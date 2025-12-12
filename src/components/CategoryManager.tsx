@@ -6,6 +6,7 @@ import { TransactionType } from '@/types/transaction';
 import { Category } from '@/hooks/useCategories';
 import { Plus, Trash2, Tag } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useTranslation } from '@/contexts/LanguageContext';
 
 interface CategoryManagerProps {
   categories: Category[];
@@ -14,6 +15,7 @@ interface CategoryManagerProps {
 }
 
 export const CategoryManager = ({ categories, onAdd, onDelete }: CategoryManagerProps) => {
+  const { t } = useTranslation();
   const [activeType, setActiveType] = useState<TransactionType>('income');
   const [newCategoryName, setNewCategoryName] = useState('');
 
@@ -47,7 +49,7 @@ export const CategoryManager = ({ categories, onAdd, onDelete }: CategoryManager
               : 'text-muted-foreground hover:text-foreground'
           )}
         >
-          Доходы
+          {t('income')}
         </button>
         <button
           type="button"
@@ -59,16 +61,16 @@ export const CategoryManager = ({ categories, onAdd, onDelete }: CategoryManager
               : 'text-muted-foreground hover:text-foreground'
           )}
         >
-          Расходы
+          {t('expenses')}
         </button>
       </div>
 
       {/* Add New Category */}
       <div className="space-y-2">
-        <Label>Добавить категорию</Label>
+        <Label>{t('addCategory')}</Label>
         <div className="flex gap-2">
           <Input
-            placeholder="Название категории..."
+            placeholder={t('categoryName')}
             value={newCategoryName}
             onChange={(e) => setNewCategoryName(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -90,12 +92,12 @@ export const CategoryManager = ({ categories, onAdd, onDelete }: CategoryManager
       {/* Categories List */}
       <div className="space-y-2">
         <Label>
-          {activeType === 'income' ? 'Категории доходов' : 'Категории расходов'}
+          {activeType === 'income' ? t('incomeCategories') : t('expenseCategories')}
         </Label>
         <div className="space-y-2 max-h-[300px] overflow-y-auto">
           {filteredCategories.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">
-              Нет категорий
+              {t('noCategories')}
             </p>
           ) : (
             filteredCategories.map((category) => (

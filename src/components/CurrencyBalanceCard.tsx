@@ -1,6 +1,7 @@
-import { Currency, CURRENCY_SYMBOLS, CURRENCY_NAMES } from '@/types/transaction';
+import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
 import { TrendingUp, TrendingDown, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useTranslation } from '@/contexts/LanguageContext';
 
 interface CurrencyBalanceCardProps {
   currency: Currency;
@@ -10,6 +11,18 @@ interface CurrencyBalanceCardProps {
   delay?: number;
 }
 
+const getCurrencyTranslationKey = (currency: Currency) => {
+  const keys: Record<Currency, 'currencyRUB' | 'currencyUSD' | 'currencyEUR' | 'currencyUAH' | 'currencyBYN' | 'currencyPLN'> = {
+    RUB: 'currencyRUB',
+    USD: 'currencyUSD',
+    EUR: 'currencyEUR',
+    UAH: 'currencyUAH',
+    BYN: 'currencyBYN',
+    PLN: 'currencyPLN',
+  };
+  return keys[currency];
+};
+
 export const CurrencyBalanceCard = ({ 
   currency, 
   income, 
@@ -17,8 +30,10 @@ export const CurrencyBalanceCard = ({
   balance,
   delay = 0 
 }: CurrencyBalanceCardProps) => {
+  const { t, getDateLocale } = useTranslation();
+  
   const formatAmount = (amount: number) => {
-    return amount.toLocaleString('ru-RU', {
+    return amount.toLocaleString(getDateLocale(), {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
@@ -34,7 +49,7 @@ export const CurrencyBalanceCard = ({
           <div className="w-10 h-10 rounded-lg gradient-primary flex items-center justify-center text-primary-foreground font-bold">
             {CURRENCY_SYMBOLS[currency]}
           </div>
-          <span className="font-semibold text-foreground">{CURRENCY_NAMES[currency]}</span>
+          <span className="font-semibold text-foreground">{t(getCurrencyTranslationKey(currency))}</span>
         </div>
       </div>
 
@@ -42,7 +57,7 @@ export const CurrencyBalanceCard = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-success">
             <TrendingUp className="w-4 h-4" />
-            <span className="text-sm">Доходы</span>
+            <span className="text-sm">{t('income')}</span>
           </div>
           <span className="font-semibold text-success">
             +{formatAmount(income)} {CURRENCY_SYMBOLS[currency]}
@@ -52,7 +67,7 @@ export const CurrencyBalanceCard = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-destructive">
             <TrendingDown className="w-4 h-4" />
-            <span className="text-sm">Расходы</span>
+            <span className="text-sm">{t('expenses')}</span>
           </div>
           <span className="font-semibold text-destructive">
             -{formatAmount(expense)} {CURRENCY_SYMBOLS[currency]}
@@ -64,7 +79,7 @@ export const CurrencyBalanceCard = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Wallet className="w-4 h-4 text-primary" />
-            <span className="text-sm font-medium">Баланс</span>
+            <span className="text-sm font-medium">{t('balance')}</span>
           </div>
           <span className={cn(
             'text-lg font-bold',

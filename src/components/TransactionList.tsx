@@ -1,9 +1,10 @@
 import { format } from 'date-fns';
-import { ru } from 'date-fns/locale';
+import { pl, ru, enUS, uk } from 'date-fns/locale';
 import { Transaction, CURRENCY_SYMBOLS } from '@/types/transaction';
 import { Trash2, TrendingUp, TrendingDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useTranslation } from '@/contexts/LanguageContext';
 
 interface TransactionListProps {
   transactions: Transaction[];
@@ -12,11 +13,22 @@ interface TransactionListProps {
 }
 
 export const TransactionList = ({ transactions, onDelete, getCategoryName }: TransactionListProps) => {
+  const { t, language } = useTranslation();
+
+  const getLocale = () => {
+    switch (language) {
+      case 'pl': return pl;
+      case 'ru': return ru;
+      case 'uk': return uk;
+      default: return enUS;
+    }
+  };
+
   if (transactions.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
-        <p className="text-lg">Нет транзакций</p>
-        <p className="text-sm mt-1">Добавьте первую транзакцию, чтобы начать</p>
+        <p className="text-lg">{t('noTransactions')}</p>
+        <p className="text-sm mt-1">{t('addFirstTransaction')}</p>
       </div>
     );
   }
@@ -52,7 +64,7 @@ export const TransactionList = ({ transactions, onDelete, getCategoryName }: Tra
                 </p>
               )}
               <p className="text-xs text-muted-foreground mt-1">
-                {format(transaction.date, 'd MMMM yyyy', { locale: ru })}
+                {format(transaction.date, 'd MMMM yyyy', { locale: getLocale() })}
               </p>
             </div>
           </div>
@@ -63,7 +75,7 @@ export const TransactionList = ({ transactions, onDelete, getCategoryName }: Tra
               transaction.type === 'income' ? 'text-success' : 'text-destructive'
             )}>
               {transaction.type === 'income' ? '+' : '-'}
-              {transaction.amount.toLocaleString('ru-RU', { 
+              {transaction.amount.toLocaleString(undefined, { 
                 minimumFractionDigits: 2, 
                 maximumFractionDigits: 2 
               })} {CURRENCY_SYMBOLS[transaction.currency]}

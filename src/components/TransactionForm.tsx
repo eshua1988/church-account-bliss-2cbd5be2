@@ -15,6 +15,7 @@ import { Currency, TransactionType, Transaction } from '@/types/transaction';
 import { Category } from '@/hooks/useCategories';
 import { PlusCircle, MinusCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useTranslation } from '@/contexts/LanguageContext';
 
 interface TransactionFormProps {
   onSubmit: (transaction: Omit<Transaction, 'id' | 'createdAt'>) => void;
@@ -23,9 +24,10 @@ interface TransactionFormProps {
 }
 
 export const TransactionForm = ({ onSubmit, incomeCategories, expenseCategories }: TransactionFormProps) => {
+  const { t } = useTranslation();
   const [type, setType] = useState<TransactionType>('income');
   const [amount, setAmount] = useState('');
-  const [currency, setCurrency] = useState<Currency>('RUB');
+  const [currency, setCurrency] = useState<Currency>('PLN');
   const [categoryId, setCategoryId] = useState<string>('');
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -74,7 +76,7 @@ export const TransactionForm = ({ onSubmit, incomeCategories, expenseCategories 
           )}
         >
           <PlusCircle className="w-5 h-5" />
-          Доход
+          {t('incomeType')}
         </button>
         <button
           type="button"
@@ -87,14 +89,14 @@ export const TransactionForm = ({ onSubmit, incomeCategories, expenseCategories 
           )}
         >
           <MinusCircle className="w-5 h-5" />
-          Расход
+          {t('expense')}
         </button>
       </div>
 
       {/* Amount and Currency */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="amount">Сумма</Label>
+          <Label htmlFor="amount">{t('amount')}</Label>
           <Input
             id="amount"
             type="number"
@@ -108,22 +110,22 @@ export const TransactionForm = ({ onSubmit, incomeCategories, expenseCategories 
           />
         </div>
         <div className="space-y-2">
-          <Label>Валюта</Label>
+          <Label>{t('currency')}</Label>
           <CurrencySelector value={currency} onChange={setCurrency} />
         </div>
       </div>
 
       {/* Category */}
       <div className="space-y-2">
-        <Label>Категория</Label>
+        <Label>{t('category')}</Label>
         {categories.length === 0 ? (
           <p className="text-sm text-muted-foreground py-2">
-            Нет категорий. Добавьте категорию в настройках.
+            {t('noCategoriesWarning')}
           </p>
         ) : (
           <Select value={categoryId} onValueChange={setCategoryId}>
             <SelectTrigger>
-              <SelectValue placeholder="Выберите категорию" />
+              <SelectValue placeholder={t('selectCategory')} />
             </SelectTrigger>
             <SelectContent>
               {categories.map((cat) => (
@@ -138,7 +140,7 @@ export const TransactionForm = ({ onSubmit, incomeCategories, expenseCategories 
 
       {/* Date */}
       <div className="space-y-2">
-        <Label htmlFor="date">Дата</Label>
+        <Label htmlFor="date">{t('date')}</Label>
         <Input
           id="date"
           type="date"
@@ -150,10 +152,10 @@ export const TransactionForm = ({ onSubmit, incomeCategories, expenseCategories 
 
       {/* Description */}
       <div className="space-y-2">
-        <Label htmlFor="description">Описание (необязательно)</Label>
+        <Label htmlFor="description">{t('description')}</Label>
         <Textarea
           id="description"
-          placeholder="Добавьте описание..."
+          placeholder={t('addDescription')}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={3}
@@ -171,7 +173,7 @@ export const TransactionForm = ({ onSubmit, incomeCategories, expenseCategories 
             : 'bg-destructive hover:bg-destructive/90'
         )}
       >
-        {type === 'income' ? 'Добавить доход' : 'Добавить расход'}
+        {type === 'income' ? t('addIncome') : t('addExpense')}
       </Button>
     </form>
   );

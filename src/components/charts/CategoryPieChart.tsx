@@ -1,0 +1,86 @@
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
+import { useTranslation } from '@/contexts/LanguageContext';
+import { Card } from '@/components/ui/card';
+
+interface CategoryPieChartProps {
+  data: Record<string, number>;
+  getCategoryName: (id: string) => string;
+  type: 'income' | 'expense';
+}
+
+const COLORS = [
+  'hsl(var(--chart-1))',
+  'hsl(var(--chart-2))',
+  'hsl(var(--chart-3))',
+  'hsl(var(--chart-4))',
+  'hsl(var(--chart-5))',
+  'hsl(142.1 76.2% 36.3%)',
+  'hsl(221.2 83.2% 53.3%)',
+  'hsl(262.1 83.3% 57.8%)',
+];
+
+export const CategoryPieChart = ({ data, getCategoryName, type }: CategoryPieChartProps) => {
+  const { t } = useTranslation();
+
+  const chartData = Object.entries(data)
+    .filter(([_, value]) => value > 0)
+    .map(([category, value]) => ({
+      name: getCategoryName(category),
+      value,
+    }));
+
+  if (chartData.length === 0) {
+    return (
+      <Card className="p-6">
+        <h3 className="text-lg font-semibold text-foreground mb-4">
+          {t('categoryDistribution')} ({type === 'income' ? t('income') : t('expenses')})
+        </h3>
+        <div className="h-[250px] flex items-center justify-center text-muted-foreground">
+          {t('noTransactions')}
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="p-6">
+      <h3 className="text-lg font-semibold text-foreground mb-4">
+        {t('categoryDistribution')} ({type === 'income' ? t('income') : t('expenses')})
+      </h3>
+      <div className="h-[250px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={chartData}
+              cx="50%"
+              cy="50%"
+              innerRadius={50}
+              outerRadius={80}
+              paddingAngle={2}
+              dataKey="value"
+              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+              labelLine={false}
+            >
+              {chartData.map((_, index) => (
+                <Cell 
+                  key={`cell-${index}`} 
+                  fill={COLORS[index % COLORS.length]}
+                  className="stroke-background"
+                  strokeWidth={2}
+                />
+              ))}
+            </Pie>
+            <Tooltip 
+              formatter={(value: number) => value.toLocaleString()}
+              contentStyle={{
+                backgroundColor: 'hsl(var(--card))',
+                border: '1px solid hsl(var(--border))',
+                borderRadius: '8px',
+              }}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    </Card>
+  );
+};

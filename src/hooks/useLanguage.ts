@@ -1,0 +1,486 @@
+import { useState, useCallback, useEffect } from 'react';
+
+export type Language = 'pl' | 'ru' | 'en' | 'uk';
+
+export const LANGUAGE_NAMES: Record<Language, string> = {
+  pl: 'Polski',
+  ru: 'Русский',
+  en: 'English',
+  uk: 'Українська',
+};
+
+const STORAGE_KEY = 'church_language';
+
+export const translations = {
+  // Header
+  appTitle: {
+    pl: 'Księgowość kościelna',
+    ru: 'Церковная бухгалтерия',
+    en: 'Church Accounting',
+    uk: 'Церковна бухгалтерія',
+  },
+  appSubtitle: {
+    pl: 'Zarządzanie finansami wspólnoty',
+    ru: 'Учёт финансов общины',
+    en: 'Community Finance Management',
+    uk: 'Облік фінансів громади',
+  },
+
+  // Stats
+  balance: {
+    pl: 'Saldo',
+    ru: 'Баланс',
+    en: 'Balance',
+    uk: 'Баланс',
+  },
+  income: {
+    pl: 'Przychody',
+    ru: 'Доходы',
+    en: 'Income',
+    uk: 'Доходи',
+  },
+  expenses: {
+    pl: 'Wydatki',
+    ru: 'Расходы',
+    en: 'Expenses',
+    uk: 'Витрати',
+  },
+  totalOperations: {
+    pl: 'Liczba operacji',
+    ru: 'Всего операций',
+    en: 'Total Operations',
+    uk: 'Всього операцій',
+  },
+
+  // Overview
+  financialOverview: {
+    pl: 'Przegląd finansów',
+    ru: 'Обзор финансов',
+    en: 'Financial Overview',
+    uk: 'Огляд фінансів',
+  },
+  mainCurrency: {
+    pl: 'Główna waluta wyświetlania',
+    ru: 'Основная валюта для отображения',
+    en: 'Main display currency',
+    uk: 'Основна валюта для відображення',
+  },
+  balanceByCurrency: {
+    pl: 'Saldo według walut',
+    ru: 'Баланс по валютам',
+    en: 'Balance by Currency',
+    uk: 'Баланс за валютами',
+  },
+
+  // Transactions
+  recentOperations: {
+    pl: 'Ostatnie operacje',
+    ru: 'Последние операции',
+    en: 'Recent Operations',
+    uk: 'Останні операції',
+  },
+  addTransaction: {
+    pl: 'Dodaj transakcję',
+    ru: 'Добавить транзакцию',
+    en: 'Add Transaction',
+    uk: 'Додати транзакцію',
+  },
+  newTransaction: {
+    pl: 'Nowa transakcja',
+    ru: 'Новая транзакция',
+    en: 'New Transaction',
+    uk: 'Нова транзакція',
+  },
+  noTransactions: {
+    pl: 'Brak transakcji',
+    ru: 'Нет транзакций',
+    en: 'No transactions',
+    uk: 'Немає транзакцій',
+  },
+  addFirstTransaction: {
+    pl: 'Dodaj pierwszą transakcję, aby rozpocząć',
+    ru: 'Добавьте первую транзакцию, чтобы начать',
+    en: 'Add your first transaction to get started',
+    uk: 'Додайте першу транзакцію, щоб почати',
+  },
+  expense: {
+    pl: 'Wydatek',
+    ru: 'Расход',
+    en: 'Expense',
+    uk: 'Витрата',
+  },
+  incomeType: {
+    pl: 'Przychód',
+    ru: 'Доход',
+    en: 'Income',
+    uk: 'Дохід',
+  },
+
+  // Categories
+  categories: {
+    pl: 'Kategorie',
+    ru: 'Категории',
+    en: 'Categories',
+    uk: 'Категорії',
+  },
+  categoryManagement: {
+    pl: 'Zarządzanie kategoriami',
+    ru: 'Управление категориями',
+    en: 'Category Management',
+    uk: 'Керування категоріями',
+  },
+  addCategory: {
+    pl: 'Dodaj kategorię',
+    ru: 'Добавить категорию',
+    en: 'Add Category',
+    uk: 'Додати категорію',
+  },
+  categoryName: {
+    pl: 'Nazwa kategorii...',
+    ru: 'Название категории...',
+    en: 'Category name...',
+    uk: 'Назва категорії...',
+  },
+  incomeCategories: {
+    pl: 'Kategorie przychodów',
+    ru: 'Категории доходов',
+    en: 'Income Categories',
+    uk: 'Категорії доходів',
+  },
+  expenseCategories: {
+    pl: 'Kategorie wydatków',
+    ru: 'Категории расходов',
+    en: 'Expense Categories',
+    uk: 'Категорії витрат',
+  },
+  noCategories: {
+    pl: 'Brak kategorii',
+    ru: 'Нет категорий',
+    en: 'No categories',
+    uk: 'Немає категорій',
+  },
+
+  // Form
+  amount: {
+    pl: 'Kwota',
+    ru: 'Сумма',
+    en: 'Amount',
+    uk: 'Сума',
+  },
+  currency: {
+    pl: 'Waluta',
+    ru: 'Валюта',
+    en: 'Currency',
+    uk: 'Валюта',
+  },
+  category: {
+    pl: 'Kategoria',
+    ru: 'Категория',
+    en: 'Category',
+    uk: 'Категорія',
+  },
+  selectCategory: {
+    pl: 'Wybierz kategorię',
+    ru: 'Выберите категорию',
+    en: 'Select category',
+    uk: 'Виберіть категорію',
+  },
+  date: {
+    pl: 'Data',
+    ru: 'Дата',
+    en: 'Date',
+    uk: 'Дата',
+  },
+  description: {
+    pl: 'Opis (opcjonalnie)',
+    ru: 'Описание (необязательно)',
+    en: 'Description (optional)',
+    uk: 'Опис (необов\'язково)',
+  },
+  addDescription: {
+    pl: 'Dodaj opis...',
+    ru: 'Добавьте описание...',
+    en: 'Add description...',
+    uk: 'Додайте опис...',
+  },
+  addIncome: {
+    pl: 'Dodaj przychód',
+    ru: 'Добавить доход',
+    en: 'Add Income',
+    uk: 'Додати дохід',
+  },
+  addExpense: {
+    pl: 'Dodaj wydatek',
+    ru: 'Добавить расход',
+    en: 'Add Expense',
+    uk: 'Додати витрату',
+  },
+  noCategoriesWarning: {
+    pl: 'Brak kategorii. Dodaj kategorię w ustawieniach.',
+    ru: 'Нет категорий. Добавьте категорию в настройках.',
+    en: 'No categories. Add a category in settings.',
+    uk: 'Немає категорій. Додайте категорію в налаштуваннях.',
+  },
+
+  // Toasts
+  incomeAdded: {
+    pl: 'Przychód dodany',
+    ru: 'Доход добавлен',
+    en: 'Income added',
+    uk: 'Дохід додано',
+  },
+  expenseAdded: {
+    pl: 'Wydatek dodany',
+    ru: 'Расход добавлен',
+    en: 'Expense added',
+    uk: 'Витрату додано',
+  },
+  transactionDeleted: {
+    pl: 'Transakcja usunięta',
+    ru: 'Транзакция удалена',
+    en: 'Transaction deleted',
+    uk: 'Транзакцію видалено',
+  },
+  categoryAdded: {
+    pl: 'Kategoria dodana',
+    ru: 'Категория добавлена',
+    en: 'Category added',
+    uk: 'Категорію додано',
+  },
+  categoryDeleted: {
+    pl: 'Kategoria usunięta',
+    ru: 'Категория удалена',
+    en: 'Category deleted',
+    uk: 'Категорію видалено',
+  },
+  unknown: {
+    pl: 'Nieznane',
+    ru: 'Неизвестно',
+    en: 'Unknown',
+    uk: 'Невідомо',
+  },
+
+  // Undo/Redo
+  undo: {
+    pl: 'Cofnij',
+    ru: 'Отменить',
+    en: 'Undo',
+    uk: 'Скасувати',
+  },
+  redo: {
+    pl: 'Ponów',
+    ru: 'Повторить',
+    en: 'Redo',
+    uk: 'Повторити',
+  },
+  actionUndone: {
+    pl: 'Akcja cofnięta',
+    ru: 'Действие отменено',
+    en: 'Action undone',
+    uk: 'Дію скасовано',
+  },
+  actionRedone: {
+    pl: 'Akcja powtórzona',
+    ru: 'Действие повторено',
+    en: 'Action redone',
+    uk: 'Дію повторено',
+  },
+
+  // Charts
+  statistics: {
+    pl: 'Statystyki',
+    ru: 'Статистика',
+    en: 'Statistics',
+    uk: 'Статистика',
+  },
+  categoryDistribution: {
+    pl: 'Rozkład według kategorii',
+    ru: 'Распределение по категориям',
+    en: 'Category Distribution',
+    uk: 'Розподіл за категоріями',
+  },
+  balanceOverTime: {
+    pl: 'Saldo w czasie',
+    ru: 'Баланс во времени',
+    en: 'Balance Over Time',
+    uk: 'Баланс у часі',
+  },
+  incomeVsExpenses: {
+    pl: 'Przychody vs Wydatki',
+    ru: 'Доходы vs Расходы',
+    en: 'Income vs Expenses',
+    uk: 'Доходи vs Витрати',
+  },
+  
+  // Currency settings
+  currencySettings: {
+    pl: 'Ustawienia walut',
+    ru: 'Настройки валют',
+    en: 'Currency Settings',
+    uk: 'Налаштування валют',
+  },
+  selectVisibleCurrencies: {
+    pl: 'Wybierz waluty do wyświetlenia',
+    ru: 'Выберите валюты для отображения',
+    en: 'Select currencies to display',
+    uk: 'Виберіть валюти для відображення',
+  },
+  settings: {
+    pl: 'Ustawienia',
+    ru: 'Настройки',
+    en: 'Settings',
+    uk: 'Налаштування',
+  },
+
+  // Currency names
+  currencyRUB: {
+    pl: 'Rubel rosyjski',
+    ru: 'Российский рубль',
+    en: 'Russian Ruble',
+    uk: 'Російський рубль',
+  },
+  currencyUSD: {
+    pl: 'Dolar amerykański',
+    ru: 'Доллар США',
+    en: 'US Dollar',
+    uk: 'Долар США',
+  },
+  currencyEUR: {
+    pl: 'Euro',
+    ru: 'Евро',
+    en: 'Euro',
+    uk: 'Євро',
+  },
+  currencyUAH: {
+    pl: 'Hrywna ukraińska',
+    ru: 'Украинская гривна',
+    en: 'Ukrainian Hryvnia',
+    uk: 'Українська гривня',
+  },
+  currencyBYN: {
+    pl: 'Rubel białoruski',
+    ru: 'Белорусский рубль',
+    en: 'Belarusian Ruble',
+    uk: 'Білоруський рубль',
+  },
+  currencyPLN: {
+    pl: 'Złoty polski',
+    ru: 'Польский злотый',
+    en: 'Polish Zloty',
+    uk: 'Польський злотий',
+  },
+
+  // Default categories
+  catTithe: {
+    pl: 'Dziesięcina',
+    ru: 'Десятина',
+    en: 'Tithe',
+    uk: 'Десятина',
+  },
+  catOffering: {
+    pl: 'Ofiara',
+    ru: 'Пожертвование',
+    en: 'Offering',
+    uk: 'Пожертва',
+  },
+  catDonation: {
+    pl: 'Darowizna',
+    ru: 'Дар',
+    en: 'Donation',
+    uk: 'Дар',
+  },
+  catBuildingFund: {
+    pl: 'Fundusz budowlany',
+    ru: 'Фонд строительства',
+    en: 'Building Fund',
+    uk: 'Фонд будівництва',
+  },
+  catMissions: {
+    pl: 'Misje',
+    ru: 'Миссии',
+    en: 'Missions',
+    uk: 'Місії',
+  },
+  catOther: {
+    pl: 'Inne',
+    ru: 'Прочее',
+    en: 'Other',
+    uk: 'Інше',
+  },
+  catSalaries: {
+    pl: 'Wynagrodzenia',
+    ru: 'Зарплаты',
+    en: 'Salaries',
+    uk: 'Зарплати',
+  },
+  catUtilities: {
+    pl: 'Media',
+    ru: 'Коммунальные услуги',
+    en: 'Utilities',
+    uk: 'Комунальні послуги',
+  },
+  catMaintenance: {
+    pl: 'Konserwacja',
+    ru: 'Обслуживание',
+    en: 'Maintenance',
+    uk: 'Обслуговування',
+  },
+  catSupplies: {
+    pl: 'Materiały',
+    ru: 'Расходные материалы',
+    en: 'Supplies',
+    uk: 'Витратні матеріали',
+  },
+  catCharity: {
+    pl: 'Działalność charytatywna',
+    ru: 'Благотворительность',
+    en: 'Charity',
+    uk: 'Благодійність',
+  },
+} as const;
+
+export type TranslationKey = keyof typeof translations;
+
+export const useLanguage = () => {
+  const [language, setLanguageState] = useState<Language>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored && ['pl', 'ru', 'en', 'uk'].includes(stored)) {
+        return stored as Language;
+      }
+    } catch (e) {
+      console.error('Failed to load language:', e);
+    }
+    return 'pl'; // Default to Polish
+  });
+
+  const setLanguage = useCallback((lang: Language) => {
+    setLanguageState(lang);
+    try {
+      localStorage.setItem(STORAGE_KEY, lang);
+    } catch (e) {
+      console.error('Failed to save language:', e);
+    }
+  }, []);
+
+  const t = useCallback((key: TranslationKey): string => {
+    return translations[key]?.[language] || key;
+  }, [language]);
+
+  const getDateLocale = useCallback(() => {
+    switch (language) {
+      case 'pl': return 'pl-PL';
+      case 'ru': return 'ru-RU';
+      case 'en': return 'en-US';
+      case 'uk': return 'uk-UA';
+      default: return 'pl-PL';
+    }
+  }, [language]);
+
+  return {
+    language,
+    setLanguage,
+    t,
+    getDateLocale,
+  };
+};
