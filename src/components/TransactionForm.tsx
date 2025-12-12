@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,42 +11,44 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { CurrencySelector } from '@/components/CurrencySelector';
-import { 
-  Currency, 
-  TransactionType, 
-  TransactionCategory,
-  CATEGORY_NAMES,
-  INCOME_CATEGORIES,
-  EXPENSE_CATEGORIES,
-  Transaction,
-} from '@/types/transaction';
+import { Currency, TransactionType, Transaction } from '@/types/transaction';
+import { Category } from '@/hooks/useCategories';
 import { PlusCircle, MinusCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface TransactionFormProps {
   onSubmit: (transaction: Omit<Transaction, 'id' | 'createdAt'>) => void;
+  incomeCategories: Category[];
+  expenseCategories: Category[];
 }
 
-export const TransactionForm = ({ onSubmit }: TransactionFormProps) => {
+export const TransactionForm = ({ onSubmit, incomeCategories, expenseCategories }: TransactionFormProps) => {
   const [type, setType] = useState<TransactionType>('income');
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState<Currency>('RUB');
-  const [category, setCategory] = useState<TransactionCategory>('offering');
+  const [categoryId, setCategoryId] = useState<string>('');
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
-  const categories = type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const categories = type === 'income' ? incomeCategories : expenseCategories;
+
+  // Reset category when type changes or categories update
+  useEffect(() => {
+    if (categories.length > 0 && !categories.find(c => c.id === categoryId)) {
+      setCategoryId(categories[0].id);
+    }
+  }, [type, categories, categoryId]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!amount || parseFloat(amount) <= 0) return;
+    if (!amount || parseFloat(amount) <= 0 || !categoryId) return;
 
     onSubmit({
       type,
       amount: parseFloat(amount),
       currency,
-      category,
+      category: categoryId as any,
       description,
       date: new Date(date),
     });
@@ -63,10 +65,7 @@ export const TransactionForm = ({ onSubmit }: TransactionFormProps) => {
       <div className="flex gap-2 p-1 bg-secondary rounded-lg">
         <button
           type="button"
-          onClick={() => {
-            setType('income');
-            setCategory(INCOME_CATEGORIES[0]);
-          }}
+          onClick={() => setType('income')}
           className={cn(
             'flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-md font-semibold transition-all duration-200',
             type === 'income' 
@@ -79,10 +78,7 @@ export const TransactionForm = ({ onSubmit }: TransactionFormProps) => {
         </button>
         <button
           type="button"
-          onClick={() => {
-            setType('expense');
-            setCategory(EXPENSE_CATEGORIES[0]);
-          }}
+          onClick={() => setType('expense')}
           className={cn(
             'flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-md font-semibold transition-all duration-200',
             type === 'expense' 
@@ -120,18 +116,24 @@ export const TransactionForm = ({ onSubmit }: TransactionFormProps) => {
       {/* Category */}
       <div className="space-y-2">
         <Label>Категория</Label>
-        <Select value={category} onValueChange={(v) => setCategory(v as TransactionCategory)}>
-          <SelectTrigger>
-            <SelectValue placeholder="Выберите категорию" />
-          </SelectTrigger>
-          <SelectContent>
-            {categories.map((cat) => (
-              <SelectItem key={cat} value={cat}>
-                {CATEGORY_NAMES[cat]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {categories.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-2">
+            Нет категорий. Добавьте категорию в настройках.
+          </p>
+        ) : (
+          <Select value={categoryId} onValueChange={setCategoryId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Выберите категорию" />
+            </SelectTrigger>
+            <SelectContent>
+              {categories.map((cat) => (
+                <SelectItem key={cat.id} value={cat.id}>
+                  {cat.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {/* Date */}
@@ -161,6 +163,7 @@ export const TransactionForm = ({ onSubmit }: TransactionFormProps) => {
       {/* Submit Button */}
       <Button 
         type="submit" 
+        disabled={categories.length === 0}
         className={cn(
           'w-full py-6 text-lg font-semibold transition-all duration-200',
           type === 'income' 
