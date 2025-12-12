@@ -1,6 +1,6 @@
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
-import { Transaction, CURRENCY_SYMBOLS, CATEGORY_NAMES } from '@/types/transaction';
+import { Transaction, CURRENCY_SYMBOLS } from '@/types/transaction';
 import { Trash2, TrendingUp, TrendingDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -8,9 +8,10 @@ import { cn } from '@/lib/utils';
 interface TransactionListProps {
   transactions: Transaction[];
   onDelete: (id: string) => void;
+  getCategoryName: (id: string) => string;
 }
 
-export const TransactionList = ({ transactions, onDelete }: TransactionListProps) => {
+export const TransactionList = ({ transactions, onDelete, getCategoryName }: TransactionListProps) => {
   if (transactions.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
@@ -43,7 +44,7 @@ export const TransactionList = ({ transactions, onDelete }: TransactionListProps
             </div>
             <div>
               <p className="font-semibold text-foreground">
-                {CATEGORY_NAMES[transaction.category]}
+                {getCategoryName(transaction.category)}
               </p>
               {transaction.description && (
                 <p className="text-sm text-muted-foreground line-clamp-1">

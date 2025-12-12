@@ -5,9 +5,11 @@ import { TransactionForm } from '@/components/TransactionForm';
 import { TransactionList } from '@/components/TransactionList';
 import { CurrencyBalanceCard } from '@/components/CurrencyBalanceCard';
 import { CurrencySelector } from '@/components/CurrencySelector';
+import { CategoryManager } from '@/components/CategoryManager';
 import { useTransactions } from '@/hooks/useTransactions';
+import { useCategories } from '@/hooks/useCategories';
 import { Currency, CURRENCY_SYMBOLS, Transaction } from '@/types/transaction';
-import { Wallet, TrendingUp, TrendingDown, Receipt } from 'lucide-react';
+import { Wallet, TrendingUp, TrendingDown, Receipt, Settings } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
@@ -22,7 +24,8 @@ const currencies: Currency[] = ['RUB', 'USD', 'EUR', 'UAH', 'BYN', 'PLN'];
 
 const Index = () => {
   const [selectedCurrency, setSelectedCurrency] = useState<Currency>('RUB');
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState(false);
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
   const { toast } = useToast();
   
   const {
@@ -33,12 +36,21 @@ const Index = () => {
     getRecentTransactions,
   } = useTransactions();
 
+  const {
+    categories,
+    addCategory,
+    deleteCategory,
+    getIncomeCategories,
+    getExpenseCategories,
+    getCategoryName,
+  } = useCategories();
+
   const balance = getBalanceByCurrency(selectedCurrency);
   const recentTransactions = getRecentTransactions(10);
 
   const handleAddTransaction = (transaction: Omit<Transaction, 'id' | 'createdAt'>) => {
     addTransaction(transaction);
-    setIsDialogOpen(false);
+    setIsTransactionDialogOpen(false);
     toast({
       title: transaction.type === 'income' ? 'Доход добавлен' : 'Расход добавлен',
       description: `${transaction.amount.toLocaleString('ru-RU')} ${CURRENCY_SYMBOLS[transaction.currency]}`,
@@ -49,6 +61,24 @@ const Index = () => {
     deleteTransaction(id);
     toast({
       title: 'Транзакция удалена',
+      variant: 'destructive',
+    });
+  };
+
+  const handleAddCategory = (name: string, type: 'income' | 'expense') => {
+    addCategory(name, type);
+    toast({
+      title: 'Категория добавлена',
+      description: name,
+    });
+  };
+
+  const handleDeleteCategory = (id: string) => {
+    const categoryName = getCategoryName(id);
+    deleteCategory(id);
+    toast({
+      title: 'Категория удалена',
+      description: categoryName,
       variant: 'destructive',
     });
   };
@@ -133,26 +163,54 @@ const Index = () => {
 
         {/* Add Transaction Button and Recent Transactions */}
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-4">
             <h3 className="text-lg font-semibold text-foreground">Последние операции</h3>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button className="gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200">
-                  Добавить транзакцию
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[500px]">
-                <DialogHeader>
-                  <DialogTitle>Новая транзакция</DialogTitle>
-                </DialogHeader>
-                <TransactionForm onSubmit={handleAddTransaction} />
-              </DialogContent>
-            </Dialog>
+            <div className="flex gap-2">
+              {/* Category Settings Dialog */}
+              <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" className="font-semibold">
+                    <Settings className="w-4 h-4 mr-2" />
+                    Категории
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[500px]">
+                  <DialogHeader>
+                    <DialogTitle>Управление категориями</DialogTitle>
+                  </DialogHeader>
+                  <CategoryManager
+                    categories={categories}
+                    onAdd={handleAddCategory}
+                    onDelete={handleDeleteCategory}
+                  />
+                </DialogContent>
+              </Dialog>
+
+              {/* Transaction Dialog */}
+              <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button className="gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200">
+                    Добавить транзакцию
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[500px]">
+                  <DialogHeader>
+                    <DialogTitle>Новая транзакция</DialogTitle>
+                  </DialogHeader>
+                  <TransactionForm 
+                    onSubmit={handleAddTransaction}
+                    incomeCategories={getIncomeCategories()}
+                    expenseCategories={getExpenseCategories()}
+                  />
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
 
           <TransactionList 
             transactions={recentTransactions} 
-            onDelete={handleDeleteTransaction} 
+            onDelete={handleDeleteTransaction}
+            getCategoryName={getCategoryName}
           />
         </div>
       </main>
