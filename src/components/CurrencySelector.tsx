@@ -13,7 +13,7 @@ interface CurrencySelectorProps {
   className?: string;
 }
 
-const currencies: Currency[] = ['RUB', 'USD', 'EUR', 'UAH', 'BYN'];
+const currencies: Currency[] = ['RUB', 'USD', 'EUR', 'UAH', 'BYN', 'PLN'];
 
 export const CurrencySelector = ({ value, onChange, className }: CurrencySelectorProps) => {
   return (

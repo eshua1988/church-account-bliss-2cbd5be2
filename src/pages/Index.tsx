@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 
-const currencies: Currency[] = ['RUB', 'USD', 'EUR', 'UAH', 'BYN'];
+const currencies: Currency[] = ['RUB', 'USD', 'EUR', 'UAH', 'BYN', 'PLN'];
 
 const Index = () => {
   const [selectedCurrency, setSelectedCurrency] = useState<Currency>('RUB');
