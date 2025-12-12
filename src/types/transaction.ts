@@ -1,6 +1,6 @@
 export type TransactionType = 'income' | 'expense';
 
-export type Currency = 'RUB' | 'USD' | 'EUR' | 'UAH' | 'BYN';
+export type Currency = 'RUB' | 'USD' | 'EUR' | 'UAH' | 'BYN' | 'PLN';
 
 export type TransactionCategory = 
   | 'tithe' 
@@ -32,6 +32,7 @@ export const CURRENCY_SYMBOLS: Record<Currency, string> = {
   EUR: '€',
   UAH: '₴',
   BYN: 'Br',
+  PLN: 'zł',
 };
 
 export const CURRENCY_NAMES: Record<Currency, string> = {
@@ -40,6 +41,7 @@ export const CURRENCY_NAMES: Record<Currency, string> = {
   EUR: 'Евро',
   UAH: 'Украинская гривна',
   BYN: 'Белорусский рубль',
+  PLN: 'Польский злотый',
 };
 
 export const CATEGORY_NAMES: Record<TransactionCategory, string> = {
