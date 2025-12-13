@@ -118,10 +118,10 @@ export const translations = {
 
   // Categories
   categories: {
-    pl: 'Kategorie',
-    ru: 'Категории',
-    en: 'Categories',
-    uk: 'Категорії',
+    pl: 'Ustawienia',
+    ru: 'Настройки',
+    en: 'Settings',
+    uk: 'Налаштування',
   },
   categoryManagement: {
     pl: 'Zarządzanie kategoriami',

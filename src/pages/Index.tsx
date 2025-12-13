@@ -213,9 +213,11 @@ const Index = () => {
                 <DialogTrigger asChild>
                   <Button className="gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200">{t('addTransaction')}</Button>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-[500px]">
+                <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-hidden flex flex-col">
                   <DialogHeader><DialogTitle>{t('newTransaction')}</DialogTitle></DialogHeader>
-                  <TransactionForm onSubmit={handleAddTransaction} incomeCategories={getIncomeCategories()} expenseCategories={getExpenseCategories()} />
+                  <div className="overflow-y-auto flex-1 pr-2">
+                    <TransactionForm onSubmit={handleAddTransaction} incomeCategories={getIncomeCategories()} expenseCategories={getExpenseCategories()} />
+                  </div>
                 </DialogContent>
               </Dialog>
             </div>
