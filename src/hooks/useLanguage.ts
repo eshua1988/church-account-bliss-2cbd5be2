@@ -446,10 +446,10 @@ export const translations = {
     uk: 'Видано (ПІБ)',
   },
   decisionNumber: {
-    pl: 'Na podstawie decyzji rady prezbiterów Nr.',
-    ru: 'На основании решения совета пресвитеров №',
-    en: 'Based on presbytery decision No.',
-    uk: 'На підставі рішення ради пресвітерів №',
+    pl: 'Podstawa (na jakie potrzeby)',
+    ru: 'Основание (для каких потребностей)',
+    en: 'Basis (for what needs)',
+    uk: 'Підстава (для яких потреб)',
   },
   amountInWords: {
     pl: 'Kwota słownie',
