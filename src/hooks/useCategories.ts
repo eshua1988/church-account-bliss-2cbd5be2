@@ -78,6 +78,33 @@ export const useCategories = () => {
     });
   }, []);
 
+  const updateCategory = useCallback((id: string, name: string) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+
+    setCategories(prev => {
+      const updated = prev.map(c => 
+        c.id === id ? { ...c, name: trimmedName } : c
+      );
+      saveCategories(updated);
+      return updated;
+    });
+  }, []);
+
+  const reorderCategories = useCallback((type: TransactionType, fromIndex: number, toIndex: number) => {
+    setCategories(prev => {
+      const typeCategories = prev.filter(c => c.type === type);
+      const otherCategories = prev.filter(c => c.type !== type);
+      
+      const [movedItem] = typeCategories.splice(fromIndex, 1);
+      typeCategories.splice(toIndex, 0, movedItem);
+      
+      const updated = [...otherCategories, ...typeCategories];
+      saveCategories(updated);
+      return updated;
+    });
+  }, []);
+
   const getIncomeCategories = useCallback(() => {
     return categories.filter(c => c.type === 'income');
   }, [categories]);
@@ -94,6 +121,8 @@ export const useCategories = () => {
     categories,
     addCategory,
     deleteCategory,
+    updateCategory,
+    reorderCategories,
     getIncomeCategories,
     getExpenseCategories,
     getCategoryName,

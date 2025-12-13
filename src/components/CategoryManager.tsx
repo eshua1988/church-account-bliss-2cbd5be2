@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { TransactionType } from '@/types/transaction';
 import { Category } from '@/hooks/useCategories';
-import { Plus, Trash2, Tag } from 'lucide-react';
+import { Plus, Trash2, Tag, Pencil, Check, X, GripVertical, ArrowUp, ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/contexts/LanguageContext';
 
@@ -12,12 +12,16 @@ interface CategoryManagerProps {
   categories: Category[];
   onAdd: (name: string, type: TransactionType) => void;
   onDelete: (id: string) => void;
+  onUpdate?: (id: string, name: string) => void;
+  onReorder?: (type: TransactionType, fromIndex: number, toIndex: number) => void;
 }
 
-export const CategoryManager = ({ categories, onAdd, onDelete }: CategoryManagerProps) => {
+export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReorder }: CategoryManagerProps) => {
   const { t } = useTranslation();
   const [activeType, setActiveType] = useState<TransactionType>('income');
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
 
   const filteredCategories = categories.filter(c => c.type === activeType);
 
@@ -32,6 +36,44 @@ export const CategoryManager = ({ categories, onAdd, onDelete }: CategoryManager
     if (e.key === 'Enter') {
       e.preventDefault();
       handleAdd();
+    }
+  };
+
+  const startEdit = (category: Category) => {
+    setEditingId(category.id);
+    setEditingName(category.name);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditingName('');
+  };
+
+  const saveEdit = () => {
+    if (editingId && editingName.trim() && onUpdate) {
+      onUpdate(editingId, editingName.trim());
+    }
+    cancelEdit();
+  };
+
+  const handleEditKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveEdit();
+    } else if (e.key === 'Escape') {
+      cancelEdit();
+    }
+  };
+
+  const moveUp = (index: number) => {
+    if (index > 0 && onReorder) {
+      onReorder(activeType, index, index - 1);
+    }
+  };
+
+  const moveDown = (index: number) => {
+    if (index < filteredCategories.length - 1 && onReorder) {
+      onReorder(activeType, index, index + 1);
     }
   };
 
@@ -100,26 +142,91 @@ export const CategoryManager = ({ categories, onAdd, onDelete }: CategoryManager
               {t('noCategories')}
             </p>
           ) : (
-            filteredCategories.map((category) => (
+            filteredCategories.map((category, index) => (
               <div
                 key={category.id}
-                className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg border border-border"
+                className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg border border-border gap-2"
               >
-                <div className="flex items-center gap-2">
-                  <Tag className={cn(
-                    'w-4 h-4',
-                    activeType === 'income' ? 'text-success' : 'text-destructive'
-                  )} />
-                  <span className="font-medium text-foreground">{category.name}</span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => onDelete(category.id)}
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
+                {editingId === category.id ? (
+                  <>
+                    <Input
+                      value={editingName}
+                      onChange={(e) => setEditingName(e.target.value)}
+                      onKeyDown={handleEditKeyDown}
+                      className="flex-1"
+                      autoFocus
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={saveEdit}
+                      className="h-8 w-8 text-success hover:text-success hover:bg-success/10"
+                    >
+                      <Check className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={cancelEdit}
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <GripVertical className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <Tag className={cn(
+                        'w-4 h-4 shrink-0',
+                        activeType === 'income' ? 'text-success' : 'text-destructive'
+                      )} />
+                      <span className="font-medium text-foreground truncate">{category.name}</span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {onReorder && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => moveUp(index)}
+                            disabled={index === 0}
+                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                          >
+                            <ArrowUp className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => moveDown(index)}
+                            disabled={index === filteredCategories.length - 1}
+                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                          >
+                            <ArrowDown className="w-4 h-4" />
+                          </Button>
+                        </>
+                      )}
+                      {onUpdate && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => startEdit(category)}
+                          className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => onDelete(category.id)}
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </>
+                )}
               </div>
             ))
           )}

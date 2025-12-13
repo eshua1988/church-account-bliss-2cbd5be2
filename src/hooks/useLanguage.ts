@@ -493,6 +493,68 @@ export const translations = {
     en: 'Expense document details',
     uk: 'Дані документа витрати',
   },
+  
+  // Statistics table
+  allTime: {
+    pl: 'Cały okres',
+    ru: 'За все время',
+    en: 'All time',
+    uk: 'За весь час',
+  },
+  thisMonth: {
+    pl: 'Ten miesiąc',
+    ru: 'Этот месяц',
+    en: 'This month',
+    uk: 'Цей місяць',
+  },
+  lastMonth: {
+    pl: 'Poprzedni miesiąc',
+    ru: 'Прошлый месяц',
+    en: 'Last month',
+    uk: 'Минулий місяць',
+  },
+  last3Months: {
+    pl: 'Ostatnie 3 miesiące',
+    ru: 'Последние 3 месяца',
+    en: 'Last 3 months',
+    uk: 'Останні 3 місяці',
+  },
+  last6Months: {
+    pl: 'Ostatnie 6 miesięcy',
+    ru: 'Последние 6 месяцев',
+    en: 'Last 6 months',
+    uk: 'Останні 6 місяців',
+  },
+  thisYear: {
+    pl: 'Ten rok',
+    ru: 'Этот год',
+    en: 'This year',
+    uk: 'Цей рік',
+  },
+  transactionsTable: {
+    pl: 'Tabela transakcji',
+    ru: 'Таблица транзакций',
+    en: 'Transactions table',
+    uk: 'Таблиця транзакцій',
+  },
+  type: {
+    pl: 'Typ',
+    ru: 'Тип',
+    en: 'Type',
+    uk: 'Тип',
+  },
+  showingTransactions: {
+    pl: 'Pokazywane transakcje',
+    ru: 'Показано транзакций',
+    en: 'Showing transactions',
+    uk: 'Показано транзакцій',
+  },
+  categoryUpdated: {
+    pl: 'Kategoria zaktualizowana',
+    ru: 'Категория обновлена',
+    en: 'Category updated',
+    uk: 'Категорію оновлено',
+  },
 } as const;
 
 export type TranslationKey = keyof typeof translations;

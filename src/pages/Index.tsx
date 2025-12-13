@@ -11,10 +11,11 @@ import { CurrencySettingsDialog, loadVisibleCurrencies, saveVisibleCurrencies } 
 import { CategoryPieChart } from '@/components/charts/CategoryPieChart';
 import { BalanceLineChart } from '@/components/charts/BalanceLineChart';
 import { IncomeExpenseBarChart } from '@/components/charts/IncomeExpenseBarChart';
+import { StatisticsTable } from '@/components/StatisticsTable';
 import { useTransactionsWithHistory } from '@/hooks/useTransactionsWithHistory';
 import { useCategories } from '@/hooks/useCategories';
 import { useTranslation } from '@/contexts/LanguageContext';
-import { Currency, CURRENCY_SYMBOLS, Transaction } from '@/types/transaction';
+import { Currency, CURRENCY_SYMBOLS, Transaction, TransactionType } from '@/types/transaction';
 import { Wallet, TrendingUp, TrendingDown, Receipt, Settings, BarChart3 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -55,6 +56,8 @@ const Index = () => {
     categories,
     addCategory,
     deleteCategory,
+    updateCategory,
+    reorderCategories,
     getIncomeCategories,
     getExpenseCategories,
     getCategoryName,
@@ -118,6 +121,15 @@ const Index = () => {
     toast({ title: t('categoryDeleted'), description: categoryName, variant: 'destructive' });
   };
 
+  const handleUpdateCategory = (id: string, name: string) => {
+    updateCategory(id, name);
+    toast({ title: t('categoryUpdated'), description: name });
+  };
+
+  const handleReorderCategories = (type: TransactionType, fromIndex: number, toIndex: number) => {
+    reorderCategories(type, fromIndex, toIndex);
+  };
+
   const handleUndo = () => {
     undo();
     toast({ title: t('actionUndone') });
@@ -138,6 +150,36 @@ const Index = () => {
       <Header />
       
       <main className="container mx-auto px-4 py-8">
+        {/* Action Buttons at Top */}
+        <div className="mb-6 flex flex-wrap items-center justify-end gap-2">
+          <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="font-semibold"><Settings className="w-4 h-4 mr-2" />{t('categories')}</Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader><DialogTitle>{t('categoryManagement')}</DialogTitle></DialogHeader>
+              <CategoryManager 
+                categories={categories} 
+                onAdd={handleAddCategory} 
+                onDelete={handleDeleteCategory} 
+                onUpdate={handleUpdateCategory}
+                onReorder={handleReorderCategories}
+              />
+            </DialogContent>
+          </Dialog>
+          <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200">{t('addTransaction')}</Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-hidden flex flex-col">
+              <DialogHeader><DialogTitle>{t('newTransaction')}</DialogTitle></DialogHeader>
+              <div className="overflow-y-auto flex-1 pr-2">
+                <TransactionForm onSubmit={handleAddTransaction} incomeCategories={getIncomeCategories()} expenseCategories={getExpenseCategories()} />
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+
         {/* Currency Selector and Controls */}
         <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="space-y-1">
@@ -178,12 +220,16 @@ const Index = () => {
             <BarChart3 className="w-5 h-5" />
             {t('statistics')}
           </h3>
-          <Tabs defaultValue="bar" className="w-full">
+          <Tabs defaultValue="table" className="w-full">
             <TabsList className="mb-4">
+              <TabsTrigger value="table">{t('transactionsTable')}</TabsTrigger>
               <TabsTrigger value="bar">{t('incomeVsExpenses')}</TabsTrigger>
               <TabsTrigger value="line">{t('balanceOverTime')}</TabsTrigger>
               <TabsTrigger value="pie">{t('categoryDistribution')}</TabsTrigger>
             </TabsList>
+            <TabsContent value="table">
+              <StatisticsTable transactions={transactions} getCategoryName={getCategoryName} />
+            </TabsContent>
             <TabsContent value="bar"><IncomeExpenseBarChart data={monthlyData} /></TabsContent>
             <TabsContent value="line"><BalanceLineChart data={monthlyData} /></TabsContent>
             <TabsContent value="pie">
@@ -197,31 +243,7 @@ const Index = () => {
 
         {/* Transactions */}
         <div className="space-y-6">
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <h3 className="text-lg font-semibold text-foreground">{t('recentOperations')}</h3>
-            <div className="flex gap-2">
-              <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" className="font-semibold"><Settings className="w-4 h-4 mr-2" />{t('categories')}</Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[500px]">
-                  <DialogHeader><DialogTitle>{t('categoryManagement')}</DialogTitle></DialogHeader>
-                  <CategoryManager categories={categories} onAdd={handleAddCategory} onDelete={handleDeleteCategory} />
-                </DialogContent>
-              </Dialog>
-              <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button className="gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200">{t('addTransaction')}</Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-hidden flex flex-col">
-                  <DialogHeader><DialogTitle>{t('newTransaction')}</DialogTitle></DialogHeader>
-                  <div className="overflow-y-auto flex-1 pr-2">
-                    <TransactionForm onSubmit={handleAddTransaction} incomeCategories={getIncomeCategories()} expenseCategories={getExpenseCategories()} />
-                  </div>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </div>
+          <h3 className="text-lg font-semibold text-foreground">{t('recentOperations')}</h3>
           <TransactionList transactions={recentTransactions} onDelete={handleDeleteTransaction} getCategoryName={getCategoryName} />
         </div>
       </main>
