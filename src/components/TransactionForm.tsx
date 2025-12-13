@@ -31,6 +31,12 @@ export const TransactionForm = ({ onSubmit, incomeCategories, expenseCategories 
   const [categoryId, setCategoryId] = useState<string>('');
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  
+  // Expense-specific fields
+  const [issuedTo, setIssuedTo] = useState('');
+  const [decisionNumber, setDecisionNumber] = useState('');
+  const [amountInWords, setAmountInWords] = useState('');
+  const [cashierName, setCashierName] = useState('');
 
   const categories = type === 'income' ? incomeCategories : expenseCategories;
 
@@ -46,19 +52,33 @@ export const TransactionForm = ({ onSubmit, incomeCategories, expenseCategories 
     
     if (!amount || parseFloat(amount) <= 0 || !categoryId) return;
 
-    onSubmit({
+    const transactionData: Omit<Transaction, 'id' | 'createdAt'> = {
       type,
       amount: parseFloat(amount),
       currency,
       category: categoryId as any,
       description,
       date: new Date(date),
-    });
+    };
+
+    // Add expense-specific fields only for expenses
+    if (type === 'expense') {
+      transactionData.issuedTo = issuedTo || undefined;
+      transactionData.decisionNumber = decisionNumber || undefined;
+      transactionData.amountInWords = amountInWords || undefined;
+      transactionData.cashierName = cashierName || undefined;
+    }
+
+    onSubmit(transactionData);
 
     // Reset form
     setAmount('');
     setDescription('');
     setDate(new Date().toISOString().split('T')[0]);
+    setIssuedTo('');
+    setDecisionNumber('');
+    setAmountInWords('');
+    setCashierName('');
   };
 
   return (
@@ -149,6 +169,53 @@ export const TransactionForm = ({ onSubmit, incomeCategories, expenseCategories 
           required
         />
       </div>
+
+      {/* Expense-specific fields */}
+      {type === 'expense' && (
+        <div className="space-y-4 p-4 bg-muted/50 rounded-lg border border-border">
+          <h3 className="font-semibold text-sm text-muted-foreground">{t('expenseDocumentFields')}</h3>
+          
+          <div className="space-y-2">
+            <Label htmlFor="issuedTo">{t('issuedTo')}</Label>
+            <Input
+              id="issuedTo"
+              placeholder={t('enterIssuedTo')}
+              value={issuedTo}
+              onChange={(e) => setIssuedTo(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="decisionNumber">{t('decisionNumber')}</Label>
+            <Input
+              id="decisionNumber"
+              placeholder={t('enterDecisionNumber')}
+              value={decisionNumber}
+              onChange={(e) => setDecisionNumber(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="amountInWords">{t('amountInWords')}</Label>
+            <Input
+              id="amountInWords"
+              placeholder={t('enterAmountInWords')}
+              value={amountInWords}
+              onChange={(e) => setAmountInWords(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="cashierName">{t('cashierName')}</Label>
+            <Input
+              id="cashierName"
+              placeholder={t('enterCashierName')}
+              value={cashierName}
+              onChange={(e) => setCashierName(e.target.value)}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Description */}
       <div className="space-y-2">

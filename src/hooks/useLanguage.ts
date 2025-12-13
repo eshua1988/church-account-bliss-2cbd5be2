@@ -437,6 +437,62 @@ export const translations = {
     en: 'Charity',
     uk: 'Благодійність',
   },
+
+  // Expense document fields
+  issuedTo: {
+    pl: 'Wydano (imię nazwisko)',
+    ru: 'Выдано (ФИО)',
+    en: 'Issued to (full name)',
+    uk: 'Видано (ПІБ)',
+  },
+  decisionNumber: {
+    pl: 'Na podstawie decyzji rady prezbiterów Nr.',
+    ru: 'На основании решения совета пресвитеров №',
+    en: 'Based on presbytery decision No.',
+    uk: 'На підставі рішення ради пресвітерів №',
+  },
+  amountInWords: {
+    pl: 'Kwota słownie',
+    ru: 'Сумма прописью',
+    en: 'Amount in words',
+    uk: 'Сума прописом',
+  },
+  cashierName: {
+    pl: 'Kasjer',
+    ru: 'Кассир',
+    en: 'Cashier',
+    uk: 'Касир',
+  },
+  enterIssuedTo: {
+    pl: 'Wpisz imię i nazwisko...',
+    ru: 'Введите ФИО...',
+    en: 'Enter full name...',
+    uk: 'Введіть ПІБ...',
+  },
+  enterDecisionNumber: {
+    pl: 'Wpisz numer decyzji...',
+    ru: 'Введите номер решения...',
+    en: 'Enter decision number...',
+    uk: 'Введіть номер рішення...',
+  },
+  enterAmountInWords: {
+    pl: 'Wpisz kwotę słownie...',
+    ru: 'Введите сумму прописью...',
+    en: 'Enter amount in words...',
+    uk: 'Введіть суму прописом...',
+  },
+  enterCashierName: {
+    pl: 'Wpisz imię kasjera...',
+    ru: 'Введите имя кассира...',
+    en: 'Enter cashier name...',
+    uk: 'Введіть ім\'я касира...',
+  },
+  expenseDocumentFields: {
+    pl: 'Dane dokumentu wydatku',
+    ru: 'Данные документа расхода',
+    en: 'Expense document details',
+    uk: 'Дані документа витрати',
+  },
 } as const;
 
 export type TranslationKey = keyof typeof translations;

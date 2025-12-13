@@ -24,6 +24,11 @@ export interface Transaction {
   description: string;
   date: Date;
   createdAt: Date;
+  // Expense-specific fields (based on church document template)
+  issuedTo?: string; // Wydano (imię nazwisko)
+  decisionNumber?: string; // Na podstawie decyzji rady prezbiterów Nr.
+  amountInWords?: string; // Kwota słownie
+  cashierName?: string; // Kasjer
 }
 
 export const CURRENCY_SYMBOLS: Record<Currency, string> = {
