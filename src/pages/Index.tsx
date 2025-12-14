@@ -14,7 +14,7 @@ import { useTransactionsWithHistory } from '@/hooks/useTransactionsWithHistory';
 import { useCategories } from '@/hooks/useCategories';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { Currency, CURRENCY_SYMBOLS, Transaction, TransactionType } from '@/types/transaction';
-import { Settings, BarChart3 } from 'lucide-react';
+import { Settings, BarChart3, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
@@ -154,7 +154,15 @@ const Index = () => {
             <UndoRedoControls canUndo={canUndo} canRedo={canRedo} onUndo={handleUndo} onRedo={handleRedo} />
             <CurrencySelector value={selectedCurrency} onChange={setSelectedCurrency} className="w-[180px]" />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button 
+              variant="outline" 
+              className="font-semibold"
+              onClick={() => window.open('https://3eqp.github.io/pdf-billing-form-builder/', '_blank')}
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              Dowód wypłaty
+            </Button>
             <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
               <DialogTrigger asChild>
                 <Button variant="outline" className="font-semibold"><Settings className="w-4 h-4 mr-2" />{t('settings')}</Button>
