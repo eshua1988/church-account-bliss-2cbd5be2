@@ -20,7 +20,7 @@ export const translations = {
     uk: 'Церковна бухгалтерія',
   },
   appSubtitle: {
-    pl: 'Zarządzanie finansami wspólnoty',
+    pl: 'ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE',
     ru: 'Учёт финансов общины',
     en: 'Community Finance Management',
     uk: 'Облік фінансів громади',
