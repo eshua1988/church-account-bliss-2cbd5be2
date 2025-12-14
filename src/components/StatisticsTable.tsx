@@ -18,17 +18,19 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp, TrendingDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 interface StatisticsTableProps {
   transactions: Transaction[];
   getCategoryName: (id: string) => string;
+  onDelete?: (id: string) => void;
 }
 
 type TimeRange = 'all' | 'thisMonth' | 'lastMonth' | 'last3Months' | 'last6Months' | 'thisYear';
 
-export const StatisticsTable = ({ transactions, getCategoryName }: StatisticsTableProps) => {
+export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: StatisticsTableProps) => {
   const { t, getDateLocale } = useTranslation();
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
 
@@ -139,12 +141,13 @@ export const StatisticsTable = ({ transactions, getCategoryName }: StatisticsTab
                 <TableHead>{t('category')}</TableHead>
                 <TableHead className="text-right">{t('amount')}</TableHead>
                 <TableHead>{t('description')}</TableHead>
+                {onDelete && <TableHead className="w-12"></TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredTransactions.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={onDelete ? 6 : 5} className="text-center text-muted-foreground py-8">
                     {t('noTransactions')}
                   </TableCell>
                 </TableRow>
@@ -176,6 +179,18 @@ export const StatisticsTable = ({ transactions, getCategoryName }: StatisticsTab
                     <TableCell className="max-w-[200px] truncate text-muted-foreground">
                       {transaction.description || '-'}
                     </TableCell>
+                    {onDelete && (
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          onClick={() => onDelete(transaction.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))
               )}

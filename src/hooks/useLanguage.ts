@@ -555,6 +555,12 @@ export const translations = {
     en: 'Category updated',
     uk: 'Категорію оновлено',
   },
+  timeRange: {
+    pl: 'Okres czasu',
+    ru: 'Период времени',
+    en: 'Time period',
+    uk: 'Період часу',
+  },
 } as const;
 
 export type TranslationKey = keyof typeof translations;

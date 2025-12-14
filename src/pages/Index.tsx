@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Header } from '@/components/Header';
 import { StatCard } from '@/components/StatCard';
 import { TransactionForm } from '@/components/TransactionForm';
-import { TransactionList } from '@/components/TransactionList';
+
 import { CurrencyBalanceCard } from '@/components/CurrencyBalanceCard';
 import { CurrencySelector } from '@/components/CurrencySelector';
 import { CategoryManager } from '@/components/CategoryManager';
@@ -91,7 +91,6 @@ const Index = () => {
   }, []);
 
   const balance = getBalanceByCurrency(selectedCurrency);
-  const recentTransactions = getRecentTransactions(10);
   const incomeByCategory = getTransactionsByCategory('income');
   const expenseByCategory = getTransactionsByCategory('expense');
   const monthlyData = getMonthlyData(selectedCurrency);
@@ -228,7 +227,7 @@ const Index = () => {
               <TabsTrigger value="pie">{t('categoryDistribution')}</TabsTrigger>
             </TabsList>
             <TabsContent value="table">
-              <StatisticsTable transactions={transactions} getCategoryName={getCategoryName} />
+              <StatisticsTable transactions={transactions} getCategoryName={getCategoryName} onDelete={handleDeleteTransaction} />
             </TabsContent>
             <TabsContent value="bar"><IncomeExpenseBarChart data={monthlyData} /></TabsContent>
             <TabsContent value="line"><BalanceLineChart data={monthlyData} /></TabsContent>
@@ -241,11 +240,6 @@ const Index = () => {
           </Tabs>
         </div>
 
-        {/* Transactions */}
-        <div className="space-y-6">
-          <h3 className="text-lg font-semibold text-foreground">{t('recentOperations')}</h3>
-          <TransactionList transactions={recentTransactions} onDelete={handleDeleteTransaction} getCategoryName={getCategoryName} />
-        </div>
       </main>
     </div>
   );
