@@ -111,8 +111,8 @@ const Index = () => {
     toast({ title: t('transactionDeleted'), variant: 'destructive' });
   };
 
-  const handleAddCategory = (name: string, type: 'income' | 'expense') => {
-    addCategory(name, type);
+  const handleAddCategory = (name: string, type: 'income' | 'expense', departmentName?: string) => {
+    addCategory(name, type, departmentName);
     toast({ title: t('categoryAdded'), description: name });
   };
 
@@ -122,8 +122,8 @@ const Index = () => {
     toast({ title: t('categoryDeleted'), description: categoryName, variant: 'destructive' });
   };
 
-  const handleUpdateCategory = (id: string, name: string) => {
-    updateCategory(id, name);
+  const handleUpdateCategory = (id: string, name: string, departmentName?: string) => {
+    updateCategory(id, name, departmentName);
     toast({ title: t('categoryUpdated'), description: name });
   };
 
