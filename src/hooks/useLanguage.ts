@@ -561,6 +561,30 @@ export const translations = {
     en: 'Time period',
     uk: 'Період часу',
   },
+  enterDepartmentName: {
+    pl: 'Wpisz nazwę działu',
+    ru: 'Введите название отдела',
+    en: 'Enter department name',
+    uk: 'Введіть назву відділу',
+  },
+  departmentSettings: {
+    pl: 'Działy (Dowód wypłaty)',
+    ru: 'Отделы (Dowód wypłaty)',
+    en: 'Departments (Dowód wypłaty)',
+    uk: 'Відділи (Dowód wypłaty)',
+  },
+  departmentName: {
+    pl: 'Nazwa działu',
+    ru: 'Название отдела',
+    en: 'Department name',
+    uk: 'Назва відділу',
+  },
+  selectDepartment: {
+    pl: 'Wybierz dział',
+    ru: 'Выберите отдел',
+    en: 'Select department',
+    uk: 'Оберіть відділ',
+  },
 } as const;
 
 export type TranslationKey = keyof typeof translations;
