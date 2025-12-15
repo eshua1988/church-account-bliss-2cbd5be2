@@ -4,7 +4,6 @@ import { TransactionForm } from '@/components/TransactionForm';
 import { CurrencyBalanceCard } from '@/components/CurrencyBalanceCard';
 import { CurrencySelector } from '@/components/CurrencySelector';
 import { CategoryManager } from '@/components/CategoryManager';
-import { DepartmentManager } from '@/components/DepartmentManager';
 import { UndoRedoControls } from '@/components/UndoRedoControls';
 import { loadVisibleCurrencies, saveVisibleCurrencies, CurrencySettingsContent } from '@/components/CurrencySettingsDialog';
 import { CategoryPieChart } from '@/components/charts/CategoryPieChart';
@@ -64,12 +63,7 @@ const Index = () => {
     getCategoryName,
   } = useCategories();
 
-  const {
-    departments,
-    addDepartment,
-    deleteDepartment,
-    updateDepartment,
-  } = useDepartments();
+  const { departments } = useDepartments();
 
   // Keyboard shortcuts for undo/redo
   useEffect(() => {
@@ -194,16 +188,7 @@ const Index = () => {
                       onReorder={handleReorderCategories}
                     />
                   </div>
-                  <Separator />
-                  <div>
-                    <h4 className="font-medium mb-3">{t('departmentSettings')}</h4>
-                    <DepartmentManager 
-                      departments={departments} 
-                      onAdd={addDepartment} 
-                      onDelete={deleteDepartment} 
-                      onUpdate={updateDepartment}
-                    />
-                  </div>
+
                 </div>
               </DialogContent>
             </Dialog>
