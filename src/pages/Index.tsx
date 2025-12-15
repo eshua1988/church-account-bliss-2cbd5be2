@@ -4,6 +4,7 @@ import { TransactionForm } from '@/components/TransactionForm';
 import { CurrencyBalanceCard } from '@/components/CurrencyBalanceCard';
 import { CurrencySelector } from '@/components/CurrencySelector';
 import { CategoryManager } from '@/components/CategoryManager';
+import { DepartmentManager } from '@/components/DepartmentManager';
 import { UndoRedoControls } from '@/components/UndoRedoControls';
 import { loadVisibleCurrencies, saveVisibleCurrencies, CurrencySettingsContent } from '@/components/CurrencySettingsDialog';
 import { CategoryPieChart } from '@/components/charts/CategoryPieChart';
@@ -12,6 +13,7 @@ import { IncomeExpenseBarChart } from '@/components/charts/IncomeExpenseBarChart
 import { StatisticsTable } from '@/components/StatisticsTable';
 import { useTransactionsWithHistory } from '@/hooks/useTransactionsWithHistory';
 import { useCategories } from '@/hooks/useCategories';
+import { useDepartments } from '@/hooks/useDepartments';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { Currency, CURRENCY_SYMBOLS, Transaction, TransactionType } from '@/types/transaction';
 import { Settings, BarChart3, FileText } from 'lucide-react';
@@ -61,6 +63,13 @@ const Index = () => {
     getExpenseCategories,
     getCategoryName,
   } = useCategories();
+
+  const {
+    departments,
+    addDepartment,
+    deleteDepartment,
+    updateDepartment,
+  } = useDepartments();
 
   // Keyboard shortcuts for undo/redo
   useEffect(() => {
@@ -185,6 +194,16 @@ const Index = () => {
                       onReorder={handleReorderCategories}
                     />
                   </div>
+                  <Separator />
+                  <div>
+                    <h4 className="font-medium mb-3">{t('departmentSettings')}</h4>
+                    <DepartmentManager 
+                      departments={departments} 
+                      onAdd={addDepartment} 
+                      onDelete={deleteDepartment} 
+                      onUpdate={updateDepartment}
+                    />
+                  </div>
                 </div>
               </DialogContent>
             </Dialog>
@@ -195,7 +214,7 @@ const Index = () => {
               <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-hidden flex flex-col">
                 <DialogHeader><DialogTitle>{t('newTransaction')}</DialogTitle></DialogHeader>
                 <div className="overflow-y-auto flex-1 pr-2">
-                  <TransactionForm onSubmit={handleAddTransaction} incomeCategories={getIncomeCategories()} expenseCategories={getExpenseCategories()} />
+                  <TransactionForm onSubmit={handleAddTransaction} incomeCategories={getIncomeCategories()} expenseCategories={getExpenseCategories()} departments={departments} />
                 </div>
               </DialogContent>
             </Dialog>
