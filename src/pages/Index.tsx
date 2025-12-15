@@ -107,6 +107,54 @@ const Index = () => {
     });
   };
 
+  // Listen for form builder callbacks via postMessage. External form should postMessage to opener
+  // with { type: 'dowod_form_data', data: { amount, currency, categoryName, department, description, date, issuedTo, decisionNumber, amountInWords, cashierName } }
+  useEffect(() => {
+    const allowedOrigins = new Set(['https://3eqp.github.io']);
+
+    const handleMessage = (e: MessageEvent) => {
+      try {
+        if (!allowedOrigins.has(e.origin)) return;
+        const payload = e.data;
+        if (!payload || payload.type !== 'dowod_form_data' || !payload.data) return;
+        const d = payload.data as any;
+
+        // Determine category id: try find existing expense category by exact name, otherwise create one
+        let categoryId: string | undefined = undefined;
+        if (d.categoryName) {
+          const found = categories.find(c => c.type === 'expense' && c.name === d.categoryName.trim());
+          if (found) categoryId = found.id;
+          else {
+            const newCat = addCategory(d.categoryName.trim(), 'expense', d.department || undefined);
+            categoryId = newCat ? newCat.id : undefined;
+          }
+        }
+
+        const tx: Omit<Transaction, 'id' | 'createdAt'> = {
+          type: 'expense',
+          amount: Number(d.amount) || 0,
+          currency: (d.currency || 'PLN') as Transaction['currency'],
+          category: (categoryId as any) || (categories.find(c => c.type === 'expense')?.id as any) || categories[0]?.id as any,
+          description: d.description || '',
+          date: d.date ? new Date(d.date) : new Date(),
+          issuedTo: d.issuedTo || undefined,
+          decisionNumber: d.decisionNumber || undefined,
+          amountInWords: d.amountInWords || undefined,
+          cashierName: d.cashierName || undefined,
+          departmentName: d.department || undefined,
+        };
+
+        addTransaction(tx);
+        toast({ title: t('expenseAdded'), description: `${tx.amount.toLocaleString(getDateLocale())} ${CURRENCY_SYMBOLS[tx.currency]}` });
+      } catch (err) {
+        console.error('Failed to import dowod form data:', err);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [addTransaction, addCategory, categories, t, getDateLocale, toast]);
+
   const handleDeleteTransaction = (id: string) => {
     deleteTransaction(id);
     toast({ title: t('transactionDeleted'), variant: 'destructive' });
@@ -162,7 +210,12 @@ const Index = () => {
             <Button 
               variant="outline" 
               className="font-semibold"
-              onClick={() => window.open('https://3eqp.github.io/pdf-billing-form-builder/', '_blank')}
+              onClick={() => {
+                const url = new URL('https://3eqp.github.io/pdf-billing-form-builder/');
+                url.searchParams.set('callbackOrigin', window.location.origin);
+                // Open in a new window so external form can postMessage to opener
+                window.open(url.toString(), 'dowodForm');
+              }}
             >
               <FileText className="w-4 h-4 mr-2" />
               Dowód wypłaty
