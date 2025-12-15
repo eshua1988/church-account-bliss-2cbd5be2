@@ -119,6 +119,10 @@ export const useCategories = () => {
     return categories.find(c => c.id === id)?.name || 'Неизвестно';
   }, [categories]);
 
+  const getCategoryDepartment = useCallback((id: string) => {
+    return categories.find(c => c.id === id)?.departmentName;
+  }, [categories]);
+
   return {
     categories,
     addCategory,
@@ -128,5 +132,6 @@ export const useCategories = () => {
     getIncomeCategories,
     getExpenseCategories,
     getCategoryName,
+    getCategoryDepartment,
   };
 };

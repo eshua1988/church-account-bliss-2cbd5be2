@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 interface StatisticsTableProps {
   transactions: Transaction[];
   getCategoryName: (id: string) => string;
+  getCategoryDepartment?: (id: string) => string | undefined;
   onDelete?: (id: string) => void;
 }
 
@@ -138,8 +139,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
               <TableRow>
                 <TableHead>{t('date')}</TableHead>
                 <TableHead>{t('type')}</TableHead>
-                <TableHead>{t('category')}</TableHead>
-                <TableHead className="text-right">{t('amount')}</TableHead>
+                <TableHead>{t('category')}</TableHead>                <TableHead>{t('departmentName')}</TableHead>                <TableHead className="text-right">{t('amount')}</TableHead>
                 <TableHead>{t('description')}</TableHead>
                 {onDelete && <TableHead className="w-12"></TableHead>}
               </TableRow>
@@ -147,7 +147,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
             <TableBody>
               {filteredTransactions.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={onDelete ? 6 : 5} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={onDelete ? 7 : 6} className="text-center text-muted-foreground py-8">
                     {t('noTransactions')}
                   </TableCell>
                 </TableRow>
@@ -169,6 +169,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
                       </span>
                     </TableCell>
                     <TableCell className="whitespace-nowrap">{getCategoryName(transaction.category)}</TableCell>
+                    <TableCell className="whitespace-nowrap">{transaction.departmentName || (getCategoryDepartment ? getCategoryDepartment(transaction.category) : undefined) || '-'}</TableCell>
                     <TableCell className={cn(
                       'text-right font-semibold whitespace-nowrap',
                       transaction.type === 'income' ? 'text-success' : 'text-destructive'

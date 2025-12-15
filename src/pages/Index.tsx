@@ -61,6 +61,7 @@ const Index = () => {
     getIncomeCategories,
     getExpenseCategories,
     getCategoryName,
+    getCategoryDepartment,
   } = useCategories();
 
   const { departments } = useDepartments();
@@ -231,7 +232,7 @@ const Index = () => {
               <TabsTrigger value="pie">{t('categoryDistribution')}</TabsTrigger>
             </TabsList>
             <TabsContent value="table">
-              <StatisticsTable transactions={transactions} getCategoryName={getCategoryName} onDelete={handleDeleteTransaction} />
+              <StatisticsTable transactions={transactions} getCategoryName={getCategoryName} getCategoryDepartment={getCategoryDepartment} onDelete={handleDeleteTransaction} />
             </TabsContent>
             <TabsContent value="bar"><IncomeExpenseBarChart data={monthlyData} /></TabsContent>
             <TabsContent value="line"><BalanceLineChart data={monthlyData} /></TabsContent>
