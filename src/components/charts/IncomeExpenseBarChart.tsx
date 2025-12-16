@@ -4,6 +4,8 @@ import { Card } from '@/components/ui/card';
 import { format, parse } from 'date-fns';
 import { pl, ru, enUS, uk } from 'date-fns/locale';
 
+import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
+
 interface IncomeExpenseBarChartProps {
   data: Array<{
     month: string;
@@ -11,9 +13,10 @@ interface IncomeExpenseBarChartProps {
     expense: number;
     balance: number;
   }>;
+  currency?: Currency;
 }
 
-export const IncomeExpenseBarChart = ({ data }: IncomeExpenseBarChartProps) => {
+export const IncomeExpenseBarChart = ({ data, currency = 'PLN' }: IncomeExpenseBarChartProps) => {
   const { t, language } = useTranslation();
 
   const getLocale = () => {
@@ -33,7 +36,7 @@ export const IncomeExpenseBarChart = ({ data }: IncomeExpenseBarChartProps) => {
   if (data.length === 0) {
     return (
       <Card className="p-6">
-        <h3 className="text-lg font-semibold text-foreground mb-4">{t('incomeVsExpenses')}</h3>
+        <h3 className="text-lg font-semibold text-foreground mb-4">{t('incomeVsExpenses')} ({currency})</h3>
         <div className="h-[250px] flex items-center justify-center text-muted-foreground">
           {t('noTransactions')}
         </div>
@@ -43,7 +46,7 @@ export const IncomeExpenseBarChart = ({ data }: IncomeExpenseBarChartProps) => {
 
   return (
     <Card className="p-6">
-      <h3 className="text-lg font-semibold text-foreground mb-4">{t('incomeVsExpenses')}</h3>
+      <h3 className="text-lg font-semibold text-foreground mb-4">{t('incomeVsExpenses')} ({CURRENCY_SYMBOLS[currency]} {currency})</h3>
       <div className="h-[250px]">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={formattedData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
@@ -56,10 +59,10 @@ export const IncomeExpenseBarChart = ({ data }: IncomeExpenseBarChartProps) => {
             <YAxis 
               className="text-muted-foreground"
               tick={{ fontSize: 12 }}
-              tickFormatter={(value) => value.toLocaleString()}
+              tickFormatter={(value) => `${value.toLocaleString()} ${CURRENCY_SYMBOLS[currency]}`}
             />
             <Tooltip
-              formatter={(value: number) => value.toLocaleString()}
+              formatter={(value: number) => `${value.toLocaleString()} ${CURRENCY_SYMBOLS[currency]}`}
               contentStyle={{
                 backgroundColor: 'hsl(var(--card))',
                 border: '1px solid hsl(var(--border))',

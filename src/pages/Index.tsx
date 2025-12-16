@@ -233,7 +233,7 @@ const Index = () => {
             <TabsContent value="table">
               <StatisticsTable transactions={transactions} getCategoryName={getCategoryName} onDelete={handleDeleteTransaction} />
             </TabsContent>
-            <TabsContent value="bar"><IncomeExpenseBarChart data={monthlyData} /></TabsContent>
+            <TabsContent value="bar"><IncomeExpenseBarChart data={monthlyData} currency={selectedCurrency} /></TabsContent>
             <TabsContent value="line"><BalanceLineChart data={monthlyData} /></TabsContent>
             <TabsContent value="pie">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
