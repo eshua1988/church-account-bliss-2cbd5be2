@@ -3,6 +3,7 @@ import { Transaction, CURRENCY_SYMBOLS } from '@/types/transaction';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { format, startOfMonth, endOfMonth, subMonths, isWithinInterval, startOfYear, endOfYear } from 'date-fns';
 import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 import {
   Table,
   TableBody,
@@ -118,6 +119,9 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
       const margin = 10;
       let yPosition = 15;
 
+      // Set font that supports Unicode
+      doc.setFont('helvetica');
+
       // Header
       doc.setFontSize(16);
       doc.text(t('transactionsTable'), margin, yPosition);
@@ -149,43 +153,32 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
 
       yPosition += 8;
 
-      // Simple table
+      // Prepare table data
       const columns = [t('date'), t('type'), t('category'), t('amount')];
-      doc.setFontSize(10);
-      doc.setTextColor(255, 255, 255);
-      doc.setFillColor(100, 150, 200);
-      
-      const colW = (pageWidth - 2 * margin) / columns.length;
-      columns.forEach((col, i) => {
-        doc.rect(margin + i * colW, yPosition - 6, colW, 6, 'F');
-        doc.text(col, margin + i * colW + 2, yPosition - 2);
-      });
-      
-      yPosition += 4;
+      const rows: (string | number)[][] = filteredTransactions.map((tx) => [
+        format(new Date(tx.date), 'dd.MM.yyyy'),
+        tx.type === 'income' ? t('income') : t('expenses'),
+        getCategoryName(tx.category),
+        `${tx.type === 'income' ? '+' : '-'}${tx.amount.toLocaleString()} ${CURRENCY_SYMBOLS[tx.currency]}`,
+      ]);
 
-      // Rows
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(9);
-      const rowHeight = 6;
-
-      filteredTransactions.forEach((tx) => {
-        if (yPosition + rowHeight > pageHeight - 10) {
-          doc.addPage();
-          yPosition = 10;
-        }
-
-        const row = [
-          format(new Date(tx.date), 'dd.MM.yyyy'),
-          tx.type === 'income' ? t('income') : t('expenses'),
-          getCategoryName(tx.category),
-          `${tx.type === 'income' ? '+' : '-'}${tx.amount.toLocaleString()} ${CURRENCY_SYMBOLS[tx.currency]}`,
-        ];
-
-        row.forEach((cell, i) => {
-          doc.text(String(cell), margin + i * colW + 2, yPosition);
-        });
-
-        yPosition += rowHeight;
+      // Use autoTable for better text handling
+      (doc as any).autoTable({
+        startY: yPosition,
+        head: [columns],
+        body: rows,
+        margin: margin,
+        styles: {
+          font: 'helvetica',
+          fontSize: 9,
+          cellPadding: 3,
+        },
+        headStyles: {
+          fillColor: [100, 150, 200],
+          textColor: [255, 255, 255],
+          font: 'helvetica',
+          fontStyle: 'bold',
+        },
       });
 
       doc.save(`transactions_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
