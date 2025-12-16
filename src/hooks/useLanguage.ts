@@ -493,7 +493,30 @@ export const translations = {
     en: 'Expense document details',
     uk: 'Дані документа витрати',
   },
-  
+  importPayout: {
+    pl: 'Importuj Dowód wypłaty',
+    ru: 'Импортировать документ',
+    en: 'Import payout (PDF)',
+    uk: 'Імпортувати документ виплати',
+  },
+  importSuccess: {
+    pl: 'Dowód zaimportowany',
+    ru: 'Документ импортирован',
+    en: 'Payout imported',
+    uk: 'Документ імпортовано',
+  },
+  importError: {
+    pl: 'Błąd importu',
+    ru: 'Ошибка импорта',
+    en: 'Import error',
+    uk: 'Помилка імпорту',
+  },
+  importFailedParse: {
+    pl: 'Nie można odczytać pliku PDF. Sprawdź poprawność pliku.',
+    ru: 'Не удалось распарсить PDF. Проверьте файл.',
+    en: 'Failed to parse PDF. Please check the file.',
+    uk: 'Не вдалося розпарсити PDF. Перевірте файл.',
+  },
   // Statistics table
   allTime: {
     pl: 'Cały okres',
