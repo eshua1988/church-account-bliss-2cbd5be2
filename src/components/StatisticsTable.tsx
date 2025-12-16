@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import { Transaction, CURRENCY_SYMBOLS } from '@/types/transaction';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { format, startOfMonth, endOfMonth, subMonths, isWithinInterval, startOfYear, endOfYear } from 'date-fns';
-import jsPDF from 'jspdf';
 import {
   Table,
   TableBody,
@@ -112,88 +111,81 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
 
   const exportToPDF = () => {
     try {
-      const doc = new jsPDF('p', 'mm', 'a4');
-      const margin = 10;
-      let yPosition = 15;
+      // Create HTML content for PDF
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            h1 { font-size: 18px; margin-bottom: 5px; }
+            .info { font-size: 11px; margin: 5px 0; }
+            .summary { font-size: 11px; margin: 10px 0; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 10px; }
+            th { background-color: #6496C8; color: white; font-weight: bold; }
+            tr:nth-child(even) { background-color: #f9f9f9; }
+          </style>
+        </head>
+        <body>
+          <h1>${t('transactionsTable')}</h1>
+          <div class="info"><strong>${t('timeRange')}:</strong> ${
+            customDateRange.from && customDateRange.to
+              ? `${format(customDateRange.from, 'dd.MM.yyyy')} — ${format(customDateRange.to, 'dd.MM.yyyy')}`
+              : t('allTime')
+          }</div>
+          <div class="info"><strong>${t('type')}:</strong> ${
+            typeFilter === 'income' ? t('income') : typeFilter === 'expense' ? t('expenses') : t('allTime')
+          }</div>
+          
+          <div class="summary">
+            <strong>Totals:</strong><br>
+            ${Object.entries(totals)
+              .map(([currency, { income, expense }]) => 
+                `${currency}: +${income.toLocaleString()} / -${expense.toLocaleString()}`
+              )
+              .join('<br>')}
+          </div>
+          
+          <table>
+            <thead>
+              <tr>
+                <th>${t('date')}</th>
+                <th>${t('type')}</th>
+                <th>${t('category')}</th>
+                <th>${t('amount')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredTransactions
+                .map((tx) => `
+                  <tr>
+                    <td>${format(new Date(tx.date), 'dd.MM.yyyy')}</td>
+                    <td>${tx.type === 'income' ? t('income') : t('expenses')}</td>
+                    <td>${getCategoryName(tx.category)}</td>
+                    <td>${tx.type === 'income' ? '+' : '-'}${tx.amount.toLocaleString()} ${CURRENCY_SYMBOLS[tx.currency]}</td>
+                  </tr>
+                `)
+                .join('')}
+            </tbody>
+          </table>
+        </body>
+        </html>
+      `;
 
-      // Header
-      doc.setFontSize(14);
-      doc.text(t('transactionsTable'), margin, yPosition);
-      yPosition += 10;
-      
-      // Date range info
-      doc.setFontSize(9);
-      const dateInfo = customDateRange.from && customDateRange.to
-        ? `${format(customDateRange.from, 'dd.MM.yyyy')} — ${format(customDateRange.to, 'dd.MM.yyyy')}`
-        : t('allTime');
-      doc.text(`${t('timeRange')}: ${dateInfo}`, margin, yPosition);
-      yPosition += 6;
-      
-      // Type filter info
-      const typeLabel = typeFilter === 'income' ? t('income') : typeFilter === 'expense' ? t('expenses') : t('allTime');
-      doc.text(`${t('type')}: ${typeLabel}`, margin, yPosition);
-      yPosition += 10;
-      
-      // Totals summary
-      doc.setFontSize(10);
-      doc.text('Totals:', margin, yPosition);
-      yPosition += 5;
-      
-      Object.entries(totals).forEach(([currency, { income, expense }]) => {
-        doc.setFontSize(9);
-        doc.text(`${currency}: +${income.toLocaleString()} / -${expense.toLocaleString()}`, margin + 2, yPosition);
-        yPosition += 5;
-      });
-
-      yPosition += 5;
-
-      // Table header
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const colWidth = (pageWidth - 2 * margin) / 4;
-      
-      doc.setFillColor(100, 150, 200);
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(8);
-      
-      const columns = [t('date'), t('type'), t('category'), t('amount')];
-      columns.forEach((col, i) => {
-        doc.rect(margin + i * colWidth, yPosition - 4, colWidth, 5, 'F');
-        doc.text(col, margin + i * colWidth + 1, yPosition - 0.5);
-      });
-      
-      yPosition += 6;
-
-      // Table rows
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(8);
-      const rowHeight = 5;
-      const pageHeight = doc.internal.pageSize.getHeight();
-
-      filteredTransactions.forEach((tx) => {
-        // Check if we need a new page
-        if (yPosition + rowHeight > pageHeight - 10) {
-          doc.addPage();
-          yPosition = 15;
-        }
-
-        const rowData = [
-          format(new Date(tx.date), 'dd.MM.yyyy'),
-          tx.type === 'income' ? t('income') : t('expenses'),
-          getCategoryName(tx.category),
-          `${tx.type === 'income' ? '+' : '-'}${tx.amount.toLocaleString()} ${CURRENCY_SYMBOLS[tx.currency]}`,
-        ];
-
-        rowData.forEach((cell, i) => {
-          doc.text(String(cell), margin + i * colWidth + 1, yPosition);
-        });
-
-        yPosition += rowHeight;
-      });
-
-      doc.save(`transactions_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+      // Create blob and download
+      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `transactions_${format(new Date(), 'yyyy-MM-dd')}.html`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
     } catch (e) {
-      console.error('PDF export failed:', e);
-      alert('Failed to export PDF');
+      console.error('Export failed:', e);
+      alert('Failed to export file');
     }
   };
 
@@ -227,7 +219,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
             <DateRangeFilter value={customDateRange} onChange={setCustomDateRange} />
             <Button variant="outline" size="sm" onClick={exportToPDF} className="font-medium">
               <Download className="w-4 h-4 mr-2" />
-              {t('export') || 'PDF'}
+              {t('export') || 'HTML'}
             </Button>
           </div>
         </div>
