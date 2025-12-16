@@ -517,6 +517,30 @@ export const translations = {
     en: 'Failed to parse PDF. Please check the file.',
     uk: 'Не вдалося розпарсити PDF. Перевірте файл.',
   },
+  importDocument: {
+    pl: 'Importuj dokument',
+    ru: 'Импортировать документ',
+    en: 'Import document',
+    uk: 'Імпортувати документ',
+  },
+  importPreviewTitle: {
+    pl: 'Podgląd importu',
+    ru: 'Предпросмотр импорта',
+    en: 'Import preview',
+    uk: 'Попередній перегляд імпорту',
+  },
+  importConfirm: {
+    pl: 'Zaimportuj',
+    ru: 'Импортировать',
+    en: 'Import',
+    uk: 'Імпортувати',
+  },
+  importCancel: {
+    pl: 'Anuluj',
+    ru: 'Отмена',
+    en: 'Cancel',
+    uk: 'Скасувати',
+  },
   // Statistics table
   allTime: {
     pl: 'Cały okres',
