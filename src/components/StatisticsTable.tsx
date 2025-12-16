@@ -111,98 +111,87 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
   }, [filteredTransactions]);
 
   const exportToPDF = () => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const margin = 10;
-    let yPosition = 15;
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 10;
+      let yPosition = 15;
 
-    // Header
-    doc.setFontSize(16);
-    doc.text(t('transactionsTable'), margin, yPosition);
-    yPosition += 10;
-    
-    // Date range info
-    doc.setFontSize(10);
-    const dateInfo = customDateRange.from && customDateRange.to
-      ? `${format(customDateRange.from, 'dd.MM.yyyy')} — ${format(customDateRange.to, 'dd.MM.yyyy')}`
-      : t('allTime');
-    doc.text(`${t('timeRange')}: ${dateInfo}`, margin, yPosition);
-    yPosition += 8;
-    
-    // Type filter info
-    const typeLabel = typeFilter === 'income' ? t('income') : typeFilter === 'expense' ? t('expenses') : t('allTime');
-    doc.text(`${t('type')}: ${typeLabel}`, margin, yPosition);
-    yPosition += 10;
-    
-    // Totals summary
-    doc.setFontSize(11);
-    doc.text('Totals:', margin, yPosition);
-    yPosition += 7;
-    
-    Object.entries(totals).forEach(([currency, { income, expense }]) => {
-      doc.setFontSize(10);
-      doc.text(`${currency}: +${income.toLocaleString()} / -${expense.toLocaleString()}`, margin + 5, yPosition);
-      yPosition += 6;
-    });
-
-    yPosition += 8;
-
-    // Table header
-    const columns = [t('date'), t('type'), t('category'), t('amount'), t('description')];
-    const colWidths = [25, 25, 30, 35, 50];
-    
-    doc.setFillColor(100, 150, 200);
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(10);
-    
-    let xPosition = margin;
-    columns.forEach((col, i) => {
-      doc.text(col, xPosition, yPosition, { maxWidth: colWidths[i] - 1 });
-      xPosition += colWidths[i];
-    });
-    
-    yPosition += 7;
-    doc.setDrawColor(200, 200, 200);
-    doc.line(margin, yPosition, pageWidth - margin, yPosition);
-    yPosition += 3;
-
-    // Table rows
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(9);
-    
-    filteredTransactions.forEach((t) => {
-      const row = [
-        format(new Date(t.date), 'dd.MM.yyyy'),
-        t.type === 'income' ? this.t('income') : this.t('expenses'),
-        getCategoryName(t.category),
-        `${t.type === 'income' ? '+' : '-'}${t.amount.toLocaleString()} ${CURRENCY_SYMBOLS[t.currency]}`,
-        t.description || '-',
-      ];
-
-      let rowHeight = 5;
-      xPosition = margin;
+      // Header
+      doc.setFontSize(16);
+      doc.text(t('transactionsTable'), margin, yPosition);
+      yPosition += 10;
       
-      row.forEach((cell, i) => {
-        const lines = doc.splitTextToSize(String(cell), colWidths[i] - 2);
-        rowHeight = Math.max(rowHeight, lines.length * 4);
+      // Date range info
+      doc.setFontSize(10);
+      const dateInfo = customDateRange.from && customDateRange.to
+        ? `${format(customDateRange.from, 'dd.MM.yyyy')} — ${format(customDateRange.to, 'dd.MM.yyyy')}`
+        : t('allTime');
+      doc.text(`${t('timeRange')}: ${dateInfo}`, margin, yPosition);
+      yPosition += 8;
+      
+      // Type filter info
+      const typeLabel = typeFilter === 'income' ? t('income') : typeFilter === 'expense' ? t('expenses') : t('allTime');
+      doc.text(`${t('type')}: ${typeLabel}`, margin, yPosition);
+      yPosition += 10;
+      
+      // Totals summary
+      doc.setFontSize(11);
+      doc.text('Totals:', margin, yPosition);
+      yPosition += 7;
+      
+      Object.entries(totals).forEach(([currency, { income, expense }]) => {
+        doc.setFontSize(10);
+        doc.text(`${currency}: +${income.toLocaleString()} / -${expense.toLocaleString()}`, margin + 5, yPosition);
+        yPosition += 6;
       });
 
-      if (yPosition + rowHeight > doc.internal.pageSize.getHeight() - 10) {
-        doc.addPage();
-        yPosition = 10;
-      }
+      yPosition += 8;
 
-      xPosition = margin;
-      row.forEach((cell, i) => {
-        const lines = doc.splitTextToSize(String(cell), colWidths[i] - 2);
-        doc.text(lines, xPosition, yPosition, { maxWidth: colWidths[i] - 2 });
-        xPosition += colWidths[i];
+      // Simple table
+      const columns = [t('date'), t('type'), t('category'), t('amount')];
+      doc.setFontSize(10);
+      doc.setTextColor(255, 255, 255);
+      doc.setFillColor(100, 150, 200);
+      
+      const colW = (pageWidth - 2 * margin) / columns.length;
+      columns.forEach((col, i) => {
+        doc.rect(margin + i * colW, yPosition - 6, colW, 6, 'F');
+        doc.text(col, margin + i * colW + 2, yPosition - 2);
+      });
+      
+      yPosition += 4;
+
+      // Rows
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(9);
+      const rowHeight = 6;
+
+      filteredTransactions.forEach((tx) => {
+        if (yPosition + rowHeight > pageHeight - 10) {
+          doc.addPage();
+          yPosition = 10;
+        }
+
+        const row = [
+          format(new Date(tx.date), 'dd.MM.yyyy'),
+          tx.type === 'income' ? t('income') : t('expenses'),
+          getCategoryName(tx.category),
+          `${tx.type === 'income' ? '+' : '-'}${tx.amount.toLocaleString()} ${CURRENCY_SYMBOLS[tx.currency]}`,
+        ];
+
+        row.forEach((cell, i) => {
+          doc.text(String(cell), margin + i * colW + 2, yPosition);
+        });
+
+        yPosition += rowHeight;
       });
 
-      yPosition += rowHeight + 2;
-    });
-
-    doc.save(`transactions_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+      doc.save(`transactions_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+    } catch (e) {
+      console.error('PDF export failed:', e);
+    }
   };
 
   const timeRangeOptions = [
