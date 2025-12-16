@@ -596,6 +596,18 @@ export const translations = {
     en: 'Reset',
     uk: 'Очистити',
   },
+  singleDate: {
+    pl: 'Pojedyncza data',
+    ru: 'Одна дата',
+    en: 'Single date',
+    uk: 'Одна дата',
+  },
+  rangeMode: {
+    pl: 'Okres',
+    ru: 'Период',
+    en: 'Range',
+    uk: 'Період',
+  },
 } as const;
 
 export type TranslationKey = keyof typeof translations;
