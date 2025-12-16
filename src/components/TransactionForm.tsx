@@ -10,20 +10,19 @@ import { Category } from '@/hooks/useCategories';
 import { PlusCircle, MinusCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/contexts/LanguageContext';
-
 interface TransactionFormProps {
   onSubmit: (transaction: Omit<Transaction, 'id' | 'createdAt'>) => void;
   incomeCategories: Category[];
   expenseCategories: Category[];
-  departments: string[];
 }
 export const TransactionForm = ({
   onSubmit,
   incomeCategories,
-  expenseCategories,
-  departments
+  expenseCategories
 }: TransactionFormProps) => {
-  const { t } = useTranslation();
+  const {
+    t
+  } = useTranslation();
   const [type, setType] = useState<TransactionType>('income');
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState<Currency>('PLN');
@@ -36,7 +35,6 @@ export const TransactionForm = ({
   const [decisionNumber, setDecisionNumber] = useState('');
   const [amountInWords, setAmountInWords] = useState('');
   const [cashierName, setCashierName] = useState('');
-  const [departmentName, setDepartmentName] = useState('');
   const categories = type === 'income' ? incomeCategories : expenseCategories;
 
   // Reset category when type changes or categories update
@@ -63,7 +61,6 @@ export const TransactionForm = ({
       transactionData.decisionNumber = decisionNumber || undefined;
       transactionData.amountInWords = amountInWords || undefined;
       transactionData.cashierName = cashierName || undefined;
-      transactionData.departmentName = departmentName || undefined;
     }
     onSubmit(transactionData);
 
@@ -75,7 +72,6 @@ export const TransactionForm = ({
     setDecisionNumber('');
     setAmountInWords('');
     setCashierName('');
-    setDepartmentName('');
   };
   return <form onSubmit={handleSubmit} className="space-y-6 animate-fade-in">
       {/* Transaction Type Toggle */}
@@ -127,19 +123,7 @@ export const TransactionForm = ({
 
       {/* Expense-specific fields */}
       {type === 'expense' && <div className="space-y-4 p-4 bg-muted/50 rounded-lg border border-border">
-          <div className="space-y-2">
-            <Label>{t('departmentName')}</Label>
-            <Select value={departmentName} onValueChange={setDepartmentName}>
-              <SelectTrigger>
-                <SelectValue placeholder={t('selectDepartment')} />
-              </SelectTrigger>
-              <SelectContent>
-                {departments.map((dept) => (
-                  <SelectItem key={dept} value={dept}>{dept}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          
           
           <div className="space-y-2">
             <Label htmlFor="issuedTo">{t('issuedTo')}</Label>

@@ -10,9 +10,9 @@ import { useTranslation } from '@/contexts/LanguageContext';
 
 interface CategoryManagerProps {
   categories: Category[];
-  onAdd: (name: string, type: TransactionType, departmentName?: string) => void;
+  onAdd: (name: string, type: TransactionType) => void;
   onDelete: (id: string) => void;
-  onUpdate?: (id: string, name: string, departmentName?: string) => void;
+  onUpdate?: (id: string, name: string) => void;
   onReorder?: (type: TransactionType, fromIndex: number, toIndex: number) => void;
 }
 
@@ -22,16 +22,13 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
   const [newCategoryName, setNewCategoryName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
-  const [editingDepartment, setEditingDepartment] = useState('');
-  const [newCategoryDept, setNewCategoryDept] = useState('');
 
   const filteredCategories = categories.filter(c => c.type === activeType);
 
   const handleAdd = () => {
     if (newCategoryName.trim()) {
-      onAdd(newCategoryName.trim(), activeType, newCategoryDept.trim() || undefined);
+      onAdd(newCategoryName.trim(), activeType);
       setNewCategoryName('');
-      setNewCategoryDept('');
     }
   };
 
@@ -45,18 +42,16 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
   const startEdit = (category: Category) => {
     setEditingId(category.id);
     setEditingName(category.name);
-    setEditingDepartment(category.departmentName || '');
   };
 
   const cancelEdit = () => {
     setEditingId(null);
     setEditingName('');
-    setEditingDepartment('');
   };
 
   const saveEdit = () => {
     if (editingId && editingName.trim() && onUpdate) {
-      onUpdate(editingId, editingName.trim(), editingDepartment.trim());
+      onUpdate(editingId, editingName.trim());
     }
     cancelEdit();
   };
@@ -122,14 +117,6 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
             onChange={(e) => setNewCategoryName(e.target.value)}
             onKeyDown={handleKeyDown}
           />
-          {activeType === 'expense' && (
-            <Input
-              placeholder={t('departmentName')}
-              value={newCategoryDept}
-              onChange={(e) => setNewCategoryDept(e.target.value)}
-              className="w-[220px]"
-            />
-          )}
           <Button
             onClick={handleAdd}
             disabled={!newCategoryName.trim()}
@@ -169,14 +156,6 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
                       className="flex-1"
                       autoFocus
                     />
-                    {activeType === 'expense' && (
-                      <Input
-                        value={editingDepartment}
-                        onChange={(e) => setEditingDepartment(e.target.value)}
-                        placeholder={t('departmentName')}
-                        className="w-[220px]"
-                      />
-                    )}
                     <Button
                       variant="ghost"
                       size="icon"
@@ -202,12 +181,7 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
                         'w-4 h-4 shrink-0',
                         activeType === 'income' ? 'text-success' : 'text-destructive'
                       )} />
-                      <div className="min-w-0">
-                        <span className="font-medium text-foreground truncate block">{category.name}</span>
-                        {activeType === 'expense' && category.departmentName ? (
-                          <span className="text-sm text-muted-foreground truncate">{category.departmentName}</span>
-                        ) : null}
-                      </div>
+                      <span className="font-medium text-foreground truncate">{category.name}</span>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       {onReorder && (

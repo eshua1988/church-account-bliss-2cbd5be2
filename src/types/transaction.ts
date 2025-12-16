@@ -29,7 +29,6 @@ export interface Transaction {
   decisionNumber?: string; // Na podstawie decyzji rady prezbiterów Nr.
   amountInWords?: string; // Kwota słownie
   cashierName?: string; // Kasjer
-  departmentName?: string; // Nazwa działu
 }
 
 export const CURRENCY_SYMBOLS: Record<Currency, string> = {

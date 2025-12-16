@@ -561,48 +561,6 @@ export const translations = {
     en: 'Time period',
     uk: 'Період часу',
   },
-  enterDepartmentName: {
-    pl: 'Wpisz nazwę działu',
-    ru: 'Введите название отдела',
-    en: 'Enter department name',
-    uk: 'Введіть назву відділу',
-  },
-  departmentSettings: {
-    pl: 'Działy (Dowód wypłaty)',
-    ru: 'Отделы (Dowód wypłaty)',
-    en: 'Departments (Dowód wypłaty)',
-    uk: 'Відділи (Dowód wypłaty)',
-  },
-  departmentName: {
-    pl: 'Nazwa działu',
-    ru: 'Название отдела',
-    en: 'Department name',
-    uk: 'Назва відділу',
-  },
-  allDepartments: {
-    pl: 'Wszystkie działy',
-    ru: 'Все отделы',
-    en: 'All departments',
-    uk: 'Всі відділи',
-  },
-  exportCSV: {
-    pl: 'Eksportuj CSV',
-    ru: 'Экспорт CSV',
-    en: 'Export CSV',
-    uk: 'Експорт CSV',
-  },
-  applyToCategory: {
-    pl: 'Применить к категории',
-    ru: 'Применить к категории',
-    en: 'Apply to category',
-    uk: 'Застосувати до категорії',
-  },
-  selectDepartment: {
-    pl: 'Wybierz dział',
-    ru: 'Выберите отдел',
-    en: 'Select department',
-    uk: 'Оберіть відділ',
-  },
 } as const;
 
 export type TranslationKey = keyof typeof translations;

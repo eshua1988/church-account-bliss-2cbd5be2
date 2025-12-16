@@ -18,18 +18,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp, TrendingDown, Trash2, Check, X } from 'lucide-react';
+import { TrendingUp, TrendingDown, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 
 interface StatisticsTableProps {
   transactions: Transaction[];
   getCategoryName: (id: string) => string;
-  getCategoryDepartment?: (id: string) => string | undefined;
-  updateTransaction?: (id: string, updates: Partial<any>) => void;
-  updateCategory?: (id: string, name: string, departmentName?: string) => void;
   onDelete?: (id: string) => void;
 }
 
@@ -38,7 +33,6 @@ type TimeRange = 'all' | 'thisMonth' | 'lastMonth' | 'last3Months' | 'last6Month
 export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: StatisticsTableProps) => {
   const { t, getDateLocale } = useTranslation();
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
-  const [departmentFilter, setDepartmentFilter] = useState<string | 'all'>('all');
 
   const filteredTransactions = useMemo(() => {
     const now = new Date();
@@ -68,27 +62,13 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
         endDate = endOfYear(now);
         break;
       default:
-        startDate = null;
-        endDate = null;
+        return transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }
 
-    let result = transactions;
-
-    if (startDate && endDate) {
-      result = transactions.filter(t => isWithinInterval(new Date(t.date), { start: startDate!, end: endDate! }));
-    }
-
-    result = result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-    if (departmentFilter && departmentFilter !== 'all') {
-      result = result.filter(tx => {
-        const dept = tx.departmentName || (getCategoryDepartment ? getCategoryDepartment(tx.category) : undefined);
-        return !!dept && dept === departmentFilter;
-      });
-    }
-
-    return result;
-  }, [transactions, timeRange, departmentFilter, getCategoryDepartment]);
+    return transactions
+      .filter(t => isWithinInterval(new Date(t.date), { start: startDate!, end: endDate! }))
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [transactions, timeRange]);
 
   const totals = useMemo(() => {
     const result: Record<string, { income: number; expense: number }> = {};
@@ -116,50 +96,22 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
     { value: 'thisYear', label: t('thisYear') },
   ];
 
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingDept, setEditingDept] = useState('');
-  const [applyToCategory, setApplyToCategory] = useState(false);
-  const availableDepartments = useMemo(() => {
-    const set = new Set<string>();
-    transactions.forEach(tx => {
-      const dept = tx.departmentName || (getCategoryDepartment ? getCategoryDepartment(tx.category) : undefined);
-      if (dept && dept.trim()) set.add(dept.trim());
-    });
-    return Array.from(set).sort();
-  }, [transactions, getCategoryDepartment]);
-
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
         <CardTitle className="text-base font-semibold">{t('transactionsTable')}</CardTitle>
-        <div className="flex items-center gap-2">
-          <Select value={timeRange} onValueChange={(v) => setTimeRange(v as TimeRange)}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {timeRangeOptions.map(option => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={departmentFilter} onValueChange={(v) => setDepartmentFilter(v)}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue>
-                {departmentFilter === 'all' ? t('allDepartments') : departmentFilter}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t('allDepartments')}</SelectItem>
-              {availableDepartments.map(dep => (
-                <SelectItem key={dep} value={dep}>{dep}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <Select value={timeRange} onValueChange={(v) => setTimeRange(v as TimeRange)}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {timeRangeOptions.map(option => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </CardHeader>
       <CardContent>
         {/* Totals Summary */}
@@ -186,7 +138,8 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
               <TableRow>
                 <TableHead>{t('date')}</TableHead>
                 <TableHead>{t('type')}</TableHead>
-                <TableHead>{t('category')}</TableHead>                <TableHead>{t('departmentName')}</TableHead>                <TableHead className="text-right">{t('amount')}</TableHead>
+                <TableHead>{t('category')}</TableHead>
+                <TableHead className="text-right">{t('amount')}</TableHead>
                 <TableHead>{t('description')}</TableHead>
                 {onDelete && <TableHead className="w-12"></TableHead>}
               </TableRow>
@@ -194,7 +147,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
             <TableBody>
               {filteredTransactions.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={onDelete ? 7 : 6} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={onDelete ? 6 : 5} className="text-center text-muted-foreground py-8">
                     {t('noTransactions')}
                   </TableCell>
                 </TableRow>
@@ -216,29 +169,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
                       </span>
                     </TableCell>
                     <TableCell className="whitespace-nowrap">{getCategoryName(transaction.category)}</TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {editingId === transaction.id ? (
-                        <div className="flex items-center gap-2">
-                          <Input value={editingDept} onChange={(e) => setEditingDept(e.target.value)} className="w-[200px]" />
-                          <Button variant="ghost" size="icon" onClick={() => {
-                            if (updateTransaction) {
-                              updateTransaction(transaction.id, { departmentName: editingDept.trim() || undefined });
-                            }
-                            if (applyToCategory && updateCategory) {
-                              updateCategory(transaction.category, getCategoryName(transaction.category), editingDept.trim() || undefined);
-                            }
-                            setEditingId(null);
-                            setEditingDept('');
-                          }} className="h-8 w-8 text-success hover:text-success hover:bg-success/10"><Check className="w-4 h-4" /></Button>
-                          <Button variant="ghost" size="icon" onClick={() => { setEditingId(null); setEditingDept(''); setApplyToCategory(false); }} className="h-8 w-8 text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></Button>
-                          {updateCategory && <label className="flex items-center gap-2 ml-2 text-sm"><Checkbox checked={applyToCategory} onCheckedChange={(v) => setApplyToCategory(Boolean(v))} />{t('applyToCategory')}</label>}
-                        </div>
-                      ) : (
-                        <div onClick={() => { setEditingId(transaction.id); setEditingDept(transaction.departmentName || (getCategoryDepartment ? getCategoryDepartment(transaction.category) : '') || ''); }} className="cursor-pointer">
-                          {transaction.departmentName || (getCategoryDepartment ? getCategoryDepartment(transaction.category) : undefined) || '-'}
-                        </div>
-                      )}
-                    </TableCell>
                     <TableCell className={cn(
                       'text-right font-semibold whitespace-nowrap',
                       transaction.type === 'income' ? 'text-success' : 'text-destructive'

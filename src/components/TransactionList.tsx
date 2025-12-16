@@ -10,10 +10,9 @@ interface TransactionListProps {
   transactions: Transaction[];
   onDelete: (id: string) => void;
   getCategoryName: (id: string) => string;
-  getCategoryDepartment?: (id: string) => string | undefined;
 }
 
-export const TransactionList = ({ transactions, onDelete, getCategoryName, getCategoryDepartment }: TransactionListProps) => {
+export const TransactionList = ({ transactions, onDelete, getCategoryName }: TransactionListProps) => {
   const { t, language } = useTranslation();
 
   const getLocale = () => {
@@ -59,9 +58,6 @@ export const TransactionList = ({ transactions, onDelete, getCategoryName, getCa
               <p className="font-semibold text-foreground">
                 {getCategoryName(transaction.category)}
               </p>
-              { (transaction.departmentName || (getCategoryDepartment ? getCategoryDepartment(transaction.category) : undefined)) && (
-                <p className="text-sm text-muted-foreground line-clamp-1">{transaction.departmentName || (getCategoryDepartment ? getCategoryDepartment(transaction.category) : undefined)}</p>
-              )}
               {transaction.description && (
                 <p className="text-sm text-muted-foreground line-clamp-1">
                   {transaction.description}

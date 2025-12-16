@@ -12,10 +12,9 @@ import { IncomeExpenseBarChart } from '@/components/charts/IncomeExpenseBarChart
 import { StatisticsTable } from '@/components/StatisticsTable';
 import { useTransactionsWithHistory } from '@/hooks/useTransactionsWithHistory';
 import { useCategories } from '@/hooks/useCategories';
-import { useDepartments } from '@/hooks/useDepartments';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { Currency, CURRENCY_SYMBOLS, Transaction, TransactionType } from '@/types/transaction';
-import { Settings, BarChart3, FileText, Download, Edit3 } from 'lucide-react';
+import { Settings, BarChart3, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
@@ -61,10 +60,7 @@ const Index = () => {
     getIncomeCategories,
     getExpenseCategories,
     getCategoryName,
-    getCategoryDepartment,
   } = useCategories();
-
-  const { departments } = useDepartments();
 
   // Keyboard shortcuts for undo/redo
   useEffect(() => {
@@ -107,61 +103,13 @@ const Index = () => {
     });
   };
 
-  // Listen for form builder callbacks via postMessage. External form should postMessage to opener
-  // with { type: 'dowod_form_data', data: { amount, currency, categoryName, department, description, date, issuedTo, decisionNumber, amountInWords, cashierName } }
-  useEffect(() => {
-    const allowedOrigins = new Set(['https://3eqp.github.io']);
-
-    const handleMessage = (e: MessageEvent) => {
-      try {
-        if (!allowedOrigins.has(e.origin)) return;
-        const payload = e.data;
-        if (!payload || payload.type !== 'dowod_form_data' || !payload.data) return;
-        const d = payload.data as any;
-
-        // Determine category id: try find existing expense category by exact name, otherwise create one
-        let categoryId: string | undefined = undefined;
-        if (d.categoryName) {
-          const found = categories.find(c => c.type === 'expense' && c.name === d.categoryName.trim());
-          if (found) categoryId = found.id;
-          else {
-            const newCat = addCategory(d.categoryName.trim(), 'expense', d.department || undefined);
-            categoryId = newCat ? newCat.id : undefined;
-          }
-        }
-
-        const tx: Omit<Transaction, 'id' | 'createdAt'> = {
-          type: 'expense',
-          amount: Number(d.amount) || 0,
-          currency: (d.currency || 'PLN') as Transaction['currency'],
-          category: (categoryId as any) || (categories.find(c => c.type === 'expense')?.id as any) || categories[0]?.id as any,
-          description: d.description || '',
-          date: d.date ? new Date(d.date) : new Date(),
-          issuedTo: d.issuedTo || undefined,
-          decisionNumber: d.decisionNumber || undefined,
-          amountInWords: d.amountInWords || undefined,
-          cashierName: d.cashierName || undefined,
-          departmentName: d.department || undefined,
-        };
-
-        addTransaction(tx);
-        toast({ title: t('expenseAdded'), description: `${tx.amount.toLocaleString(getDateLocale())} ${CURRENCY_SYMBOLS[tx.currency]}` });
-      } catch (err) {
-        console.error('Failed to import dowod form data:', err);
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [addTransaction, addCategory, categories, t, getDateLocale, toast]);
-
   const handleDeleteTransaction = (id: string) => {
     deleteTransaction(id);
     toast({ title: t('transactionDeleted'), variant: 'destructive' });
   };
 
-  const handleAddCategory = (name: string, type: 'income' | 'expense', departmentName?: string) => {
-    addCategory(name, type, departmentName);
+  const handleAddCategory = (name: string, type: 'income' | 'expense') => {
+    addCategory(name, type);
     toast({ title: t('categoryAdded'), description: name });
   };
 
@@ -171,8 +119,8 @@ const Index = () => {
     toast({ title: t('categoryDeleted'), description: categoryName, variant: 'destructive' });
   };
 
-  const handleUpdateCategory = (id: string, name: string, departmentName?: string) => {
-    updateCategory(id, name, departmentName);
+  const handleUpdateCategory = (id: string, name: string) => {
+    updateCategory(id, name);
     toast({ title: t('categoryUpdated'), description: name });
   };
 
@@ -210,57 +158,10 @@ const Index = () => {
             <Button 
               variant="outline" 
               className="font-semibold"
-              onClick={() => {
-                const url = new URL('https://3eqp.github.io/pdf-billing-form-builder/');
-                url.searchParams.set('callbackOrigin', window.location.origin);
-                // Open in a new window so external form can postMessage to opener
-                window.open(url.toString(), 'dowodForm');
-              }}
+              onClick={() => window.open('https://3eqp.github.io/pdf-billing-form-builder/', '_blank')}
             >
               <FileText className="w-4 h-4 mr-2" />
               Dowód wypłaty
-            </Button>
-
-            <Button
-              variant="outline"
-              className="font-semibold"
-              onClick={() => {
-                // Build CSV and download
-                const headers = [
-                  'date', 'type', 'category', 'department', 'amount', 'currency', 'description', 'issuedTo', 'decisionNumber', 'amountInWords', 'cashierName'
-                ];
-
-                const rows = transactions.map(t => {
-                  const dept = t.departmentName || (getCategoryDepartment ? getCategoryDepartment(t.category) : undefined) || '';
-                  return [
-                    new Date(t.date).toISOString(),
-                    t.type,
-                    getCategoryName(t.category),
-                    dept,
-                    t.amount.toFixed(2),
-                    t.currency,
-                    (t.description || '').replace(/\n/g, ' '),
-                    t.issuedTo || '',
-                    t.decisionNumber || '',
-                    t.amountInWords || '',
-                    t.cashierName || '',
-                  ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
-                });
-
-                const csvContent = [headers.join(','), ...rows].join('\n');
-                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `church_transactions_${new Date().toISOString().split('T')[0]}.csv`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                URL.revokeObjectURL(url);
-              }}
-            >
-              <Download className="w-4 h-4 mr-2" />
-              {t('exportCSV')}
             </Button>
             <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
               <DialogTrigger asChild>
@@ -284,7 +185,6 @@ const Index = () => {
                       onReorder={handleReorderCategories}
                     />
                   </div>
-
                 </div>
               </DialogContent>
             </Dialog>
@@ -295,7 +195,7 @@ const Index = () => {
               <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-hidden flex flex-col">
                 <DialogHeader><DialogTitle>{t('newTransaction')}</DialogTitle></DialogHeader>
                 <div className="overflow-y-auto flex-1 pr-2">
-                  <TransactionForm onSubmit={handleAddTransaction} incomeCategories={getIncomeCategories()} expenseCategories={getExpenseCategories()} departments={departments} />
+                  <TransactionForm onSubmit={handleAddTransaction} incomeCategories={getIncomeCategories()} expenseCategories={getExpenseCategories()} />
                 </div>
               </DialogContent>
             </Dialog>
@@ -327,7 +227,7 @@ const Index = () => {
               <TabsTrigger value="pie">{t('categoryDistribution')}</TabsTrigger>
             </TabsList>
             <TabsContent value="table">
-              <StatisticsTable transactions={transactions} getCategoryName={getCategoryName} getCategoryDepartment={getCategoryDepartment} updateTransaction={updateTransaction} updateCategory={updateCategory} onDelete={handleDeleteTransaction} />
+              <StatisticsTable transactions={transactions} getCategoryName={getCategoryName} onDelete={handleDeleteTransaction} />
             </TabsContent>
             <TabsContent value="bar"><IncomeExpenseBarChart data={monthlyData} /></TabsContent>
             <TabsContent value="line"><BalanceLineChart data={monthlyData} /></TabsContent>

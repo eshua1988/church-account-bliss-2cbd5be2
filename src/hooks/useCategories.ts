@@ -5,7 +5,6 @@ export interface Category {
   id: string;
   name: string;
   type: TransactionType;
-  departmentName?: string;
 }
 
 const DEFAULT_INCOME_CATEGORIES: Category[] = [
@@ -18,13 +17,13 @@ const DEFAULT_INCOME_CATEGORIES: Category[] = [
 ];
 
 const DEFAULT_EXPENSE_CATEGORIES: Category[] = [
-  { id: 'salaries', name: 'Зарплаты', type: 'expense', departmentName: '' },
-  { id: 'utilities', name: 'Коммунальные услуги', type: 'expense', departmentName: '' },
-  { id: 'maintenance', name: 'Обслуживание', type: 'expense', departmentName: '' },
-  { id: 'supplies', name: 'Расходные материалы', type: 'expense', departmentName: '' },
-  { id: 'charity', name: 'Благотворительность', type: 'expense', departmentName: '' },
-  { id: 'missions_expense', name: 'Миссии', type: 'expense', departmentName: '' },
-  { id: 'other_expense', name: 'Прочее', type: 'expense', departmentName: '' },
+  { id: 'salaries', name: 'Зарплаты', type: 'expense' },
+  { id: 'utilities', name: 'Коммунальные услуги', type: 'expense' },
+  { id: 'maintenance', name: 'Обслуживание', type: 'expense' },
+  { id: 'supplies', name: 'Расходные материалы', type: 'expense' },
+  { id: 'charity', name: 'Благотворительность', type: 'expense' },
+  { id: 'missions_expense', name: 'Миссии', type: 'expense' },
+  { id: 'other_expense', name: 'Прочее', type: 'expense' },
 ];
 
 const STORAGE_KEY = 'church_categories';
@@ -52,7 +51,7 @@ const saveCategories = (categories: Category[]) => {
 export const useCategories = () => {
   const [categories, setCategories] = useState<Category[]>(loadCategories);
 
-  const addCategory = useCallback((name: string, type: TransactionType, departmentName?: string) => {
+  const addCategory = useCallback((name: string, type: TransactionType) => {
     const trimmedName = name.trim();
     if (!trimmedName) return null;
 
@@ -60,7 +59,6 @@ export const useCategories = () => {
       id: crypto.randomUUID(),
       name: trimmedName,
       type,
-      departmentName: departmentName?.trim() || undefined,
     };
 
     setCategories(prev => {
@@ -80,13 +78,13 @@ export const useCategories = () => {
     });
   }, []);
 
-  const updateCategory = useCallback((id: string, name: string, departmentName?: string) => {
+  const updateCategory = useCallback((id: string, name: string) => {
     const trimmedName = name.trim();
     if (!trimmedName) return;
 
     setCategories(prev => {
       const updated = prev.map(c => 
-        c.id === id ? { ...c, name: trimmedName, departmentName: departmentName !== undefined ? departmentName.trim() : c.departmentName } : c
+        c.id === id ? { ...c, name: trimmedName } : c
       );
       saveCategories(updated);
       return updated;
@@ -119,10 +117,6 @@ export const useCategories = () => {
     return categories.find(c => c.id === id)?.name || 'Неизвестно';
   }, [categories]);
 
-  const getCategoryDepartment = useCallback((id: string) => {
-    return categories.find(c => c.id === id)?.departmentName;
-  }, [categories]);
-
   return {
     categories,
     addCategory,
@@ -132,6 +126,5 @@ export const useCategories = () => {
     getIncomeCategories,
     getExpenseCategories,
     getCategoryName,
-    getCategoryDepartment,
   };
 };
