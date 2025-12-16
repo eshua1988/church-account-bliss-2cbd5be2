@@ -584,6 +584,18 @@ export const translations = {
     en: 'Time period',
     uk: 'Період часу',
   },
+  apply: {
+    pl: 'Zastosuj',
+    ru: 'Применить',
+    en: 'Apply',
+    uk: 'Застосувати',
+  },
+  reset: {
+    pl: 'Wyczyść',
+    ru: 'Сбросить',
+    en: 'Reset',
+    uk: 'Очистити',
+  },
 } as const;
 
 export type TranslationKey = keyof typeof translations;

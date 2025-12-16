@@ -16,6 +16,7 @@ import { useTranslation } from '@/contexts/LanguageContext';
 import { Currency, CURRENCY_SYMBOLS, Transaction, TransactionType } from '@/types/transaction';
 import { Settings, BarChart3, FileText } from 'lucide-react';
 import ImportPayout from '@/components/ImportPayout';
+import DateRangeFilter from '@/components/DateRangeFilter';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
@@ -94,6 +95,7 @@ const Index = () => {
   const incomeByCategory = getTransactionsByCategory('income');
   const expenseByCategory = getTransactionsByCategory('expense');
   const monthlyData = getMonthlyData(selectedCurrency);
+  const [period, setPeriod] = useState<{ from?: Date; to?: Date }>({});
 
   const handleAddTransaction = (transaction: Omit<Transaction, 'id' | 'createdAt'>) => {
     addTransaction(transaction);
@@ -234,7 +236,12 @@ const Index = () => {
               <StatisticsTable transactions={transactions} getCategoryName={getCategoryName} onDelete={handleDeleteTransaction} />
             </TabsContent>
             <TabsContent value="bar"><IncomeExpenseBarChart data={monthlyData} currency={selectedCurrency} /></TabsContent>
-            <TabsContent value="line"><BalanceLineChart data={monthlyData} /></TabsContent>
+            <TabsContent value="line">
+              <div className="mb-4 flex items-center justify-end">
+                <DateRangeFilter value={period} onChange={setPeriod} />
+              </div>
+              <BalanceLineChart data={monthlyData} currency={selectedCurrency} startDate={period.from} endDate={period.to} />
+            </TabsContent>
             <TabsContent value="pie">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <CategoryPieChart data={incomeByCategory} getCategoryName={getCategoryName} type="income" />
