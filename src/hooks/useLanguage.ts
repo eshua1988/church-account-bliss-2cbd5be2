@@ -21,9 +21,9 @@ export const translations = {
   },
   appSubtitle: {
     pl: 'ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE',
-    ru: 'Учёт финансов общины',
-    en: 'Community Finance Management',
-    uk: 'Облік фінансів громади',
+    ru: 'ОБЩИНА ХРИСТИАН БАПТИСТОВ «БОЖЬЯ БЛАГОДАТЬ» В ВАРШАВЕ',
+    en: 'CONGREGATION OF CHRISTIAN BAPTISTS «GOD\'S GRACE» IN WARSAW',
+    uk: 'ГРОМАДА ХРИСТИЯН БАПТИСТІВ «БОЖА БЛАГОДАТЬ» У ВАРШАВІ',
   },
 
   // Stats
