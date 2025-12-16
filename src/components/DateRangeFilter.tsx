@@ -15,6 +15,7 @@ interface DateRangeFilterProps {
 export const DateRangeFilter = ({ value, onChange }: DateRangeFilterProps) => {
   const { t, getDateLocale } = useTranslation();
   const [localRange, setLocalRange] = useState<Range>(value || {});
+  const [open, setOpen] = useState(false);
 
   useEffect(() => setLocalRange(value || {}), [value]);
 
@@ -32,7 +33,7 @@ export const DateRangeFilter = ({ value, onChange }: DateRangeFilterProps) => {
   };
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="outline" className="font-medium">
           {displayLabel()}
@@ -50,10 +51,10 @@ export const DateRangeFilter = ({ value, onChange }: DateRangeFilterProps) => {
           }}
         />
         <div className="mt-3 flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => { setLocalRange({}); onChange({}); }}>
+          <Button variant="ghost" onClick={() => { setLocalRange({}); onChange({}); setOpen(false); }}>
             {t('reset')}
           </Button>
-          <Button onClick={() => { onChange(localRange || {}); }}>
+          <Button onClick={() => { onChange(localRange || {}); setOpen(false); }}>
             {t('apply')}
           </Button>
         </div>
