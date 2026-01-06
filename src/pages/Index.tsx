@@ -13,7 +13,7 @@ import { useTransactionsWithHistory } from '@/hooks/useTransactionsWithHistory';
 import { useCategories } from '@/hooks/useCategories';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { Currency, CURRENCY_SYMBOLS, Transaction, TransactionType } from '@/types/transaction';
-import { Settings, BarChart3, FileText } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import ImportPayout from '@/components/ImportPayout';
 import DateRangeFilter from '@/components/DateRangeFilter';
 import { useToast } from '@/hooks/use-toast';
@@ -27,6 +27,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
+import { AppSidebar } from '@/components/AppSidebar';
 
 const currencies: Currency[] = ['RUB', 'USD', 'EUR', 'UAH', 'BYN', 'PLN'];
 
@@ -35,7 +36,7 @@ const Index = () => {
   const [selectedCurrency, setSelectedCurrency] = useState<Currency>('PLN');
   const [visibleCurrencies, setVisibleCurrencies] = useState<Currency[]>(loadVisibleCurrencies);
   const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState(false);
-  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'balance' | 'statistics' | 'settings'>('balance');
   const { toast } = useToast();
   
   const {
@@ -140,116 +141,110 @@ const Index = () => {
     toast({ title: t('actionRedone') });
   };
 
-  const currenciesWithBalance = visibleCurrencies.filter(currency => {
-    const { income, expense } = getBalanceByCurrency(currency);
-    return income > 0 || expense > 0;
-  });
-
   return (
-    <div className="min-h-screen bg-background">
-      <Header canUndo={canUndo} canRedo={canRedo} onUndo={handleUndo} onRedo={handleRedo} />
+    <div className="min-h-screen bg-background flex">
+      <AppSidebar activeTab={activeTab} onTabChange={setActiveTab} />
       
-      <main className="container mx-auto px-4 py-8">
-        {/* Controls Row */}
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <CurrencySelector value={selectedCurrency} onChange={setSelectedCurrency} className="w-[180px]" />
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex-1 ml-16">
+        <Header canUndo={canUndo} canRedo={canRedo} onUndo={handleUndo} onRedo={handleRedo} />
+        
+        <main className="container mx-auto px-4 py-8">
+          {/* Controls Row */}
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <Button 
-                variant="outline" 
-                className="font-semibold"
-                onClick={() => window.open('https://3eqp.github.io/pdf-billing-form-builder/', '_blank')}
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Dowód wypłaty
-              </Button>
-              <ImportPayout />
+              <CurrencySelector value={selectedCurrency} onChange={setSelectedCurrency} className="w-[180px]" />
             </div>
-            <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="font-semibold"><Settings className="w-4 h-4 mr-2" />{t('settings')}</Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-hidden flex flex-col">
-                <DialogHeader><DialogTitle>{t('settings')}</DialogTitle></DialogHeader>
-                <div className="overflow-y-auto flex-1 pr-2 space-y-6">
-                  <div>
-                    <h4 className="font-medium mb-3">{t('currencySettings')}</h4>
-                    <CurrencySettingsContent visibleCurrencies={visibleCurrencies} onVisibleCurrenciesChange={handleVisibleCurrenciesChange} />
-                  </div>
-                  <Separator />
-                  <div>
-                    <h4 className="font-medium mb-3">{t('categoryManagement')}</h4>
-                    <CategoryManager 
-                      categories={categories} 
-                      onAdd={handleAddCategory} 
-                      onDelete={handleDeleteCategory} 
-                      onUpdate={handleUpdateCategory}
-                      onReorder={handleReorderCategories}
-                    />
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-            <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
-              <DialogTrigger asChild>
-                <Button className="gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200">{t('addTransaction')}</Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-hidden flex flex-col">
-                <DialogHeader><DialogTitle>{t('newTransaction')}</DialogTitle></DialogHeader>
-                <div className="overflow-y-auto flex-1 pr-2">
-                  <TransactionForm onSubmit={handleAddTransaction} incomeCategories={getIncomeCategories()} expenseCategories={getExpenseCategories()} />
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
-
-        {/* Currency Balances */}
-        <div className="mb-8">
-          <h3 className="text-lg font-semibold text-foreground mb-4">{t('balanceByCurrency')}</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {visibleCurrencies.map((currency, index) => {
-              const currencyBalance = getBalanceByCurrency(currency);
-              return <CurrencyBalanceCard key={currency} currency={currency} income={currencyBalance.income} expense={currencyBalance.expense} balance={currencyBalance.balance} delay={index * 100} />;
-            })}
-          </div>
-        </div>
-
-        {/* Statistics Section */}
-        <div className="mb-8">
-          <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-            <BarChart3 className="w-5 h-5" />
-            {t('statistics')}
-          </h3>
-          <Tabs defaultValue="table" className="w-full">
-            <TabsList className="mb-4">
-              <TabsTrigger value="table">{t('transactionsTable')}</TabsTrigger>
-              <TabsTrigger value="bar">{t('incomeVsExpenses')}</TabsTrigger>
-              <TabsTrigger value="line">{t('balanceOverTime')}</TabsTrigger>
-              <TabsTrigger value="pie">{t('categoryDistribution')}</TabsTrigger>
-            </TabsList>
-            <TabsContent value="table">
-              <StatisticsTable transactions={transactions} getCategoryName={getCategoryName} onDelete={handleDeleteTransaction} />
-            </TabsContent>
-            <TabsContent value="bar"><IncomeExpenseBarChart data={monthlyData} currency={selectedCurrency} /></TabsContent>
-            <TabsContent value="line">
-              <div className="mb-4 flex items-center justify-end">
-                <DateRangeFilter value={period} onChange={setPeriod} />
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Button 
+                  variant="outline" 
+                  className="font-semibold"
+                  onClick={() => window.open('https://3eqp.github.io/pdf-billing-form-builder/', '_blank')}
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Dowód wypłaty
+                </Button>
+                <ImportPayout />
               </div>
-              <BalanceLineChart data={monthlyData} currency={selectedCurrency} startDate={period.from} endDate={period.to} />
-            </TabsContent>
-            <TabsContent value="pie">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <CategoryPieChart data={incomeByCategory} getCategoryName={getCategoryName} type="income" />
-                <CategoryPieChart data={expenseByCategory} getCategoryName={getCategoryName} type="expense" />
-              </div>
-            </TabsContent>
-          </Tabs>
-        </div>
+              <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button className="gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200">{t('addTransaction')}</Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-hidden flex flex-col">
+                  <DialogHeader><DialogTitle>{t('newTransaction')}</DialogTitle></DialogHeader>
+                  <div className="overflow-y-auto flex-1 pr-2">
+                    <TransactionForm onSubmit={handleAddTransaction} incomeCategories={getIncomeCategories()} expenseCategories={getExpenseCategories()} />
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </div>
 
-      </main>
+          {/* Balance Tab */}
+          {activeTab === 'balance' && (
+            <div className="animate-fade-in">
+              <h3 className="text-lg font-semibold text-foreground mb-4">{t('balanceByCurrency')}</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {visibleCurrencies.map((currency, index) => {
+                  const currencyBalance = getBalanceByCurrency(currency);
+                  return <CurrencyBalanceCard key={currency} currency={currency} income={currencyBalance.income} expense={currencyBalance.expense} balance={currencyBalance.balance} delay={index * 100} />;
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Statistics Tab */}
+          {activeTab === 'statistics' && (
+            <div className="animate-fade-in">
+              <Tabs defaultValue="table" className="w-full">
+                <TabsList className="mb-4">
+                  <TabsTrigger value="table">{t('transactionsTable')}</TabsTrigger>
+                  <TabsTrigger value="bar">{t('incomeVsExpenses')}</TabsTrigger>
+                  <TabsTrigger value="line">{t('balanceOverTime')}</TabsTrigger>
+                  <TabsTrigger value="pie">{t('categoryDistribution')}</TabsTrigger>
+                </TabsList>
+                <TabsContent value="table">
+                  <StatisticsTable transactions={transactions} getCategoryName={getCategoryName} onDelete={handleDeleteTransaction} />
+                </TabsContent>
+                <TabsContent value="bar"><IncomeExpenseBarChart data={monthlyData} currency={selectedCurrency} /></TabsContent>
+                <TabsContent value="line">
+                  <div className="mb-4 flex items-center justify-end">
+                    <DateRangeFilter value={period} onChange={setPeriod} />
+                  </div>
+                  <BalanceLineChart data={monthlyData} currency={selectedCurrency} startDate={period.from} endDate={period.to} />
+                </TabsContent>
+                <TabsContent value="pie">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <CategoryPieChart data={incomeByCategory} getCategoryName={getCategoryName} type="income" />
+                    <CategoryPieChart data={expenseByCategory} getCategoryName={getCategoryName} type="expense" />
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </div>
+          )}
+
+          {/* Settings Tab */}
+          {activeTab === 'settings' && (
+            <div className="animate-fade-in space-y-6">
+              <div className="bg-card rounded-lg p-6 shadow-card">
+                <h4 className="font-semibold text-lg mb-4">{t('currencySettings')}</h4>
+                <CurrencySettingsContent visibleCurrencies={visibleCurrencies} onVisibleCurrenciesChange={handleVisibleCurrenciesChange} />
+              </div>
+              <Separator />
+              <div className="bg-card rounded-lg p-6 shadow-card">
+                <h4 className="font-semibold text-lg mb-4">{t('categoryManagement')}</h4>
+                <CategoryManager 
+                  categories={categories} 
+                  onAdd={handleAddCategory} 
+                  onDelete={handleDeleteCategory} 
+                  onUpdate={handleUpdateCategory}
+                  onReorder={handleReorderCategories}
+                />
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
     </div>
   );
 };
