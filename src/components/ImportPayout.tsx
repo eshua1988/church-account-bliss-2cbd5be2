@@ -164,27 +164,50 @@ export const ImportPayout = () => {
     }
   };
 
+  // Sanitize text to prevent injection
+  const sanitizeText = (text: string | undefined): string => {
+    if (!text) return '';
+    return text.replace(/<[^>]*>/g, '').substring(0, 500).trim();
+  };
+
   const confirmImport = () => {
     if (!parsed || !parsed.amount) {
       toast({ title: t('importError'), description: t('importFailedParse'), variant: 'destructive' });
       return;
     }
-    const amountNum = parseFloat(parsed.amount.replace(',', '.')) || 0;
+    
+    // Validate and sanitize amount
+    const amountNum = parseFloat(parsed.amount.replace(',', '.'));
+    if (isNaN(amountNum) || amountNum <= 0 || amountNum > 1000000000) {
+      toast({ title: t('importError'), description: 'Invalid amount', variant: 'destructive' });
+      return;
+    }
+    
+    // Validate date
     const date = parsed.date ? new Date(parsed.date) : new Date();
+    if (isNaN(date.getTime())) {
+      toast({ title: t('importError'), description: 'Invalid date', variant: 'destructive' });
+      return;
+    }
+    
     const currency = (parsed.currency as any) || 'PLN';
     const category = parsed.category || getExpenseCategories()[0]?.id || 'other';
+
+    // Sanitize text fields
+    const sanitizedDescription = sanitizeText(parsed.description) || `Imported from ${sanitizeText(fileName) || 'file'}`;
+    const sanitizedIssuedTo = sanitizeText(parsed.issuedTo);
 
     addTransaction({
       type: 'expense',
       amount: amountNum,
       currency,
       category: category as any,
-      description: parsed.description || `Imported from ${fileName || 'file'}`,
+      description: sanitizedDescription,
       date,
-      issuedTo: parsed.issuedTo || undefined,
+      issuedTo: sanitizedIssuedTo || undefined,
     });
 
-    toast({ title: t('importSuccess'), description: `${parsed.amount} ${currency}` });
+    toast({ title: t('importSuccess'), description: `${amountNum.toFixed(2)} ${currency}` });
     setPreviewOpen(false);
     setParsed(null);
     setFileName(null);

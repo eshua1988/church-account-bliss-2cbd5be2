@@ -8,7 +8,8 @@ import { Transaction } from '@/types/transaction';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 
-const SPREADSHEET_ID = '1WFFz7EV2ZUor-sQhvkZj3EHoTLRiEYjuxrTwLB96QKI';
+// Spreadsheet ID from environment variable for security
+const SPREADSHEET_ID = import.meta.env.VITE_GOOGLE_SPREADSHEET_ID || '';
 const SHEET_RANGE = 'Sheet1!A:G';
 
 interface GoogleSheetsSyncProps {
@@ -33,6 +34,15 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName }: GoogleSheets
   const isFirstRender = useRef(true);
 
   const syncToSheets = useCallback(async (txs: Transaction[]) => {
+    if (!SPREADSHEET_ID) {
+      toast({
+        title: 'Ошибка конфигурации',
+        description: 'Spreadsheet ID не настроен',
+        variant: 'destructive',
+      });
+      return false;
+    }
+
     setSyncStatus('syncing');
     try {
       const headers = ['Date', 'Type', 'Category', 'Amount', 'Currency', 'Description', 'ID'];
@@ -68,7 +78,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName }: GoogleSheets
       setSyncStatus('error');
       return false;
     }
-  }, [getCategoryName]);
+  }, [getCategoryName, toast]);
 
   // Auto-sync when transactions change
   useEffect(() => {
