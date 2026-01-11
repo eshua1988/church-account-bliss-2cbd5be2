@@ -290,16 +290,9 @@ const Index = () => {
     return income > 0 || expense > 0;
   });
 
+  // Получаем состояние sidebar
+  const { open, isMobile } = require("@/components/ui/sidebar");
   // ...existing code...
-  const { open, isMobile } = (() => {
-    try {
-      // динамически импортируем хук, если он есть
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      return require("@/components/ui/sidebar").useSidebar();
-    } catch {
-      return { open: false, isMobile: false };
-    }
-  })();
 
   return (
     <div className="min-h-screen bg-background">
