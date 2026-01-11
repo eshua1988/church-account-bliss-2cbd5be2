@@ -146,14 +146,14 @@ const Index = () => {
     <div className="min-h-screen bg-background flex">
       <AppSidebar activeTab={activeTab} onTabChange={setActiveTab} />
       
-      <div className="flex-1 ml-16">
+      <div className="flex-1">
         <Header canUndo={canUndo} canRedo={canRedo} onUndo={handleUndo} onRedo={handleRedo} />
         
         <main className="container mx-auto px-4 py-8">
           {/* Controls Row */}
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <CurrencySelector value={selectedCurrency} onChange={setSelectedCurrency} className="w-[180px]" />
+              <CurrencySelector value={selectedCurrency} onChange={setSelectedCurrency} className="w-[180px]" availableCurrencies={visibleCurrencies} />
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <div className="flex items-center gap-2">

@@ -27,7 +27,7 @@ export const AppSidebar = ({ activeTab, onTabChange }: AppSidebarProps) => {
   return (
     <aside
       className={cn(
-        'fixed left-0 top-0 z-40 h-screen bg-sidebar-background border-r border-sidebar-border transition-all duration-300 flex flex-col',
+        'sticky left-0 top-0 z-40 h-screen bg-sidebar-background border-r border-sidebar-border transition-all duration-300 flex flex-col flex-shrink-0',
         collapsed ? 'w-16' : 'w-56'
       )}
     >

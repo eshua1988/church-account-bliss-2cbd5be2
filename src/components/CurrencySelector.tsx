@@ -11,11 +11,14 @@ interface CurrencySelectorProps {
   value: Currency;
   onChange: (value: Currency) => void;
   className?: string;
+  availableCurrencies?: Currency[];
 }
 
-const currencies: Currency[] = ['RUB', 'USD', 'EUR', 'UAH', 'BYN', 'PLN'];
+const allCurrencies: Currency[] = ['RUB', 'USD', 'EUR', 'UAH', 'BYN', 'PLN'];
 
-export const CurrencySelector = ({ value, onChange, className }: CurrencySelectorProps) => {
+export const CurrencySelector = ({ value, onChange, className, availableCurrencies }: CurrencySelectorProps) => {
+  const currencies = availableCurrencies && availableCurrencies.length > 0 ? availableCurrencies : allCurrencies;
+  
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger className={className}>
