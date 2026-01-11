@@ -2,6 +2,7 @@ import { Church } from 'lucide-react';
 import { LanguageSelector } from './LanguageSelector';
 import { useTranslation } from '@/contexts/LanguageContext';
 
+<<<<<<< HEAD
 interface HeaderProps {
   canUndo?: boolean;
   canRedo?: boolean;
@@ -10,6 +11,9 @@ interface HeaderProps {
 }
 
 export const Header = ({ canUndo, canRedo, onUndo, onRedo }: HeaderProps) => {
+=======
+export const Header = () => {
+>>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
   const { t } = useTranslation();
   
   return (
@@ -25,6 +29,7 @@ export const Header = ({ canUndo, canRedo, onUndo, onRedo }: HeaderProps) => {
               <p className="text-sm text-muted-foreground">{t('appSubtitle')}</p>
             </div>
           </div>
+<<<<<<< HEAD
           <div className="flex items-center gap-2">
             {canUndo !== undefined && onUndo && onRedo && (
               <>
@@ -48,6 +53,9 @@ export const Header = ({ canUndo, canRedo, onUndo, onRedo }: HeaderProps) => {
             )}
             <LanguageSelector />
           </div>
+=======
+          <LanguageSelector />
+>>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
         </div>
       </div>
     </header>

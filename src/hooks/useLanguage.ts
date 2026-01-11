@@ -21,9 +21,15 @@ export const translations = {
   },
   appSubtitle: {
     pl: 'ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE',
+<<<<<<< HEAD
     ru: 'ОБЩИНА ХРИСТИАН БАПТИСТОВ «БОЖЬЯ БЛАГОДАТЬ» В ВАРШАВЕ',
     en: 'CONGREGATION OF CHRISTIAN BAPTISTS «GOD\'S GRACE» IN WARSAW',
     uk: 'ГРОМАДА ХРИСТИЯН БАПТИСТІВ «БОЖА БЛАГОДАТЬ» У ВАРШАВІ',
+=======
+    ru: 'Учёт финансов общины',
+    en: 'Community Finance Management',
+    uk: 'Облік фінансів громади',
+>>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
   },
 
   // Stats
@@ -493,6 +499,7 @@ export const translations = {
     en: 'Expense document details',
     uk: 'Дані документа витрати',
   },
+<<<<<<< HEAD
   importPayout: {
     pl: 'Importuj Dowód wypłaty',
     ru: 'Импортировать документ',
@@ -541,6 +548,9 @@ export const translations = {
     en: 'Cancel',
     uk: 'Скасувати',
   },
+=======
+  
+>>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
   // Statistics table
   allTime: {
     pl: 'Cały okres',
@@ -608,6 +618,7 @@ export const translations = {
     en: 'Time period',
     uk: 'Період часу',
   },
+<<<<<<< HEAD
   apply: {
     pl: 'Zastosuj',
     ru: 'Применить',
@@ -637,6 +648,31 @@ export const translations = {
     ru: 'Экспортировать',
     en: 'Export',
     uk: 'Експортувати',
+=======
+  enterDepartmentName: {
+    pl: 'Wpisz nazwę działu',
+    ru: 'Введите название отдела',
+    en: 'Enter department name',
+    uk: 'Введіть назву відділу',
+  },
+  departmentSettings: {
+    pl: 'Działy',
+    ru: 'Отделы',
+    en: 'Departments',
+    uk: 'Відділи',
+  },
+  departmentName: {
+    pl: 'Nazwa działu',
+    ru: 'Название отдела',
+    en: 'Department name',
+    uk: 'Назва відділу',
+  },
+  selectDepartment: {
+    pl: 'Wybierz dział',
+    ru: 'Выберите отдел',
+    en: 'Select department',
+    uk: 'Оберіть відділ',
+>>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
   },
 } as const;
 

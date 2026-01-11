@@ -18,10 +18,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+<<<<<<< HEAD
 import { TrendingUp, TrendingDown, Trash2, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import DateRangeFilter from '@/components/DateRangeFilter';
+=======
+import { TrendingUp, TrendingDown, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+>>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
 
 interface StatisticsTableProps {
   transactions: Transaction[];
@@ -34,6 +40,7 @@ type TimeRange = 'all' | 'thisMonth' | 'lastMonth' | 'last3Months' | 'last6Month
 export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: StatisticsTableProps) => {
   const { t, getDateLocale } = useTranslation();
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
+<<<<<<< HEAD
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [customDateRange, setCustomDateRange] = useState<{ from?: Date; to?: Date }>({});
 
@@ -91,6 +98,44 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
 
     return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, timeRange, typeFilter, customDateRange]);
+=======
+
+  const filteredTransactions = useMemo(() => {
+    const now = new Date();
+    
+    let startDate: Date | null = null;
+    let endDate: Date | null = null;
+
+    switch (timeRange) {
+      case 'thisMonth':
+        startDate = startOfMonth(now);
+        endDate = endOfMonth(now);
+        break;
+      case 'lastMonth':
+        startDate = startOfMonth(subMonths(now, 1));
+        endDate = endOfMonth(subMonths(now, 1));
+        break;
+      case 'last3Months':
+        startDate = startOfMonth(subMonths(now, 2));
+        endDate = endOfMonth(now);
+        break;
+      case 'last6Months':
+        startDate = startOfMonth(subMonths(now, 5));
+        endDate = endOfMonth(now);
+        break;
+      case 'thisYear':
+        startDate = startOfYear(now);
+        endDate = endOfYear(now);
+        break;
+      default:
+        return transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }
+
+    return transactions
+      .filter(t => isWithinInterval(new Date(t.date), { start: startDate!, end: endDate! }))
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [transactions, timeRange]);
+>>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
 
   const totals = useMemo(() => {
     const result: Record<string, { income: number; expense: number }> = {};
@@ -109,6 +154,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
     return result;
   }, [filteredTransactions]);
 
+<<<<<<< HEAD
   const exportToPDF = () => {
     try {
       // Create HTML content for PDF
@@ -189,6 +235,8 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
     }
   };
 
+=======
+>>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
   const timeRangeOptions = [
     { value: 'all', label: t('allTime') },
     { value: 'thisMonth', label: t('thisMonth') },
@@ -200,6 +248,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
 
   return (
     <Card>
+<<<<<<< HEAD
       <CardHeader className="flex flex-col space-y-4 pb-4">
         <div className="flex items-center justify-between gap-2">
           <CardTitle className="text-base font-semibold">{t('transactionsTable')}</CardTitle>
@@ -249,6 +298,22 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
             {t('expenses')}
           </Button>
         </div>
+=======
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+        <CardTitle className="text-base font-semibold">{t('transactionsTable')}</CardTitle>
+        <Select value={timeRange} onValueChange={(v) => setTimeRange(v as TimeRange)}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {timeRangeOptions.map(option => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+>>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
       </CardHeader>
       <CardContent>
         {/* Totals Summary */}
