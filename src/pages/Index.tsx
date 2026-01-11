@@ -1,15 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSidebar } from '@/components/ui/sidebar';
 import { Header } from '@/components/Header';
 import { TransactionForm } from '@/components/TransactionForm';
 import { CurrencyBalanceCard } from '@/components/CurrencyBalanceCard';
 import { CurrencySelector } from '@/components/CurrencySelector';
 import { CategoryManager } from '@/components/CategoryManager';
-<<<<<<< HEAD
-=======
 import { DepartmentManager } from '@/components/DepartmentManager';
 import { UndoRedoControls } from '@/components/UndoRedoControls';
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
 import { loadVisibleCurrencies, saveVisibleCurrencies, CurrencySettingsContent } from '@/components/CurrencySettingsDialog';
 import { CategoryPieChart } from '@/components/charts/CategoryPieChart';
 import { BalanceLineChart } from '@/components/charts/BalanceLineChart';
@@ -17,18 +14,12 @@ import { IncomeExpenseBarChart } from '@/components/charts/IncomeExpenseBarChart
 import { StatisticsTable } from '@/components/StatisticsTable';
 import { useTransactionsWithHistory } from '@/hooks/useTransactionsWithHistory';
 import { useCategories } from '@/hooks/useCategories';
-<<<<<<< HEAD
-import { useTranslation } from '@/contexts/LanguageContext';
-import { Currency, CURRENCY_SYMBOLS, Transaction, TransactionType } from '@/types/transaction';
-import { FileText } from 'lucide-react';
-import ImportPayout from '@/components/ImportPayout';
-import DateRangeFilter from '@/components/DateRangeFilter';
-=======
 import { useDepartments } from '@/hooks/useDepartments';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { Currency, CURRENCY_SYMBOLS, Transaction, TransactionType } from '@/types/transaction';
 import { Settings, BarChart3, FileText } from 'lucide-react';
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
+import ImportPayout from '@/components/ImportPayout';
+import DateRangeFilter from '@/components/DateRangeFilter';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
@@ -40,11 +31,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
-<<<<<<< HEAD
 import { AppSidebar } from '@/components/AppSidebar';
 import { GoogleSheetsSync } from '@/components/GoogleSheetsSync';
-=======
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
 
 const currencies: Currency[] = ['RUB', 'USD', 'EUR', 'UAH', 'BYN', 'PLN'];
 
@@ -53,11 +41,8 @@ const Index = () => {
   const [selectedCurrency, setSelectedCurrency] = useState<Currency>('PLN');
   const [visibleCurrencies, setVisibleCurrencies] = useState<Currency[]>(loadVisibleCurrencies);
   const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState(false);
-<<<<<<< HEAD
   const [activeTab, setActiveTab] = useState<'balance' | 'statistics' | 'settings'>('balance');
-=======
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
   const { toast } = useToast();
   
   const {
@@ -68,10 +53,10 @@ const Index = () => {
     getRecentTransactions,
     getTransactionsByCategory,
     getMonthlyData,
-    undo,
-    redo,
     canUndo,
     canRedo,
+    undo,
+    redo,
   } = useTransactionsWithHistory();
 
   const {
@@ -85,16 +70,12 @@ const Index = () => {
     getCategoryName,
   } = useCategories();
 
-<<<<<<< HEAD
-=======
   const {
     departments,
     addDepartment,
     deleteDepartment,
     updateDepartment,
   } = useDepartments();
-
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
   // Keyboard shortcuts for undo/redo
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -126,10 +107,7 @@ const Index = () => {
   const incomeByCategory = getTransactionsByCategory('income');
   const expenseByCategory = getTransactionsByCategory('expense');
   const monthlyData = getMonthlyData(selectedCurrency);
-<<<<<<< HEAD
   const [period, setPeriod] = useState<{ from?: Date; to?: Date }>({});
-=======
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
 
   const handleAddTransaction = (transaction: Omit<Transaction, 'id' | 'createdAt'>) => {
     addTransaction(transaction);
@@ -175,7 +153,6 @@ const Index = () => {
     toast({ title: t('actionRedone') });
   };
 
-<<<<<<< HEAD
   const { open, isMobile } = useSidebar();
 
   return (
@@ -213,7 +190,6 @@ const Index = () => {
                 </DialogContent>
               </Dialog>
             </div>
-          </div>
 
           {/* Balance Tab */}
           {activeTab === 'balance' && (
@@ -282,129 +258,8 @@ const Index = () => {
               </div>
             </div>
           )}
-        </main>
-      </div>
-=======
-  const currenciesWithBalance = visibleCurrencies.filter(currency => {
-    const { income, expense } = getBalanceByCurrency(currency);
-    return income > 0 || expense > 0;
-  });
-
-  // Получаем состояние sidebar
-  const { open, isMobile } = require("@/components/ui/sidebar");
-  // ...existing code...
-
-  return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      {/* Добавляем отступ слева, если sidebar открыт и не мобильный */}
-      <main
-        className={`container mx-auto px-4 py-8 transition-all duration-200 ${open && !isMobile ? 'ml-[16rem]' : ''}`}
-      >
-        {/* Controls Row */}
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <UndoRedoControls canUndo={canUndo} canRedo={canRedo} onUndo={handleUndo} onRedo={handleRedo} />
-            <CurrencySelector value={selectedCurrency} onChange={setSelectedCurrency} className="w-[180px]" />
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Button 
-              variant="outline" 
-              className="font-semibold"
-              onClick={() => window.open('https://3eqp.github.io/pdf-billing-form-builder/', '_blank')}
-            >
-              <FileText className="w-4 h-4 mr-2" />
-              Dowód wypłaty
-            </Button>
-            <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="font-semibold"><Settings className="w-4 h-4 mr-2" />{t('settings')}</Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-hidden flex flex-col">
-                <DialogHeader><DialogTitle>{t('settings')}</DialogTitle></DialogHeader>
-                <div className="overflow-y-auto flex-1 pr-2 space-y-6">
-                  <div>
-                    <h4 className="font-medium mb-3">{t('currencySettings')}</h4>
-                    <CurrencySettingsContent visibleCurrencies={visibleCurrencies} onVisibleCurrenciesChange={handleVisibleCurrenciesChange} />
-                  </div>
-                  <Separator />
-                  <div>
-                    <h4 className="font-medium mb-3">{t('categoryManagement')}</h4>
-                    <CategoryManager 
-                      categories={categories} 
-                      onAdd={handleAddCategory} 
-                      onDelete={handleDeleteCategory} 
-                      onUpdate={handleUpdateCategory}
-                      onReorder={handleReorderCategories}
-                    />
-                  </div>
-                  <Separator />
-                  <div>
-                    <h4 className="font-medium mb-3">{t('departmentSettings')}</h4>
-                    <DepartmentManager 
-                      departments={departments} 
-                      onAdd={addDepartment} 
-                      onDelete={deleteDepartment} 
-                      onUpdate={updateDepartment}
-                    />
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-            <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
-              <DialogTrigger asChild>
-                <Button className="gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200">{t('addTransaction')}</Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-hidden flex flex-col">
-                <DialogHeader><DialogTitle>{t('newTransaction')}</DialogTitle></DialogHeader>
-                <div className="overflow-y-auto flex-1 pr-2">
-                  <TransactionForm onSubmit={handleAddTransaction} incomeCategories={getIncomeCategories()} expenseCategories={getExpenseCategories()} departments={departments} />
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
         </div>
-
-        {/* Currency Balances */}
-        <div className="mb-8">
-          <h3 className="text-lg font-semibold text-foreground mb-4">{t('balanceByCurrency')}</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {visibleCurrencies.map((currency, index) => {
-              const currencyBalance = getBalanceByCurrency(currency);
-              return <CurrencyBalanceCard key={currency} currency={currency} income={currencyBalance.income} expense={currencyBalance.expense} balance={currencyBalance.balance} delay={index * 100} />;
-            })}
-          </div>
-        </div>
-
-        {/* Statistics Section */}
-        <div className="mb-8">
-          <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-            <BarChart3 className="w-5 h-5" />
-            {t('statistics')}
-          </h3>
-          <Tabs defaultValue="table" className="w-full">
-            <TabsList className="mb-4">
-              <TabsTrigger value="table">{t('transactionsTable')}</TabsTrigger>
-              <TabsTrigger value="bar">{t('incomeVsExpenses')}</TabsTrigger>
-              <TabsTrigger value="line">{t('balanceOverTime')}</TabsTrigger>
-              <TabsTrigger value="pie">{t('categoryDistribution')}</TabsTrigger>
-            </TabsList>
-            <TabsContent value="table">
-              <StatisticsTable transactions={transactions} getCategoryName={getCategoryName} onDelete={handleDeleteTransaction} />
-            </TabsContent>
-            <TabsContent value="bar"><IncomeExpenseBarChart data={monthlyData} /></TabsContent>
-            <TabsContent value="line"><BalanceLineChart data={monthlyData} /></TabsContent>
-            <TabsContent value="pie">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <CategoryPieChart data={incomeByCategory} getCategoryName={getCategoryName} type="income" />
-                <CategoryPieChart data={expenseByCategory} getCategoryName={getCategoryName} type="expense" />
-              </div>
-            </TabsContent>
-          </Tabs>
-        </div>
-
       </main>
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
     </div>
   );
 };

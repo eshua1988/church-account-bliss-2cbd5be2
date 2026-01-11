@@ -10,34 +10,19 @@ import { Category } from '@/hooks/useCategories';
 import { PlusCircle, MinusCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/contexts/LanguageContext';
-<<<<<<< HEAD
-=======
-
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
 interface TransactionFormProps {
   onSubmit: (transaction: Omit<Transaction, 'id' | 'createdAt'>) => void;
   incomeCategories: Category[];
   expenseCategories: Category[];
-<<<<<<< HEAD
-=======
   departments: string[];
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
 }
 export const TransactionForm = ({
   onSubmit,
   incomeCategories,
-<<<<<<< HEAD
-  expenseCategories
-}: TransactionFormProps) => {
-  const {
-    t
-  } = useTranslation();
-=======
   expenseCategories,
   departments
 }: TransactionFormProps) => {
   const { t } = useTranslation();
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
   const [type, setType] = useState<TransactionType>('income');
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState<Currency>('PLN');
@@ -50,10 +35,7 @@ export const TransactionForm = ({
   const [decisionNumber, setDecisionNumber] = useState('');
   const [amountInWords, setAmountInWords] = useState('');
   const [cashierName, setCashierName] = useState('');
-<<<<<<< HEAD
-=======
   const [departmentName, setDepartmentName] = useState('');
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
   const categories = type === 'income' ? incomeCategories : expenseCategories;
 
   // Reset category when type changes or categories update
@@ -80,10 +62,7 @@ export const TransactionForm = ({
       transactionData.decisionNumber = decisionNumber || undefined;
       transactionData.amountInWords = amountInWords || undefined;
       transactionData.cashierName = cashierName || undefined;
-<<<<<<< HEAD
-=======
       transactionData.departmentName = departmentName || undefined;
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
     }
     onSubmit(transactionData);
 
@@ -95,10 +74,7 @@ export const TransactionForm = ({
     setDecisionNumber('');
     setAmountInWords('');
     setCashierName('');
-<<<<<<< HEAD
-=======
     setDepartmentName('');
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
   };
   return <form onSubmit={handleSubmit} className="space-y-6 animate-fade-in">
       {/* Transaction Type Toggle */}
@@ -150,9 +126,6 @@ export const TransactionForm = ({
 
       {/* Expense-specific fields */}
       {type === 'expense' && <div className="space-y-4 p-4 bg-muted/50 rounded-lg border border-border">
-<<<<<<< HEAD
-          
-=======
           <div className="space-y-2">
             <Label>{t('departmentName')}</Label>
             <Select value={departmentName} onValueChange={setDepartmentName}>
@@ -166,7 +139,6 @@ export const TransactionForm = ({
               </SelectContent>
             </Select>
           </div>
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
           
           <div className="space-y-2">
             <Label htmlFor="issuedTo">{t('issuedTo')}</Label>

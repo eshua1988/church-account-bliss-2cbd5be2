@@ -4,11 +4,7 @@ import { Card } from '@/components/ui/card';
 import { format, parse } from 'date-fns';
 import { pl, ru, enUS, uk } from 'date-fns/locale';
 
-<<<<<<< HEAD
 import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
-
-=======
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
 interface BalanceLineChartProps {
   data: Array<{
     month: string;
@@ -16,18 +12,12 @@ interface BalanceLineChartProps {
     expense: number;
     balance: number;
   }>;
-<<<<<<< HEAD
   currency?: Currency;
   startDate?: Date;
   endDate?: Date;
 }
 
 export const BalanceLineChart = ({ data, currency = 'PLN', startDate, endDate }: BalanceLineChartProps) => {
-=======
-}
-
-export const BalanceLineChart = ({ data }: BalanceLineChartProps) => {
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
   const { t, language } = useTranslation();
 
   const getLocale = () => {
@@ -39,7 +29,6 @@ export const BalanceLineChart = ({ data }: BalanceLineChartProps) => {
     }
   };
 
-<<<<<<< HEAD
   // Filter by start/end if provided (data.month is 'yyyy-MM')
   const inRange = (monthKey: string) => {
     if (!startDate && !endDate) return true;
@@ -53,9 +42,6 @@ export const BalanceLineChart = ({ data }: BalanceLineChartProps) => {
   const filtered = data.filter(d => inRange(d.month));
 
   const formattedData = filtered.map(item => ({
-=======
-  const formattedData = data.map(item => ({
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
     ...item,
     monthLabel: format(parse(item.month, 'yyyy-MM', new Date()), 'MMM yyyy', { locale: getLocale() }),
   }));
@@ -70,17 +56,10 @@ export const BalanceLineChart = ({ data }: BalanceLineChartProps) => {
     };
   });
 
-<<<<<<< HEAD
   if (filtered.length === 0) {
     return (
       <Card className="p-6">
         <h3 className="text-lg font-semibold text-foreground mb-4">{t('balanceOverTime')} ({CURRENCY_SYMBOLS[currency]} {currency})</h3>
-=======
-  if (data.length === 0) {
-    return (
-      <Card className="p-6">
-        <h3 className="text-lg font-semibold text-foreground mb-4">{t('balanceOverTime')}</h3>
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
         <div className="h-[250px] flex items-center justify-center text-muted-foreground">
           {t('noTransactions')}
         </div>
@@ -102,18 +81,10 @@ export const BalanceLineChart = ({ data }: BalanceLineChartProps) => {
             />
             <YAxis 
               className="text-muted-foreground"
-              tick={{ fontSize: 12 }}
-<<<<<<< HEAD
               tickFormatter={(value) => `${value.toLocaleString()} ${CURRENCY_SYMBOLS[currency]}`}
             />
             <Tooltip
               formatter={(value: number) => `${value.toLocaleString()} ${CURRENCY_SYMBOLS[currency]}`}
-=======
-              tickFormatter={(value) => value.toLocaleString()}
-            />
-            <Tooltip
-              formatter={(value: number) => value.toLocaleString()}
->>>>>>> fd9e39d (fix: sidebar no longer overlaps main content)
               contentStyle={{
                 backgroundColor: 'hsl(var(--card))',
                 border: '1px solid hsl(var(--border))',
