@@ -5,6 +5,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Allowed spreadsheet IDs for security
+const ALLOWED_SPREADSHEET_IDS = [
+  Deno.env.get('ALLOWED_SPREADSHEET_ID') || '1WFFz7EV2ZUor-sQhvkZj3EHoTLRiEYjuxrTwLB96QKI'
+];
+
 interface SheetRequest {
   action: 'read' | 'write' | 'append';
   spreadsheetId: string;
@@ -96,6 +101,15 @@ serve(async (req) => {
     const { action, spreadsheetId, range, values }: SheetRequest = await req.json();
     
     console.log(`Google Sheets action: ${action}, spreadsheet: ${spreadsheetId}, range: ${range}`);
+
+    // Validate spreadsheet ID against whitelist for security
+    if (!ALLOWED_SPREADSHEET_IDS.includes(spreadsheetId)) {
+      console.error(`Unauthorized spreadsheet ID: ${spreadsheetId}`);
+      return new Response(
+        JSON.stringify({ error: 'Forbidden: Invalid spreadsheet ID' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     if (!spreadsheetId || !range) {
       throw new Error('Missing required parameters: spreadsheetId and range');
