@@ -10,7 +10,8 @@ import { Label } from '@/components/ui/label';
 
 // Spreadsheet ID from environment variable for security
 const SPREADSHEET_ID = import.meta.env.VITE_GOOGLE_SPREADSHEET_ID || '';
-const SHEET_RANGE = 'Sheet1!A:G';
+// Use simple range without sheet name to default to first sheet
+const SHEET_RANGE = 'A:G';
 
 interface GoogleSheetsSyncProps {
   transactions: Transaction[];
