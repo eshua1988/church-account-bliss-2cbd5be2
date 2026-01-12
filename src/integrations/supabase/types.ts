@@ -14,7 +14,125 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      categories: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+          type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          email: string | null
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      transactions: {
+        Row: {
+          amount: number
+          amount_in_words: string | null
+          cashier_name: string | null
+          category_id: string | null
+          created_at: string
+          currency: string
+          date: string
+          decision_number: string | null
+          description: string | null
+          id: string
+          issued_to: string | null
+          synced_to_sheets: boolean | null
+          type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          amount_in_words?: string | null
+          cashier_name?: string | null
+          category_id?: string | null
+          created_at?: string
+          currency?: string
+          date?: string
+          decision_number?: string | null
+          description?: string | null
+          id?: string
+          issued_to?: string | null
+          synced_to_sheets?: boolean | null
+          type: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          amount_in_words?: string | null
+          cashier_name?: string | null
+          category_id?: string | null
+          created_at?: string
+          currency?: string
+          date?: string
+          decision_number?: string | null
+          description?: string | null
+          id?: string
+          issued_to?: string | null
+          synced_to_sheets?: boolean | null
+          type?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

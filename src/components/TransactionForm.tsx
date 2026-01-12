@@ -6,7 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CurrencySelector } from '@/components/CurrencySelector';
 import { Currency, TransactionType, Transaction } from '@/types/transaction';
-import { Category } from '@/hooks/useCategories';
+import { Category } from '@/hooks/useSupabaseCategories';
 import { PlusCircle, MinusCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/contexts/LanguageContext';

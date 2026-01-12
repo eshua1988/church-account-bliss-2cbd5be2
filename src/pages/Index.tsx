@@ -9,11 +9,11 @@ import { CategoryPieChart } from '@/components/charts/CategoryPieChart';
 import { BalanceLineChart } from '@/components/charts/BalanceLineChart';
 import { IncomeExpenseBarChart } from '@/components/charts/IncomeExpenseBarChart';
 import { StatisticsTable } from '@/components/StatisticsTable';
-import { useTransactionsWithHistory } from '@/hooks/useTransactionsWithHistory';
-import { useCategories } from '@/hooks/useCategories';
+import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
+import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { Currency, CURRENCY_SYMBOLS, Transaction, TransactionType } from '@/types/transaction';
-import { FileText } from 'lucide-react';
+import { FileText, Loader2 } from 'lucide-react';
 import ImportPayout from '@/components/ImportPayout';
 import DateRangeFilter from '@/components/DateRangeFilter';
 import { useToast } from '@/hooks/use-toast';
@@ -42,20 +42,17 @@ const Index = () => {
   
   const {
     transactions,
+    loading: transactionsLoading,
     addTransaction,
     deleteTransaction,
     getBalanceByCurrency,
-    getRecentTransactions,
     getTransactionsByCategory,
     getMonthlyData,
-    undo,
-    redo,
-    canUndo,
-    canRedo,
-  } = useTransactionsWithHistory();
+  } = useSupabaseTransactions();
 
   const {
     categories,
+    loading: categoriesLoading,
     addCategory,
     deleteCategory,
     updateCategory,
@@ -63,29 +60,7 @@ const Index = () => {
     getIncomeCategories,
     getExpenseCategories,
     getCategoryName,
-  } = useCategories();
-
-  // Keyboard shortcuts for undo/redo
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        if (canUndo) {
-          undo();
-          toast({ title: t('actionUndone') });
-        }
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
-        e.preventDefault();
-        if (canRedo) {
-          redo();
-          toast({ title: t('actionRedone') });
-        }
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [canUndo, canRedo, undo, redo, toast, t]);
+  } = useSupabaseCategories();
 
   const handleVisibleCurrenciesChange = useCallback((newCurrencies: Currency[]) => {
     setVisibleCurrencies(newCurrencies);
@@ -98,56 +73,96 @@ const Index = () => {
   const monthlyData = getMonthlyData(selectedCurrency);
   const [period, setPeriod] = useState<{ from?: Date; to?: Date }>({});
 
-  const handleAddTransaction = (transaction: Omit<Transaction, 'id' | 'createdAt'>) => {
-    addTransaction(transaction);
-    setIsTransactionDialogOpen(false);
-    toast({
-      title: transaction.type === 'income' ? t('incomeAdded') : t('expenseAdded'),
-      description: `${transaction.amount.toLocaleString(getDateLocale())} ${CURRENCY_SYMBOLS[transaction.currency]}`,
-    });
+  const handleAddTransaction = async (transaction: Omit<Transaction, 'id' | 'createdAt'>) => {
+    try {
+      await addTransaction(transaction);
+      setIsTransactionDialogOpen(false);
+      toast({
+        title: transaction.type === 'income' ? t('incomeAdded') : t('expenseAdded'),
+        description: `${transaction.amount.toLocaleString(getDateLocale())} ${CURRENCY_SYMBOLS[transaction.currency]}`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось добавить транзакцию',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleDeleteTransaction = (id: string) => {
-    deleteTransaction(id);
-    toast({ title: t('transactionDeleted'), variant: 'destructive' });
+  const handleDeleteTransaction = async (id: string) => {
+    try {
+      await deleteTransaction(id);
+      toast({ title: t('transactionDeleted'), variant: 'destructive' });
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось удалить транзакцию',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleAddCategory = (name: string, type: 'income' | 'expense') => {
-    addCategory(name, type);
-    toast({ title: t('categoryAdded'), description: name });
+  const handleAddCategory = async (name: string, type: 'income' | 'expense') => {
+    try {
+      await addCategory(name, type);
+      toast({ title: t('categoryAdded'), description: name });
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось добавить категорию',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleDeleteCategory = (id: string) => {
-    const categoryName = getCategoryName(id);
-    deleteCategory(id);
-    toast({ title: t('categoryDeleted'), description: categoryName, variant: 'destructive' });
+  const handleDeleteCategory = async (id: string) => {
+    try {
+      const categoryName = getCategoryName(id);
+      await deleteCategory(id);
+      toast({ title: t('categoryDeleted'), description: categoryName, variant: 'destructive' });
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось удалить категорию',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleUpdateCategory = (id: string, name: string) => {
-    updateCategory(id, name);
-    toast({ title: t('categoryUpdated'), description: name });
+  const handleUpdateCategory = async (id: string, name: string) => {
+    try {
+      await updateCategory(id, name);
+      toast({ title: t('categoryUpdated'), description: name });
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось обновить категорию',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleReorderCategories = (type: TransactionType, fromIndex: number, toIndex: number) => {
     reorderCategories(type, fromIndex, toIndex);
   };
 
-  const handleUndo = () => {
-    undo();
-    toast({ title: t('actionUndone') });
-  };
+  const isLoading = transactionsLoading || categoriesLoading;
 
-  const handleRedo = () => {
-    redo();
-    toast({ title: t('actionRedone') });
-  };
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex">
       <AppSidebar activeTab={activeTab} onTabChange={setActiveTab} />
       
       <div className="flex-1">
-        <Header canUndo={canUndo} canRedo={canRedo} onUndo={handleUndo} onRedo={handleRedo} />
+        <Header />
         
         <main className="container mx-auto px-4 py-8">
           {/* Controls Row */}

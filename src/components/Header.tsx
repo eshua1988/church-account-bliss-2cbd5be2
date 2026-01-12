@@ -1,5 +1,6 @@
 import { Church } from 'lucide-react';
 import { LanguageSelector } from './LanguageSelector';
+import { UserMenu } from './UserMenu';
 import { useTranslation } from '@/contexts/LanguageContext';
 
 interface HeaderProps {
@@ -47,6 +48,7 @@ export const Header = ({ canUndo, canRedo, onUndo, onRedo }: HeaderProps) => {
               </>
             )}
             <LanguageSelector />
+            <UserMenu />
           </div>
         </div>
       </div>

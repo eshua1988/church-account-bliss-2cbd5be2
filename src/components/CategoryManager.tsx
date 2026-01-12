@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { TransactionType } from '@/types/transaction';
-import { Category } from '@/hooks/useCategories';
+import { Category } from '@/hooks/useSupabaseCategories';
 import { Plus, Trash2, Tag, Pencil, Check, X, GripVertical, ArrowUp, ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/contexts/LanguageContext';
