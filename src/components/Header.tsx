@@ -26,25 +26,25 @@ export const Header = ({ canUndo, canRedo, onUndo, onRedo }: HeaderProps) => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {typeof onUndo === 'function' && (
-              <button
-                onClick={onUndo}
-                disabled={!canUndo}
-                className="p-2 rounded-md hover:bg-accent disabled:opacity-50"
-                title="Undo (Ctrl+Z)"
-              >
-                ↶
-              </button>
-            )}
-            {typeof onRedo === 'function' && (
-              <button
-                onClick={onRedo}
-                disabled={!canRedo}
-                className="p-2 rounded-md hover:bg-accent disabled:opacity-50"
-                title="Redo (Ctrl+Y)"
-              >
-                ↷
-              </button>
+            {canUndo !== undefined && onUndo && onRedo && (
+              <>
+                <button
+                  onClick={onUndo}
+                  disabled={!canUndo}
+                  className="p-2 rounded-md hover:bg-accent disabled:opacity-50"
+                  title="Undo (Ctrl+Z)"
+                >
+                  ↶
+                </button>
+                <button
+                  onClick={onRedo}
+                  disabled={!canRedo}
+                  className="p-2 rounded-md hover:bg-accent disabled:opacity-50"
+                  title="Redo (Ctrl+Y)"
+                >
+                  ↷
+                </button>
+              </>
             )}
             <LanguageSelector />
           </div>

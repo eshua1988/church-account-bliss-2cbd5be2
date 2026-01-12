@@ -20,7 +20,7 @@ export const translations = {
     uk: 'Церковна бухгалтерія',
   },
   appSubtitle: {
-    pl: 'ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKА» W WARSZAWIE',
+    pl: 'ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE',
     ru: 'ОБЩИНА ХРИСТИАН БАПТИСТОВ «БОЖЬЯ БЛАГОДАТЬ» В ВАРШАВЕ',
     en: 'CONGREGATION OF CHRISTIAN BAPTISTS «GOD\'S GRACE» IN WARSAW',
     uk: 'ГРОМАДА ХРИСТИЯН БАПТИСТІВ «БОЖА БЛАГОДАТЬ» У ВАРШАВІ',

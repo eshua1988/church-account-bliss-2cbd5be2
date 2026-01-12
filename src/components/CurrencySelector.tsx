@@ -18,6 +18,7 @@ const allCurrencies: Currency[] = ['RUB', 'USD', 'EUR', 'UAH', 'BYN', 'PLN'];
 
 export const CurrencySelector = ({ value, onChange, className, availableCurrencies }: CurrencySelectorProps) => {
   const currencies = availableCurrencies && availableCurrencies.length > 0 ? availableCurrencies : allCurrencies;
+  
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger className={className}>

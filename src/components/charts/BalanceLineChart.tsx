@@ -5,6 +5,7 @@ import { format, parse } from 'date-fns';
 import { pl, ru, enUS, uk } from 'date-fns/locale';
 
 import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
+
 interface BalanceLineChartProps {
   data: Array<{
     month: string;
@@ -81,6 +82,7 @@ export const BalanceLineChart = ({ data, currency = 'PLN', startDate, endDate }:
             />
             <YAxis 
               className="text-muted-foreground"
+              tick={{ fontSize: 12 }}
               tickFormatter={(value) => `${value.toLocaleString()} ${CURRENCY_SYMBOLS[currency]}`}
             />
             <Tooltip

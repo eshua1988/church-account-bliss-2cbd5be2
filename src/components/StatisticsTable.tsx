@@ -111,7 +111,70 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
 
   const exportToPDF = () => {
     try {
-      const htmlContent = '...'; // Здесь должен быть ваш HTML для экспорта
+      // Create HTML content for PDF
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            h1 { font-size: 18px; margin-bottom: 5px; }
+            .info { font-size: 11px; margin: 5px 0; }
+            .summary { font-size: 11px; margin: 10px 0; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 10px; }
+            th { background-color: #6496C8; color: white; font-weight: bold; }
+            tr:nth-child(even) { background-color: #f9f9f9; }
+          </style>
+        </head>
+        <body>
+          <h1>${t('transactionsTable')}</h1>
+          <div class="info"><strong>${t('timeRange')}:</strong> ${
+            customDateRange.from && customDateRange.to
+              ? `${format(customDateRange.from, 'dd.MM.yyyy')} — ${format(customDateRange.to, 'dd.MM.yyyy')}`
+              : t('allTime')
+          }</div>
+          <div class="info"><strong>${t('type')}:</strong> ${
+            typeFilter === 'income' ? t('income') : typeFilter === 'expense' ? t('expenses') : t('allTime')
+          }</div>
+          
+          <div class="summary">
+            <strong>Totals:</strong><br>
+            ${Object.entries(totals)
+              .map(([currency, { income, expense }]) => 
+                `${currency}: +${income.toLocaleString()} / -${expense.toLocaleString()}`
+              )
+              .join('<br>')}
+          </div>
+          
+          <table>
+            <thead>
+              <tr>
+                <th>${t('date')}</th>
+                <th>${t('type')}</th>
+                <th>${t('category')}</th>
+                <th>${t('amount')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredTransactions
+                .map((tx) => `
+                  <tr>
+                    <td>${format(new Date(tx.date), 'dd.MM.yyyy')}</td>
+                    <td>${tx.type === 'income' ? t('income') : t('expenses')}</td>
+                    <td>${getCategoryName(tx.category)}</td>
+                    <td>${tx.type === 'income' ? '+' : '-'}${tx.amount.toLocaleString()} ${CURRENCY_SYMBOLS[tx.currency]}</td>
+                  </tr>
+                `)
+                .join('')}
+            </tbody>
+          </table>
+        </body>
+        </html>
+      `;
+
+      // Create blob and download
       const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
@@ -137,20 +200,55 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-        <CardTitle className="text-base font-semibold">{t('transactionsTable')}</CardTitle>
-        <Select value={timeRange} onValueChange={(v) => setTimeRange(v as TimeRange)}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {timeRangeOptions.map(option => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <CardHeader className="flex flex-col space-y-4 pb-4">
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-base font-semibold">{t('transactionsTable')}</CardTitle>
+          <div className="flex items-center gap-2">
+            <Select value={timeRange} onValueChange={(v) => setTimeRange(v as TimeRange)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {timeRangeOptions.map(option => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <DateRangeFilter value={customDateRange} onChange={setCustomDateRange} />
+            <Button variant="outline" size="sm" onClick={exportToPDF} className="font-medium">
+              <Download className="w-4 h-4 mr-2" />
+              {t('export') || 'HTML'}
+            </Button>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={typeFilter === 'all' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTypeFilter('all')}
+            className="font-medium"
+          >
+            {t('allTime')}
+          </Button>
+          <Button
+            variant={typeFilter === 'income' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTypeFilter('income')}
+            className="font-medium"
+          >
+            {t('income')}
+          </Button>
+          <Button
+            variant={typeFilter === 'expense' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTypeFilter('expense')}
+            className="font-medium"
+          >
+            {t('expenses')}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {/* Totals Summary */}
@@ -243,4 +341,4 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
       </CardContent>
     </Card>
   );
-}
+};

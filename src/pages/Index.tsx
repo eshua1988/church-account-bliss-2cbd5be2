@@ -1,12 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useSidebar } from '@/components/ui/sidebar';
+import { useState, useEffect, useCallback } from 'react';
 import { Header } from '@/components/Header';
 import { TransactionForm } from '@/components/TransactionForm';
 import { CurrencyBalanceCard } from '@/components/CurrencyBalanceCard';
 import { CurrencySelector } from '@/components/CurrencySelector';
 import { CategoryManager } from '@/components/CategoryManager';
-import { DepartmentManager } from '@/components/DepartmentManager';
-import { UndoRedoControls } from '@/components/UndoRedoControls';
 import { loadVisibleCurrencies, saveVisibleCurrencies, CurrencySettingsContent } from '@/components/CurrencySettingsDialog';
 import { CategoryPieChart } from '@/components/charts/CategoryPieChart';
 import { BalanceLineChart } from '@/components/charts/BalanceLineChart';
@@ -14,10 +11,9 @@ import { IncomeExpenseBarChart } from '@/components/charts/IncomeExpenseBarChart
 import { StatisticsTable } from '@/components/StatisticsTable';
 import { useTransactionsWithHistory } from '@/hooks/useTransactionsWithHistory';
 import { useCategories } from '@/hooks/useCategories';
-import { useDepartments } from '@/hooks/useDepartments';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { Currency, CURRENCY_SYMBOLS, Transaction, TransactionType } from '@/types/transaction';
-import { Settings, BarChart3, FileText } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import ImportPayout from '@/components/ImportPayout';
 import DateRangeFilter from '@/components/DateRangeFilter';
 import { useToast } from '@/hooks/use-toast';
@@ -42,7 +38,6 @@ const Index = () => {
   const [visibleCurrencies, setVisibleCurrencies] = useState<Currency[]>(loadVisibleCurrencies);
   const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'balance' | 'statistics' | 'settings'>('balance');
-  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
   const { toast } = useToast();
   
   const {
@@ -53,10 +48,10 @@ const Index = () => {
     getRecentTransactions,
     getTransactionsByCategory,
     getMonthlyData,
-    canUndo,
-    canRedo,
     undo,
     redo,
+    canUndo,
+    canRedo,
   } = useTransactionsWithHistory();
 
   const {
@@ -70,12 +65,6 @@ const Index = () => {
     getCategoryName,
   } = useCategories();
 
-  const {
-    departments,
-    addDepartment,
-    deleteDepartment,
-    updateDepartment,
-  } = useDepartments();
   // Keyboard shortcuts for undo/redo
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -153,14 +142,14 @@ const Index = () => {
     toast({ title: t('actionRedone') });
   };
 
-  const { open, isMobile } = useSidebar();
-
   return (
-    <div className="min-h-screen bg-background">
-      <Header canUndo={canUndo} canRedo={canRedo} onUndo={handleUndo} onRedo={handleRedo} />
-      <main
-        className={`container mx-auto px-4 py-8 transition-all duration-200 ${open && !isMobile ? 'ml-[16rem]' : ''}`}
-      >
+    <div className="min-h-screen bg-background flex">
+      <AppSidebar activeTab={activeTab} onTabChange={setActiveTab} />
+      
+      <div className="flex-1">
+        <Header canUndo={canUndo} canRedo={canRedo} onUndo={handleUndo} onRedo={handleRedo} />
+        
+        <main className="container mx-auto px-4 py-8">
           {/* Controls Row */}
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-2">
@@ -190,6 +179,7 @@ const Index = () => {
                 </DialogContent>
               </Dialog>
             </div>
+          </div>
 
           {/* Balance Tab */}
           {activeTab === 'balance' && (
@@ -258,8 +248,8 @@ const Index = () => {
               </div>
             </div>
           )}
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 };

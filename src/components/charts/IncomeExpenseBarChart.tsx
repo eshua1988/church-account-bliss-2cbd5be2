@@ -5,6 +5,7 @@ import { format, parse } from 'date-fns';
 import { pl, ru, enUS, uk } from 'date-fns/locale';
 
 import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
+
 interface IncomeExpenseBarChartProps {
   data: Array<{
     month: string;
@@ -35,7 +36,7 @@ export const IncomeExpenseBarChart = ({ data, currency = 'PLN' }: IncomeExpenseB
   if (data.length === 0) {
     return (
       <Card className="p-6">
-        <h3 className="text-lg font-semibold text-foreground mb-4">{t('incomeVsExpenses')} ({CURRENCY_SYMBOLS[currency]} {currency})</h3>
+        <h3 className="text-lg font-semibold text-foreground mb-4">{t('incomeVsExpenses')} ({currency})</h3>
         <div className="h-[250px] flex items-center justify-center text-muted-foreground">
           {t('noTransactions')}
         </div>
@@ -57,6 +58,7 @@ export const IncomeExpenseBarChart = ({ data, currency = 'PLN' }: IncomeExpenseB
             />
             <YAxis 
               className="text-muted-foreground"
+              tick={{ fontSize: 12 }}
               tickFormatter={(value) => `${value.toLocaleString()} ${CURRENCY_SYMBOLS[currency]}`}
             />
             <Tooltip
