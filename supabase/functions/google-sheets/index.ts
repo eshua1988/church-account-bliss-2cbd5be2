@@ -18,13 +18,21 @@ interface SheetRequest {
   values?: string[][];
 }
 
-async function authenticateRequest(req: Request): Promise<{ userId: string } | Response> {
+async function authenticateRequest(req: Request): Promise<{ userId: string; token: string; authHeader: string } | Response> {
   const authHeader = req.headers.get('Authorization');
-  
+
   if (!authHeader?.startsWith('Bearer ')) {
     console.error('Missing or invalid authorization header');
     return new Response(
       JSON.stringify({ error: 'Unauthorized: Missing authorization header' }),
+      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
+  const token = authHeader.replace('Bearer ', '').trim();
+  if (!token) {
+    return new Response(
+      JSON.stringify({ error: 'Unauthorized: Missing token' }),
       { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
@@ -35,7 +43,8 @@ async function authenticateRequest(req: Request): Promise<{ userId: string } | R
     { global: { headers: { Authorization: authHeader } } }
   );
 
-  const { data: { user }, error } = await supabase.auth.getUser();
+  // IMPORTANT: In edge/runtime, do not rely on auth storage; validate using the provided JWT.
+  const { data: { user }, error } = await supabase.auth.getUser(token);
 
   if (error || !user) {
     console.error('User verification failed:', error?.message);
@@ -46,7 +55,7 @@ async function authenticateRequest(req: Request): Promise<{ userId: string } | R
   }
 
   console.log(`Authenticated user: ${user.id}`);
-  return { userId: user.id };
+  return { userId: user.id, token, authHeader };
 }
 
 async function getAccessToken(): Promise<string> {
@@ -136,9 +145,61 @@ serve(async (req) => {
       return authResult; // Return error response if authentication failed
     }
 
-    const { action, spreadsheetId, range, values }: SheetRequest = await req.json();
-    
+    const body: Partial<SheetRequest> = await req.json();
+    const action = body.action;
+
+    // Look up the user's configured spreadsheet in the database (do NOT trust client-supplied IDs)
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      { global: { headers: { Authorization: authResult.authHeader } } }
+    );
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('spreadsheet_id, sheet_range')
+      .eq('user_id', authResult.userId)
+      .single();
+
+    if (profileError) {
+      console.error('Failed to load user profile for sheets settings:', profileError);
+      return new Response(
+        JSON.stringify({ error: 'Bad request: Missing Google Sheets settings' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const configuredSpreadsheetId = (profile?.spreadsheet_id ?? '').trim();
+    const configuredRange = (profile?.sheet_range ?? "'Data app'!A:G").trim();
+
+    if (!configuredSpreadsheetId) {
+      return new Response(
+        JSON.stringify({ error: 'Bad request: Please configure your Google Sheets ID in settings' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Backwards compatibility: if client sends a spreadsheetId, ensure it matches the user's configured one.
+    if (body.spreadsheetId && body.spreadsheetId !== configuredSpreadsheetId) {
+      console.error(`Spreadsheet ID mismatch for user ${authResult.userId}`);
+      return new Response(
+        JSON.stringify({ error: 'Forbidden: Spreadsheet ID mismatch' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const spreadsheetId = configuredSpreadsheetId;
+    const range = configuredRange;
+    const values = body.values;
+
     console.log(`Google Sheets action: ${action}, spreadsheet: ${spreadsheetId}, range: ${range}, user: ${authResult.userId}`);
+
+    if (!action) {
+      return new Response(
+        JSON.stringify({ error: 'Bad request: Missing action' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Validate spreadsheet ID format for security
     if (!isValidSpreadsheetId(spreadsheetId)) {
@@ -149,8 +210,11 @@ serve(async (req) => {
       );
     }
 
-    if (!spreadsheetId || !range) {
-      throw new Error('Missing required parameters: spreadsheetId and range');
+    if (!range || range.length > 200) {
+      return new Response(
+        JSON.stringify({ error: 'Bad request: Invalid range' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     const accessToken = await getAccessToken();
