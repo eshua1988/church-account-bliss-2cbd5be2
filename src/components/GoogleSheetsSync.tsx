@@ -17,7 +17,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 
-const DEFAULT_SHEET_RANGE = "'Data app'!A:G";
+const DEFAULT_SHEET_RANGE = "'Data app'!A:H";
 
 interface GoogleSheetsSyncProps {
   transactions: Transaction[];
@@ -141,7 +141,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName }: GoogleSheets
 
     setSyncStatus('syncing');
     try {
-      const headers = ['Date', 'Type', 'Category', 'Amount', 'Currency', 'Description', 'ID'];
+      const headers = ['Date', 'Type', 'Category', 'Amount', 'Currency', 'Description', 'Issued To', 'ID'];
       const rows = txs.map(tx => [
         new Date(tx.date).toLocaleDateString('pl-PL'),
         tx.type,
@@ -149,6 +149,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName }: GoogleSheets
         tx.amount.toString(),
         tx.currency,
         tx.description || '',
+        tx.type === 'expense' ? (tx.issuedTo || '') : '',
         tx.id,
       ]);
 
