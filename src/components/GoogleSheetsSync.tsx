@@ -141,15 +141,17 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName }: GoogleSheets
 
     setSyncStatus('syncing');
     try {
-      const headers = ['Date', 'Type', 'Category', 'Amount', 'Currency', 'Description', 'ID'];
-      const rows = txs.map(tx => [
+      // Export only expense transactions with specific fields
+      const expenseTransactions = txs.filter(tx => tx.type === 'expense');
+      
+      const headers = ['Выдано (ФИО)', 'Дата', 'Отдел', 'Описание', 'Сумма', 'Валюта'];
+      const rows = expenseTransactions.map(tx => [
+        tx.issuedTo || '',
         new Date(tx.date).toLocaleDateString('pl-PL'),
-        tx.type,
         getCategoryName(tx.category),
+        tx.description || '',
         tx.amount.toString(),
         tx.currency,
-        tx.description || '',
-        tx.id,
       ]);
 
       const values = [headers, ...rows];
