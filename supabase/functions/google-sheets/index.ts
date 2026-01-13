@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,6 +16,37 @@ interface SheetRequest {
   spreadsheetId: string;
   range: string;
   values?: string[][];
+}
+
+async function authenticateRequest(req: Request): Promise<{ userId: string } | Response> {
+  const authHeader = req.headers.get('Authorization');
+  
+  if (!authHeader?.startsWith('Bearer ')) {
+    console.error('Missing or invalid authorization header');
+    return new Response(
+      JSON.stringify({ error: 'Unauthorized: Missing authorization header' }),
+      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+    { global: { headers: { Authorization: authHeader } } }
+  );
+
+  const { data: { user }, error } = await supabase.auth.getUser();
+
+  if (error || !user) {
+    console.error('User verification failed:', error?.message);
+    return new Response(
+      JSON.stringify({ error: 'Unauthorized: Invalid token' }),
+      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
+  console.log(`Authenticated user: ${user.id}`);
+  return { userId: user.id };
 }
 
 async function getAccessToken(): Promise<string> {
@@ -98,9 +130,15 @@ serve(async (req) => {
   }
 
   try {
+    // Authenticate the request first
+    const authResult = await authenticateRequest(req);
+    if (authResult instanceof Response) {
+      return authResult; // Return error response if authentication failed
+    }
+
     const { action, spreadsheetId, range, values }: SheetRequest = await req.json();
     
-    console.log(`Google Sheets action: ${action}, spreadsheet: ${spreadsheetId}, range: ${range}`);
+    console.log(`Google Sheets action: ${action}, spreadsheet: ${spreadsheetId}, range: ${range}, user: ${authResult.userId}`);
 
     // Validate spreadsheet ID against whitelist for security
     if (!ALLOWED_SPREADSHEET_IDS.includes(spreadsheetId)) {
