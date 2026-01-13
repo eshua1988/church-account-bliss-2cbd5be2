@@ -128,6 +128,17 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName }: GoogleSheets
       return false;
     }
 
+    // Check if user is authenticated
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      toast({
+        title: 'Ошибка авторизации',
+        description: 'Пожалуйста, войдите в систему',
+        variant: 'destructive',
+      });
+      return false;
+    }
+
     setSyncStatus('syncing');
     try {
       const headers = ['Date', 'Type', 'Category', 'Amount', 'Currency', 'Description', 'ID'];
@@ -143,7 +154,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName }: GoogleSheets
 
       const values = [headers, ...rows];
 
-      const { error } = await supabase.functions.invoke('google-sheets', {
+      const { data, error } = await supabase.functions.invoke('google-sheets', {
         body: {
           action: 'write',
           spreadsheetId: spreadsheetId,
@@ -152,7 +163,10 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName }: GoogleSheets
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Sync error details:', error);
+        throw error;
+      }
 
       setLastSyncTime(new Date());
       setSyncStatus('success');
@@ -161,6 +175,11 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName }: GoogleSheets
     } catch (error) {
       console.error('Sync error:', error);
       setSyncStatus('error');
+      toast({
+        title: 'Ошибка синхронизации',
+        description: error instanceof Error ? error.message : 'Проверьте настройки таблицы',
+        variant: 'destructive',
+      });
       return false;
     }
   }, [getCategoryName, toast, spreadsheetId, sheetRange]);
@@ -256,6 +275,17 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName }: GoogleSheets
   const handleImport = async () => {
     if (!spreadsheetId) {
       setSettingsDialogOpen(true);
+      return;
+    }
+    
+    // Check if user is authenticated
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      toast({
+        title: 'Ошибка авторизации',
+        description: 'Пожалуйста, войдите в систему',
+        variant: 'destructive',
+      });
       return;
     }
     
