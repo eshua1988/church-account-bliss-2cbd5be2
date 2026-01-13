@@ -6,10 +6,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Allowed spreadsheet IDs for security
-const ALLOWED_SPREADSHEET_IDS = [
-  Deno.env.get('ALLOWED_SPREADSHEET_ID') || '1WFFz7EV2ZUor-sQhvkZj3EHoTLRiEYjuxrTwLB96QKI'
-];
+// Validate spreadsheet ID format (alphanumeric, hyphens, underscores)
+function isValidSpreadsheetId(id: string): boolean {
+  return /^[a-zA-Z0-9_-]+$/.test(id) && id.length > 10 && id.length < 100;
+}
 
 interface SheetRequest {
   action: 'read' | 'write' | 'append';
@@ -140,11 +140,11 @@ serve(async (req) => {
     
     console.log(`Google Sheets action: ${action}, spreadsheet: ${spreadsheetId}, range: ${range}, user: ${authResult.userId}`);
 
-    // Validate spreadsheet ID against whitelist for security
-    if (!ALLOWED_SPREADSHEET_IDS.includes(spreadsheetId)) {
-      console.error(`Unauthorized spreadsheet ID: ${spreadsheetId}`);
+    // Validate spreadsheet ID format for security
+    if (!isValidSpreadsheetId(spreadsheetId)) {
+      console.error(`Invalid spreadsheet ID format: ${spreadsheetId}`);
       return new Response(
-        JSON.stringify({ error: 'Forbidden: Invalid spreadsheet ID' }),
+        JSON.stringify({ error: 'Forbidden: Invalid spreadsheet ID format' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
