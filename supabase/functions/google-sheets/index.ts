@@ -12,10 +12,11 @@ function isValidSpreadsheetId(id: string): boolean {
 }
 
 interface SheetRequest {
-  action: 'read' | 'write' | 'append';
+  action: 'read' | 'write' | 'append' | 'delete';
   spreadsheetId: string;
   range: string;
   values?: string[][];
+  transactionId?: string;
 }
 
 async function authenticateRequest(req: Request): Promise<{ userId: string; token: string; authHeader: string } | Response> {
@@ -260,6 +261,30 @@ serve(async (req) => {
           }
         );
         break;
+      }
+      
+      case 'delete': {
+        const transactionId = body.transactionId;
+        if (!transactionId) throw new Error('Transaction ID required for delete action');
+        
+        // Delete from Supabase database
+        const { error: deleteError } = await supabase
+          .from('transactions')
+          .delete()
+          .eq('id', transactionId)
+          .eq('user_id', authResult.userId);
+        
+        if (deleteError) {
+          console.error('Delete error:', deleteError);
+          throw new Error(`Failed to delete transaction: ${deleteError.message}`);
+        }
+        
+        console.log(`Transaction ${transactionId} deleted successfully`);
+        
+        return new Response(
+          JSON.stringify({ success: true, deletedId: transactionId }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
       
       default:

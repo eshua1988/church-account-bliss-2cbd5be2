@@ -17,16 +17,17 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 
-const DEFAULT_SHEET_RANGE = "'Data app'!A:H";
+const DEFAULT_SHEET_RANGE = "'Data app'!A:I";
 
 interface GoogleSheetsSyncProps {
   transactions: Transaction[];
   getCategoryName: (id: string) => string;
+  onDeleteTransaction?: (id: string) => Promise<void>;
 }
 
 const AUTO_SYNC_KEY = 'google_sheets_auto_sync';
 
-export const GoogleSheetsSync = ({ transactions, getCategoryName }: GoogleSheetsSyncProps) => {
+export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransaction }: GoogleSheetsSyncProps) => {
   const { toast } = useToast();
   const { user } = useAuth();
   const [isExporting, setIsExporting] = useState(false);
@@ -141,8 +142,18 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName }: GoogleSheets
 
     setSyncStatus('syncing');
     try {
-      const headers = ['Date', 'Type', 'Category', 'Amount', 'Currency', 'Description', 'Issued To', 'ID'];
-      const rows = txs.map(tx => [
+      const headers = ['ID', 'Date', 'Type', 'Category', 'Amount', 'Currency', 'Description', 'Issued To', 'DELETE'];
+      
+      // Sort transactions: newest first (by date, then by createdAt)
+      const sortedTxs = [...txs].sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        if (dateA !== dateB) return dateB - dateA;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+      
+      const rows = sortedTxs.map(tx => [
+        tx.id,
         new Date(tx.date).toLocaleDateString('pl-PL'),
         tx.type,
         getCategoryName(tx.category),
@@ -150,7 +161,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName }: GoogleSheets
         tx.currency,
         tx.description || '',
         tx.type === 'expense' ? (tx.issuedTo || '') : '',
-        tx.id,
+        '', // Placeholder for delete action
       ]);
 
       const values = [headers, ...rows];
@@ -302,9 +313,46 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName }: GoogleSheets
 
       if (error) throw error;
 
+      // Check for rows marked for deletion (column I with any value like "x", "delete", "1", etc.)
+      const rows = data?.values || [];
+      if (rows.length > 1 && onDeleteTransaction) {
+        let deletedCount = 0;
+        
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i];
+          const transactionId = row[0]; // ID is now in first column
+          const deleteMarker = row[8]?.toString().trim().toLowerCase(); // DELETE column (I)
+          
+          if (deleteMarker && deleteMarker !== '' && transactionId) {
+            try {
+              await onDeleteTransaction(transactionId);
+              deletedCount++;
+            } catch (err) {
+              console.error(`Failed to delete transaction ${transactionId}:`, err);
+            }
+          }
+        }
+        
+        if (deletedCount > 0) {
+          toast({
+            title: 'Удаление завершено',
+            description: `Удалено ${deletedCount} транзакций`,
+          });
+          
+          // Re-export to update the sheet without deleted rows
+          setTimeout(() => {
+            syncToSheets(transactions.filter(t => 
+              !rows.some((row: string[]) => row[0] === t.id && row[8]?.toString().trim())
+            ));
+          }, 500);
+          
+          return;
+        }
+      }
+
       toast({
         title: 'Импорт завершен',
-        description: `Получено ${data?.values?.length || 0} строк`,
+        description: `Получено ${rows.length - 1} строк данных`,
       });
     } catch (error) {
       console.error('Import error:', error);
