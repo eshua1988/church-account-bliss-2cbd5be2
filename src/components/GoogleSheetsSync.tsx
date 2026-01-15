@@ -26,7 +26,8 @@ interface GoogleSheetsSyncProps {
 }
 
 const AUTO_SYNC_KEY = 'google_sheets_auto_sync';
-
+const AUTO_DELETE_CHECK_KEY = 'google_sheets_auto_delete_check';
+const DELETE_CHECK_INTERVAL = 60000; // 1 minute
 export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransaction }: GoogleSheetsSyncProps) => {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -37,7 +38,12 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
     const saved = localStorage.getItem(AUTO_SYNC_KEY);
     return saved === 'true';
   });
+  const [autoDeleteCheck, setAutoDeleteCheck] = useState(() => {
+    const saved = localStorage.getItem(AUTO_DELETE_CHECK_KEY);
+    return saved === 'true';
+  });
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [lastDeleteCheckTime, setLastDeleteCheckTime] = useState<Date | null>(null);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   
   // User-specific settings
@@ -50,6 +56,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
   
   const prevTransactionsRef = useRef<string>('');
   const isFirstRender = useRef(true);
+  const deleteCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load user settings from profiles table
   useEffect(() => {
@@ -257,6 +264,115 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
     } else {
       toast({
         title: 'Автосинхронизация отключена',
+      });
+    }
+  };
+
+  // Silent check for deletions (no toast on success if no deletions)
+  const checkForDeletions = useCallback(async (silent: boolean = true) => {
+    if (!spreadsheetId || !onDeleteTransaction) return;
+    
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('google-sheets', {
+        body: {
+          action: 'read',
+          spreadsheetId: spreadsheetId,
+          range: sheetRange,
+        },
+      });
+
+      if (error) throw error;
+
+      const rows = data?.values || [];
+      if (rows.length > 1) {
+        let deletedCount = 0;
+        
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i];
+          const transactionId = row[0];
+          const deleteMarker = row[8]?.toString().trim().toLowerCase();
+          
+          if (deleteMarker && deleteMarker !== '' && transactionId) {
+            try {
+              await onDeleteTransaction(transactionId);
+              deletedCount++;
+            } catch (err) {
+              console.error(`Failed to delete transaction ${transactionId}:`, err);
+            }
+          }
+        }
+        
+        if (deletedCount > 0) {
+          toast({
+            title: 'Автоудаление',
+            description: `Удалено ${deletedCount} транзакций из Google Sheets`,
+          });
+          
+          // Re-export to update the sheet
+          setTimeout(() => {
+            syncToSheets(transactions.filter(t => 
+              !rows.some((row: string[]) => row[0] === t.id && row[8]?.toString().trim())
+            ));
+          }, 500);
+        }
+        
+        setLastDeleteCheckTime(new Date());
+      }
+    } catch (error) {
+      if (!silent) {
+        console.error('Delete check error:', error);
+      }
+    }
+  }, [spreadsheetId, sheetRange, onDeleteTransaction, syncToSheets, transactions, toast]);
+
+  // Auto delete check interval
+  useEffect(() => {
+    if (autoDeleteCheck && spreadsheetId && onDeleteTransaction) {
+      // Initial check
+      checkForDeletions(true);
+      
+      // Set up interval
+      deleteCheckIntervalRef.current = setInterval(() => {
+        checkForDeletions(true);
+      }, DELETE_CHECK_INTERVAL);
+      
+      return () => {
+        if (deleteCheckIntervalRef.current) {
+          clearInterval(deleteCheckIntervalRef.current);
+        }
+      };
+    } else {
+      if (deleteCheckIntervalRef.current) {
+        clearInterval(deleteCheckIntervalRef.current);
+      }
+    }
+  }, [autoDeleteCheck, spreadsheetId, onDeleteTransaction, checkForDeletions]);
+
+  const handleAutoDeleteCheckChange = (enabled: boolean) => {
+    if (!spreadsheetId && enabled) {
+      toast({
+        title: 'Настройте таблицу',
+        description: 'Сначала укажите ID вашей Google таблицы в настройках',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    setAutoDeleteCheck(enabled);
+    localStorage.setItem(AUTO_DELETE_CHECK_KEY, String(enabled));
+    
+    if (enabled) {
+      checkForDeletions(false);
+      toast({
+        title: 'Автопроверка удалений включена',
+        description: 'Проверка каждую минуту',
+      });
+    } else {
+      toast({
+        title: 'Автопроверка удалений отключена',
       });
     }
   };
@@ -481,22 +597,38 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
       
       {spreadsheetId && (
         <>
-          <div className="flex items-center space-x-2 p-3 bg-muted/50 rounded-lg">
-            <Switch
-              id="auto-sync"
-              checked={autoSync}
-              onCheckedChange={handleAutoSyncChange}
-            />
-            <Label htmlFor="auto-sync" className="cursor-pointer">
-              Автоматическая синхронизация
-            </Label>
+          <div className="space-y-3">
+            <div className="flex items-center space-x-2 p-3 bg-muted/50 rounded-lg">
+              <Switch
+                id="auto-sync"
+                checked={autoSync}
+                onCheckedChange={handleAutoSyncChange}
+              />
+              <Label htmlFor="auto-sync" className="cursor-pointer flex-1">
+                Автоматическая синхронизация
+              </Label>
+            </div>
+            
+            <div className="flex items-center space-x-2 p-3 bg-muted/50 rounded-lg">
+              <Switch
+                id="auto-delete-check"
+                checked={autoDeleteCheck}
+                onCheckedChange={handleAutoDeleteCheckChange}
+              />
+              <Label htmlFor="auto-delete-check" className="cursor-pointer flex-1">
+                Автопроверка удалений (каждую минуту)
+              </Label>
+            </div>
           </div>
           
-          {lastSyncTime && (
-            <p className="text-xs text-muted-foreground">
-              Последняя синхронизация: {lastSyncTime.toLocaleTimeString('pl-PL')}
-            </p>
-          )}
+          <div className="text-xs text-muted-foreground space-y-1">
+            {lastSyncTime && (
+              <p>Последняя синхронизация: {lastSyncTime.toLocaleTimeString('pl-PL')}</p>
+            )}
+            {lastDeleteCheckTime && autoDeleteCheck && (
+              <p>Последняя проверка удалений: {lastDeleteCheckTime.toLocaleTimeString('pl-PL')}</p>
+            )}
+          </div>
         </>
       )}
       
