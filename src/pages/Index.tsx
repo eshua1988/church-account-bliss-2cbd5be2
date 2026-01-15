@@ -259,7 +259,11 @@ const Index = () => {
               </div>
               <Separator />
               <div className="bg-card rounded-lg p-6 shadow-card">
-                <GoogleSheetsSync transactions={transactions} getCategoryName={getCategoryName} />
+                <GoogleSheetsSync 
+                  transactions={transactions} 
+                  getCategoryName={getCategoryName} 
+                  onDeleteTransaction={deleteTransaction}
+                />
               </div>
             </div>
           )}
