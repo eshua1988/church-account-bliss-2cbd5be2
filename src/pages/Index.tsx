@@ -164,14 +164,14 @@ const Index = () => {
       <div className="flex-1">
         <Header />
         
-        <main className="container mx-auto px-4 py-8">
+        <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
           {/* Controls Row */}
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
             <div className="flex items-center gap-2">
-              <CurrencySelector value={selectedCurrency} onChange={setSelectedCurrency} className="w-[180px]" availableCurrencies={visibleCurrencies} />
+              <CurrencySelector value={selectedCurrency} onChange={setSelectedCurrency} className="w-full sm:w-[180px]" availableCurrencies={visibleCurrencies} />
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex items-center gap-2">
+              <div className="hidden sm:flex items-center gap-2">
                 <Button 
                   variant="outline" 
                   className="font-semibold"
@@ -184,9 +184,9 @@ const Index = () => {
               </div>
               <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button className="gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200">{t('addTransaction')}</Button>
+                  <Button className="gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200 w-full sm:w-auto">{t('addTransaction')}</Button>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-hidden flex flex-col">
+                <DialogContent className="sm:max-w-[500px] max-h-[90vh] w-[95vw] overflow-hidden flex flex-col">
                   <DialogHeader><DialogTitle>{t('newTransaction')}</DialogTitle></DialogHeader>
                   <div className="overflow-y-auto flex-1 pr-2">
                     <TransactionForm onSubmit={handleAddTransaction} incomeCategories={getIncomeCategories()} expenseCategories={getExpenseCategories()} />
@@ -213,14 +213,18 @@ const Index = () => {
           {activeTab === 'statistics' && (
             <div className="animate-fade-in">
               <Tabs defaultValue="table" className="w-full">
-                <TabsList className="mb-4">
-                  <TabsTrigger value="table">{t('transactionsTable')}</TabsTrigger>
-                  <TabsTrigger value="bar">{t('incomeVsExpenses')}</TabsTrigger>
-                  <TabsTrigger value="line">{t('balanceOverTime')}</TabsTrigger>
-                  <TabsTrigger value="pie">{t('categoryDistribution')}</TabsTrigger>
+                <TabsList className="mb-4 flex-wrap h-auto gap-1 p-1">
+                  <TabsTrigger value="table" className="text-xs sm:text-sm">{t('transactionsTable')}</TabsTrigger>
+                  <TabsTrigger value="bar" className="text-xs sm:text-sm">{t('incomeVsExpenses')}</TabsTrigger>
+                  <TabsTrigger value="line" className="text-xs sm:text-sm">{t('balanceOverTime')}</TabsTrigger>
+                  <TabsTrigger value="pie" className="text-xs sm:text-sm">{t('categoryDistribution')}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="table">
-                  <StatisticsTable transactions={transactions} getCategoryName={getCategoryName} onDelete={handleDeleteTransaction} />
+                  <div className="overflow-x-auto -mx-3 sm:mx-0">
+                    <div className="min-w-[600px] sm:min-w-0 px-3 sm:px-0">
+                      <StatisticsTable transactions={transactions} getCategoryName={getCategoryName} onDelete={handleDeleteTransaction} />
+                    </div>
+                  </div>
                 </TabsContent>
                 <TabsContent value="bar"><IncomeExpenseBarChart data={monthlyData} currency={selectedCurrency} /></TabsContent>
                 <TabsContent value="line">
@@ -230,7 +234,7 @@ const Index = () => {
                   <BalanceLineChart data={monthlyData} currency={selectedCurrency} startDate={period.from} endDate={period.to} />
                 </TabsContent>
                 <TabsContent value="pie">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4">
                     <CategoryPieChart data={incomeByCategory} getCategoryName={getCategoryName} type="income" />
                     <CategoryPieChart data={expenseByCategory} getCategoryName={getCategoryName} type="expense" />
                   </div>
@@ -241,14 +245,14 @@ const Index = () => {
 
           {/* Settings Tab */}
           {activeTab === 'settings' && (
-            <div className="animate-fade-in space-y-6">
-              <div className="bg-card rounded-lg p-6 shadow-card">
-                <h4 className="font-semibold text-lg mb-4">{t('currencySettings')}</h4>
+            <div className="animate-fade-in space-y-4 sm:space-y-6">
+              <div className="bg-card rounded-lg p-4 sm:p-6 shadow-card">
+                <h4 className="font-semibold text-base sm:text-lg mb-3 sm:mb-4">{t('currencySettings')}</h4>
                 <CurrencySettingsContent visibleCurrencies={visibleCurrencies} onVisibleCurrenciesChange={handleVisibleCurrenciesChange} />
               </div>
               <Separator />
-              <div className="bg-card rounded-lg p-6 shadow-card">
-                <h4 className="font-semibold text-lg mb-4">{t('categoryManagement')}</h4>
+              <div className="bg-card rounded-lg p-4 sm:p-6 shadow-card">
+                <h4 className="font-semibold text-base sm:text-lg mb-3 sm:mb-4">{t('categoryManagement')}</h4>
                 <CategoryManager 
                   categories={categories} 
                   onAdd={handleAddCategory} 
@@ -258,7 +262,7 @@ const Index = () => {
                 />
               </div>
               <Separator />
-              <div className="bg-card rounded-lg p-6 shadow-card">
+              <div className="bg-card rounded-lg p-4 sm:p-6 shadow-card">
                 <GoogleSheetsSync 
                   transactions={transactions} 
                   getCategoryName={getCategoryName} 
