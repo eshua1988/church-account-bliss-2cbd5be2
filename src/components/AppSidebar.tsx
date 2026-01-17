@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Wallet, BarChart3, Settings, ChevronLeft, ChevronRight, Menu } from 'lucide-react';
+import { Wallet, BarChart3, Settings, ChevronLeft, ChevronRight, Menu, FileText } from 'lucide-react';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -12,8 +12,8 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 interface AppSidebarProps {
-  activeTab: 'balance' | 'statistics' | 'settings';
-  onTabChange: (tab: 'balance' | 'statistics' | 'settings') => void;
+  activeTab: 'balance' | 'statistics' | 'payout' | 'settings';
+  onTabChange: (tab: 'balance' | 'statistics' | 'payout' | 'settings') => void;
 }
 
 export const AppSidebar = ({ activeTab, onTabChange }: AppSidebarProps) => {
@@ -25,10 +25,11 @@ export const AppSidebar = ({ activeTab, onTabChange }: AppSidebarProps) => {
   const menuItems = [
     { id: 'balance' as const, icon: Wallet, label: t('balanceByCurrency') },
     { id: 'statistics' as const, icon: BarChart3, label: t('statistics') },
+    { id: 'payout' as const, icon: FileText, label: t('payoutGenerator') },
     { id: 'settings' as const, icon: Settings, label: t('settings') },
   ];
 
-  const handleTabChange = (tab: 'balance' | 'statistics' | 'settings') => {
+  const handleTabChange = (tab: 'balance' | 'statistics' | 'payout' | 'settings') => {
     onTabChange(tab);
     if (isMobile) {
       setMobileOpen(false);

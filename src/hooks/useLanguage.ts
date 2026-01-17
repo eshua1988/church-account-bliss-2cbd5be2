@@ -638,6 +638,86 @@ export const translations = {
     en: 'Export',
     uk: 'Експортувати',
   },
+  
+  // Payout Generator
+  payoutGenerator: {
+    pl: 'Generator dowodu',
+    ru: 'Генератор документа',
+    en: 'Payout Generator',
+    uk: 'Генератор документа',
+  },
+  payoutGeneratorTitle: {
+    pl: 'Generator Dowód wypłaty',
+    ru: 'Генератор Dowód wypłaty',
+    en: 'Payout Voucher Generator',
+    uk: 'Генератор Dowód wypłaty',
+  },
+  requiredFields: {
+    pl: 'Pola obowiązkowe do wypełnienia',
+    ru: 'Обязательные поля для заполнения',
+    en: 'Required fields',
+    uk: 'Обов\'язкові поля для заповнення',
+  },
+  payoutIssuedTo: {
+    pl: 'Wydano (imię i nazwisko)',
+    ru: 'Выдано (имя и фамилия)',
+    en: 'Issued to (full name)',
+    uk: 'Видано (ім\'я та прізвище)',
+  },
+  payoutBankAccount: {
+    pl: 'Konto do przelewu (numer telefonu lub konto bankowe)',
+    ru: 'Счет для перевода (номер телефона или банковский счет)',
+    en: 'Transfer account (phone number or bank account)',
+    uk: 'Рахунок для переказу (номер телефону або банківський рахунок)',
+  },
+  payoutBankAccountPlaceholder: {
+    pl: 'Wpisz numer konta lub telefonu...',
+    ru: 'Введите номер счета или телефона...',
+    en: 'Enter account or phone number...',
+    uk: 'Введіть номер рахунку або телефону...',
+  },
+  payoutDepartmentName: {
+    pl: 'Nazwa oddziału',
+    ru: 'Название отдела',
+    en: 'Department name',
+    uk: 'Назва відділу',
+  },
+  payoutDepartmentPlaceholder: {
+    pl: 'Wpisz nazwę oddziału...',
+    ru: 'Введите название отдела...',
+    en: 'Enter department name...',
+    uk: 'Введіть назву відділу...',
+  },
+  payoutBasis: {
+    pl: 'Podstawa (na jakie potrzeby)',
+    ru: 'Основание (для каких потребностей)',
+    en: 'Basis (for what needs)',
+    uk: 'Підстава (для яких потреб)',
+  },
+  payoutBasisPlaceholder: {
+    pl: 'Wpisz podstawę wypłaty...',
+    ru: 'Введите основание выплаты...',
+    en: 'Enter payout basis...',
+    uk: 'Введіть підставу виплати...',
+  },
+  payoutSignature: {
+    pl: 'Podpis odbiorcy',
+    ru: 'Подпись получателя',
+    en: 'Recipient signature',
+    uk: 'Підпис отримувача',
+  },
+  payoutClearSignature: {
+    pl: 'Wyczyść',
+    ru: 'Очистить',
+    en: 'Clear',
+    uk: 'Очистити',
+  },
+  payoutGeneratePDF: {
+    pl: 'Generuj PDF',
+    ru: 'Сгенерировать PDF',
+    en: 'Generate PDF',
+    uk: 'Згенерувати PDF',
+  },
 } as const;
 
 export type TranslationKey = keyof typeof translations;
