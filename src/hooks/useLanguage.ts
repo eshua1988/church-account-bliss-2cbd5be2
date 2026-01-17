@@ -718,6 +718,18 @@ export const translations = {
     en: 'Generate PDF',
     uk: 'Згенерувати PDF',
   },
+  payoutGenerateAndSave: {
+    pl: 'Generuj i zapisz',
+    ru: 'Сгенерировать и сохранить',
+    en: 'Generate and Save',
+    uk: 'Згенерувати і зберегти',
+  },
+  transactionSaved: {
+    pl: 'Transakcja zapisana',
+    ru: 'Транзакция сохранена',
+    en: 'Transaction saved',
+    uk: 'Транзакцію збережено',
+  },
 } as const;
 
 export type TranslationKey = keyof typeof translations;

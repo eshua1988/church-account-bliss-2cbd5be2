@@ -1,6 +1,6 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { format } from 'date-fns';
-import { Calendar, Eraser, Download, FileText } from 'lucide-react';
+import { Calendar, Eraser, Download, Save, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,6 +12,12 @@ import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
 import jsPDF from 'jspdf';
+import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
+import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
+import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
 
 interface PayoutFormData {
   date: Date;
@@ -24,11 +30,33 @@ interface PayoutFormData {
   amountInWords: string;
 }
 
+// Helper function to load font as base64
+const loadFontAsBase64 = async (url: string): Promise<string> => {
+  const response = await fetch(url);
+  const blob = await response.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = (reader.result as string).split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
+
 export const PayoutGenerator = () => {
   const { t, language } = useTranslation();
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const { addTransaction } = useSupabaseTransactions();
+  const { getExpenseCategories } = useSupabaseCategories();
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [fontLoaded, setFontLoaded] = useState(false);
+  const [fontBase64, setFontBase64] = useState<string | null>(null);
   
   const [formData, setFormData] = useState<PayoutFormData>({
     date: new Date(),
@@ -40,6 +68,21 @@ export const PayoutGenerator = () => {
     basis: '',
     amountInWords: '',
   });
+
+  // Load Roboto font for PDF
+  useEffect(() => {
+    const loadFont = async () => {
+      try {
+        const base64 = await loadFontAsBase64('/fonts/Roboto-Regular.ttf');
+        setFontBase64(base64);
+        setFontLoaded(true);
+      } catch (error) {
+        console.error('Failed to load font:', error);
+        setFontLoaded(true); // Continue without custom font
+      }
+    };
+    loadFont();
+  }, []);
 
   const currencies = [
     { value: 'PLN', label: 'zł' },
@@ -122,14 +165,19 @@ export const PayoutGenerator = () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     
+    // Add custom font for Cyrillic/Polish support
+    if (fontBase64) {
+      doc.addFileToVFS('Roboto-Regular.ttf', fontBase64);
+      doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
+      doc.setFont('Roboto');
+    }
+    
     // Title
     doc.setFontSize(18);
-    doc.setFont('helvetica', 'bold');
     doc.text('Dowód wypłaty', pageWidth / 2, 25, { align: 'center' });
     
     // Subtitle
     doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
     doc.text('ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE', pageWidth / 2, 35, { align: 'center' });
     
     let yPos = 55;
@@ -191,6 +239,80 @@ export const PayoutGenerator = () => {
     // Save PDF
     const fileName = `dowod_wyplaty_${format(formData.date, 'yyyy-MM-dd')}_${formData.issuedTo.replace(/\s/g, '_') || 'dokument'}.pdf`;
     doc.save(fileName);
+  };
+
+  // Save transaction to database and sync to Google Sheets
+  const saveAsTransaction = async () => {
+    if (!user) {
+      toast({
+        title: 'Ошибка',
+        description: 'Пожалуйста, войдите в систему',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsSaving(true);
+    
+    try {
+      // Get expense categories and find "other" or first available
+      const expenseCategories = getExpenseCategories();
+      const categoryId = expenseCategories.find(c => c.name.toLowerCase().includes('other') || c.name.toLowerCase().includes('inne') || c.name.toLowerCase().includes('другое'))?.id 
+        || expenseCategories[0]?.id 
+        || 'other';
+
+      // Add transaction to database
+      await addTransaction({
+        type: 'expense',
+        amount: parseFloat(formData.amount),
+        currency: formData.currency as Currency,
+        category: categoryId as any,
+        description: formData.basis,
+        date: formData.date,
+        issuedTo: formData.issuedTo,
+        amountInWords: formData.amountInWords,
+      });
+
+      // Sync to Google Sheets if configured
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('spreadsheet_id')
+            .eq('user_id', user.id)
+            .single();
+
+          // Show success - auto-sync will handle Google Sheets if configured
+          toast({
+            title: t('payoutGenerateAndSave'),
+            description: `${formData.amount} ${CURRENCY_SYMBOLS[formData.currency as Currency]} - ${formData.issuedTo}`,
+          });
+        }
+      } catch (sheetError) {
+        console.error('Sheet sync error:', sheetError);
+        // Still show success for database save
+        toast({
+          title: t('payoutGenerateAndSave'),
+          description: `${formData.amount} ${CURRENCY_SYMBOLS[formData.currency as Currency]} - ${formData.issuedTo}`,
+        });
+      }
+    } catch (error) {
+      console.error('Save error:', error);
+      toast({
+        title: 'Ошибка сохранения',
+        description: error instanceof Error ? error.message : 'Не удалось сохранить транзакцию',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Generate PDF and save transaction
+  const handleGenerateAndSave = async () => {
+    generatePDF();
+    await saveAsTransaction();
   };
 
   const isFormValid = formData.amount && formData.issuedTo && formData.departmentName && formData.basis && formData.amountInWords;
@@ -277,7 +399,7 @@ export const PayoutGenerator = () => {
           
           {/* Bank Account */}
           <div className="space-y-2">
-            <Label>{t('payoutBankAccount')} *</Label>
+            <Label>{t('payoutBankAccount')}</Label>
             <Input
               placeholder={t('payoutBankAccountPlaceholder')}
               value={formData.bankAccount}
@@ -349,16 +471,33 @@ export const PayoutGenerator = () => {
             </div>
           </div>
           
-          {/* Generate Button */}
-          <Button
-            onClick={generatePDF}
-            disabled={!isFormValid || !hasSignature}
-            className="w-full gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200"
-            size="lg"
-          >
-            <Download className="w-5 h-5 mr-2" />
-            {t('payoutGeneratePDF')}
-          </Button>
+          {/* Buttons */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button
+              onClick={generatePDF}
+              disabled={!isFormValid || !hasSignature || !fontLoaded}
+              variant="outline"
+              className="flex-1"
+              size="lg"
+            >
+              <Download className="w-5 h-5 mr-2" />
+              {t('payoutGeneratePDF')}
+            </Button>
+            
+            <Button
+              onClick={handleGenerateAndSave}
+              disabled={!isFormValid || !hasSignature || isSaving || !fontLoaded}
+              className="flex-1 gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200"
+              size="lg"
+            >
+              {isSaving ? (
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+              ) : (
+                <Save className="w-5 h-5 mr-2" />
+              )}
+              {t('payoutGenerateAndSave')}
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
