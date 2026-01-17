@@ -9,6 +9,7 @@ import { CategoryPieChart } from '@/components/charts/CategoryPieChart';
 import { BalanceLineChart } from '@/components/charts/BalanceLineChart';
 import { IncomeExpenseBarChart } from '@/components/charts/IncomeExpenseBarChart';
 import { StatisticsTable } from '@/components/StatisticsTable';
+import { PayoutGenerator } from '@/components/PayoutGenerator';
 import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { useTranslation } from '@/contexts/LanguageContext';
@@ -37,7 +38,7 @@ const Index = () => {
   const [selectedCurrency, setSelectedCurrency] = useState<Currency>('PLN');
   const [visibleCurrencies, setVisibleCurrencies] = useState<Currency[]>(loadVisibleCurrencies);
   const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'balance' | 'statistics' | 'settings'>('balance');
+  const [activeTab, setActiveTab] = useState<'balance' | 'statistics' | 'payout' | 'settings'>('balance');
   const { toast } = useToast();
   
   const {
@@ -165,36 +166,30 @@ const Index = () => {
         <Header />
         
         <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
-          {/* Controls Row */}
-          <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-            <div className="flex items-center gap-2">
-              <CurrencySelector value={selectedCurrency} onChange={setSelectedCurrency} className="w-full sm:w-[180px]" availableCurrencies={visibleCurrencies} />
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="hidden sm:flex items-center gap-2">
-                <Button 
-                  variant="outline" 
-                  className="font-semibold"
-                  onClick={() => window.open('https://3eqp.github.io/pdf-billing-form-builder/', '_blank')}
-                >
-                  <FileText className="w-4 h-4 mr-2" />
-                  Dowód wypłaty
-                </Button>
-                <ImportPayout />
+          {/* Controls Row - only show for balance and statistics tabs */}
+          {(activeTab === 'balance' || activeTab === 'statistics') && (
+            <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+              <div className="flex items-center gap-2">
+                <CurrencySelector value={selectedCurrency} onChange={setSelectedCurrency} className="w-full sm:w-[180px]" availableCurrencies={visibleCurrencies} />
               </div>
-              <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button className="gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200 w-full sm:w-auto">{t('addTransaction')}</Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[500px] max-h-[90vh] w-[95vw] overflow-hidden flex flex-col">
-                  <DialogHeader><DialogTitle>{t('newTransaction')}</DialogTitle></DialogHeader>
-                  <div className="overflow-y-auto flex-1 pr-2">
-                    <TransactionForm onSubmit={handleAddTransaction} incomeCategories={getIncomeCategories()} expenseCategories={getExpenseCategories()} />
-                  </div>
-                </DialogContent>
-              </Dialog>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="hidden sm:flex items-center gap-2">
+                  <ImportPayout />
+                </div>
+                <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button className="gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200 w-full sm:w-auto">{t('addTransaction')}</Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[500px] max-h-[90vh] w-[95vw] overflow-hidden flex flex-col">
+                    <DialogHeader><DialogTitle>{t('newTransaction')}</DialogTitle></DialogHeader>
+                    <div className="overflow-y-auto flex-1 pr-2">
+                      <TransactionForm onSubmit={handleAddTransaction} incomeCategories={getIncomeCategories()} expenseCategories={getExpenseCategories()} />
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Balance Tab */}
           {activeTab === 'balance' && (
@@ -241,6 +236,11 @@ const Index = () => {
                 </TabsContent>
               </Tabs>
             </div>
+          )}
+
+          {/* Payout Generator Tab */}
+          {activeTab === 'payout' && (
+            <PayoutGenerator />
           )}
 
           {/* Settings Tab */}
