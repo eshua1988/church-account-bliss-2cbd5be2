@@ -407,14 +407,24 @@ export const PayoutGenerator = () => {
             />
           </div>
           
-          {/* Department Name */}
+          {/* Department Name - Select from expense categories */}
           <div className="space-y-2">
             <Label>{t('payoutDepartmentName')} *</Label>
-            <Input
-              placeholder={t('payoutDepartmentPlaceholder')}
-              value={formData.departmentName}
-              onChange={(e) => handleInputChange('departmentName', e.target.value)}
-            />
+            <Select 
+              value={formData.departmentName} 
+              onValueChange={(v) => handleInputChange('departmentName', v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={t('selectCategory')} />
+              </SelectTrigger>
+              <SelectContent className="bg-popover">
+                {getExpenseCategories().map((category) => (
+                  <SelectItem key={category.id} value={category.name}>
+                    {category.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           
           {/* Basis */}
