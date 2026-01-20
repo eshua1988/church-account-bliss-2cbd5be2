@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { format } from 'date-fns';
-import { Calendar, Eraser, Download, Save, Loader2 } from 'lucide-react';
+import { Calendar, Eraser, Save, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -612,12 +612,13 @@ export const PayoutGenerator = () => {
                 {t('payoutClearSignature')}
               </Button>
             </div>
-            <div className="border-2 border-dashed border-border rounded-lg bg-background">
+            <div className="border-2 border-dashed border-border rounded-lg bg-white">
               <canvas
                 ref={signatureCanvasRef}
                 width={600}
                 height={150}
-                className="w-full h-32 cursor-crosshair touch-none"
+                className="w-full h-32 cursor-crosshair touch-none rounded-lg"
+                style={{ backgroundColor: 'white' }}
                 onMouseDown={startDrawing}
                 onMouseMove={draw}
                 onMouseUp={stopDrawing}
@@ -629,23 +630,12 @@ export const PayoutGenerator = () => {
             </div>
           </div>
           
-          {/* Buttons */}
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Button
-              onClick={generatePDF}
-              disabled={!isFormValid || !hasSignature || !fontLoaded}
-              variant="outline"
-              className="flex-1"
-              size="lg"
-            >
-              <Download className="w-5 h-5 mr-2" />
-              {t('payoutGeneratePDF')}
-            </Button>
-            
+          {/* Button */}
+          <div className="flex">
             <Button
               onClick={handleGenerateAndSave}
               disabled={!isFormValid || !hasSignature || isSaving || !fontLoaded}
-              className="flex-1 gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200"
+              className="w-full gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200"
               size="lg"
             >
               {isSaving ? (
