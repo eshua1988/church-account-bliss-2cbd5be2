@@ -45,6 +45,139 @@ const loadFontAsBase64 = async (url: string): Promise<string> => {
   });
 };
 
+// Number to words conversion for multiple languages
+const numberToWords = (num: number, currency: string, lang: string): string => {
+  if (isNaN(num) || num === 0) return '';
+  
+  const currencyNames: Record<string, Record<string, { singular: string; plural: string; genitive: string }>> = {
+    PLN: {
+      pl: { singular: 'złoty', plural: 'złotych', genitive: 'złote' },
+      ru: { singular: 'злотый', plural: 'злотых', genitive: 'злотых' },
+      uk: { singular: 'злотий', plural: 'злотих', genitive: 'злотих' },
+      en: { singular: 'zloty', plural: 'zlotys', genitive: 'zlotys' },
+    },
+    EUR: {
+      pl: { singular: 'euro', plural: 'euro', genitive: 'euro' },
+      ru: { singular: 'евро', plural: 'евро', genitive: 'евро' },
+      uk: { singular: 'євро', plural: 'євро', genitive: 'євро' },
+      en: { singular: 'euro', plural: 'euros', genitive: 'euros' },
+    },
+    USD: {
+      pl: { singular: 'dolar', plural: 'dolarów', genitive: 'dolary' },
+      ru: { singular: 'доллар', plural: 'долларов', genitive: 'доллара' },
+      uk: { singular: 'долар', plural: 'доларів', genitive: 'долари' },
+      en: { singular: 'dollar', plural: 'dollars', genitive: 'dollars' },
+    },
+    UAH: {
+      pl: { singular: 'hrywna', plural: 'hrywien', genitive: 'hrywny' },
+      ru: { singular: 'гривна', plural: 'гривен', genitive: 'гривны' },
+      uk: { singular: 'гривня', plural: 'гривень', genitive: 'гривні' },
+      en: { singular: 'hryvnia', plural: 'hryvnias', genitive: 'hryvnias' },
+    },
+    RUB: {
+      pl: { singular: 'rubel', plural: 'rubli', genitive: 'ruble' },
+      ru: { singular: 'рубль', plural: 'рублей', genitive: 'рубля' },
+      uk: { singular: 'рубль', plural: 'рублів', genitive: 'рублі' },
+      en: { singular: 'ruble', plural: 'rubles', genitive: 'rubles' },
+    },
+    BYN: {
+      pl: { singular: 'rubel białoruski', plural: 'rubli białoruskich', genitive: 'ruble białoruskie' },
+      ru: { singular: 'белорусский рубль', plural: 'белорусских рублей', genitive: 'белорусских рубля' },
+      uk: { singular: 'білоруський рубль', plural: 'білоруських рублів', genitive: 'білоруських рублі' },
+      en: { singular: 'Belarusian ruble', plural: 'Belarusian rubles', genitive: 'Belarusian rubles' },
+    },
+  };
+
+  const ones: Record<string, string[]> = {
+    pl: ['', 'jeden', 'dwa', 'trzy', 'cztery', 'pięć', 'sześć', 'siedem', 'osiem', 'dziewięć', 'dziesięć', 'jedenaście', 'dwanaście', 'trzynaście', 'czternaście', 'piętnaście', 'szesnaście', 'siedemnaście', 'osiemnaście', 'dziewiętnaście'],
+    ru: ['', 'один', 'два', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять', 'десять', 'одиннадцать', 'двенадцать', 'тринадцать', 'четырнадцать', 'пятнадцать', 'шестнадцать', 'семнадцать', 'восемнадцать', 'девятнадцать'],
+    uk: ['', 'один', 'два', 'три', 'чотири', 'п\'ять', 'шість', 'сім', 'вісім', 'дев\'ять', 'десять', 'одинадцять', 'дванадцять', 'тринадцять', 'чотирнадцять', 'п\'ятнадцять', 'шістнадцять', 'сімнадцять', 'вісімнадцять', 'дев\'ятнадцять'],
+    en: ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'],
+  };
+
+  const tens: Record<string, string[]> = {
+    pl: ['', '', 'dwadzieścia', 'trzydzieści', 'czterdzieści', 'pięćdziesiąt', 'sześćdziesiąt', 'siedemdziesiąt', 'osiemdziesiąt', 'dziewięćdziesiąt'],
+    ru: ['', '', 'двадцать', 'тридцать', 'сорок', 'пятьдесят', 'шестьдесят', 'семьдесят', 'восемьдесят', 'девяносто'],
+    uk: ['', '', 'двадцять', 'тридцять', 'сорок', 'п\'ятдесят', 'шістдесят', 'сімдесят', 'вісімдесят', 'дев\'яносто'],
+    en: ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'],
+  };
+
+  const hundreds: Record<string, string[]> = {
+    pl: ['', 'sto', 'dwieście', 'trzysta', 'czterysta', 'pięćset', 'sześćset', 'siedemset', 'osiemset', 'dziewięćset'],
+    ru: ['', 'сто', 'двести', 'триста', 'четыреста', 'пятьсот', 'шестьсот', 'семьсот', 'восемьсот', 'девятьсот'],
+    uk: ['', 'сто', 'двісті', 'триста', 'чотириста', 'п\'ятсот', 'шістсот', 'сімсот', 'вісімсот', 'дев\'ятсот'],
+    en: ['', 'one hundred', 'two hundred', 'three hundred', 'four hundred', 'five hundred', 'six hundred', 'seven hundred', 'eight hundred', 'nine hundred'],
+  };
+
+  const thousands: Record<string, { singular: string; plural: string; genitive: string }> = {
+    pl: { singular: 'tysiąc', plural: 'tysięcy', genitive: 'tysiące' },
+    ru: { singular: 'тысяча', plural: 'тысяч', genitive: 'тысячи' },
+    uk: { singular: 'тисяча', plural: 'тисяч', genitive: 'тисячі' },
+    en: { singular: 'thousand', plural: 'thousand', genitive: 'thousand' },
+  };
+
+  const l = lang in ones ? lang : 'en';
+  const intPart = Math.floor(num);
+  const decPart = Math.round((num - intPart) * 100);
+  
+  const convertHundreds = (n: number): string => {
+    if (n === 0) return '';
+    if (n < 20) return ones[l][n];
+    if (n < 100) {
+      const t = Math.floor(n / 10);
+      const o = n % 10;
+      return tens[l][t] + (o > 0 ? ' ' + ones[l][o] : '');
+    }
+    const h = Math.floor(n / 100);
+    const rest = n % 100;
+    return hundreds[l][h] + (rest > 0 ? ' ' + convertHundreds(rest) : '');
+  };
+
+  const getThousandWord = (n: number): string => {
+    const lastTwo = n % 100;
+    const lastOne = n % 10;
+    if (lastTwo >= 11 && lastTwo <= 19) return thousands[l].plural;
+    if (lastOne === 1) return thousands[l].singular;
+    if (lastOne >= 2 && lastOne <= 4) return thousands[l].genitive;
+    return thousands[l].plural;
+  };
+
+  const getCurrencyWord = (n: number): string => {
+    const lastTwo = n % 100;
+    const lastOne = n % 10;
+    const curr = currencyNames[currency]?.[l] || currencyNames['PLN'][l];
+    if (lastTwo >= 11 && lastTwo <= 19) return curr.plural;
+    if (lastOne === 1) return curr.singular;
+    if (lastOne >= 2 && lastOne <= 4) return curr.genitive;
+    return curr.plural;
+  };
+
+  let result = '';
+  const th = Math.floor(intPart / 1000);
+  const rest = intPart % 1000;
+
+  if (th > 0) {
+    result += convertHundreds(th) + ' ' + getThousandWord(th) + ' ';
+  }
+  if (rest > 0 || th === 0) {
+    result += convertHundreds(rest);
+  }
+
+  result = result.trim() + ' ' + getCurrencyWord(intPart);
+
+  if (decPart > 0) {
+    const copeckWords: Record<string, string> = {
+      pl: 'groszy',
+      ru: 'копеек',
+      uk: 'копійок',
+      en: 'cents',
+    };
+    result += ` ${decPart}/100 ${copeckWords[l] || 'cents'}`;
+  }
+
+  return result.charAt(0).toUpperCase() + result.slice(1);
+};
+
 export const PayoutGenerator = () => {
   const { t, language } = useTranslation();
   const { toast } = useToast();
@@ -68,6 +201,19 @@ export const PayoutGenerator = () => {
     basis: '',
     amountInWords: '',
   });
+
+  // Auto-generate amount in words when amount or currency changes
+  useEffect(() => {
+    if (formData.amount) {
+      const numAmount = parseFloat(formData.amount);
+      if (!isNaN(numAmount) && numAmount > 0) {
+        const words = numberToWords(numAmount, formData.currency, language);
+        setFormData(prev => ({ ...prev, amountInWords: words }));
+      }
+    } else {
+      setFormData(prev => ({ ...prev, amountInWords: '' }));
+    }
+  }, [formData.amount, formData.currency, language]);
 
   // Load Roboto font for PDF
   useEffect(() => {
@@ -94,6 +240,7 @@ export const PayoutGenerator = () => {
   ];
 
   const handleInputChange = (field: keyof PayoutFormData, value: string | Date) => {
+    if (field === 'amountInWords') return; // Prevent manual editing
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -438,14 +585,15 @@ export const PayoutGenerator = () => {
             />
           </div>
           
-          {/* Amount in Words */}
+          {/* Amount in Words - Auto-generated, read-only */}
           <div className="space-y-2">
             <Label>{t('amountInWords')} *</Label>
             <Textarea
-              placeholder={t('enterAmountInWords')}
+              placeholder={formData.amount ? '' : t('enterAmountInWords')}
               value={formData.amountInWords}
-              onChange={(e) => handleInputChange('amountInWords', e.target.value)}
+              readOnly
               rows={2}
+              className="bg-muted cursor-not-allowed"
             />
           </div>
           
