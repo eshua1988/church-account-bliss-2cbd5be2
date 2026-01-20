@@ -30,6 +30,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { AppSidebar } from '@/components/AppSidebar';
 import { GoogleSheetsSync } from '@/components/GoogleSheetsSync';
+import { SharePayoutLink } from '@/components/SharePayoutLink';
 
 const currencies: Currency[] = ['RUB', 'USD', 'EUR', 'UAH', 'BYN', 'PLN'];
 
@@ -240,7 +241,10 @@ const Index = () => {
 
           {/* Payout Generator Tab */}
           {activeTab === 'payout' && (
-            <PayoutGenerator />
+            <div className="animate-fade-in space-y-6">
+              <PayoutGenerator />
+              <SharePayoutLink />
+            </div>
           )}
 
           {/* Settings Tab */}

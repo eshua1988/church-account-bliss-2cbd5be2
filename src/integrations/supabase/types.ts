@@ -77,6 +77,36 @@ export type Database = {
         }
         Relationships: []
       }
+      shared_payout_links: {
+        Row: {
+          created_at: string
+          expires_at: string | null
+          id: string
+          is_active: boolean
+          name: string | null
+          owner_user_id: string
+          token: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string | null
+          owner_user_id: string
+          token: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string | null
+          owner_user_id?: string
+          token?: string
+        }
+        Relationships: []
+      }
       transactions: {
         Row: {
           amount: number
