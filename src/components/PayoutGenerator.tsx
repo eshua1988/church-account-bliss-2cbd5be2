@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { format } from 'date-fns';
-import { Calendar, Eraser, Save, Loader2 } from 'lucide-react';
+import { Calendar, Eraser, Save, Loader2, ImagePlus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,6 +18,11 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
+
+interface AttachedImage {
+  file: File;
+  preview: string;
+}
 
 interface PayoutFormData {
   date: Date;
@@ -185,11 +190,13 @@ export const PayoutGenerator = () => {
   const { addTransaction } = useSupabaseTransactions();
   const { getExpenseCategories } = useSupabaseCategories();
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [fontLoaded, setFontLoaded] = useState(false);
   const [fontBase64, setFontBase64] = useState<string | null>(null);
+  const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   
   const [formData, setFormData] = useState<PayoutFormData>({
     date: new Date(),
@@ -308,9 +315,47 @@ export const PayoutGenerator = () => {
     setHasSignature(false);
   };
 
-  const generatePDF = () => {
+  // Image attachment handlers
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    const newImages: AttachedImage[] = [];
+    Array.from(files).forEach(file => {
+      if (file.type.startsWith('image/')) {
+        const preview = URL.createObjectURL(file);
+        newImages.push({ file, preview });
+      }
+    });
+
+    setAttachedImages(prev => [...prev, ...newImages]);
+    
+    // Reset input to allow selecting same files again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setAttachedImages(prev => {
+      const newImages = [...prev];
+      URL.revokeObjectURL(newImages[index].preview);
+      newImages.splice(index, 1);
+      return newImages;
+    });
+  };
+
+  // Cleanup previews on unmount
+  useEffect(() => {
+    return () => {
+      attachedImages.forEach(img => URL.revokeObjectURL(img.preview));
+    };
+  }, []);
+
+  const generatePDF = async () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
     
     // Add custom font for Cyrillic/Polish support
     if (fontBase64) {
@@ -381,6 +426,47 @@ export const PayoutGenerator = () => {
     if (hasSignature && signatureCanvasRef.current) {
       const signatureData = signatureCanvasRef.current.toDataURL('image/png');
       doc.addImage(signatureData, 'PNG', leftMargin, yPos, 80, 30);
+    }
+
+    // Add each attached image on a new page
+    for (const img of attachedImages) {
+      doc.addPage();
+      
+      // Read the image file
+      const imageData = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(img.file);
+      });
+
+      // Get image dimensions to maintain aspect ratio
+      const imgElement = await new Promise<HTMLImageElement>((resolve) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.src = imageData;
+      });
+
+      const imgWidth = imgElement.width;
+      const imgHeight = imgElement.height;
+      
+      // Calculate dimensions to fit within page margins
+      const maxWidth = pageWidth - 2 * leftMargin;
+      const maxHeight = pageHeight - 40; // 20mm margin top and bottom
+      
+      let finalWidth = maxWidth;
+      let finalHeight = (imgHeight / imgWidth) * finalWidth;
+      
+      if (finalHeight > maxHeight) {
+        finalHeight = maxHeight;
+        finalWidth = (imgWidth / imgHeight) * finalHeight;
+      }
+      
+      // Center the image on the page
+      const xPos = (pageWidth - finalWidth) / 2;
+      const yPos = (pageHeight - finalHeight) / 2;
+      
+      const format = img.file.type.includes('png') ? 'PNG' : 'JPEG';
+      doc.addImage(imageData, format, xPos, yPos, finalWidth, finalHeight);
     }
     
     // Save PDF
@@ -458,7 +544,7 @@ export const PayoutGenerator = () => {
 
   // Generate PDF and save transaction
   const handleGenerateAndSave = async () => {
-    generatePDF();
+    await generatePDF();
     await saveAsTransaction();
   };
 
@@ -595,6 +681,52 @@ export const PayoutGenerator = () => {
               rows={2}
               className="bg-muted cursor-not-allowed"
             />
+          </div>
+          
+          {/* Image Attachments */}
+          <div className="space-y-2">
+            <Label>Załączniki (zdjęcia)</Label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleImageSelect}
+              className="hidden"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full border-dashed"
+            >
+              <ImagePlus className="w-4 h-4 mr-2" />
+              Dodaj zdjęcia
+            </Button>
+            
+            {attachedImages.length > 0 && (
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
+                {attachedImages.map((img, index) => (
+                  <div key={index} className="relative group">
+                    <img
+                      src={img.preview}
+                      alt={`Załącznik ${index + 1}`}
+                      className="w-full h-20 object-cover rounded-lg border border-border"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(index)}
+                      className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Każde zdjęcie zostanie umieszczone na osobnej stronie PDF
+            </p>
           </div>
           
           {/* Signature */}
