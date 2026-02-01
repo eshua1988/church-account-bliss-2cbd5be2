@@ -533,7 +533,7 @@ const PublicPayout = () => {
       doc.addImage(imageData, format, xPos, imgYPos, finalWidth, finalHeight);
     }
     
-    const fileName = `dowod_wyplaty_${format(formData.date, 'yyyy-MM-dd')}_${formData.issuedTo.replace(/\s/g, '_') || 'dokument'}.pdf`;
+    const fileName = `payout_voucher_${format(formData.date, 'yyyy-MM-dd')}_${formData.issuedTo.replace(/\s/g, '_') || 'document'}.pdf`;
     doc.save(fileName);
   };
 
