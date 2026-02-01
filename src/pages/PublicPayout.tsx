@@ -643,12 +643,12 @@ const PublicPayout = () => {
           </CardHeader>
           
           <CardContent className="pt-6 space-y-6">
-            <p className="text-sm text-muted-foreground">* Pola obowiązkowe do wypełnienia</p>
-            
+            <p className="text-sm text-muted-foreground">* {t('requiredFields')}</p>
+
             {/* Date, Currency, Amount, Issued To */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Data *</Label>
+                <Label>{t('date')} *</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -672,9 +672,9 @@ const PublicPayout = () => {
                   </PopoverContent>
                 </Popover>
               </div>
-              
+
               <div className="space-y-2">
-                <Label>Suma *</Label>
+                <Label>{t('amount')} *</Label>
                 <div className="flex gap-2">
                   <Select value={formData.currency} onValueChange={(v) => handleInputChange('currency', v)}>
                     <SelectTrigger className="w-20">
@@ -696,36 +696,36 @@ const PublicPayout = () => {
                   />
                 </div>
               </div>
-              
+
               <div className="space-y-2">
-                <Label>Wydano (imię i nazwisko) *</Label>
+                <Label>{t('payoutIssuedTo')} *</Label>
                 <Input
-                  placeholder="Wpisz imię i nazwisko..."
+                  placeholder={t('enterIssuedTo')}
                   value={formData.issuedTo}
                   onChange={(e) => handleInputChange('issuedTo', e.target.value)}
                 />
               </div>
             </div>
-            
+
             {/* Bank Account */}
             <div className="space-y-2">
-              <Label>Konto do przelewu</Label>
+              <Label>{t('payoutBankAccount')}</Label>
               <Input
-                placeholder="Wpisz numer konta lub telefonu..."
+                placeholder={t('payoutBankAccountPlaceholder')}
                 value={formData.bankAccount}
                 onChange={(e) => handleInputChange('bankAccount', e.target.value)}
               />
             </div>
-            
+
             {/* Department Name */}
             <div className="space-y-2">
-              <Label>Nazwa oddziału *</Label>
-              <Select 
-                value={formData.departmentName} 
+              <Label>{t('payoutDepartmentName')} *</Label>
+              <Select
+                value={formData.departmentName}
                 onValueChange={(v) => handleInputChange('departmentName', v)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Wybierz kategorię" />
+                  <SelectValue placeholder={t('selectCategory')} />
                 </SelectTrigger>
                 <SelectContent>
                   {categories.map((category) => (
@@ -736,21 +736,21 @@ const PublicPayout = () => {
                 </SelectContent>
               </Select>
             </div>
-            
+
             {/* Basis */}
             <div className="space-y-2">
-              <Label>Podstawa (na jakie potrzeby) *</Label>
+              <Label>{t('payoutBasis')} *</Label>
               <Textarea
-                placeholder="Wpisz podstawę wypłaty..."
+                placeholder={t('payoutBasisPlaceholder')}
                 value={formData.basis}
                 onChange={(e) => handleInputChange('basis', e.target.value)}
                 rows={3}
               />
             </div>
-            
+
             {/* Amount in Words */}
             <div className="space-y-2">
-              <Label>Suma słownie *</Label>
+              <Label>{t('amountInWords')} *</Label>
               <Textarea
                 value={formData.amountInWords}
                 readOnly
@@ -758,10 +758,10 @@ const PublicPayout = () => {
                 className="bg-muted cursor-not-allowed"
               />
             </div>
-            
+
             {/* Image Attachments */}
             <div className="space-y-2">
-              <Label>Załączniki (zdjęcia)</Label>
+              <Label>Attachments (images)</Label>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -777,16 +777,16 @@ const PublicPayout = () => {
                 className="w-full border-dashed"
               >
                 <ImagePlus className="w-4 h-4 mr-2" />
-                Dodaj zdjęcia
+                Add images
               </Button>
-              
+
               {attachedImages.length > 0 && (
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
                   {attachedImages.map((img, index) => (
                     <div key={index} className="relative group">
                       <img
                         src={img.preview}
-                        alt={`Załącznik ${index + 1}`}
+                        alt={`Attachment ${index + 1}`}
                         className="w-full h-20 object-cover rounded-lg border border-border"
                       />
                       <button
@@ -801,13 +801,13 @@ const PublicPayout = () => {
                 </div>
               )}
               <p className="text-xs text-muted-foreground">
-                Każde zdjęcie zostanie umieszczone na osobnej stronie PDF
+                Each image will be placed on a separate PDF page
               </p>
             </div>
             {/* Signature */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>Podpis odbiorcy *</Label>
+                <Label>{t('payoutSignature')} *</Label>
                 <Button
                   type="button"
                   variant="ghost"
@@ -816,7 +816,7 @@ const PublicPayout = () => {
                   className="text-muted-foreground hover:text-foreground"
                 >
                   <Eraser className="w-4 h-4 mr-1" />
-                  Wyczyść
+                  {t('payoutClearSignature')}
                 </Button>
               </div>
               <div className="border-2 border-dashed rounded-lg bg-white">
@@ -836,7 +836,7 @@ const PublicPayout = () => {
                 />
               </div>
             </div>
-            
+
             {/* Submit Button */}
             <div className="flex">
               <Button
@@ -850,7 +850,7 @@ const PublicPayout = () => {
                 ) : (
                   <Save className="w-5 h-5 mr-2" />
                 )}
-                Zapisz i pobierz PDF
+                Save and download PDF
               </Button>
             </div>
           </CardContent>
