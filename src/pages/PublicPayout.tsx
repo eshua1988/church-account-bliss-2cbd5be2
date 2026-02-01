@@ -781,7 +781,7 @@ const PublicPayout = () => {
                 style={{ height: '90px' }}
               >
                 <ImagePlus className="w-4 h-4 mr-2" />
-                {t('importDocument')}
+                {t('payoutAddImages')}
               </Button>
 
               {attachedImages.length > 0 && (
