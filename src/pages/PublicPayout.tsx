@@ -313,13 +313,13 @@ const PublicPayout = () => {
     if (formData.amount) {
       const numAmount = parseFloat(formData.amount);
       if (!isNaN(numAmount) && numAmount > 0) {
-        const words = numberToWords(numAmount, formData.currency, 'pl');
+        const words = numberToWords(numAmount, formData.currency, language);
         setFormData(prev => ({ ...prev, amountInWords: words }));
       }
     } else {
       setFormData(prev => ({ ...prev, amountInWords: '' }));
     }
-  }, [formData.amount, formData.currency]);
+  }, [formData.amount, formData.currency, language]);
 
   const handleInputChange = (field: keyof PayoutFormData, value: string | Date) => {
     if (field === 'amountInWords') return;
