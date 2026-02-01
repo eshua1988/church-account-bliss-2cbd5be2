@@ -778,6 +778,7 @@ const PublicPayout = () => {
                 variant="outline"
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full border-dashed"
+                style={{ height: '90px' }}
               >
                 <ImagePlus className="w-4 h-4 mr-2" />
                 Add images
