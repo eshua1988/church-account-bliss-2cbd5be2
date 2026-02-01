@@ -680,7 +680,7 @@ export const PayoutGenerator = () => {
               readOnly
               rows={2}
               className="bg-muted cursor-not-allowed"
-              style={{ minHeight: '10px', height: 'auto' }}
+              style={{ height: '40px' }}
             />
           </div>
           
