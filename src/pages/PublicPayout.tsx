@@ -764,7 +764,7 @@ const PublicPayout = () => {
 
             {/* Image Attachments */}
             <div className="space-y-2">
-              <Label>Attachments (images)</Label>
+              <Label>{t('requiredFields') ? '' : ''}Images</Label>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -781,7 +781,7 @@ const PublicPayout = () => {
                 style={{ height: '90px' }}
               >
                 <ImagePlus className="w-4 h-4 mr-2" />
-                Add images
+                {t('importDocument')}
               </Button>
 
               {attachedImages.length > 0 && (
@@ -790,7 +790,7 @@ const PublicPayout = () => {
                     <div key={index} className="relative group">
                       <img
                         src={img.preview}
-                        alt={`Attachment ${index + 1}`}
+                        alt={`Image ${index + 1}`}
                         className="w-full h-20 object-cover rounded-lg border border-border"
                       />
                       <button
@@ -805,7 +805,7 @@ const PublicPayout = () => {
                 </div>
               )}
               <p className="text-xs text-muted-foreground">
-                Each image will be placed on a separate PDF page
+                {t('importPreviewTitle')}
               </p>
             </div>
             {/* Signature */}
@@ -854,7 +854,7 @@ const PublicPayout = () => {
                 ) : (
                   <Save className="w-5 h-5 mr-2" />
                 )}
-                Save and download PDF
+                {t('payoutGenerateAndSave')}
               </Button>
             </div>
           </CardContent>
