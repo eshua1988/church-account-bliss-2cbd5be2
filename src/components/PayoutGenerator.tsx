@@ -686,7 +686,7 @@ export const PayoutGenerator = () => {
           
           {/* Image Attachments */}
           <div className="space-y-2">
-            <Label>Załączniki (zdjęcia)</Label>
+            <Label>{t('payoutImages')}</Label>
             <input
               ref={fileInputRef}
               type="file"
@@ -703,7 +703,7 @@ export const PayoutGenerator = () => {
               style={{ height: '90px' }}
             >
               <ImagePlus className="w-4 h-4 mr-2" />
-              Dodaj zdjęcia
+              {t('payoutAddImages')}
             </Button>
             
             {attachedImages.length > 0 && (
@@ -727,7 +727,7 @@ export const PayoutGenerator = () => {
               </div>
             )}
             <p className="text-xs text-muted-foreground">
-              Każde zdjęcie zostanie umieszczone na osobnej stronie PDF
+              {t('payoutImagesHelpText')}
             </p>
           </div>
           
