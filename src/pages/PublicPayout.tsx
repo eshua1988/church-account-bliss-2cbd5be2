@@ -242,7 +242,7 @@ const PublicPayout = () => {
   useEffect(() => {
     const loadData = async () => {
       if (!token) {
-        setError('Nieprawidłowy link');
+        setError(t('importError') || 'Invalid link');
         setLoading(false);
         return;
       }
@@ -258,14 +258,14 @@ const PublicPayout = () => {
 
         if (linkError) throw linkError;
         if (!linkData) {
-          setError('Link jest nieaktywny lub nie istnieje');
+          setError('Link is inactive or does not exist');
           setLoading(false);
           return;
         }
 
         // Check expiration
         if (linkData.expires_at && new Date(linkData.expires_at) < new Date()) {
-          setError('Link wygasł');
+          setError('Link has expired');
           setLoading(false);
           return;
         }
@@ -284,7 +284,7 @@ const PublicPayout = () => {
         setCategories(catData || []);
       } catch (err) {
         console.error('Error loading data:', err);
-        setError('Nie można załadować danych');
+        setError('Unable to load data');
       } finally {
         setLoading(false);
       }
