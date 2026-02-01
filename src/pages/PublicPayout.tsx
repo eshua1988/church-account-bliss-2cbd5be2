@@ -630,8 +630,8 @@ const PublicPayout = () => {
       <Toaster />
       <div className="max-w-3xl mx-auto">
         <Card className="shadow-lg">
-          <CardHeader className="text-center border-b pb-4 flex flex-row items-start justify-between">
-            <div>
+          <CardHeader className="border-b pb-4 flex flex-row items-start justify-between gap-4">
+            <div className="flex-1">
               <CardTitle className="text-xl sm:text-2xl font-bold text-primary">
                 Payout Voucher
               </CardTitle>
@@ -639,7 +639,9 @@ const PublicPayout = () => {
                 {t('appSubtitle')}
               </p>
             </div>
-            <LanguageSelector />
+            <div className="flex-shrink-0">
+              <LanguageSelector />
+            </div>
           </CardHeader>
           
           <CardContent className="pt-6 space-y-6">
