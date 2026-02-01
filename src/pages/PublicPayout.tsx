@@ -201,6 +201,7 @@ const PublicPayout = () => {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { t, language, getDateLocale } = useTranslation();
   
   const [sharedLink, setSharedLink] = useState<SharedLink | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
