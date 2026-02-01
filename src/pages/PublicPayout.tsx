@@ -805,7 +805,7 @@ const PublicPayout = () => {
                 </div>
               )}
               <p className="text-xs text-muted-foreground">
-                {t('importPreviewTitle')}
+                {t('payoutImagesHelpText')}
               </p>
             </div>
             {/* Signature */}
