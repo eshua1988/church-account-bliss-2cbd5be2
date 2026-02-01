@@ -764,7 +764,7 @@ const PublicPayout = () => {
 
             {/* Image Attachments */}
             <div className="space-y-2">
-              <Label>Images</Label>
+              <Label>{t('payoutImages')}</Label>
               <input
                 ref={fileInputRef}
                 type="file"
