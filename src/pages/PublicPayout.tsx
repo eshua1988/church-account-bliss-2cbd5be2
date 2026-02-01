@@ -612,12 +612,12 @@ const PublicPayout = () => {
         <Card className="max-w-md w-full">
           <CardContent className="pt-6 text-center space-y-4">
             <CheckCircle className="w-16 h-16 text-green-500 mx-auto" />
-            <h2 className="text-xl font-bold">Dziękujemy!</h2>
+            <h2 className="text-xl font-bold">Thank you!</h2>
             <p className="text-muted-foreground">
-              Dokument został zapisany i pobrany jako PDF.
+              Document has been saved and downloaded as PDF.
             </p>
             <Button onClick={() => setIsSuccess(false)} variant="outline">
-              Wypełnić kolejny dokument
+              Fill another document
             </Button>
           </CardContent>
         </Card>
@@ -630,13 +630,16 @@ const PublicPayout = () => {
       <Toaster />
       <div className="max-w-3xl mx-auto">
         <Card className="shadow-lg">
-          <CardHeader className="text-center border-b pb-4">
-            <CardTitle className="text-xl sm:text-2xl font-bold text-primary">
-              Dowód wypłaty
-            </CardTitle>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-              ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE
-            </p>
+          <CardHeader className="text-center border-b pb-4 flex flex-row items-start justify-between">
+            <div>
+              <CardTitle className="text-xl sm:text-2xl font-bold text-primary">
+                Payout Voucher
+              </CardTitle>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                {t('appSubtitle')}
+              </p>
+            </div>
+            <LanguageSelector />
           </CardHeader>
           
           <CardContent className="pt-6 space-y-6">
