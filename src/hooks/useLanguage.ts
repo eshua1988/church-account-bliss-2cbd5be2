@@ -730,6 +730,24 @@ export const translations = {
     en: 'Transaction saved',
     uk: 'Транзакцію збережено',
   },
+  payoutImages: {
+    pl: 'Załączniki (zdjęcia)',
+    ru: 'Изображения',
+    en: 'Images',
+    uk: 'Зображення',
+  },
+  payoutAddImages: {
+    pl: 'Dodaj zdjęcia',
+    ru: 'Добавить изображения',
+    en: 'Add images',
+    uk: 'Додати зображення',
+  },
+  payoutImagesHelpText: {
+    pl: 'Każde zdjęcie zostanie umieszczone na osobnej stronie PDF',
+    ru: 'Каждое изображение будет размещено на отдельной странице PDF',
+    en: 'Each image will be placed on a separate PDF page',
+    uk: 'Кожне зображення буде розміщене на окремій сторінці PDF',
+  },
 } as const;
 
 export type TranslationKey = keyof typeof translations;

@@ -15,6 +15,8 @@ import jsPDF from 'jspdf';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
+import { useTranslation } from '@/contexts/LanguageContext';
+import { LanguageSelector } from '@/components/LanguageSelector';
 import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
 
 interface AttachedImage {
@@ -199,6 +201,7 @@ const PublicPayout = () => {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { t, language, getDateLocale } = useTranslation();
   
   const [sharedLink, setSharedLink] = useState<SharedLink | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -239,7 +242,7 @@ const PublicPayout = () => {
   useEffect(() => {
     const loadData = async () => {
       if (!token) {
-        setError('Nieprawidłowy link');
+        setError(t('importError') || 'Invalid link');
         setLoading(false);
         return;
       }
@@ -255,14 +258,14 @@ const PublicPayout = () => {
 
         if (linkError) throw linkError;
         if (!linkData) {
-          setError('Link jest nieaktywny lub nie istnieje');
+          setError('Link is inactive or does not exist');
           setLoading(false);
           return;
         }
 
         // Check expiration
         if (linkData.expires_at && new Date(linkData.expires_at) < new Date()) {
-          setError('Link wygasł');
+          setError('Link has expired');
           setLoading(false);
           return;
         }
@@ -281,7 +284,7 @@ const PublicPayout = () => {
         setCategories(catData || []);
       } catch (err) {
         console.error('Error loading data:', err);
-        setError('Nie można załadować danych');
+        setError('Unable to load data');
       } finally {
         setLoading(false);
       }
@@ -310,13 +313,13 @@ const PublicPayout = () => {
     if (formData.amount) {
       const numAmount = parseFloat(formData.amount);
       if (!isNaN(numAmount) && numAmount > 0) {
-        const words = numberToWords(numAmount, formData.currency, 'pl');
+        const words = numberToWords(numAmount, formData.currency, language);
         setFormData(prev => ({ ...prev, amountInWords: words }));
       }
     } else {
       setFormData(prev => ({ ...prev, amountInWords: '' }));
     }
-  }, [formData.amount, formData.currency]);
+  }, [formData.amount, formData.currency, language]);
 
   const handleInputChange = (field: keyof PayoutFormData, value: string | Date) => {
     if (field === 'amountInWords') return;
@@ -428,60 +431,60 @@ const PublicPayout = () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
-    
+
     if (fontBase64) {
       doc.addFileToVFS('Roboto-Regular.ttf', fontBase64);
       doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
       doc.setFont('Roboto');
     }
-    
+
     doc.setFontSize(18);
-    doc.text('Dowód wypłaty', pageWidth / 2, 25, { align: 'center' });
-    
+    doc.text('Payout Voucher', pageWidth / 2, 25, { align: 'center' });
+
     doc.setFontSize(10);
-    doc.text('ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE', pageWidth / 2, 35, { align: 'center' });
-    
+    doc.text(t('appSubtitle'), pageWidth / 2, 35, { align: 'center' });
+
     let yPos = 55;
     const leftMargin = 20;
     const labelWidth = 60;
-    
+
     doc.setFontSize(11);
-    
-    doc.text('Data:', leftMargin, yPos);
+
+    doc.text(`${t('date')}:`, leftMargin, yPos);
     doc.text(format(formData.date, 'dd.MM.yyyy'), leftMargin + labelWidth, yPos);
     yPos += 10;
-    
-    doc.text('Suma:', leftMargin, yPos);
+
+    doc.text(`${t('amount')}:`, leftMargin, yPos);
     const currencySymbol = currencies.find(c => c.value === formData.currency)?.label || formData.currency;
     doc.text(`${currencySymbol} ${formData.amount}`, leftMargin + labelWidth, yPos);
     yPos += 10;
-    
-    doc.text('Wydano (imię i nazwisko):', leftMargin, yPos);
+
+    doc.text(`${t('payoutIssuedTo')}:`, leftMargin, yPos);
     doc.text(formData.issuedTo, leftMargin + labelWidth, yPos);
     yPos += 10;
-    
-    doc.text('Konto do przelewu:', leftMargin, yPos);
+
+    doc.text(`${t('payoutBankAccount')}:`, leftMargin, yPos);
     const bankLines = doc.splitTextToSize(formData.bankAccount, pageWidth - leftMargin - labelWidth - 20);
     doc.text(bankLines, leftMargin + labelWidth, yPos);
     yPos += bankLines.length * 7 + 3;
-    
-    doc.text('Nazwa oddziału:', leftMargin, yPos);
+
+    doc.text(`${t('payoutDepartmentName')}:`, leftMargin, yPos);
     doc.text(formData.departmentName, leftMargin + labelWidth, yPos);
     yPos += 10;
-    
-    doc.text('Podstawa (na jakie potrzeby):', leftMargin, yPos);
+
+    doc.text(`${t('payoutBasis')}:`, leftMargin, yPos);
     yPos += 7;
     const basisLines = doc.splitTextToSize(formData.basis, pageWidth - leftMargin * 2);
     doc.text(basisLines, leftMargin, yPos);
     yPos += basisLines.length * 7 + 3;
-    
-    doc.text('Suma słownie:', leftMargin, yPos);
+
+    doc.text(`${t('amountInWords')}:`, leftMargin, yPos);
     yPos += 7;
     const wordsLines = doc.splitTextToSize(formData.amountInWords, pageWidth - leftMargin * 2);
     doc.text(wordsLines, leftMargin, yPos);
     yPos += wordsLines.length * 7 + 10;
-    
-    doc.text('Podpis odbiorcy:', leftMargin, yPos);
+
+    doc.text(`${t('payoutSignature')}:`, leftMargin, yPos);
     yPos += 5;
     
     if (hasSignature && signatureCanvasRef.current) {
@@ -530,7 +533,7 @@ const PublicPayout = () => {
       doc.addImage(imageData, format, xPos, imgYPos, finalWidth, finalHeight);
     }
     
-    const fileName = `dowod_wyplaty_${format(formData.date, 'yyyy-MM-dd')}_${formData.issuedTo.replace(/\s/g, '_') || 'dokument'}.pdf`;
+    const fileName = `payout_voucher_${format(formData.date, 'yyyy-MM-dd')}_${formData.issuedTo.replace(/\s/g, '_') || 'document'}.pdf`;
     doc.save(fileName);
   };
 
@@ -565,14 +568,14 @@ const PublicPayout = () => {
 
       setIsSuccess(true);
       toast({
-        title: 'Zapisano!',
-        description: 'Dokument został zapisany i pobrany',
+        title: 'Saved!',
+        description: 'Document has been saved and downloaded',
       });
     } catch (err) {
       console.error('Save error:', err);
       toast({
-        title: 'Błąd',
-        description: 'Nie udało się zapisać dokumentu',
+        title: 'Error',
+        description: 'Failed to save document',
         variant: 'destructive',
       });
     } finally {
@@ -609,12 +612,12 @@ const PublicPayout = () => {
         <Card className="max-w-md w-full">
           <CardContent className="pt-6 text-center space-y-4">
             <CheckCircle className="w-16 h-16 text-green-500 mx-auto" />
-            <h2 className="text-xl font-bold">Dziękujemy!</h2>
+            <h2 className="text-xl font-bold">Thank you!</h2>
             <p className="text-muted-foreground">
-              Dokument został zapisany i pobrany jako PDF.
+              Document has been saved and downloaded as PDF.
             </p>
             <Button onClick={() => setIsSuccess(false)} variant="outline">
-              Wypełnić kolejny dokument
+              Fill another document
             </Button>
           </CardContent>
         </Card>
@@ -627,22 +630,27 @@ const PublicPayout = () => {
       <Toaster />
       <div className="max-w-3xl mx-auto">
         <Card className="shadow-lg">
-          <CardHeader className="text-center border-b pb-4">
-            <CardTitle className="text-xl sm:text-2xl font-bold text-primary">
-              Dowód wypłaty
-            </CardTitle>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-              ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE
-            </p>
+          <CardHeader className="border-b pb-4 flex flex-row items-start justify-between gap-4">
+            <div className="flex-1">
+              <CardTitle className="text-xl sm:text-2xl font-bold text-primary">
+                Payout Voucher
+              </CardTitle>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                {t('appSubtitle')}
+              </p>
+            </div>
+            <div className="flex-shrink-0">
+              <LanguageSelector />
+            </div>
           </CardHeader>
           
           <CardContent className="pt-6 space-y-6">
-            <p className="text-sm text-muted-foreground">* Pola obowiązkowe do wypełnienia</p>
-            
+            <p className="text-sm text-muted-foreground">* {t('requiredFields')}</p>
+
             {/* Date, Currency, Amount, Issued To */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Data *</Label>
+                <Label>{t('date')} *</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -666,9 +674,9 @@ const PublicPayout = () => {
                   </PopoverContent>
                 </Popover>
               </div>
-              
+
               <div className="space-y-2">
-                <Label>Suma *</Label>
+                <Label>{t('amount')} *</Label>
                 <div className="flex gap-2">
                   <Select value={formData.currency} onValueChange={(v) => handleInputChange('currency', v)}>
                     <SelectTrigger className="w-20">
@@ -690,36 +698,36 @@ const PublicPayout = () => {
                   />
                 </div>
               </div>
-              
+
               <div className="space-y-2">
-                <Label>Wydano (imię i nazwisko) *</Label>
+                <Label>{t('payoutIssuedTo')} *</Label>
                 <Input
-                  placeholder="Wpisz imię i nazwisko..."
+                  placeholder={t('enterIssuedTo')}
                   value={formData.issuedTo}
                   onChange={(e) => handleInputChange('issuedTo', e.target.value)}
                 />
               </div>
             </div>
-            
+
             {/* Bank Account */}
             <div className="space-y-2">
-              <Label>Konto do przelewu</Label>
+              <Label>{t('payoutBankAccount')}</Label>
               <Input
-                placeholder="Wpisz numer konta lub telefonu..."
+                placeholder={t('payoutBankAccountPlaceholder')}
                 value={formData.bankAccount}
                 onChange={(e) => handleInputChange('bankAccount', e.target.value)}
               />
             </div>
-            
+
             {/* Department Name */}
             <div className="space-y-2">
-              <Label>Nazwa oddziału *</Label>
-              <Select 
-                value={formData.departmentName} 
+              <Label>{t('payoutDepartmentName')} *</Label>
+              <Select
+                value={formData.departmentName}
                 onValueChange={(v) => handleInputChange('departmentName', v)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Wybierz kategorię" />
+                  <SelectValue placeholder={t('selectCategory')} />
                 </SelectTrigger>
                 <SelectContent>
                   {categories.map((category) => (
@@ -730,32 +738,33 @@ const PublicPayout = () => {
                 </SelectContent>
               </Select>
             </div>
-            
+
             {/* Basis */}
             <div className="space-y-2">
-              <Label>Podstawa (na jakie potrzeby) *</Label>
+              <Label>{t('payoutBasis')} *</Label>
               <Textarea
-                placeholder="Wpisz podstawę wypłaty..."
+                placeholder={t('payoutBasisPlaceholder')}
                 value={formData.basis}
                 onChange={(e) => handleInputChange('basis', e.target.value)}
                 rows={3}
               />
             </div>
-            
+
             {/* Amount in Words */}
             <div className="space-y-2">
-              <Label>Suma słownie *</Label>
+              <Label>{t('amountInWords')} *</Label>
               <Textarea
                 value={formData.amountInWords}
                 readOnly
                 rows={2}
                 className="bg-muted cursor-not-allowed"
+                style={{ height: '40px' }}
               />
             </div>
-            
+
             {/* Image Attachments */}
             <div className="space-y-2">
-              <Label>Załączniki (zdjęcia)</Label>
+              <Label>{t('payoutImages')}</Label>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -769,18 +778,19 @@ const PublicPayout = () => {
                 variant="outline"
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full border-dashed"
+                style={{ height: '90px' }}
               >
                 <ImagePlus className="w-4 h-4 mr-2" />
-                Dodaj zdjęcia
+                {t('payoutAddImages')}
               </Button>
-              
+
               {attachedImages.length > 0 && (
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
                   {attachedImages.map((img, index) => (
                     <div key={index} className="relative group">
                       <img
                         src={img.preview}
-                        alt={`Załącznik ${index + 1}`}
+                        alt={`Image ${index + 1}`}
                         className="w-full h-20 object-cover rounded-lg border border-border"
                       />
                       <button
@@ -795,13 +805,13 @@ const PublicPayout = () => {
                 </div>
               )}
               <p className="text-xs text-muted-foreground">
-                Każde zdjęcie zostanie umieszczone na osobnej stronie PDF
+                {t('payoutImagesHelpText')}
               </p>
             </div>
             {/* Signature */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>Podpis odbiorcy *</Label>
+                <Label>{t('payoutSignature')} *</Label>
                 <Button
                   type="button"
                   variant="ghost"
@@ -810,7 +820,7 @@ const PublicPayout = () => {
                   className="text-muted-foreground hover:text-foreground"
                 >
                   <Eraser className="w-4 h-4 mr-1" />
-                  Wyczyść
+                  {t('payoutClearSignature')}
                 </Button>
               </div>
               <div className="border-2 border-dashed rounded-lg bg-white">
@@ -830,7 +840,7 @@ const PublicPayout = () => {
                 />
               </div>
             </div>
-            
+
             {/* Submit Button */}
             <div className="flex">
               <Button
@@ -844,7 +854,7 @@ const PublicPayout = () => {
                 ) : (
                   <Save className="w-5 h-5 mr-2" />
                 )}
-                Zapisz i pobierz PDF
+                {t('payoutGenerateAndSave')}
               </Button>
             </div>
           </CardContent>
