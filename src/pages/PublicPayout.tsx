@@ -431,60 +431,60 @@ const PublicPayout = () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
-    
+
     if (fontBase64) {
       doc.addFileToVFS('Roboto-Regular.ttf', fontBase64);
       doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
       doc.setFont('Roboto');
     }
-    
+
     doc.setFontSize(18);
-    doc.text('Dowód wypłaty', pageWidth / 2, 25, { align: 'center' });
-    
+    doc.text('Payout Voucher', pageWidth / 2, 25, { align: 'center' });
+
     doc.setFontSize(10);
-    doc.text('ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE', pageWidth / 2, 35, { align: 'center' });
-    
+    doc.text(t('appSubtitle'), pageWidth / 2, 35, { align: 'center' });
+
     let yPos = 55;
     const leftMargin = 20;
     const labelWidth = 60;
-    
+
     doc.setFontSize(11);
-    
-    doc.text('Data:', leftMargin, yPos);
+
+    doc.text(`${t('date')}:`, leftMargin, yPos);
     doc.text(format(formData.date, 'dd.MM.yyyy'), leftMargin + labelWidth, yPos);
     yPos += 10;
-    
-    doc.text('Suma:', leftMargin, yPos);
+
+    doc.text(`${t('amount')}:`, leftMargin, yPos);
     const currencySymbol = currencies.find(c => c.value === formData.currency)?.label || formData.currency;
     doc.text(`${currencySymbol} ${formData.amount}`, leftMargin + labelWidth, yPos);
     yPos += 10;
-    
-    doc.text('Wydano (imię i nazwisko):', leftMargin, yPos);
+
+    doc.text(`${t('payoutIssuedTo')}:`, leftMargin, yPos);
     doc.text(formData.issuedTo, leftMargin + labelWidth, yPos);
     yPos += 10;
-    
-    doc.text('Konto do przelewu:', leftMargin, yPos);
+
+    doc.text(`${t('payoutBankAccount')}:`, leftMargin, yPos);
     const bankLines = doc.splitTextToSize(formData.bankAccount, pageWidth - leftMargin - labelWidth - 20);
     doc.text(bankLines, leftMargin + labelWidth, yPos);
     yPos += bankLines.length * 7 + 3;
-    
-    doc.text('Nazwa oddziału:', leftMargin, yPos);
+
+    doc.text(`${t('payoutDepartmentName')}:`, leftMargin, yPos);
     doc.text(formData.departmentName, leftMargin + labelWidth, yPos);
     yPos += 10;
-    
-    doc.text('Podstawa (na jakie potrzeby):', leftMargin, yPos);
+
+    doc.text(`${t('payoutBasis')}:`, leftMargin, yPos);
     yPos += 7;
     const basisLines = doc.splitTextToSize(formData.basis, pageWidth - leftMargin * 2);
     doc.text(basisLines, leftMargin, yPos);
     yPos += basisLines.length * 7 + 3;
-    
-    doc.text('Suma słownie:', leftMargin, yPos);
+
+    doc.text(`${t('amountInWords')}:`, leftMargin, yPos);
     yPos += 7;
     const wordsLines = doc.splitTextToSize(formData.amountInWords, pageWidth - leftMargin * 2);
     doc.text(wordsLines, leftMargin, yPos);
     yPos += wordsLines.length * 7 + 10;
-    
-    doc.text('Podpis odbiorcy:', leftMargin, yPos);
+
+    doc.text(`${t('payoutSignature')}:`, leftMargin, yPos);
     yPos += 5;
     
     if (hasSignature && signatureCanvasRef.current) {
