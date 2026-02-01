@@ -15,6 +15,8 @@ import jsPDF from 'jspdf';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
+import { useTranslation } from '@/contexts/LanguageContext';
+import { LanguageSelector } from '@/components/LanguageSelector';
 import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
 
 interface AttachedImage {
