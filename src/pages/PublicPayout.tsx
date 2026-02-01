@@ -568,14 +568,14 @@ const PublicPayout = () => {
 
       setIsSuccess(true);
       toast({
-        title: 'Zapisano!',
-        description: 'Dokument został zapisany i pobrany',
+        title: 'Saved!',
+        description: 'Document has been saved and downloaded',
       });
     } catch (err) {
       console.error('Save error:', err);
       toast({
-        title: 'Błąd',
-        description: 'Nie udało się zapisać dokumentu',
+        title: 'Error',
+        description: 'Failed to save document',
         variant: 'destructive',
       });
     } finally {
