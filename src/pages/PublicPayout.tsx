@@ -424,58 +424,138 @@ const PublicPayout = () => {
       doc.setFont('Roboto');
     }
     
-    doc.setFontSize(18);
-    doc.text('Dowód wypłaty', pageWidth / 2, 25, { align: 'center' });
-    
-    doc.setFontSize(10);
-    doc.text('ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE', pageWidth / 2, 35, { align: 'center' });
-    
-    let yPos = 55;
     const leftMargin = 20;
-    const labelWidth = 60;
+    const rightMargin = 20;
+    const tableWidth = pageWidth - leftMargin - rightMargin;
+    const labelColWidth = 50;
+    const valueColWidth = tableWidth - labelColWidth;
+    const rowHeight = 10;
+    const cellPadding = 3;
     
+    // Helper function to draw a cell with borders
+    const drawCell = (x: number, y: number, width: number, height: number, text: string, options?: { 
+      fill?: boolean, 
+      align?: 'left' | 'center' | 'right',
+      fontSize?: number 
+    }) => {
+      const { fill = false, align = 'left', fontSize = 10 } = options || {};
+      
+      // Draw fill
+      if (fill) {
+        doc.setFillColor(240, 240, 240);
+        doc.rect(x, y, width, height, 'F');
+      }
+      
+      // Draw border
+      doc.setDrawColor(0);
+      doc.setLineWidth(0.3);
+      doc.rect(x, y, width, height, 'S');
+      
+      // Draw text
+      doc.setFontSize(fontSize);
+      const textX = align === 'center' ? x + width / 2 : x + cellPadding;
+      const textY = y + height / 2 + 3;
+      
+      // Wrap text if needed
+      const maxWidth = width - cellPadding * 2;
+      const lines = doc.splitTextToSize(text, maxWidth);
+      
+      if (align === 'center') {
+        doc.text(lines[0] || '', textX, textY, { align: 'center' });
+      } else {
+        doc.text(lines[0] || '', textX, textY);
+      }
+    };
+    
+    // Helper function to draw a row with label and value
+    const drawTableRow = (y: number, label: string, value: string, height: number = rowHeight) => {
+      drawCell(leftMargin, y, labelColWidth, height, label, { fill: true });
+      drawCell(leftMargin + labelColWidth, y, valueColWidth, height, value);
+    };
+    
+    // Header
     doc.setFontSize(11);
+    doc.text('ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE', pageWidth / 2, 20, { align: 'center' });
     
-    doc.text('Data:', leftMargin, yPos);
-    doc.text(format(formData.date, 'dd.MM.yyyy'), leftMargin + labelWidth, yPos);
-    yPos += 10;
+    // Title
+    doc.setFontSize(16);
+    doc.setFont('Roboto', 'normal');
+    doc.text('Dowód wypłaty', pageWidth / 2, 32, { align: 'center' });
     
-    doc.text('Suma:', leftMargin, yPos);
+    let yPos = 45;
+    
+    // Date and Amount row (two small tables side by side)
+    const smallTableWidth = (tableWidth - 10) / 2;
+    const smallLabelWidth = 35;
+    const smallValueWidth = smallTableWidth - smallLabelWidth;
+    
+    // Date table
+    drawCell(leftMargin, yPos, smallLabelWidth, rowHeight, 'Data', { fill: true });
+    drawCell(leftMargin + smallLabelWidth, yPos, smallValueWidth, rowHeight, format(formData.date, 'yyyy-MM-dd'));
+    
+    // Amount table  
     const currencySymbol = currencies.find(c => c.value === formData.currency)?.label || formData.currency;
-    doc.text(`${currencySymbol} ${formData.amount}`, leftMargin + labelWidth, yPos);
-    yPos += 10;
+    const amountTableX = leftMargin + smallTableWidth + 10;
+    drawCell(amountTableX, yPos, smallLabelWidth + 10, rowHeight, `Kwota (${formData.currency})`, { fill: true });
+    drawCell(amountTableX + smallLabelWidth + 10, yPos, smallValueWidth - 10, rowHeight, `${currencySymbol} ${formData.amount}`);
     
-    doc.text('Wydano (imię i nazwisko):', leftMargin, yPos);
-    doc.text(formData.issuedTo, leftMargin + labelWidth, yPos);
-    yPos += 10;
+    yPos += rowHeight + 8;
     
-    doc.text('Konto do przelewu:', leftMargin, yPos);
-    const bankLines = doc.splitTextToSize(formData.bankAccount, pageWidth - leftMargin - labelWidth - 20);
-    doc.text(bankLines, leftMargin + labelWidth, yPos);
-    yPos += bankLines.length * 7 + 3;
+    // Main table rows
+    drawTableRow(yPos, 'Wydano (imię nazwisko)', formData.issuedTo);
+    yPos += rowHeight;
     
-    doc.text('Nazwa oddziału:', leftMargin, yPos);
-    doc.text(formData.departmentName, leftMargin + labelWidth, yPos);
-    yPos += 10;
+    drawTableRow(yPos, 'Konto dla przelewu', formData.bankAccount);
+    yPos += rowHeight;
     
-    doc.text('Podstawa (na jakie potrzeby):', leftMargin, yPos);
-    yPos += 7;
-    const basisLines = doc.splitTextToSize(formData.basis, pageWidth - leftMargin * 2);
-    doc.text(basisLines, leftMargin, yPos);
-    yPos += basisLines.length * 7 + 3;
+    drawTableRow(yPos, 'Nazwa działu', formData.departmentName);
+    yPos += rowHeight;
     
-    doc.text('Suma słownie:', leftMargin, yPos);
-    yPos += 7;
-    const wordsLines = doc.splitTextToSize(formData.amountInWords, pageWidth - leftMargin * 2);
-    doc.text(wordsLines, leftMargin, yPos);
-    yPos += wordsLines.length * 7 + 10;
+    // Basis (multi-line)
+    const basisLines = doc.splitTextToSize(formData.basis, valueColWidth - cellPadding * 2);
+    const basisHeight = Math.max(rowHeight * 2, basisLines.length * 6 + cellPadding * 2);
     
-    doc.text('Podpis odbiorcy:', leftMargin, yPos);
+    drawCell(leftMargin, yPos, labelColWidth, basisHeight, 'Na podstawie', { fill: true });
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.3);
+    doc.rect(leftMargin + labelColWidth, yPos, valueColWidth, basisHeight, 'S');
+    doc.setFontSize(10);
+    doc.text(basisLines, leftMargin + labelColWidth + cellPadding, yPos + cellPadding + 6);
+    yPos += basisHeight;
+    
+    // Amount in words (multi-line)
+    const wordsLines = doc.splitTextToSize(formData.amountInWords, valueColWidth - cellPadding * 2);
+    const wordsHeight = Math.max(rowHeight * 2, wordsLines.length * 6 + cellPadding * 2);
+    
+    drawCell(leftMargin, yPos, labelColWidth, wordsHeight, 'Kwota słownie', { fill: true });
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.3);
+    doc.rect(leftMargin + labelColWidth, yPos, valueColWidth, wordsHeight, 'S');
+    doc.setFontSize(10);
+    doc.text(wordsLines, leftMargin + labelColWidth + cellPadding, yPos + cellPadding + 6);
+    yPos += wordsHeight + 15;
+    
+    // Cashier line
+    doc.setFontSize(10);
+    doc.text('Kasjer: ________________________________', leftMargin, yPos);
+    doc.text('Podpis kasjera: ________________________________', pageWidth / 2, yPos);
+    yPos += 15;
+    
+    // Recipient signature
+    doc.setFontSize(11);
+    doc.text('Podpis odbiorcy', leftMargin, yPos);
     yPos += 5;
+    
+    // Signature box
+    const signatureBoxWidth = 150;
+    const signatureBoxHeight = 40;
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.5);
+    doc.rect(leftMargin, yPos, signatureBoxWidth, signatureBoxHeight, 'S');
     
     if (hasSignature && signatureCanvasRef.current) {
       const signatureData = signatureCanvasRef.current.toDataURL('image/png');
-      doc.addImage(signatureData, 'PNG', leftMargin, yPos, 80, 30);
+      doc.addImage(signatureData, 'PNG', leftMargin + 5, yPos + 2, signatureBoxWidth - 10, signatureBoxHeight - 4);
     }
 
     // Add each attached image on a new page
@@ -501,7 +581,7 @@ const PublicPayout = () => {
       
       // Calculate dimensions to fit within page margins
       const maxWidth = pageWidth - 2 * leftMargin;
-      const maxHeight = pageHeight - 40; // 20mm margin top and bottom
+      const maxHeight = pageHeight - 40;
       
       let finalWidth = maxWidth;
       let finalHeight = (imgHeight / imgWidth) * finalWidth;
