@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X } from 'lucide-react';
+import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,12 +10,29 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import jsPDF from 'jspdf';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
+
+type Language = 'pl' | 'ru' | 'en' | 'uk';
+
+const LANGUAGE_NAMES: Record<Language, string> = {
+  pl: 'Polski',
+  ru: 'Русский',
+  en: 'English',
+  uk: 'Українська',
+};
+
+const languageFlags: Record<Language, string> = {
+  pl: '🇵🇱',
+  ru: '🇷🇺',
+  en: '🇬🇧',
+  uk: '🇺🇦',
+};
 
 interface AttachedImage {
   file: File;
@@ -214,6 +231,8 @@ const PublicPayout = () => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
+  const [language, setLanguage] = useState<Language>('pl');
+  const [allowImages, setAllowImages] = useState(true);
 
   const [formData, setFormData] = useState<PayoutFormData>({
     date: new Date(),
@@ -299,13 +318,13 @@ const PublicPayout = () => {
     if (formData.amount) {
       const numAmount = parseFloat(formData.amount);
       if (!isNaN(numAmount) && numAmount > 0) {
-        const words = numberToWords(numAmount, formData.currency, 'pl');
+        const words = numberToWords(numAmount, formData.currency, language);
         setFormData(prev => ({ ...prev, amountInWords: words }));
       }
     } else {
       setFormData(prev => ({ ...prev, amountInWords: '' }));
     }
-  }, [formData.amount, formData.currency]);
+  }, [formData.amount, formData.currency, language]);
 
   const handleInputChange = (field: keyof PayoutFormData, value: string | Date) => {
     if (field === 'amountInWords') return;
@@ -558,9 +577,9 @@ const PublicPayout = () => {
       doc.addImage(signatureData, 'PNG', leftMargin + 5, yPos + 2, signatureBoxWidth - 10, signatureBoxHeight - 4);
     }
 
-    // Add each attached image on a new page
-    for (const img of attachedImages) {
-      doc.addPage();
+    // Add each attached image on a new page (only if allowImages is enabled)
+    if (allowImages) {
+      for (const img of attachedImages) {
       
       // Read the image file
       const imageData = await new Promise<string>((resolve) => {
@@ -597,6 +616,7 @@ const PublicPayout = () => {
       
       const format = img.file.type.includes('png') ? 'PNG' : 'JPEG';
       doc.addImage(imageData, format, xPos, imgYPos, finalWidth, finalHeight);
+      }
     }
     
     const fileName = `dowod_wyplaty_${format(formData.date, 'yyyy-MM-dd')}_${formData.issuedTo.replace(/\s/g, '_') || 'dokument'}.pdf`;
@@ -700,13 +720,36 @@ const PublicPayout = () => {
       <Toaster />
       <div className="max-w-3xl mx-auto">
         <Card className="shadow-lg">
-          <CardHeader className="text-center border-b pb-4">
-            <CardTitle className="text-xl sm:text-2xl font-bold text-primary">
-              Dowód wypłaty
-            </CardTitle>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-              ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE
-            </p>
+          <CardHeader className="border-b pb-4">
+            <div className="flex items-center justify-between">
+              <div className="flex-1" />
+              <div className="text-center flex-1">
+                <CardTitle className="text-xl sm:text-2xl font-bold text-primary">
+                  Dowód wypłaty
+                </CardTitle>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                  ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE
+                </p>
+              </div>
+              <div className="flex-1 flex justify-end">
+                <Select value={language} onValueChange={(v) => setLanguage(v as Language)}>
+                  <SelectTrigger className="w-[130px] bg-card border-border">
+                    <Globe className="w-4 h-4 mr-2 text-muted-foreground" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(['pl', 'ru', 'en', 'uk'] as Language[]).map((lang) => (
+                      <SelectItem key={lang} value={lang}>
+                        <span className="flex items-center gap-2">
+                          <span>{languageFlags[lang]}</span>
+                          <span>{LANGUAGE_NAMES[lang]}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </CardHeader>
           
           <CardContent className="pt-6 space-y-6">
@@ -826,50 +869,62 @@ const PublicPayout = () => {
               />
             </div>
             
-            {/* Image Attachments */}
-            <div className="space-y-2">
-              <Label>Załączniki (zdjęcia)</Label>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handleImageSelect}
-                className="hidden"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full border-dashed"
-              >
-                <ImagePlus className="w-4 h-4 mr-2" />
-                Dodaj zdjęcia
-              </Button>
+            {/* Image Attachments Toggle */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="allow-images-public">Załączniki (zdjęcia)</Label>
+                <Switch
+                  id="allow-images-public"
+                  checked={allowImages}
+                  onCheckedChange={setAllowImages}
+                />
+              </div>
               
-              {attachedImages.length > 0 && (
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
-                  {attachedImages.map((img, index) => (
-                    <div key={index} className="relative group">
-                      <img
-                        src={img.preview}
-                        alt={`Załącznik ${index + 1}`}
-                        className="w-full h-20 object-cover rounded-lg border border-border"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeImage(index)}
-                        className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
+              {allowImages && (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleImageSelect}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full border-dashed"
+                  >
+                    <ImagePlus className="w-4 h-4 mr-2" />
+                    Dodaj zdjęcia
+                  </Button>
+                  
+                  {attachedImages.length > 0 && (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
+                      {attachedImages.map((img, index) => (
+                        <div key={index} className="relative group">
+                          <img
+                            src={img.preview}
+                            alt={`Załącznik ${index + 1}`}
+                            className="w-full h-20 object-cover rounded-lg border border-border"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeImage(index)}
+                            className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Każde zdjęcie zostanie umieszczone na osobnej stronie PDF
+                  </p>
+                </>
               )}
-              <p className="text-xs text-muted-foreground">
-                Każde zdjęcie zostanie umieszczone na osobnej stronie PDF
-              </p>
             </div>
             {/* Signature */}
             <div className="space-y-2">
