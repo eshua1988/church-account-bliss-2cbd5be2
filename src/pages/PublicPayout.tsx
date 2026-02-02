@@ -235,7 +235,7 @@ const PublicPayout = () => {
     { value: 'BYN', label: 'Br' },
   ];
 
-  // Load shared link and categories
+  // Load shared link and categories via secure edge function
   useEffect(() => {
     const loadData = async () => {
       if (!token) {
@@ -245,40 +245,29 @@ const PublicPayout = () => {
       }
 
       try {
-        // Fetch shared link
-        const { data: linkData, error: linkError } = await supabase
-          .from('shared_payout_links')
-          .select('*')
-          .eq('token', token)
-          .eq('is_active', true)
-          .maybeSingle();
+        // Validate token via secure edge function (doesn't expose tokens or user IDs)
+        const { data: validationData, error: validationError } = await supabase.functions.invoke('validate-payout-token', {
+          body: { token }
+        });
 
-        if (linkError) throw linkError;
-        if (!linkData) {
-          setError('Link jest nieaktywny lub nie istnieje');
+        if (validationError) throw validationError;
+        
+        if (!validationData?.valid) {
+          setError(validationData?.error || 'Link jest nieaktywny lub nie istnieje');
           setLoading(false);
           return;
         }
 
-        // Check expiration
-        if (linkData.expires_at && new Date(linkData.expires_at) < new Date()) {
-          setError('Link wygasł');
-          setLoading(false);
-          return;
-        }
+        // Set link info (token is stored locally, not fetched from DB)
+        setSharedLink({
+          id: '', // Not needed for submission
+          owner_user_id: '', // Not exposed by edge function
+          token: token,
+          name: validationData.linkName,
+          is_active: true,
+        });
 
-        setSharedLink(linkData);
-
-        // Fetch expense categories for the owner
-        const { data: catData, error: catError } = await supabase
-          .from('categories')
-          .select('*')
-          .eq('user_id', linkData.owner_user_id)
-          .eq('type', 'expense')
-          .order('sort_order');
-
-        if (catError) throw catError;
-        setCategories(catData || []);
+        setCategories(validationData.categories || []);
       } catch (err) {
         console.error('Error loading data:', err);
         setError('Nie można załadować danych');
@@ -535,7 +524,7 @@ const PublicPayout = () => {
   };
 
   const handleSubmit = async () => {
-    if (!sharedLink) return;
+    if (!token) return;
 
     setIsSaving(true);
 
@@ -543,22 +532,25 @@ const PublicPayout = () => {
       // Find category ID by name
       const category = categories.find(c => c.name === formData.departmentName);
 
-      // Insert transaction for the owner
-      const { error: insertError } = await supabase
-        .from('transactions')
-        .insert({
-          user_id: sharedLink.owner_user_id,
-          type: 'expense',
+      // Submit via secure edge function with validation and rate limiting
+      const { data, error: submitError } = await supabase.functions.invoke('submit-public-payout', {
+        body: {
+          token,
           amount: parseFloat(formData.amount),
           currency: formData.currency,
-          category_id: category?.id || null,
+          categoryId: category?.id || null,
           description: formData.basis,
           date: format(formData.date, 'yyyy-MM-dd'),
-          issued_to: formData.issuedTo,
-          amount_in_words: formData.amountInWords,
-        });
+          issuedTo: formData.issuedTo,
+          amountInWords: formData.amountInWords,
+        }
+      });
 
-      if (insertError) throw insertError;
+      if (submitError) throw submitError;
+      
+      if (data?.error) {
+        throw new Error(data.error);
+      }
 
       // Generate PDF
       await generatePDF();
@@ -570,9 +562,10 @@ const PublicPayout = () => {
       });
     } catch (err) {
       console.error('Save error:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Nie udało się zapisać dokumentu';
       toast({
         title: 'Błąd',
-        description: 'Nie udało się zapisać dokumentu',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
