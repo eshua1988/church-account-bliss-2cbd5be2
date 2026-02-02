@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { format } from 'date-fns';
 import { Calendar, Eraser, Save, Loader2, ImagePlus, X } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -197,6 +198,7 @@ export const PayoutGenerator = () => {
   const [fontLoaded, setFontLoaded] = useState(false);
   const [fontBase64, setFontBase64] = useState<string | null>(null);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
+  const [allowImages, setAllowImages] = useState(true);
   
   const [formData, setFormData] = useState<PayoutFormData>({
     date: new Date(),
@@ -498,9 +500,9 @@ export const PayoutGenerator = () => {
       doc.addImage(signatureData, 'PNG', leftMargin + 5, yPos + 2, signatureBoxWidth - 10, signatureBoxHeight - 4);
     }
 
-    // Add each attached image on a new page
-    for (const img of attachedImages) {
-      doc.addPage();
+    // Add each attached image on a new page (only if allowImages is enabled)
+    if (allowImages) {
+      for (const img of attachedImages) {
       
       // Read the image file
       const imageData = await new Promise<string>((resolve) => {
@@ -537,6 +539,7 @@ export const PayoutGenerator = () => {
       
       const format = img.file.type.includes('png') ? 'PNG' : 'JPEG';
       doc.addImage(imageData, format, xPos, imgYPos, finalWidth, finalHeight);
+      }
     }
     
     // Save PDF
@@ -753,50 +756,62 @@ export const PayoutGenerator = () => {
             />
           </div>
           
-          {/* Image Attachments */}
-          <div className="space-y-2">
-            <Label>Załączniki (zdjęcia)</Label>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleImageSelect}
-              className="hidden"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full border-dashed"
-            >
-              <ImagePlus className="w-4 h-4 mr-2" />
-              Dodaj zdjęcia
-            </Button>
+          {/* Image Attachments Toggle */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="allow-images">Załączniki (zdjęcia)</Label>
+              <Switch
+                id="allow-images"
+                checked={allowImages}
+                onCheckedChange={setAllowImages}
+              />
+            </div>
             
-            {attachedImages.length > 0 && (
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
-                {attachedImages.map((img, index) => (
-                  <div key={index} className="relative group">
-                    <img
-                      src={img.preview}
-                      alt={`Załącznik ${index + 1}`}
-                      className="w-full h-20 object-cover rounded-lg border border-border"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeImage(index)}
-                      className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
+            {allowImages && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleImageSelect}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full border-dashed"
+                >
+                  <ImagePlus className="w-4 h-4 mr-2" />
+                  Dodaj zdjęcia
+                </Button>
+                
+                {attachedImages.length > 0 && (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
+                    {attachedImages.map((img, index) => (
+                      <div key={index} className="relative group">
+                        <img
+                          src={img.preview}
+                          alt={`Załącznik ${index + 1}`}
+                          className="w-full h-20 object-cover rounded-lg border border-border"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeImage(index)}
+                          className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Każde zdjęcie zostanie umieszczone na osobnej stronie PDF
+                </p>
+              </>
             )}
-            <p className="text-xs text-muted-foreground">
-              Każde zdjęcie zostanie umieszczone na osobnej stronie PDF
-            </p>
           </div>
           
           {/* Signature */}
