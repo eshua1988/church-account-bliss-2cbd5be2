@@ -2,3 +2,9 @@ project_id = "amwewckftjeahzsktcqp"
 
 [functions.google-sheets]
 verify_jwt = false
+
+[functions.validate-payout-token]
+verify_jwt = false
+
+[functions.submit-public-payout]
+verify_jwt = false
