@@ -763,52 +763,66 @@ export const PayoutGenerator = () => {
                 <Switch
                   id="allow-images"
                   checked={imagesOptional}
-                  onCheckedChange={setImagesOptional}
+                  onCheckedChange={(checked) => {
+                    setImagesOptional(checked);
+                    if (checked) {
+                      // Clear images when making optional
+                      attachedImages.forEach(img => URL.revokeObjectURL(img.preview));
+                      setAttachedImages([]);
+                    }
+                  }}
                 />
               </div>
             </div>
             
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleImageSelect}
-              className="hidden"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full border-dashed"
-            >
-              <ImagePlus className="w-4 h-4 mr-2" />
-              Dodaj zdjęcia
-            </Button>
-            
-            {attachedImages.length > 0 && (
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
-                {attachedImages.map((img, index) => (
-                  <div key={index} className="relative group">
-                    <img
-                      src={img.preview}
-                      alt={`Załącznik ${index + 1}`}
-                      className="w-full h-20 object-cover rounded-lg border border-border"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeImage(index)}
-                      className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Każde zdjęcie zostanie umieszczone na osobnej stronie PDF
-            </p>
+            <div className={cn(
+              "transition-all duration-200",
+              imagesOptional && "opacity-50 pointer-events-none"
+            )}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleImageSelect}
+                className="hidden"
+                disabled={imagesOptional}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full border-dashed"
+                disabled={imagesOptional}
+              >
+                <ImagePlus className="w-4 h-4 mr-2" />
+                Dodaj zdjęcia
+              </Button>
+              
+              {attachedImages.length > 0 && (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
+                  {attachedImages.map((img, index) => (
+                    <div key={index} className="relative group">
+                      <img
+                        src={img.preview}
+                        alt={`Załącznik ${index + 1}`}
+                        className="w-full h-20 object-cover rounded-lg border border-border"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeImage(index)}
+                        className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground mt-2">
+                Każde zdjęcie zostanie umieszczone na osobnej stronie PDF
+              </p>
+            </div>
           </div>
           
           {/* Signature */}

@@ -226,6 +226,11 @@ const PublicPayout = () => {
   const [fontLoaded, setFontLoaded] = useState(false);
   const [fontBase64, setFontBase64] = useState<string | null>(null);
   
+  // Auth state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [submitterFirstName, setSubmitterFirstName] = useState('');
+  const [submitterLastName, setSubmitterLastName] = useState('');
+  
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -641,6 +646,8 @@ const PublicPayout = () => {
           date: format(formData.date, 'yyyy-MM-dd'),
           issuedTo: formData.issuedTo,
           amountInWords: formData.amountInWords,
+          submitterName: `${submitterFirstName} ${submitterLastName}`,
+          imagesSkipped: imagesOptional,
         }
       });
 
@@ -699,13 +706,84 @@ const PublicPayout = () => {
         <Toaster />
         <Card className="max-w-md w-full">
           <CardContent className="pt-6 text-center space-y-4">
-            <CheckCircle className="w-16 h-16 text-green-500 mx-auto" />
+            <CheckCircle className="w-16 h-16 text-primary mx-auto" />
             <h2 className="text-xl font-bold">Dziękujemy!</h2>
             <p className="text-muted-foreground">
               Dokument został zapisany i pobrany jako PDF.
             </p>
             <Button onClick={() => setIsSuccess(false)} variant="outline">
               Wypełnić kolejny dokument
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Authentication form
+  if (!isAuthenticated) {
+    const handleAuth = () => {
+      if (submitterFirstName.trim() && submitterLastName.trim()) {
+        setIsAuthenticated(true);
+        // Pre-fill the issuedTo field with the name
+        setFormData(prev => ({
+          ...prev,
+          issuedTo: `${submitterFirstName.trim()} ${submitterLastName.trim()}`
+        }));
+      }
+    };
+
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Toaster />
+        <Card className="max-w-md w-full shadow-lg">
+          <CardHeader className="text-center border-b pb-4">
+            <CardTitle className="text-xl sm:text-2xl font-bold text-primary">
+              Dowód wypłaty
+            </CardTitle>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+              ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE
+            </p>
+          </CardHeader>
+          <CardContent className="pt-6 space-y-4">
+            <div className="text-center mb-4">
+              <h3 className="text-lg font-semibold">Wprowadź swoje dane</h3>
+              <p className="text-sm text-muted-foreground">
+                Aby kontynuować, podaj imię i nazwisko
+              </p>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="firstName">Imię *</Label>
+                <Input
+                  id="firstName"
+                  placeholder="Wpisz imię..."
+                  value={submitterFirstName}
+                  onChange={(e) => setSubmitterFirstName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAuth()}
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="lastName">Nazwisko *</Label>
+                <Input
+                  id="lastName"
+                  placeholder="Wpisz nazwisko..."
+                  value={submitterLastName}
+                  onChange={(e) => setSubmitterLastName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAuth()}
+                />
+              </div>
+            </div>
+            
+            <Button
+              onClick={handleAuth}
+              disabled={!submitterFirstName.trim() || !submitterLastName.trim()}
+              className="w-full"
+              size="lg"
+            >
+              Kontynuuj
             </Button>
           </CardContent>
         </Card>
@@ -881,52 +959,66 @@ const PublicPayout = () => {
                   <Switch
                     id="allow-images-public"
                     checked={imagesOptional}
-                    onCheckedChange={setImagesOptional}
+                    onCheckedChange={(checked) => {
+                      setImagesOptional(checked);
+                      if (checked) {
+                        // Clear images when making optional
+                        attachedImages.forEach(img => URL.revokeObjectURL(img.preview));
+                        setAttachedImages([]);
+                      }
+                    }}
                   />
                 </div>
               </div>
               
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handleImageSelect}
-                className="hidden"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full border-dashed"
-              >
-                <ImagePlus className="w-4 h-4 mr-2" />
-                Dodaj zdjęcia
-              </Button>
-              
-              {attachedImages.length > 0 && (
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
-                  {attachedImages.map((img, index) => (
-                    <div key={index} className="relative group">
-                      <img
-                        src={img.preview}
-                        alt={`Załącznik ${index + 1}`}
-                        className="w-full h-20 object-cover rounded-lg border border-border"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeImage(index)}
-                        className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Każde zdjęcie zostanie umieszczone na osobnej stronie PDF
-              </p>
+              <div className={cn(
+                "transition-all duration-200",
+                imagesOptional && "opacity-50 pointer-events-none"
+              )}>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleImageSelect}
+                  className="hidden"
+                  disabled={imagesOptional}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full border-dashed"
+                  disabled={imagesOptional}
+                >
+                  <ImagePlus className="w-4 h-4 mr-2" />
+                  Dodaj zdjęcia
+                </Button>
+                
+                {attachedImages.length > 0 && (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
+                    {attachedImages.map((img, index) => (
+                      <div key={index} className="relative group">
+                        <img
+                          src={img.preview}
+                          alt={`Załącznik ${index + 1}`}
+                          className="w-full h-20 object-cover rounded-lg border border-border"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeImage(index)}
+                          className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground mt-2">
+                  Każde zdjęcie zostanie umieszczone na osobnej stronie PDF
+                </p>
+              </div>
             </div>
             {/* Signature */}
             <div className="space-y-2">

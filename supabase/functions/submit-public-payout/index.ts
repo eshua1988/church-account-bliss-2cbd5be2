@@ -24,6 +24,8 @@ interface SubmitPayoutRequest {
   date: string;
   issuedTo?: string;
   amountInWords?: string;
+  submitterName?: string;
+  imagesSkipped?: boolean;
 }
 
 // Simple in-memory rate limiting (per token)
@@ -203,6 +205,19 @@ Deno.serve(async (req) => {
     }
 
     // Insert transaction (using service role to bypass RLS safely after validation)
+    // Build description with submitter tracking info
+    let finalDescription = body.description?.slice(0, MAX_TEXT_LENGTH) || '';
+    
+    // Add submitter tracking info if images were skipped
+    if (body.imagesSkipped && body.submitterName) {
+      const trackingNote = `[Bez załączników - ${body.submitterName}]`;
+      if (finalDescription) {
+        finalDescription = `${finalDescription} ${trackingNote}`;
+      } else {
+        finalDescription = trackingNote;
+      }
+    }
+    
     const { data: txData, error: txError } = await supabase
       .from('transactions')
       .insert({
@@ -211,7 +226,7 @@ Deno.serve(async (req) => {
         amount: body.amount,
         currency: body.currency,
         category_id: body.categoryId || null,
-        description: body.description?.slice(0, MAX_TEXT_LENGTH) || null,
+        description: finalDescription.slice(0, MAX_TEXT_LENGTH) || null,
         date: body.date,
         issued_to: body.issuedTo?.slice(0, MAX_TEXT_LENGTH) || null,
         amount_in_words: body.amountInWords?.slice(0, MAX_TEXT_LENGTH) || null,
