@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe } from 'lucide-react';
+import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -84,6 +84,7 @@ const translations: Record<Language, Record<string, string>> = {
     enterFirstName: 'Wpisz imię...',
     enterLastName: 'Wpisz nazwisko...',
     enterName: 'Wpisz imię i nazwisko...',
+    back: 'Wstecz',
   },
   ru: {
     title: 'Расходный ордер',
@@ -133,6 +134,7 @@ const translations: Record<Language, Record<string, string>> = {
     enterFirstName: 'Введите имя...',
     enterLastName: 'Введите фамилию...',
     enterName: 'Введите имя и фамилию...',
+    back: 'Назад',
   },
   en: {
     title: 'Payment Voucher',
@@ -182,6 +184,7 @@ const translations: Record<Language, Record<string, string>> = {
     enterFirstName: 'Enter first name...',
     enterLastName: 'Enter last name...',
     enterName: 'Enter full name...',
+    back: 'Back',
   },
   uk: {
     title: 'Видатковий ордер',
@@ -231,6 +234,7 @@ const translations: Record<Language, Record<string, string>> = {
     enterFirstName: 'Введіть ім\'я...',
     enterLastName: 'Введіть прізвище...',
     enterName: 'Введіть ім\'я та прізвище...',
+    back: 'Назад',
   },
 };
 
@@ -975,6 +979,14 @@ const PublicPayout = () => {
     );
   }
 
+  const handleBackToPendingSelection = () => {
+    setContinuingPayout(null);
+    setShowPendingSelection(true);
+    setAttachedImages([]);
+    setHasSignature(false);
+    clearSignature();
+  };
+
   // Authentication form
   if (!isAuthenticated) {
     const handleAuth = async () => {
@@ -1052,6 +1064,13 @@ const PublicPayout = () => {
       }));
     };
 
+    const handleBackToLogin = () => {
+      setShowPendingSelection(false);
+      setPendingPayouts([]);
+      setIsAuthenticated(false);
+      setContinuingPayout(null);
+    };
+
     // Show pending selection screen
     if (showPendingSelection && pendingPayouts.length > 0) {
       return (
@@ -1124,7 +1143,7 @@ const PublicPayout = () => {
                 })}
               </div>
               
-              <div className="border-t pt-4">
+              <div className="border-t pt-4 space-y-3">
                 <Button
                   onClick={handleCreateNew}
                   variant="outline"
@@ -1132,6 +1151,15 @@ const PublicPayout = () => {
                   size="lg"
                 >
                   {t.createNew}
+                </Button>
+                <Button
+                  onClick={handleBackToLogin}
+                  variant="ghost"
+                  className="w-full"
+                  size="lg"
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  {t.back}
                 </Button>
               </div>
             </CardContent>
@@ -1276,6 +1304,15 @@ const PublicPayout = () => {
             {/* Continuing payout - simplified view */}
             {continuingPayout ? (
               <>
+                <Button
+                  onClick={handleBackToPendingSelection}
+                  variant="ghost"
+                  size="sm"
+                  className="mb-2"
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  {t.back}
+                </Button>
                 <div className="bg-muted/50 p-4 rounded-lg space-y-2">
                   <p className="text-sm font-medium">{t.documentData}</p>
                   <div className="grid grid-cols-2 gap-2 text-sm">
