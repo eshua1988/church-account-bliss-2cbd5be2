@@ -13,18 +13,10 @@ import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { Currency, CURRENCY_SYMBOLS, Transaction, TransactionType } from '@/types/transaction';
-import { FileText, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import ImportPayout from '@/components/ImportPayout';
 import DateRangeFilter from '@/components/DateRangeFilter';
 import { useToast } from '@/hooks/use-toast';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { AppSidebar } from '@/components/AppSidebar';
@@ -37,7 +29,6 @@ const Index = () => {
   const { t, getDateLocale } = useTranslation();
   const [selectedCurrency, setSelectedCurrency] = useState<Currency>('PLN');
   const [visibleCurrencies, setVisibleCurrencies] = useState<Currency[]>(loadVisibleCurrencies);
-  const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'balance' | 'statistics' | 'payout' | 'settings'>('balance');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -79,7 +70,6 @@ const Index = () => {
   const handleAddTransaction = async (transaction: Omit<Transaction, 'id' | 'createdAt'>) => {
     try {
       await addTransaction(transaction);
-      setIsTransactionDialogOpen(false);
       toast({
         title: transaction.type === 'income' ? t('incomeAdded') : t('expenseAdded'),
         description: `${transaction.amount.toLocaleString(getDateLocale())} ${CURRENCY_SYMBOLS[transaction.currency]}`,
@@ -166,6 +156,9 @@ const Index = () => {
         collapsed={sidebarCollapsed}
         onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
         onOpenMobileMenu={() => setMobileMenuOpen(true)}
+        onAddTransaction={handleAddTransaction}
+        incomeCategories={getIncomeCategories()}
+        expenseCategories={getExpenseCategories()}
       />
       
       <div className="flex flex-1 overflow-hidden">
@@ -187,35 +180,7 @@ const Index = () => {
                 <div className="hidden sm:flex items-center gap-2">
                   <ImportPayout />
                 </div>
-                <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button className="gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200 w-full sm:w-auto">{t('addTransaction')}</Button>
-                  </DialogTrigger>
-                  <DialogContent className="sm:max-w-[500px] max-h-[90vh] w-[95vw] overflow-hidden flex flex-col">
-                    <DialogHeader><DialogTitle>{t('newTransaction')}</DialogTitle></DialogHeader>
-                    <div className="overflow-y-auto flex-1 pr-2">
-                      <TransactionForm onSubmit={handleAddTransaction} incomeCategories={getIncomeCategories()} expenseCategories={getExpenseCategories()} />
-                    </div>
-                  </DialogContent>
-                </Dialog>
               </div>
-            </div>
-          )}
-
-          {/* Balance Tab - Controls */}
-          {activeTab === 'balance' && (
-            <div className="mb-4 sm:mb-6 flex items-center justify-end">
-              <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button className="gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200">{t('addTransaction')}</Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[500px] max-h-[90vh] w-[95vw] overflow-hidden flex flex-col">
-                  <DialogHeader><DialogTitle>{t('newTransaction')}</DialogTitle></DialogHeader>
-                  <div className="overflow-y-auto flex-1 pr-2">
-                    <TransactionForm onSubmit={handleAddTransaction} incomeCategories={getIncomeCategories()} expenseCategories={getExpenseCategories()} />
-                  </div>
-                </DialogContent>
-              </Dialog>
             </div>
           )}
 

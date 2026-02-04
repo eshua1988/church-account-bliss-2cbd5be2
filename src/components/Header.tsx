@@ -1,24 +1,48 @@
+import { useState } from 'react';
 import { LanguageSelector } from './LanguageSelector';
 import { UserMenu } from './UserMenu';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { cn } from '@/lib/utils';
-import { Church, ChevronLeft, ChevronRight, Menu } from 'lucide-react';
+import { Church, ChevronLeft, ChevronRight, Menu, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/contexts/LanguageContext';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { TransactionForm } from './TransactionForm';
+import { Transaction } from '@/types/transaction';
+import { Category } from '@/hooks/useSupabaseCategories';
 
 interface HeaderProps {
-  canUndo?: boolean;
-  canRedo?: boolean;
-  onUndo?: () => void;
-  onRedo?: () => void;
   collapsed?: boolean;
   onToggleSidebar?: () => void;
   onOpenMobileMenu?: () => void;
+  onAddTransaction?: (transaction: Omit<Transaction, 'id' | 'createdAt'>) => Promise<void>;
+  incomeCategories?: Category[];
+  expenseCategories?: Category[];
 }
 
-export const Header = ({ canUndo, canRedo, onUndo, onRedo, collapsed, onToggleSidebar, onOpenMobileMenu }: HeaderProps) => {
+export const Header = ({ 
+  collapsed, 
+  onToggleSidebar, 
+  onOpenMobileMenu,
+  onAddTransaction,
+  incomeCategories = [],
+  expenseCategories = [],
+}: HeaderProps) => {
   const isMobile = useIsMobile();
   const { t } = useTranslation();
+  const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState(false);
+
+  const handleAddTransaction = async (transaction: Omit<Transaction, 'id' | 'createdAt'>) => {
+    if (onAddTransaction) {
+      await onAddTransaction(transaction);
+      setIsTransactionDialogOpen(false);
+    }
+  };
   
   return (
     <header className="bg-card border-b border-border shadow-sm">
@@ -60,25 +84,25 @@ export const Header = ({ canUndo, canRedo, onUndo, onRedo, collapsed, onToggleSi
           
           {/* Right: Controls */}
           <div className="flex items-center gap-1 sm:gap-2">
-            {canUndo !== undefined && onUndo && onRedo && (
-              <>
-                <button
-                  onClick={onUndo}
-                  disabled={!canUndo}
-                  className="p-2 rounded-md hover:bg-accent disabled:opacity-50"
-                  title="Undo (Ctrl+Z)"
-                >
-                  ↶
-                </button>
-                <button
-                  onClick={onRedo}
-                  disabled={!canRedo}
-                  className="p-2 rounded-md hover:bg-accent disabled:opacity-50"
-                  title="Redo (Ctrl+Y)"
-                >
-                  ↷
-                </button>
-              </>
+            {onAddTransaction && (
+              <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button className="gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200">
+                    <Plus className="w-4 h-4 sm:mr-2" />
+                    <span className="hidden sm:inline">{t('addTransaction')}</span>
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[500px] max-h-[90vh] w-[95vw] overflow-hidden flex flex-col">
+                  <DialogHeader><DialogTitle>{t('newTransaction')}</DialogTitle></DialogHeader>
+                  <div className="overflow-y-auto flex-1 pr-2">
+                    <TransactionForm 
+                      onSubmit={handleAddTransaction} 
+                      incomeCategories={incomeCategories} 
+                      expenseCategories={expenseCategories} 
+                    />
+                  </div>
+                </DialogContent>
+              </Dialog>
             )}
             <LanguageSelector />
             <UserMenu />
