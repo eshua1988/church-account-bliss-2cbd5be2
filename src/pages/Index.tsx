@@ -55,10 +55,8 @@ const Index = () => {
   } = useSupabaseCategories();
 
   const {
-    isExporting,
-    isImporting,
-    handleExport,
-    handleImport,
+    isSyncing,
+    handleSync,
   } = useGoogleSheetsSync({
     transactions,
     getCategoryName,
@@ -174,10 +172,8 @@ const Index = () => {
           collapsed={sidebarCollapsed}
           mobileOpen={mobileMenuOpen}
           onMobileOpenChange={setMobileMenuOpen}
-          onExport={handleExport}
-          onImport={handleImport}
-          isExporting={isExporting}
-          isImporting={isImporting}
+          onSync={handleSync}
+          isSyncing={isSyncing}
         />
         
         <div className="flex-1 overflow-auto">
