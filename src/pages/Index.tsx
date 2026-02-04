@@ -20,6 +20,8 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { GoogleSheetsSync } from '@/components/GoogleSheetsSync';
 import { SharePayoutLink } from '@/components/SharePayoutLink';
 import { useGoogleSheetsSync } from '@/hooks/useGoogleSheetsSync';
+import { useSwipeGesture } from '@/hooks/useSwipeGesture';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const currencies: Currency[] = ['RUB', 'USD', 'EUR', 'UAH', 'BYN', 'PLN'];
 
@@ -31,6 +33,21 @@ const Index = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { toast } = useToast();
+  const isMobile = useIsMobile();
+
+  // Swipe gesture for mobile sidebar
+  useSwipeGesture({
+    onSwipeRight: () => {
+      if (isMobile) {
+        setMobileMenuOpen(true);
+      }
+    },
+    onSwipeLeft: () => {
+      if (isMobile && mobileMenuOpen) {
+        setMobileMenuOpen(false);
+      }
+    },
+  });
   
   const {
     transactions,
