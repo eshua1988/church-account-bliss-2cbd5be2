@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Wallet, BarChart3, Settings, ChevronLeft, ChevronRight, Menu, FileText } from 'lucide-react';
+import { Church, BarChart3, Settings, ChevronLeft, ChevronRight, Menu, FileText, Wallet } from 'lucide-react';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -54,14 +54,19 @@ export const AppSidebar = ({ activeTab, onTabChange }: AppSidebarProps) => {
 
   const SidebarContent = ({ isSheet = false }: { isSheet?: boolean }) => (
     <div className="flex flex-col h-full bg-card">
-      {/* Logo area */}
-      <div className="h-16 flex items-center justify-center border-b border-border px-4">
-        <div className="w-10 h-10 rounded-full gradient-primary flex items-center justify-center">
-          <Wallet className="w-5 h-5 text-primary-foreground" />
+      {/* Logo area with title */}
+      <div className="border-b border-border px-3 py-4">
+        <div className="flex items-center gap-2">
+          <div className="w-10 h-10 rounded-xl gradient-primary shadow-glow flex items-center justify-center flex-shrink-0">
+            <Church className="w-5 h-5 text-primary-foreground" />
+          </div>
+          {(isSheet || !collapsed) && (
+            <div className="min-w-0">
+              <h1 className="font-bold text-foreground text-sm leading-tight">{t('appTitle')}</h1>
+              <p className="text-muted-foreground text-xs leading-tight truncate">{t('appSubtitle')}</p>
+            </div>
+          )}
         </div>
-        {(isSheet || !collapsed) && (
-          <span className="ml-3 font-bold text-foreground">Меню</span>
-        )}
       </div>
 
       {/* Menu items */}

@@ -1,8 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { Header } from '@/components/Header';
 import { TransactionForm } from '@/components/TransactionForm';
 import { CurrencyBalanceCard } from '@/components/CurrencyBalanceCard';
-import { CurrencySelector } from '@/components/CurrencySelector';
 import { CategoryManager } from '@/components/CategoryManager';
 import { loadVisibleCurrencies, saveVisibleCurrencies, CurrencySettingsContent } from '@/components/CurrencySettingsDialog';
 import { CategoryPieChart } from '@/components/charts/CategoryPieChart';
@@ -167,12 +166,9 @@ const Index = () => {
         <Header />
         
         <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
-          {/* Controls Row - only show for balance and statistics tabs */}
-          {(activeTab === 'balance' || activeTab === 'statistics') && (
-            <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-              <div className="flex items-center gap-2">
-                <CurrencySelector value={selectedCurrency} onChange={setSelectedCurrency} className="w-full sm:w-[180px]" availableCurrencies={visibleCurrencies} />
-              </div>
+          {/* Controls Row - only show for statistics tab */}
+          {activeTab === 'statistics' && (
+            <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 sm:gap-4">
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="hidden sm:flex items-center gap-2">
                   <ImportPayout />
@@ -192,16 +188,44 @@ const Index = () => {
             </div>
           )}
 
+          {/* Balance Tab - Controls */}
+          {activeTab === 'balance' && (
+            <div className="mb-4 sm:mb-6 flex items-center justify-end">
+              <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button className="gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200">{t('addTransaction')}</Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[500px] max-h-[90vh] w-[95vw] overflow-hidden flex flex-col">
+                  <DialogHeader><DialogTitle>{t('newTransaction')}</DialogTitle></DialogHeader>
+                  <div className="overflow-y-auto flex-1 pr-2">
+                    <TransactionForm onSubmit={handleAddTransaction} incomeCategories={getIncomeCategories()} expenseCategories={getExpenseCategories()} />
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+          )}
+
           {/* Balance Tab */}
           {activeTab === 'balance' && (
             <div className="animate-fade-in">
               <h3 className="text-lg font-semibold text-foreground mb-4">{t('balanceByCurrency')}</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {visibleCurrencies.map((currency, index) => {
-                  const currencyBalance = getBalanceByCurrency(currency);
-                  return <CurrencyBalanceCard key={currency} currency={currency} income={currencyBalance.income} expense={currencyBalance.expense} balance={currencyBalance.balance} delay={index * 100} />;
-                })}
+                {visibleCurrencies
+                  .filter((currency) => {
+                    const currencyBalance = getBalanceByCurrency(currency);
+                    return currencyBalance.income > 0 || currencyBalance.expense > 0;
+                  })
+                  .map((currency, index) => {
+                    const currencyBalance = getBalanceByCurrency(currency);
+                    return <CurrencyBalanceCard key={currency} currency={currency} income={currencyBalance.income} expense={currencyBalance.expense} balance={currencyBalance.balance} delay={index * 100} />;
+                  })}
               </div>
+              {visibleCurrencies.filter((currency) => {
+                const currencyBalance = getBalanceByCurrency(currency);
+                return currencyBalance.income > 0 || currencyBalance.expense > 0;
+              }).length === 0 && (
+                <p className="text-muted-foreground text-center py-8">{t('noTransactions')}</p>
+              )}
             </div>
           )}
 
