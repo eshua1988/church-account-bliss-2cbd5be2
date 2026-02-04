@@ -19,6 +19,7 @@ import { Separator } from '@/components/ui/separator';
 import { AppSidebar } from '@/components/AppSidebar';
 import { GoogleSheetsSync } from '@/components/GoogleSheetsSync';
 import { SharePayoutLink } from '@/components/SharePayoutLink';
+import { useGoogleSheetsSync } from '@/hooks/useGoogleSheetsSync';
 
 const currencies: Currency[] = ['RUB', 'USD', 'EUR', 'UAH', 'BYN', 'PLN'];
 
@@ -52,6 +53,17 @@ const Index = () => {
     getExpenseCategories,
     getCategoryName,
   } = useSupabaseCategories();
+
+  const {
+    isExporting,
+    isImporting,
+    handleExport,
+    handleImport,
+  } = useGoogleSheetsSync({
+    transactions,
+    getCategoryName,
+    onDeleteTransaction: deleteTransaction,
+  });
 
   const handleVisibleCurrenciesChange = useCallback((newCurrencies: Currency[]) => {
     setVisibleCurrencies(newCurrencies);
@@ -162,7 +174,10 @@ const Index = () => {
           collapsed={sidebarCollapsed}
           mobileOpen={mobileMenuOpen}
           onMobileOpenChange={setMobileMenuOpen}
-          onSyncGoogleSheets={() => setActiveTab('settings')}
+          onExport={handleExport}
+          onImport={handleImport}
+          isExporting={isExporting}
+          isImporting={isImporting}
         />
         
         <div className="flex-1 overflow-auto">
