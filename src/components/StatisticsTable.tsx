@@ -27,21 +27,34 @@ interface StatisticsTableProps {
   transactions: Transaction[];
   getCategoryName: (id: string) => string;
   onDelete?: (id: string) => void;
+  selectedCurrency?: string | null;
+  categories?: { id: string; name: string; type: string }[];
 }
 
 type TimeRange = 'all' | 'thisMonth' | 'lastMonth' | 'last3Months' | 'last6Months' | 'thisYear';
 
-export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: StatisticsTableProps) => {
+export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selectedCurrency, categories = [] }: StatisticsTableProps) => {
   const { t, getDateLocale } = useTranslation();
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [customDateRange, setCustomDateRange] = useState<{ from?: Date; to?: Date }>({});
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
   const filteredTransactions = useMemo(() => {
     let filtered = transactions;
 
+    // Apply currency filter
+    if (selectedCurrency) {
+      filtered = filtered.filter(t => t.currency === selectedCurrency);
+    }
+
     // Apply type filter
     filtered = filtered.filter(t => typeFilter === 'all' || t.type === typeFilter);
+
+    // Apply category filter
+    if (categoryFilter !== 'all') {
+      filtered = filtered.filter(t => t.category === categoryFilter);
+    }
 
     // Apply date filter (custom range takes precedence over timeRange)
     if (customDateRange.from || customDateRange.to) {
@@ -90,7 +103,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
     }
 
     return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, timeRange, typeFilter, customDateRange]);
+  }, [transactions, timeRange, typeFilter, customDateRange, selectedCurrency, categoryFilter]);
 
   const totals = useMemo(() => {
     const result: Record<string, { income: number; expense: number }> = {};
@@ -217,6 +230,21 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete }: Sta
               </SelectContent>
             </Select>
             <DateRangeFilter value={customDateRange} onChange={setCustomDateRange} />
+            {categories.length > 0 && (
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder={t('category')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все категории</SelectItem>
+                  {categories.map(cat => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Button variant="outline" size="sm" onClick={exportToPDF} className="font-medium">
               <Download className="w-4 h-4 mr-2" />
               {t('export') || 'HTML'}

@@ -5,8 +5,6 @@ import { CurrencyBalanceCard } from '@/components/CurrencyBalanceCard';
 import { CategoryManager } from '@/components/CategoryManager';
 import { loadVisibleCurrencies, saveVisibleCurrencies, CurrencySettingsContent } from '@/components/CurrencySettingsDialog';
 import { CategoryPieChart } from '@/components/charts/CategoryPieChart';
-import { BalanceLineChart } from '@/components/charts/BalanceLineChart';
-import { IncomeExpenseBarChart } from '@/components/charts/IncomeExpenseBarChart';
 import { StatisticsTable } from '@/components/StatisticsTable';
 import { PayoutGenerator } from '@/components/PayoutGenerator';
 import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
@@ -15,7 +13,6 @@ import { useTranslation } from '@/contexts/LanguageContext';
 import { Currency, CURRENCY_SYMBOLS, Transaction, TransactionType } from '@/types/transaction';
 import { Loader2 } from 'lucide-react';
 import ImportPayout from '@/components/ImportPayout';
-import DateRangeFilter from '@/components/DateRangeFilter';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
@@ -27,7 +24,7 @@ const currencies: Currency[] = ['RUB', 'USD', 'EUR', 'UAH', 'BYN', 'PLN'];
 
 const Index = () => {
   const { t, getDateLocale } = useTranslation();
-  const [selectedCurrency, setSelectedCurrency] = useState<Currency>('PLN');
+  const [selectedCurrency, setSelectedCurrency] = useState<Currency | null>(null);
   const [visibleCurrencies, setVisibleCurrencies] = useState<Currency[]>(loadVisibleCurrencies);
   const [activeTab, setActiveTab] = useState<'balance' | 'statistics' | 'payout' | 'settings'>('balance');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
@@ -61,11 +58,8 @@ const Index = () => {
     saveVisibleCurrencies(newCurrencies);
   }, []);
 
-  const balance = getBalanceByCurrency(selectedCurrency);
   const incomeByCategory = getTransactionsByCategory('income');
   const expenseByCategory = getTransactionsByCategory('expense');
-  const monthlyData = getMonthlyData(selectedCurrency);
-  const [period, setPeriod] = useState<{ from?: Date; to?: Date }>({});
 
   const handleAddTransaction = async (transaction: Omit<Transaction, 'id' | 'createdAt'>) => {
     try {
@@ -196,7 +190,22 @@ const Index = () => {
                   })
                   .map((currency, index) => {
                     const currencyBalance = getBalanceByCurrency(currency);
-                    return <CurrencyBalanceCard key={currency} currency={currency} income={currencyBalance.income} expense={currencyBalance.expense} balance={currencyBalance.balance} delay={index * 100} />;
+                    const isSelected = selectedCurrency === currency;
+                    return (
+                      <div 
+                        key={currency} 
+                        onClick={() => setSelectedCurrency(isSelected ? null : currency)}
+                        className={`cursor-pointer transition-all ${isSelected ? 'ring-2 ring-primary rounded-lg' : ''}`}
+                      >
+                        <CurrencyBalanceCard 
+                          currency={currency} 
+                          income={currencyBalance.income} 
+                          expense={currencyBalance.expense} 
+                          balance={currencyBalance.balance} 
+                          delay={index * 100} 
+                        />
+                      </div>
+                    );
                   })}
               </div>
               {visibleCurrencies.filter((currency) => {
@@ -214,23 +223,20 @@ const Index = () => {
               <Tabs defaultValue="table" className="w-full">
                 <TabsList className="mb-4 flex-wrap h-auto gap-1 p-1">
                   <TabsTrigger value="table" className="text-xs sm:text-sm">{t('transactionsTable')}</TabsTrigger>
-                  <TabsTrigger value="bar" className="text-xs sm:text-sm">{t('incomeVsExpenses')}</TabsTrigger>
-                  <TabsTrigger value="line" className="text-xs sm:text-sm">{t('balanceOverTime')}</TabsTrigger>
                   <TabsTrigger value="pie" className="text-xs sm:text-sm">{t('categoryDistribution')}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="table">
                   <div className="overflow-x-auto -mx-3 sm:mx-0">
                     <div className="min-w-[600px] sm:min-w-0 px-3 sm:px-0">
-                      <StatisticsTable transactions={transactions} getCategoryName={getCategoryName} onDelete={handleDeleteTransaction} />
+                      <StatisticsTable 
+                        transactions={transactions} 
+                        getCategoryName={getCategoryName} 
+                        onDelete={handleDeleteTransaction}
+                        selectedCurrency={selectedCurrency}
+                        categories={categories}
+                      />
                     </div>
                   </div>
-                </TabsContent>
-                <TabsContent value="bar"><IncomeExpenseBarChart data={monthlyData} currency={selectedCurrency} /></TabsContent>
-                <TabsContent value="line">
-                  <div className="mb-4 flex items-center justify-end">
-                    <DateRangeFilter value={period} onChange={setPeriod} />
-                  </div>
-                  <BalanceLineChart data={monthlyData} currency={selectedCurrency} startDate={period.from} endDate={period.to} />
                 </TabsContent>
                 <TabsContent value="pie">
                   <div className="grid grid-cols-1 gap-4">
