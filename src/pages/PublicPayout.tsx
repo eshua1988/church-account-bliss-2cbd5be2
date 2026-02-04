@@ -453,6 +453,10 @@ const PublicPayout = () => {
   const [continuingPayout, setContinuingPayout] = useState<PendingPayout | null>(null);
   const [isAddingImages, setIsAddingImages] = useState(false);
   
+  // Navigation history: tracks where user came from for proper back navigation
+  type NavigationScreen = 'login' | 'pending' | 'form' | 'continuing';
+  const [navigationHistory, setNavigationHistory] = useState<NavigationScreen[]>(['login']);
+  
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -979,28 +983,45 @@ const PublicPayout = () => {
     );
   }
 
-  const handleBackToPendingSelection = () => {
-    setContinuingPayout(null);
-    setShowPendingSelection(true);
-    setAttachedImages([]);
-    setHasSignature(false);
-    clearSignature();
+  // Navigation helper: push to history
+  const navigateTo = (screen: NavigationScreen) => {
+    setNavigationHistory(prev => [...prev, screen]);
   };
 
-  const handleBackFromMainForm = () => {
-    // If there are pending payouts, go to pending selection
-    if (pendingPayouts.length > 0) {
-      setShowPendingSelection(true);
-    } else {
-      // Otherwise, go back to login screen
-      setIsAuthenticated(false);
-      setSubmitterFirstName('');
-      setSubmitterLastName('');
-    }
-    // Clear form state
+  // Navigation helper: go back
+  const goBack = () => {
+    setNavigationHistory(prev => {
+      if (prev.length <= 1) return prev;
+      return prev.slice(0, -1);
+    });
+    
+    // Get the previous screen (before current)
+    const prevScreen = navigationHistory.length > 1 ? navigationHistory[navigationHistory.length - 2] : 'login';
+    
+    // Reset form state
     setAttachedImages([]);
     setHasSignature(false);
     clearSignature();
+    
+    switch (prevScreen) {
+      case 'login':
+        setIsAuthenticated(false);
+        setShowPendingSelection(false);
+        setContinuingPayout(null);
+        break;
+      case 'pending':
+        setShowPendingSelection(true);
+        setContinuingPayout(null);
+        break;
+      case 'form':
+        setShowPendingSelection(false);
+        setContinuingPayout(null);
+        setIsAuthenticated(true);
+        break;
+      case 'continuing':
+        // This case shouldn't normally happen
+        break;
+    }
   };
 
   // Authentication form
@@ -1026,21 +1047,25 @@ const PublicPayout = () => {
           // Continue anyway if check fails
           setIsAuthenticated(true);
           setFormData(prev => ({ ...prev, issuedTo: fullName }));
+          navigateTo('form');
           return;
         }
         
         if (data?.pendingPayouts && data.pendingPayouts.length > 0) {
           setPendingPayouts(data.pendingPayouts);
           setShowPendingSelection(true);
+          navigateTo('pending');
         } else {
           setIsAuthenticated(true);
           setFormData(prev => ({ ...prev, issuedTo: fullName }));
+          navigateTo('form');
         }
       } catch (err) {
         console.error('Error checking pending:', err);
         // Continue anyway
         setIsAuthenticated(true);
         setFormData(prev => ({ ...prev, issuedTo: fullName }));
+        navigateTo('form');
       } finally {
         setIsCheckingPending(false);
       }
@@ -1050,6 +1075,7 @@ const PublicPayout = () => {
       setContinuingPayout(payout);
       setShowPendingSelection(false);
       setIsAuthenticated(true);
+      navigateTo('continuing');
       
       // Pre-fill form with existing transaction data
       const category = categories.find(c => c.id === payout.category_id);
@@ -1072,8 +1098,8 @@ const PublicPayout = () => {
 
     const handleCreateNew = () => {
       setShowPendingSelection(false);
-      setPendingPayouts([]);
       setIsAuthenticated(true);
+      navigateTo('form');
       setFormData(prev => ({
         ...prev,
         issuedTo: `${submitterFirstName.trim()} ${submitterLastName.trim()}`
@@ -1081,13 +1107,8 @@ const PublicPayout = () => {
     };
 
     const handleBackToLogin = () => {
-      setShowPendingSelection(false);
-      setPendingPayouts([]);
-      setIsAuthenticated(false);
-      setContinuingPayout(null);
+      goBack();
     };
-
-    // Show pending selection screen
     if (showPendingSelection && pendingPayouts.length > 0) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -1321,7 +1342,7 @@ const PublicPayout = () => {
             {continuingPayout ? (
               <>
                 <Button
-                  onClick={handleBackToPendingSelection}
+                  onClick={goBack}
                   variant="ghost"
                   size="sm"
                   className="mb-2"
@@ -1448,7 +1469,7 @@ const PublicPayout = () => {
             ) : (
               <>
                 <Button
-                  onClick={handleBackFromMainForm}
+                  onClick={goBack}
                   variant="ghost"
                   size="sm"
                   className="mb-2"
