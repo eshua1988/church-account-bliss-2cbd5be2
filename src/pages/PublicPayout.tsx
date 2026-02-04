@@ -987,6 +987,22 @@ const PublicPayout = () => {
     clearSignature();
   };
 
+  const handleBackFromMainForm = () => {
+    // If there are pending payouts, go to pending selection
+    if (pendingPayouts.length > 0) {
+      setShowPendingSelection(true);
+    } else {
+      // Otherwise, go back to login screen
+      setIsAuthenticated(false);
+      setSubmitterFirstName('');
+      setSubmitterLastName('');
+    }
+    // Clear form state
+    setAttachedImages([]);
+    setHasSignature(false);
+    clearSignature();
+  };
+
   // Authentication form
   if (!isAuthenticated) {
     const handleAuth = async () => {
@@ -1431,6 +1447,15 @@ const PublicPayout = () => {
               </>
             ) : (
               <>
+                <Button
+                  onClick={handleBackFromMainForm}
+                  variant="ghost"
+                  size="sm"
+                  className="mb-2"
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  {t.back}
+                </Button>
             <p className="text-sm text-muted-foreground">{t.requiredFields}</p>
             
             {/* Date, Currency, Amount, Issued To */}
