@@ -8,3 +8,9 @@ verify_jwt = false
 
 [functions.submit-public-payout]
 verify_jwt = false
+
+[functions.check-pending-payouts]
+verify_jwt = false
+
+[functions.add-images-to-payout]
+verify_jwt = false

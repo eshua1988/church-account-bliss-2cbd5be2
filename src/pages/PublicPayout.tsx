@@ -230,6 +230,24 @@ const PublicPayout = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [submitterFirstName, setSubmitterFirstName] = useState('');
   const [submitterLastName, setSubmitterLastName] = useState('');
+  const [isCheckingPending, setIsCheckingPending] = useState(false);
+  
+  // Pending payouts state
+  interface PendingPayout {
+    id: string;
+    amount: number;
+    currency: string;
+    description: string | null;
+    date: string;
+    issued_to: string | null;
+    amount_in_words: string | null;
+    category_id: string | null;
+    created_at: string;
+  }
+  const [pendingPayouts, setPendingPayouts] = useState<PendingPayout[]>([]);
+  const [showPendingSelection, setShowPendingSelection] = useState(false);
+  const [continuingPayout, setContinuingPayout] = useState<PendingPayout | null>(null);
+  const [isAddingImages, setIsAddingImages] = useState(false);
   
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -632,6 +650,34 @@ const PublicPayout = () => {
     setIsSaving(true);
 
     try {
+      // If continuing an existing payout, update it instead of creating new
+      if (continuingPayout) {
+        // Update the existing transaction to mark images as added
+        const { data: updateData, error: updateError } = await supabase.functions.invoke('add-images-to-payout', {
+          body: {
+            token,
+            transactionId: continuingPayout.id,
+            submitterName: `${submitterFirstName} ${submitterLastName}`,
+          }
+        });
+
+        if (updateError) throw updateError;
+        
+        if (updateData?.error) {
+          throw new Error(updateData.error);
+        }
+        
+        // Generate PDF with images
+        await generatePDF();
+
+        setIsSuccess(true);
+        toast({
+          title: 'Zapisano!',
+          description: 'Zdjęcia zostały dodane do dokumentu',
+        });
+        return;
+      }
+
       // Find category ID by name
       const category = categories.find(c => c.name === formData.departmentName);
 
@@ -678,7 +724,10 @@ const PublicPayout = () => {
     }
   };
 
-  const isFormValid = formData.amount && formData.issuedTo && formData.departmentName && formData.basis && formData.amountInWords && (imagesOptional || attachedImages.length > 0);
+  // For continuing payout, require images
+  const isFormValid = continuingPayout 
+    ? attachedImages.length > 0 
+    : (formData.amount && formData.issuedTo && formData.departmentName && formData.basis && formData.amountInWords && (imagesOptional || attachedImages.length > 0));
 
   if (loading) {
     return (
@@ -722,16 +771,145 @@ const PublicPayout = () => {
 
   // Authentication form
   if (!isAuthenticated) {
-    const handleAuth = () => {
-      if (submitterFirstName.trim() && submitterLastName.trim()) {
+    const handleAuth = async () => {
+      if (!submitterFirstName.trim() || !submitterLastName.trim()) return;
+      
+      const fullName = `${submitterFirstName.trim()} ${submitterLastName.trim()}`;
+      
+      setIsCheckingPending(true);
+      
+      try {
+        // Check for pending payouts (transactions without images)
+        const { data, error } = await supabase.functions.invoke('check-pending-payouts', {
+          body: { 
+            token, 
+            submitterName: fullName 
+          }
+        });
+        
+        if (error) {
+          console.error('Error checking pending payouts:', error);
+          // Continue anyway if check fails
+          setIsAuthenticated(true);
+          setFormData(prev => ({ ...prev, issuedTo: fullName }));
+          return;
+        }
+        
+        if (data?.pendingPayouts && data.pendingPayouts.length > 0) {
+          setPendingPayouts(data.pendingPayouts);
+          setShowPendingSelection(true);
+        } else {
+          setIsAuthenticated(true);
+          setFormData(prev => ({ ...prev, issuedTo: fullName }));
+        }
+      } catch (err) {
+        console.error('Error checking pending:', err);
+        // Continue anyway
         setIsAuthenticated(true);
-        // Pre-fill the issuedTo field with the name
-        setFormData(prev => ({
-          ...prev,
-          issuedTo: `${submitterFirstName.trim()} ${submitterLastName.trim()}`
-        }));
+        setFormData(prev => ({ ...prev, issuedTo: fullName }));
+      } finally {
+        setIsCheckingPending(false);
       }
     };
+
+    const handleSelectPending = (payout: PendingPayout) => {
+      setContinuingPayout(payout);
+      setShowPendingSelection(false);
+      setIsAuthenticated(true);
+      
+      // Pre-fill form with existing transaction data
+      const category = categories.find(c => c.id === payout.category_id);
+      const cleanDescription = payout.description?.replace(/\s*\[Bez załączników - [^\]]+\]/g, '').trim() || '';
+      
+      setFormData({
+        date: new Date(payout.date),
+        currency: payout.currency,
+        amount: payout.amount.toString(),
+        issuedTo: payout.issued_to || `${submitterFirstName.trim()} ${submitterLastName.trim()}`,
+        bankAccount: '',
+        departmentName: category?.name || '',
+        basis: cleanDescription,
+        amountInWords: payout.amount_in_words || '',
+      });
+      
+      // Force images required for continuation
+      setImagesOptional(false);
+    };
+
+    const handleCreateNew = () => {
+      setShowPendingSelection(false);
+      setPendingPayouts([]);
+      setIsAuthenticated(true);
+      setFormData(prev => ({
+        ...prev,
+        issuedTo: `${submitterFirstName.trim()} ${submitterLastName.trim()}`
+      }));
+    };
+
+    // Show pending selection screen
+    if (showPendingSelection && pendingPayouts.length > 0) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background p-4">
+          <Toaster />
+          <Card className="max-w-lg w-full shadow-lg">
+            <CardHeader className="text-center border-b pb-4">
+              <CardTitle className="text-xl sm:text-2xl font-bold text-primary">
+                Dowód wypłaty
+              </CardTitle>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE
+              </p>
+            </CardHeader>
+            <CardContent className="pt-6 space-y-4">
+              <div className="text-center mb-4">
+                <h3 className="text-lg font-semibold">Znaleźliśmy dokumenty bez zdjęć</h3>
+                <p className="text-sm text-muted-foreground">
+                  Wybierz dokument, aby dodać zdjęcia, lub utwórz nowy
+                </p>
+              </div>
+              
+              <div className="space-y-3 max-h-64 overflow-y-auto">
+                {pendingPayouts.map((payout) => {
+                  const cleanDesc = payout.description?.replace(/\s*\[Bez załączników - [^\]]+\]/g, '').trim() || '';
+                  const currencySymbol = currencies.find(c => c.value === payout.currency)?.label || payout.currency;
+                  
+                  return (
+                    <button
+                      key={payout.id}
+                      onClick={() => handleSelectPending(payout)}
+                      className="w-full p-3 text-left border border-border rounded-lg hover:bg-accent/50 transition-colors"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-medium">{cleanDesc || 'Bez opisu'}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {format(new Date(payout.date), 'dd.MM.yyyy')}
+                          </p>
+                        </div>
+                        <span className="font-semibold text-primary">
+                          {currencySymbol} {payout.amount.toFixed(2)}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              
+              <div className="border-t pt-4">
+                <Button
+                  onClick={handleCreateNew}
+                  variant="outline"
+                  className="w-full"
+                  size="lg"
+                >
+                  Utwórz nowy dokument
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
 
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -762,6 +940,7 @@ const PublicPayout = () => {
                   value={submitterFirstName}
                   onChange={(e) => setSubmitterFirstName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleAuth()}
+                  disabled={isCheckingPending}
                 />
               </div>
               
@@ -773,17 +952,25 @@ const PublicPayout = () => {
                   value={submitterLastName}
                   onChange={(e) => setSubmitterLastName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleAuth()}
+                  disabled={isCheckingPending}
                 />
               </div>
             </div>
             
             <Button
               onClick={handleAuth}
-              disabled={!submitterFirstName.trim() || !submitterLastName.trim()}
+              disabled={!submitterFirstName.trim() || !submitterLastName.trim() || isCheckingPending}
               className="w-full"
               size="lg"
             >
-              Kontynuuj
+              {isCheckingPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Sprawdzanie...
+                </>
+              ) : (
+                'Kontynuuj'
+              )}
             </Button>
           </CardContent>
         </Card>
@@ -801,7 +988,7 @@ const PublicPayout = () => {
               <div className="flex-1" />
               <div className="text-center flex-1">
                 <CardTitle className="text-xl sm:text-2xl font-bold text-primary">
-                  Dowód wypłaty
+                  {continuingPayout ? 'Dodaj zdjęcia do dokumentu' : 'Dowód wypłaty'}
                 </CardTitle>
                 <p className="text-xs sm:text-sm text-muted-foreground mt-1">
                   ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE
@@ -834,6 +1021,94 @@ const PublicPayout = () => {
           </CardHeader>
           
           <CardContent className="pt-6 space-y-6">
+            {/* Continuing payout - simplified view */}
+            {continuingPayout ? (
+              <>
+                <div className="bg-muted/50 p-4 rounded-lg space-y-2">
+                  <p className="text-sm font-medium">Dane dokumentu:</p>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <span className="text-muted-foreground">Data:</span>
+                    <span>{format(formData.date, 'dd.MM.yyyy')}</span>
+                    <span className="text-muted-foreground">Kwota:</span>
+                    <span>{currencies.find(c => c.value === formData.currency)?.label} {formData.amount}</span>
+                    <span className="text-muted-foreground">Odbiorca:</span>
+                    <span>{formData.issuedTo}</span>
+                    <span className="text-muted-foreground">Podstawa:</span>
+                    <span>{formData.basis}</span>
+                  </div>
+                </div>
+                
+                {/* Image Attachments - Required for continuation */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label>Załączniki (zdjęcia) *</Label>
+                    <span className="text-xs text-muted-foreground">Obowiązkowe</span>
+                  </div>
+                  
+                  <div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleImageSelect}
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full border-dashed"
+                    >
+                      <ImagePlus className="w-4 h-4 mr-2" />
+                      Dodaj zdjęcia
+                    </Button>
+                    
+                    {attachedImages.length > 0 && (
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
+                        {attachedImages.map((img, index) => (
+                          <div key={index} className="relative group">
+                            <img
+                              src={img.preview}
+                              alt={`Załącznik ${index + 1}`}
+                              className="w-full h-20 object-cover rounded-lg border border-border"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeImage(index)}
+                              className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Każde zdjęcie zostanie umieszczone na osobnej stronie PDF
+                    </p>
+                  </div>
+                </div>
+                
+                {/* Submit Button */}
+                <div className="flex">
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={!isFormValid || isSaving || !fontLoaded}
+                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+                    size="lg"
+                  >
+                    {isSaving ? (
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    ) : (
+                      <Save className="w-5 h-5 mr-2" />
+                    )}
+                    Zapisz i pobierz PDF
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
             <p className="text-sm text-muted-foreground">* Pola obowiązkowe do wypełnienia</p>
             
             {/* Date, Currency, Amount, Issued To */}
@@ -1069,6 +1344,8 @@ const PublicPayout = () => {
                 Zapisz i pobierz PDF
               </Button>
             </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
