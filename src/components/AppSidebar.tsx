@@ -1,4 +1,5 @@
-import { BarChart3, Settings, FileText, Wallet, LogOut, RefreshCw } from 'lucide-react';
+import { BarChart3, Settings, FileText, Wallet, LogOut, RefreshCw, Key } from 'lucide-react';
+import { useState } from 'react';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
 import {
@@ -12,6 +13,25 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { supabase } from '@/integrations/supabase/client';
 
 interface AppSidebarProps {
   activeTab: 'balance' | 'statistics' | 'payout' | 'settings';
@@ -36,12 +56,17 @@ export const AppSidebar = ({
   const isMobile = useIsMobile();
   const { user, signOut } = useAuth();
   const { toast } = useToast();
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const menuItems = [
     { id: 'balance' as const, icon: Wallet, label: t('balanceByCurrency') },
     { id: 'statistics' as const, icon: BarChart3, label: t('statistics') },
-    { id: 'payout' as const, icon: FileText, label: t('payoutGenerator') },
     { id: 'settings' as const, icon: Settings, label: t('settings') },
+    { id: 'sync' as const, icon: RefreshCw, label: 'Синхронизация', isSync: true },
+    { id: 'payout' as const, icon: FileText, label: t('payoutGenerator') },
   ];
 
   const handleTabChange = (tab: 'balance' | 'statistics' | 'payout' | 'settings') => {
@@ -59,118 +84,144 @@ export const AppSidebar = ({
     });
   };
 
+  const handleChangePassword = async () => {
+    if (newPassword !== confirmPassword) {
+      toast({
+        title: 'Ошибка',
+        description: 'Пароли не совпадают',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      toast({
+        title: 'Ошибка',
+        description: 'Пароль должен содержать минимум 6 символов',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      
+      toast({
+        title: 'Успешно',
+        description: 'Пароль успешно изменён',
+      });
+      setPasswordDialogOpen(false);
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (error: any) {
+      toast({
+        title: 'Ошибка',
+        description: error.message || 'Не удалось изменить пароль',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
   const getInitials = () => {
     const email = user?.email || '';
     return email.substring(0, 2).toUpperCase();
   };
 
-  const MenuButton = ({ item }: { item: typeof menuItems[0] }) => (
-    <button
-      onClick={() => handleTabChange(item.id)}
-      className={cn(
-        'w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200',
-        'hover:bg-primary/10',
-        activeTab === item.id
-          ? 'bg-primary text-primary-foreground shadow-glow'
-          : 'text-foreground'
-      )}
-    >
-      <item.icon className="w-5 h-5 flex-shrink-0" />
-      <span className="font-medium">{item.label}</span>
-    </button>
-  );
+  const handleSyncClick = () => {
+    if (onSync && !isSyncing) {
+      onSync();
+    }
+    if (isMobile) {
+      onMobileOpenChange(false);
+    }
+  };
 
-  const UserProfile = ({ showText = true }: { showText?: boolean }) => (
-    <div className={cn(
-      'flex items-center gap-3 px-4 py-3',
-      !showText && 'justify-center px-2'
-    )}>
-      <Avatar className="h-10 w-10 flex-shrink-0">
-        <AvatarFallback className="gradient-primary text-primary-foreground text-sm">
-          {getInitials()}
-        </AvatarFallback>
-      </Avatar>
-      {showText && (
-        <div className="flex flex-col min-w-0">
-          <p className="text-sm font-medium leading-none truncate">
-            {user?.user_metadata?.display_name || 'Пользователь'}
-          </p>
-          <p className="text-xs leading-none text-muted-foreground truncate mt-1">
-            {user?.email}
-          </p>
-        </div>
-      )}
-    </div>
-  );
-
-  const SyncButton = ({ showText = true }: { showText?: boolean }) => {
-    if (!showText) {
+  const MenuButton = ({ item }: { item: typeof menuItems[0] }) => {
+    if (item.isSync) {
       return (
-        <Tooltip delayDuration={0}>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="w-full"
-              onClick={onSync}
-              disabled={isSyncing}
-            >
-              <RefreshCw className={cn("w-5 h-5", isSyncing && "animate-spin")} />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={10}>
-            {isSyncing ? 'Синхронизация...' : 'Синхронизация'}
-          </TooltipContent>
-        </Tooltip>
+        <button
+          onClick={handleSyncClick}
+          disabled={isSyncing}
+          className={cn(
+            'w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200',
+            'hover:bg-primary/10 text-foreground',
+            isSyncing && 'opacity-50 cursor-not-allowed'
+          )}
+        >
+          <item.icon className={cn("w-5 h-5 flex-shrink-0", isSyncing && "animate-spin")} />
+          <span className="font-medium">{isSyncing ? 'Синхронизация...' : item.label}</span>
+        </button>
       );
     }
 
     return (
-      <Button
-        variant="ghost"
-        className="w-full justify-start gap-3 px-4 py-3 h-auto"
-        onClick={onSync}
-        disabled={isSyncing}
+      <button
+        onClick={() => handleTabChange(item.id as 'balance' | 'statistics' | 'payout' | 'settings')}
+        className={cn(
+          'w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200',
+          'hover:bg-primary/10',
+          activeTab === item.id
+            ? 'bg-primary text-primary-foreground shadow-glow'
+            : 'text-foreground'
+        )}
       >
-        <RefreshCw className={cn("w-5 h-5 flex-shrink-0", isSyncing && "animate-spin")} />
-        <span className="font-medium">{isSyncing ? 'Синхронизация...' : 'Синхронизация'}</span>
-      </Button>
+        <item.icon className="w-5 h-5 flex-shrink-0" />
+        <span className="font-medium">{item.label}</span>
+      </button>
     );
   };
 
-  const BottomActions = ({ showText = true }: { showText?: boolean }) => (
-    <div className="border-t border-border px-2 py-3 space-y-2">
-      {/* Google Sheets Sync Button */}
-      <SyncButton showText={showText} />
-
-      {/* Logout Button */}
-      {showText ? (
-        <Button
-          variant="ghost"
-          className="w-full justify-start gap-3 px-4 py-3 h-auto text-destructive hover:text-destructive hover:bg-destructive/10"
-          onClick={handleSignOut}
-        >
-          <LogOut className="w-5 h-5 flex-shrink-0" />
-          <span className="font-medium">Выйти</span>
-        </Button>
-      ) : (
-        <Tooltip delayDuration={0}>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
-              onClick={handleSignOut}
-            >
-              <LogOut className="w-5 h-5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={10}>
-            Выйти
-          </TooltipContent>
-        </Tooltip>
-      )}
-    </div>
+  const UserProfile = ({ showText = true }: { showText?: boolean }) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className={cn(
+          'flex items-center gap-3 px-4 py-3 w-full hover:bg-accent/50 transition-colors rounded-lg',
+          !showText && 'justify-center px-2'
+        )}>
+          <Avatar className="h-10 w-10 flex-shrink-0">
+            <AvatarFallback className="gradient-primary text-primary-foreground text-sm">
+              {getInitials()}
+            </AvatarFallback>
+          </Avatar>
+          {showText && (
+            <div className="flex flex-col min-w-0 text-left">
+              <p className="text-sm font-medium leading-none truncate">
+                {user?.user_metadata?.display_name || 'Пользователь'}
+              </p>
+              <p className="text-xs leading-none text-muted-foreground truncate mt-1">
+                {user?.email}
+              </p>
+            </div>
+          )}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="w-56" align="start" side={showText ? "bottom" : "right"}>
+        <DropdownMenuLabel className="font-normal">
+          <div className="flex flex-col space-y-1">
+            <p className="text-sm font-medium leading-none">
+              {user?.user_metadata?.display_name || 'Пользователь'}
+            </p>
+            <p className="text-xs leading-none text-muted-foreground">
+              {user?.email}
+            </p>
+          </div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => setPasswordDialogOpen(true)}>
+          <Key className="mr-2 h-4 w-4" />
+          <span>Сменить пароль</span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
+          <LogOut className="mr-2 h-4 w-4" />
+          <span>Выйти</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 
   const SidebarContent = ({ isSheet = false }: { isSheet?: boolean }) => (
@@ -184,7 +235,7 @@ export const AppSidebar = ({
             <Tooltip delayDuration={0}>
               <TooltipTrigger asChild>
                 <div className="flex justify-center py-3">
-                  <Avatar className="h-10 w-10">
+                  <Avatar className="h-10 w-10 cursor-pointer">
                     <AvatarFallback className="gradient-primary text-primary-foreground text-sm">
                       {getInitials()}
                     </AvatarFallback>
@@ -212,21 +263,35 @@ export const AppSidebar = ({
               ) : (
                 <Tooltip delayDuration={0}>
                   <TooltipTrigger asChild>
-                    <button
-                      onClick={() => handleTabChange(item.id)}
-                      className={cn(
-                        'w-full flex items-center justify-center p-3 rounded-lg transition-all duration-200',
-                        'hover:bg-primary/10',
-                        activeTab === item.id
-                          ? 'bg-primary text-primary-foreground shadow-glow'
-                          : 'text-foreground'
-                      )}
-                    >
-                      <item.icon className="w-5 h-5" />
-                    </button>
+                    {item.isSync ? (
+                      <button
+                        onClick={handleSyncClick}
+                        disabled={isSyncing}
+                        className={cn(
+                          'w-full flex items-center justify-center p-3 rounded-lg transition-all duration-200',
+                          'hover:bg-primary/10 text-foreground',
+                          isSyncing && 'opacity-50 cursor-not-allowed'
+                        )}
+                      >
+                        <item.icon className={cn("w-5 h-5", isSyncing && "animate-spin")} />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleTabChange(item.id as 'balance' | 'statistics' | 'payout' | 'settings')}
+                        className={cn(
+                          'w-full flex items-center justify-center p-3 rounded-lg transition-all duration-200',
+                          'hover:bg-primary/10',
+                          activeTab === item.id
+                            ? 'bg-primary text-primary-foreground shadow-glow'
+                            : 'text-foreground'
+                        )}
+                      >
+                        <item.icon className="w-5 h-5" />
+                      </button>
+                    )}
                   </TooltipTrigger>
                   <TooltipContent side="right" sideOffset={10}>
-                    {item.label}
+                    {item.isSync ? (isSyncing ? 'Синхронизация...' : item.label) : item.label}
                   </TooltipContent>
                 </Tooltip>
               )}
@@ -234,35 +299,120 @@ export const AppSidebar = ({
           ))}
         </ul>
       </nav>
-
-      {/* Bottom actions */}
-      <BottomActions showText={isSheet || !collapsed} />
     </div>
   );
 
   // Mobile: use Sheet
   if (isMobile) {
     return (
-      <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
-        <SheetContent 
-          side="left" 
-          className="w-72 p-0 bg-card border-r border-border"
-        >
-          <SidebarContent isSheet />
-        </SheetContent>
-      </Sheet>
+      <>
+        <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
+          <SheetContent 
+            side="left" 
+            className="w-72 p-0 bg-card border-r border-border"
+          >
+            <SidebarContent isSheet />
+          </SheetContent>
+        </Sheet>
+
+        {/* Password Change Dialog */}
+        <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Сменить пароль</DialogTitle>
+              <DialogDescription>
+                Введите новый пароль для вашей учётной записи
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-password">Новый пароль</Label>
+                <Input
+                  id="new-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Минимум 6 символов"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password">Подтвердите пароль</Label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Повторите пароль"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPasswordDialogOpen(false)}>
+                Отмена
+              </Button>
+              <Button onClick={handleChangePassword} disabled={isChangingPassword}>
+                {isChangingPassword ? 'Сохранение...' : 'Сохранить'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </>
     );
   }
 
   // Desktop: regular sidebar
   return (
-    <aside
-      className={cn(
-        'bg-card border-r border-border transition-all duration-300 flex flex-col flex-shrink-0',
-        collapsed ? 'w-16' : 'w-56'
-      )}
-    >
-      <SidebarContent />
-    </aside>
+    <>
+      <aside
+        className={cn(
+          'bg-card border-r border-border transition-all duration-300 flex flex-col flex-shrink-0',
+          collapsed ? 'w-16' : 'w-56'
+        )}
+      >
+        <SidebarContent />
+      </aside>
+
+      {/* Password Change Dialog */}
+      <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Сменить пароль</DialogTitle>
+            <DialogDescription>
+              Введите новый пароль для вашей учётной записи
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-password-desktop">Новый пароль</Label>
+              <Input
+                id="new-password-desktop"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Минимум 6 символов"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password-desktop">Подтвердите пароль</Label>
+              <Input
+                id="confirm-password-desktop"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Повторите пароль"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPasswordDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button onClick={handleChangePassword} disabled={isChangingPassword}>
+              {isChangingPassword ? 'Сохранение...' : 'Сохранить'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
