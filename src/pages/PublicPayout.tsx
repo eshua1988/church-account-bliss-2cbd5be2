@@ -1093,11 +1093,44 @@ const PublicPayout = () => {
                   </div>
                 </div>
                 
+                {/* Signature - Required for continuation */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Podpis odbiorcy *</Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={clearSignature}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <Eraser className="w-4 h-4 mr-1" />
+                      Wyczyść
+                    </Button>
+                  </div>
+                  <div className="border-2 border-dashed rounded-lg bg-white">
+                    <canvas
+                      ref={signatureCanvasRef}
+                      width={600}
+                      height={150}
+                      className="w-full h-32 cursor-crosshair touch-none rounded-lg"
+                      style={{ backgroundColor: 'white' }}
+                      onMouseDown={startDrawing}
+                      onMouseMove={draw}
+                      onMouseUp={stopDrawing}
+                      onMouseLeave={stopDrawing}
+                      onTouchStart={startDrawing}
+                      onTouchMove={draw}
+                      onTouchEnd={stopDrawing}
+                    />
+                  </div>
+                </div>
+                
                 {/* Submit Button */}
                 <div className="flex">
                   <Button
                     onClick={handleSubmit}
-                    disabled={!isFormValid || isSaving || !fontLoaded}
+                    disabled={!isFormValid || !hasSignature || isSaving || !fontLoaded}
                     className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
                     size="lg"
                   >
