@@ -39,6 +39,8 @@ const Index = () => {
   const [visibleCurrencies, setVisibleCurrencies] = useState<Currency[]>(loadVisibleCurrencies);
   const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'balance' | 'statistics' | 'payout' | 'settings'>('balance');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { toast } = useToast();
   
   const {
@@ -159,11 +161,23 @@ const Index = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background flex">
-      <AppSidebar activeTab={activeTab} onTabChange={setActiveTab} />
+    <div className="min-h-screen bg-background flex flex-col">
+      <Header 
+        collapsed={sidebarCollapsed}
+        onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+        onOpenMobileMenu={() => setMobileMenuOpen(true)}
+      />
       
-      <div className="flex-1">
-        <Header />
+      <div className="flex flex-1 overflow-hidden">
+        <AppSidebar 
+          activeTab={activeTab} 
+          onTabChange={setActiveTab}
+          collapsed={sidebarCollapsed}
+          mobileOpen={mobileMenuOpen}
+          onMobileOpenChange={setMobileMenuOpen}
+        />
+        
+        <div className="flex-1 overflow-auto">
         
         <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
           {/* Controls Row - only show for statistics tab */}
@@ -300,6 +314,7 @@ const Index = () => {
             </div>
           )}
         </main>
+        </div>
       </div>
     </div>
   );
