@@ -34,6 +34,206 @@ const languageFlags: Record<Language, string> = {
   uk: '🇺🇦',
 };
 
+// Translations for all UI text
+const translations: Record<Language, Record<string, string>> = {
+  pl: {
+    title: 'Dowód wypłaty',
+    subtitle: 'ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE',
+    requiredFields: '* Pola obowiązkowe do wypełnienia',
+    date: 'Data',
+    amount: 'Suma',
+    issuedTo: 'Wydano (imię i nazwisko)',
+    bankAccount: 'Konto do przelewu',
+    bankAccountPlaceholder: 'Wpisz numer konta lub telefonu...',
+    department: 'Nazwa oddziału',
+    selectCategory: 'Wybierz kategorię',
+    basis: 'Podstawa (na jakie potrzeby)',
+    basisPlaceholder: 'Wpisz podstawę wypłaty...',
+    amountInWords: 'Suma słownie',
+    attachments: 'Załączniki (zdjęcia)',
+    required: 'Obowiązkowe',
+    optional: 'Nieobowiązkowe',
+    addPhotos: 'Dodaj zdjęcia',
+    photoNote: 'Każde zdjęcie zostanie umieszczone na osobnej stronie PDF',
+    signature: 'Podpis odbiorcy',
+    clear: 'Wyczyść',
+    saveAndDownload: 'Zapisz i pobierz PDF',
+    saving: 'Zapisywanie...',
+    success: 'Zapisano!',
+    successMessage: 'Dokument został zapisany. Możesz zamknąć tę stronę.',
+    createAnother: 'Utwórz kolejny dokument',
+    loading: 'Ładowanie...',
+    invalidLink: 'Nieprawidłowy link',
+    linkInactive: 'Link jest nieaktywny lub nie istnieje',
+    cannotLoad: 'Nie można załadować danych',
+    enterData: 'Wprowadź swoje dane',
+    enterDataDesc: 'Aby kontynuować, podaj imię i nazwisko',
+    firstName: 'Imię',
+    lastName: 'Nazwisko',
+    continue: 'Kontynuuj',
+    checking: 'Sprawdzanie...',
+    foundDocuments: 'Znaleźliśmy dokumenty bez zdjęć',
+    selectDocument: 'Wybierz dokument, aby dodać zdjęcia, lub utwórz nowy',
+    createNew: 'Utwórz nowy dokument',
+    noDescription: 'Bez opisu',
+    addPhotosTitle: 'Dodaj zdjęcia do dokumentu',
+    documentData: 'Dane dokumentu:',
+    recipient: 'Odbiorca:',
+    basisLabel: 'Podstawa:',
+    photosAdded: 'Zdjęcia zostały dodane do dokumentu',
+    enterFirstName: 'Wpisz imię...',
+    enterLastName: 'Wpisz nazwisko...',
+    enterName: 'Wpisz imię i nazwisko...',
+  },
+  ru: {
+    title: 'Расходный ордер',
+    subtitle: 'ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE',
+    requiredFields: '* Обязательные поля для заполнения',
+    date: 'Дата',
+    amount: 'Сумма',
+    issuedTo: 'Выдано (имя и фамилия)',
+    bankAccount: 'Счёт для перевода',
+    bankAccountPlaceholder: 'Введите номер счёта или телефон...',
+    department: 'Название отдела',
+    selectCategory: 'Выберите категорию',
+    basis: 'Основание (на какие нужды)',
+    basisPlaceholder: 'Введите основание выплаты...',
+    amountInWords: 'Сумма прописью',
+    attachments: 'Вложения (фото)',
+    required: 'Обязательно',
+    optional: 'Необязательно',
+    addPhotos: 'Добавить фото',
+    photoNote: 'Каждое фото будет размещено на отдельной странице PDF',
+    signature: 'Подпись получателя',
+    clear: 'Очистить',
+    saveAndDownload: 'Сохранить и скачать PDF',
+    saving: 'Сохранение...',
+    success: 'Сохранено!',
+    successMessage: 'Документ сохранён. Можете закрыть эту страницу.',
+    createAnother: 'Создать ещё один документ',
+    loading: 'Загрузка...',
+    invalidLink: 'Неверная ссылка',
+    linkInactive: 'Ссылка неактивна или не существует',
+    cannotLoad: 'Не удалось загрузить данные',
+    enterData: 'Введите свои данные',
+    enterDataDesc: 'Чтобы продолжить, укажите имя и фамилию',
+    firstName: 'Имя',
+    lastName: 'Фамилия',
+    continue: 'Продолжить',
+    checking: 'Проверка...',
+    foundDocuments: 'Найдены документы без фото',
+    selectDocument: 'Выберите документ для добавления фото или создайте новый',
+    createNew: 'Создать новый документ',
+    noDescription: 'Без описания',
+    addPhotosTitle: 'Добавить фото к документу',
+    documentData: 'Данные документа:',
+    recipient: 'Получатель:',
+    basisLabel: 'Основание:',
+    photosAdded: 'Фото добавлены к документу',
+    enterFirstName: 'Введите имя...',
+    enterLastName: 'Введите фамилию...',
+    enterName: 'Введите имя и фамилию...',
+  },
+  en: {
+    title: 'Payment Voucher',
+    subtitle: 'ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE',
+    requiredFields: '* Required fields',
+    date: 'Date',
+    amount: 'Amount',
+    issuedTo: 'Issued to (full name)',
+    bankAccount: 'Bank account',
+    bankAccountPlaceholder: 'Enter account number or phone...',
+    department: 'Department name',
+    selectCategory: 'Select category',
+    basis: 'Purpose (for what needs)',
+    basisPlaceholder: 'Enter payment purpose...',
+    amountInWords: 'Amount in words',
+    attachments: 'Attachments (photos)',
+    required: 'Required',
+    optional: 'Optional',
+    addPhotos: 'Add photos',
+    photoNote: 'Each photo will be placed on a separate PDF page',
+    signature: 'Recipient signature',
+    clear: 'Clear',
+    saveAndDownload: 'Save and download PDF',
+    saving: 'Saving...',
+    success: 'Saved!',
+    successMessage: 'Document saved. You can close this page.',
+    createAnother: 'Create another document',
+    loading: 'Loading...',
+    invalidLink: 'Invalid link',
+    linkInactive: 'Link is inactive or does not exist',
+    cannotLoad: 'Failed to load data',
+    enterData: 'Enter your details',
+    enterDataDesc: 'To continue, enter your first and last name',
+    firstName: 'First name',
+    lastName: 'Last name',
+    continue: 'Continue',
+    checking: 'Checking...',
+    foundDocuments: 'Found documents without photos',
+    selectDocument: 'Select a document to add photos, or create new',
+    createNew: 'Create new document',
+    noDescription: 'No description',
+    addPhotosTitle: 'Add photos to document',
+    documentData: 'Document data:',
+    recipient: 'Recipient:',
+    basisLabel: 'Purpose:',
+    photosAdded: 'Photos added to document',
+    enterFirstName: 'Enter first name...',
+    enterLastName: 'Enter last name...',
+    enterName: 'Enter full name...',
+  },
+  uk: {
+    title: 'Видатковий ордер',
+    subtitle: 'ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE',
+    requiredFields: '* Обов\'язкові поля для заповнення',
+    date: 'Дата',
+    amount: 'Сума',
+    issuedTo: 'Видано (ім\'я та прізвище)',
+    bankAccount: 'Рахунок для переказу',
+    bankAccountPlaceholder: 'Введіть номер рахунку або телефон...',
+    department: 'Назва відділу',
+    selectCategory: 'Виберіть категорію',
+    basis: 'Підстава (на які потреби)',
+    basisPlaceholder: 'Введіть підставу виплати...',
+    amountInWords: 'Сума прописом',
+    attachments: 'Вкладення (фото)',
+    required: 'Обов\'язково',
+    optional: 'Необов\'язково',
+    addPhotos: 'Додати фото',
+    photoNote: 'Кожне фото буде розміщено на окремій сторінці PDF',
+    signature: 'Підпис отримувача',
+    clear: 'Очистити',
+    saveAndDownload: 'Зберегти та завантажити PDF',
+    saving: 'Збереження...',
+    success: 'Збережено!',
+    successMessage: 'Документ збережено. Можете закрити цю сторінку.',
+    createAnother: 'Створити ще один документ',
+    loading: 'Завантаження...',
+    invalidLink: 'Невірне посилання',
+    linkInactive: 'Посилання неактивне або не існує',
+    cannotLoad: 'Не вдалося завантажити дані',
+    enterData: 'Введіть свої дані',
+    enterDataDesc: 'Щоб продовжити, вкажіть ім\'я та прізвище',
+    firstName: 'Ім\'я',
+    lastName: 'Прізвище',
+    continue: 'Продовжити',
+    checking: 'Перевірка...',
+    foundDocuments: 'Знайдено документи без фото',
+    selectDocument: 'Виберіть документ для додавання фото або створіть новий',
+    createNew: 'Створити новий документ',
+    noDescription: 'Без опису',
+    addPhotosTitle: 'Додати фото до документу',
+    documentData: 'Дані документу:',
+    recipient: 'Отримувач:',
+    basisLabel: 'Підстава:',
+    photosAdded: 'Фото додано до документу',
+    enterFirstName: 'Введіть ім\'я...',
+    enterLastName: 'Введіть прізвище...',
+    enterName: 'Введіть ім\'я та прізвище...',
+  },
+};
+
 interface AttachedImage {
   file: File;
   preview: string;
@@ -256,6 +456,9 @@ const PublicPayout = () => {
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   const [language, setLanguage] = useState<Language>('pl');
   const [imagesOptional, setImagesOptional] = useState(false); // false = images required by default
+  
+  // Translation helper
+  const t = translations[language];
 
   const [formData, setFormData] = useState<PayoutFormData>({
     date: new Date(),
@@ -675,8 +878,8 @@ const PublicPayout = () => {
 
         setIsSuccess(true);
         toast({
-          title: 'Zapisano!',
-          description: 'Zdjęcia zostały dodane do dokumentu',
+          title: t.success,
+          description: t.photosAdded,
         });
         return;
       }
@@ -711,12 +914,12 @@ const PublicPayout = () => {
 
       setIsSuccess(true);
       toast({
-        title: 'Zapisano!',
-        description: 'Dokument został zapisany i pobrany',
+        title: t.success,
+        description: t.successMessage,
       });
     } catch (err) {
       console.error('Save error:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Nie udało się zapisać dokumentu';
+      const errorMessage = err instanceof Error ? err.message : t.cannotLoad;
       toast({
         title: 'Błąd',
         description: errorMessage,
@@ -759,12 +962,12 @@ const PublicPayout = () => {
         <Card className="max-w-md w-full">
           <CardContent className="pt-6 text-center space-y-4">
             <CheckCircle className="w-16 h-16 text-primary mx-auto" />
-            <h2 className="text-xl font-bold">Dziękujemy!</h2>
+            <h2 className="text-xl font-bold">{t.success}</h2>
             <p className="text-muted-foreground">
-              Dokument został zapisany i pobrany jako PDF.
+              {t.successMessage}
             </p>
             <Button onClick={() => setIsSuccess(false)} variant="outline">
-              Wypełnić kolejny dokument
+              {t.createAnother}
             </Button>
           </CardContent>
         </Card>
@@ -856,18 +1059,41 @@ const PublicPayout = () => {
           <Toaster />
           <Card className="max-w-lg w-full shadow-lg">
             <CardHeader className="text-center border-b pb-4">
+              <div className="flex justify-end mb-2">
+                <Select value={language} onValueChange={(v) => setLanguage(v as Language)}>
+                  <SelectTrigger className="w-[140px] bg-card border-border">
+                    <Globe className="w-4 h-4 mr-2 text-muted-foreground" />
+                    <SelectValue>
+                      <span className="flex items-center gap-2">
+                        <span>{languageFlags[language]}</span>
+                        <span>{LANGUAGE_NAMES[language]}</span>
+                      </span>
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(['pl', 'ru', 'en', 'uk'] as Language[]).map((lang) => (
+                      <SelectItem key={lang} value={lang}>
+                        <span className="flex items-center gap-2">
+                          <span>{languageFlags[lang]}</span>
+                          <span>{LANGUAGE_NAMES[lang]}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <CardTitle className="text-xl sm:text-2xl font-bold text-primary">
-                Dowód wypłaty
+                {t.title}
               </CardTitle>
               <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE
+                {t.subtitle}
               </p>
             </CardHeader>
             <CardContent className="pt-6 space-y-4">
               <div className="text-center mb-4">
-                <h3 className="text-lg font-semibold">Znaleźliśmy dokumenty bez zdjęć</h3>
+                <h3 className="text-lg font-semibold">{t.foundDocuments}</h3>
                 <p className="text-sm text-muted-foreground">
-                  Wybierz dokument, aby dodać zdjęcia, lub utwórz nowy
+                  {t.selectDocument}
                 </p>
               </div>
               
@@ -884,7 +1110,7 @@ const PublicPayout = () => {
                     >
                       <div className="flex justify-between items-start">
                         <div>
-                          <p className="font-medium">{cleanDesc || 'Bez opisu'}</p>
+                          <p className="font-medium">{cleanDesc || t.noDescription}</p>
                           <p className="text-sm text-muted-foreground">
                             {format(new Date(payout.date), 'dd.MM.yyyy')}
                           </p>
@@ -905,7 +1131,7 @@ const PublicPayout = () => {
                   className="w-full"
                   size="lg"
                 >
-                  Utwórz nowy dokument
+                  {t.createNew}
                 </Button>
               </div>
             </CardContent>
@@ -919,27 +1145,50 @@ const PublicPayout = () => {
         <Toaster />
         <Card className="max-w-md w-full shadow-lg">
           <CardHeader className="text-center border-b pb-4">
+            <div className="flex justify-end mb-2">
+              <Select value={language} onValueChange={(v) => setLanguage(v as Language)}>
+                <SelectTrigger className="w-[140px] bg-card border-border">
+                  <Globe className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue>
+                    <span className="flex items-center gap-2">
+                      <span>{languageFlags[language]}</span>
+                      <span>{LANGUAGE_NAMES[language]}</span>
+                    </span>
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {(['pl', 'ru', 'en', 'uk'] as Language[]).map((lang) => (
+                    <SelectItem key={lang} value={lang}>
+                      <span className="flex items-center gap-2">
+                        <span>{languageFlags[lang]}</span>
+                        <span>{LANGUAGE_NAMES[lang]}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <CardTitle className="text-xl sm:text-2xl font-bold text-primary">
-              Dowód wypłaty
+              {t.title}
             </CardTitle>
             <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-              ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE
+              {t.subtitle}
             </p>
           </CardHeader>
           <CardContent className="pt-6 space-y-4">
             <div className="text-center mb-4">
-              <h3 className="text-lg font-semibold">Wprowadź swoje dane</h3>
+              <h3 className="text-lg font-semibold">{t.enterData}</h3>
               <p className="text-sm text-muted-foreground">
-                Aby kontynuować, podaj imię i nazwisko
+                {t.enterDataDesc}
               </p>
             </div>
             
             <div className="space-y-3">
               <div className="space-y-2">
-                <Label htmlFor="firstName">Imię *</Label>
+                <Label htmlFor="firstName">{t.firstName} *</Label>
                 <Input
                   id="firstName"
-                  placeholder="Wpisz imię..."
+                  placeholder={t.enterFirstName}
                   value={submitterFirstName}
                   onChange={(e) => setSubmitterFirstName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleAuth()}
@@ -948,10 +1197,10 @@ const PublicPayout = () => {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="lastName">Nazwisko *</Label>
+                <Label htmlFor="lastName">{t.lastName} *</Label>
                 <Input
                   id="lastName"
-                  placeholder="Wpisz nazwisko..."
+                  placeholder={t.enterLastName}
                   value={submitterLastName}
                   onChange={(e) => setSubmitterLastName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleAuth()}
@@ -969,10 +1218,10 @@ const PublicPayout = () => {
               {isCheckingPending ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Sprawdzanie...
+                  {t.checking}
                 </>
               ) : (
-                'Kontynuuj'
+                t.continue
               )}
             </Button>
           </CardContent>
@@ -991,10 +1240,10 @@ const PublicPayout = () => {
               <div className="flex-1" />
               <div className="text-center flex-1">
                 <CardTitle className="text-xl sm:text-2xl font-bold text-primary">
-                  {continuingPayout ? 'Dodaj zdjęcia do dokumentu' : 'Dowód wypłaty'}
+                  {continuingPayout ? t.addPhotosTitle : t.title}
                 </CardTitle>
                 <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                  ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE
+                  {t.subtitle}
                 </p>
               </div>
               <div className="flex-1 flex justify-end">
@@ -1028,15 +1277,15 @@ const PublicPayout = () => {
             {continuingPayout ? (
               <>
                 <div className="bg-muted/50 p-4 rounded-lg space-y-2">
-                  <p className="text-sm font-medium">Dane dokumentu:</p>
+                  <p className="text-sm font-medium">{t.documentData}</p>
                   <div className="grid grid-cols-2 gap-2 text-sm">
-                    <span className="text-muted-foreground">Data:</span>
+                    <span className="text-muted-foreground">{t.date}:</span>
                     <span>{format(formData.date, 'dd.MM.yyyy')}</span>
-                    <span className="text-muted-foreground">Kwota:</span>
+                    <span className="text-muted-foreground">{t.amount}:</span>
                     <span>{currencies.find(c => c.value === formData.currency)?.label} {formData.amount}</span>
-                    <span className="text-muted-foreground">Odbiorca:</span>
+                    <span className="text-muted-foreground">{t.recipient}</span>
                     <span>{formData.issuedTo}</span>
-                    <span className="text-muted-foreground">Podstawa:</span>
+                    <span className="text-muted-foreground">{t.basisLabel}</span>
                     <span>{formData.basis}</span>
                   </div>
                 </div>
@@ -1044,8 +1293,8 @@ const PublicPayout = () => {
                 {/* Image Attachments - Required for continuation */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <Label>Załączniki (zdjęcia) *</Label>
-                    <span className="text-xs text-muted-foreground">Obowiązkowe</span>
+                    <Label>{t.attachments} *</Label>
+                    <span className="text-xs text-muted-foreground">{t.required}</span>
                   </div>
                   
                   <div>
@@ -1064,7 +1313,7 @@ const PublicPayout = () => {
                       className="w-full border-dashed"
                     >
                       <ImagePlus className="w-4 h-4 mr-2" />
-                      Dodaj zdjęcia
+                      {t.addPhotos}
                     </Button>
                     
                     {attachedImages.length > 0 && (
@@ -1073,7 +1322,7 @@ const PublicPayout = () => {
                           <div key={index} className="relative group">
                             <img
                               src={img.preview}
-                              alt={`Załącznik ${index + 1}`}
+                              alt={`${t.attachments} ${index + 1}`}
                               className="w-full h-20 object-cover rounded-lg border border-border"
                             />
                             <button
@@ -1088,7 +1337,7 @@ const PublicPayout = () => {
                       </div>
                     )}
                     <p className="text-xs text-muted-foreground mt-2">
-                      Każde zdjęcie zostanie umieszczone na osobnej stronie PDF
+                      {t.photoNote}
                     </p>
                   </div>
                 </div>
@@ -1096,7 +1345,7 @@ const PublicPayout = () => {
                 {/* Signature - Required for continuation */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label>Podpis odbiorcy *</Label>
+                    <Label>{t.signature} *</Label>
                     <Button
                       type="button"
                       variant="ghost"
@@ -1105,7 +1354,7 @@ const PublicPayout = () => {
                       className="text-muted-foreground hover:text-foreground"
                     >
                       <Eraser className="w-4 h-4 mr-1" />
-                      Wyczyść
+                      {t.clear}
                     </Button>
                   </div>
                   <div className="border-2 border-dashed rounded-lg bg-white">
@@ -1139,18 +1388,18 @@ const PublicPayout = () => {
                     ) : (
                       <Save className="w-5 h-5 mr-2" />
                     )}
-                    Zapisz i pobierz PDF
+                    {t.saveAndDownload}
                   </Button>
                 </div>
               </>
             ) : (
               <>
-            <p className="text-sm text-muted-foreground">* Pola obowiązkowe do wypełnienia</p>
+            <p className="text-sm text-muted-foreground">{t.requiredFields}</p>
             
             {/* Date, Currency, Amount, Issued To */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Data *</Label>
+                <Label>{t.date} *</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -1176,7 +1425,7 @@ const PublicPayout = () => {
               </div>
               
               <div className="space-y-2">
-                <Label>Suma *</Label>
+                <Label>{t.amount} *</Label>
                 <div className="flex gap-2">
                   <Select value={formData.currency} onValueChange={(v) => handleInputChange('currency', v)}>
                     <SelectTrigger className="w-20">
@@ -1200,9 +1449,9 @@ const PublicPayout = () => {
               </div>
               
               <div className="space-y-2">
-                <Label>Wydano (imię i nazwisko) *</Label>
+                <Label>{t.issuedTo} *</Label>
                 <Input
-                  placeholder="Wpisz imię i nazwisko..."
+                  placeholder={t.enterName}
                   value={formData.issuedTo}
                   onChange={(e) => handleInputChange('issuedTo', e.target.value)}
                 />
@@ -1211,9 +1460,9 @@ const PublicPayout = () => {
             
             {/* Bank Account */}
             <div className="space-y-2">
-              <Label>Konto do przelewu</Label>
+              <Label>{t.bankAccount}</Label>
               <Input
-                placeholder="Wpisz numer konta lub telefonu..."
+                placeholder={t.bankAccountPlaceholder}
                 value={formData.bankAccount}
                 onChange={(e) => handleInputChange('bankAccount', e.target.value)}
               />
@@ -1221,13 +1470,13 @@ const PublicPayout = () => {
             
             {/* Department Name */}
             <div className="space-y-2">
-              <Label>Nazwa oddziału *</Label>
+              <Label>{t.department} *</Label>
               <Select 
                 value={formData.departmentName} 
                 onValueChange={(v) => handleInputChange('departmentName', v)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Wybierz kategorię" />
+                  <SelectValue placeholder={t.selectCategory} />
                 </SelectTrigger>
                 <SelectContent>
                   {categories.map((category) => (
@@ -1241,9 +1490,9 @@ const PublicPayout = () => {
             
             {/* Basis */}
             <div className="space-y-2">
-              <Label>Podstawa (na jakie potrzeby) *</Label>
+              <Label>{t.basis} *</Label>
               <Textarea
-                placeholder="Wpisz podstawę wypłaty..."
+                placeholder={t.basisPlaceholder}
                 value={formData.basis}
                 onChange={(e) => handleInputChange('basis', e.target.value)}
                 rows={3}
@@ -1252,7 +1501,7 @@ const PublicPayout = () => {
             
             {/* Amount in Words */}
             <div className="space-y-2">
-              <Label>Suma słownie *</Label>
+              <Label>{t.amountInWords} *</Label>
               <Textarea
                 value={formData.amountInWords}
                 readOnly
@@ -1264,9 +1513,9 @@ const PublicPayout = () => {
             {/* Image Attachments Toggle */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label htmlFor="allow-images-public">Załączniki (zdjęcia) {!imagesOptional && '*'}</Label>
+                <Label htmlFor="allow-images-public">{t.attachments} {!imagesOptional && '*'}</Label>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">{imagesOptional ? 'Nieobowiązkowe' : 'Obowiązkowe'}</span>
+                  <span className="text-xs text-muted-foreground">{imagesOptional ? t.optional : t.required}</span>
                   <Switch
                     id="allow-images-public"
                     checked={imagesOptional}
@@ -1303,7 +1552,7 @@ const PublicPayout = () => {
                   disabled={imagesOptional}
                 >
                   <ImagePlus className="w-4 h-4 mr-2" />
-                  Dodaj zdjęcia
+                  {t.addPhotos}
                 </Button>
                 
                 {attachedImages.length > 0 && (
@@ -1312,7 +1561,7 @@ const PublicPayout = () => {
                       <div key={index} className="relative group">
                         <img
                           src={img.preview}
-                          alt={`Załącznik ${index + 1}`}
+                          alt={`${t.attachments} ${index + 1}`}
                           className="w-full h-20 object-cover rounded-lg border border-border"
                         />
                         <button
@@ -1327,14 +1576,14 @@ const PublicPayout = () => {
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground mt-2">
-                  Każde zdjęcie zostanie umieszczone na osobnej stronie PDF
+                  {t.photoNote}
                 </p>
               </div>
             </div>
             {/* Signature */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>Podpis odbiorcy *</Label>
+                <Label>{t.signature} *</Label>
                 <Button
                   type="button"
                   variant="ghost"
@@ -1343,7 +1592,7 @@ const PublicPayout = () => {
                   className="text-muted-foreground hover:text-foreground"
                 >
                   <Eraser className="w-4 h-4 mr-1" />
-                  Wyczyść
+                  {t.clear}
                 </Button>
               </div>
               <div className="border-2 border-dashed rounded-lg bg-white">
@@ -1377,7 +1626,7 @@ const PublicPayout = () => {
                 ) : (
                   <Save className="w-5 h-5 mr-2" />
                 )}
-                Zapisz i pobierz PDF
+                {t.saveAndDownload}
               </Button>
             </div>
               </>
