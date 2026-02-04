@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { LanguageSelector } from './LanguageSelector';
-import { UserMenu } from './UserMenu';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Church, ChevronLeft, ChevronRight, Menu, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -105,7 +104,6 @@ export const Header = ({
               </Dialog>
             )}
             <LanguageSelector />
-            <UserMenu />
           </div>
         </div>
       </div>

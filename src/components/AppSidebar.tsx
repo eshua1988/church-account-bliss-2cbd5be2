@@ -1,4 +1,4 @@
-import { BarChart3, Settings, FileText, Wallet } from 'lucide-react';
+import { BarChart3, Settings, FileText, Wallet, LogOut, RefreshCw } from 'lucide-react';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
 import {
@@ -8,6 +8,10 @@ import {
 } from '@/components/ui/tooltip';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useAuth } from '@/contexts/AuthContext';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
 
 interface AppSidebarProps {
   activeTab: 'balance' | 'statistics' | 'payout' | 'settings';
@@ -15,11 +19,14 @@ interface AppSidebarProps {
   collapsed: boolean;
   mobileOpen: boolean;
   onMobileOpenChange: (open: boolean) => void;
+  onSyncGoogleSheets?: () => void;
 }
 
-export const AppSidebar = ({ activeTab, onTabChange, collapsed, mobileOpen, onMobileOpenChange }: AppSidebarProps) => {
+export const AppSidebar = ({ activeTab, onTabChange, collapsed, mobileOpen, onMobileOpenChange, onSyncGoogleSheets }: AppSidebarProps) => {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+  const { user, signOut } = useAuth();
+  const { toast } = useToast();
 
   const menuItems = [
     { id: 'balance' as const, icon: Wallet, label: t('balanceByCurrency') },
@@ -33,6 +40,19 @@ export const AppSidebar = ({ activeTab, onTabChange, collapsed, mobileOpen, onMo
     if (isMobile) {
       onMobileOpenChange(false);
     }
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    toast({
+      title: 'Выход выполнен',
+      description: 'Вы вышли из системы',
+    });
+  };
+
+  const getInitials = () => {
+    const email = user?.email || '';
+    return email.substring(0, 2).toUpperCase();
   };
 
   const MenuButton = ({ item }: { item: typeof menuItems[0] }) => (
@@ -51,8 +71,118 @@ export const AppSidebar = ({ activeTab, onTabChange, collapsed, mobileOpen, onMo
     </button>
   );
 
+  const UserProfile = ({ showText = true }: { showText?: boolean }) => (
+    <div className={cn(
+      'flex items-center gap-3 px-4 py-3',
+      !showText && 'justify-center px-2'
+    )}>
+      <Avatar className="h-10 w-10 flex-shrink-0">
+        <AvatarFallback className="gradient-primary text-primary-foreground text-sm">
+          {getInitials()}
+        </AvatarFallback>
+      </Avatar>
+      {showText && (
+        <div className="flex flex-col min-w-0">
+        <p className="text-sm font-medium leading-none truncate">
+            {user?.user_metadata?.display_name || 'Пользователь'}
+          </p>
+          <p className="text-xs leading-none text-muted-foreground truncate mt-1">
+            {user?.email}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+
+  const BottomActions = ({ showText = true }: { showText?: boolean }) => (
+    <div className="border-t border-border px-2 py-3 space-y-2">
+      {/* Google Sheets Sync Button */}
+      {showText ? (
+        <Button
+          variant="ghost"
+          className="w-full justify-start gap-3 px-4 py-3 h-auto"
+          onClick={onSyncGoogleSheets}
+        >
+          <RefreshCw className="w-5 h-5 flex-shrink-0" />
+          <span className="font-medium">Синхронизация</span>
+        </Button>
+      ) : (
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-full"
+              onClick={onSyncGoogleSheets}
+            >
+              <RefreshCw className="w-5 h-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={10}>
+            Синхронизация
+          </TooltipContent>
+        </Tooltip>
+      )}
+
+      {/* Logout Button */}
+      {showText ? (
+        <Button
+          variant="ghost"
+          className="w-full justify-start gap-3 px-4 py-3 h-auto text-destructive hover:text-destructive hover:bg-destructive/10"
+          onClick={handleSignOut}
+        >
+          <LogOut className="w-5 h-5 flex-shrink-0" />
+          <span className="font-medium">Выйти</span>
+        </Button>
+      ) : (
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={handleSignOut}
+            >
+              <LogOut className="w-5 h-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={10}>
+            Выйти
+          </TooltipContent>
+        </Tooltip>
+      )}
+    </div>
+  );
+
   const SidebarContent = ({ isSheet = false }: { isSheet?: boolean }) => (
     <div className="flex flex-col h-full bg-card">
+      {/* User Profile at top */}
+      {user && (
+        <div className="border-b border-border">
+          {isSheet || !collapsed ? (
+            <UserProfile showText />
+          ) : (
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <div className="flex justify-center py-3">
+                  <Avatar className="h-10 w-10">
+                    <AvatarFallback className="gradient-primary text-primary-foreground text-sm">
+                      {getInitials()}
+                    </AvatarFallback>
+                  </Avatar>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={10}>
+                <div>
+                  <p className="font-medium">{user?.user_metadata?.display_name || 'Пользователь'}</p>
+                  <p className="text-xs text-muted-foreground">{user?.email}</p>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      )}
+
       {/* Menu items */}
       <nav className="flex-1 py-4 px-2">
         <ul className="space-y-2">
@@ -85,6 +215,9 @@ export const AppSidebar = ({ activeTab, onTabChange, collapsed, mobileOpen, onMo
           ))}
         </ul>
       </nav>
+
+      {/* Bottom actions */}
+      <BottomActions showText={isSheet || !collapsed} />
     </div>
   );
 

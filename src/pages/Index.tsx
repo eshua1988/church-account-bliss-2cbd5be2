@@ -162,6 +162,7 @@ const Index = () => {
           collapsed={sidebarCollapsed}
           mobileOpen={mobileMenuOpen}
           onMobileOpenChange={setMobileMenuOpen}
+          onSyncGoogleSheets={() => setActiveTab('settings')}
         />
         
         <div className="flex-1 overflow-auto">
