@@ -132,7 +132,7 @@ export const useGoogleSheetsSync = ({
         description: 'Укажите ID Google таблицы в настройках',
         variant: 'destructive',
       });
-      return;
+      return false;
     }
     
     setIsExporting(true);
@@ -145,6 +145,7 @@ export const useGoogleSheetsSync = ({
         description: `Экспортировано ${transactions.length} транзакций`,
       });
     }
+    return success;
   }, [spreadsheetId, syncToSheets, transactions, toast]);
 
   const handleImport = useCallback(async () => {
@@ -230,12 +231,36 @@ export const useGoogleSheetsSync = ({
     }
   }, [spreadsheetId, sheetRange, onDeleteTransaction, syncToSheets, transactions, toast]);
 
+  const handleSync = useCallback(async () => {
+    if (!spreadsheetId) {
+      toast({
+        title: 'Настройте таблицу',
+        description: 'Укажите ID Google таблицы в настройках',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    toast({
+      title: 'Синхронизация',
+      description: 'Начинаем синхронизацию с Google Sheets...',
+    });
+
+    // First export, then import
+    const exportSuccess = await handleExport();
+    if (exportSuccess) {
+      await handleImport();
+    }
+  }, [spreadsheetId, handleExport, handleImport, toast]);
+
   return {
     isExporting,
     isImporting,
+    isSyncing: isExporting || isImporting,
     isLoadingSettings,
     spreadsheetId,
     handleExport,
     handleImport,
+    handleSync,
   };
 };
