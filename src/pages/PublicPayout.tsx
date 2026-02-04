@@ -602,6 +602,8 @@ const PublicPayout = () => {
 
     // Add each attached image on a new page
     for (const img of attachedImages) {
+      // Add new page for each image
+      doc.addPage();
       
       // Read the image file
       const imageData = await new Promise<string>((resolve) => {
@@ -620,9 +622,10 @@ const PublicPayout = () => {
       const imgWidth = imgElement.width;
       const imgHeight = imgElement.height;
       
-      // Calculate dimensions to fit within page margins
-      const maxWidth = pageWidth - 2 * leftMargin;
-      const maxHeight = pageHeight - 40;
+      // Calculate dimensions to fit within page margins with proper padding
+      const imgMargin = 15;
+      const maxWidth = pageWidth - 2 * imgMargin;
+      const maxHeight = pageHeight - 2 * imgMargin;
       
       let finalWidth = maxWidth;
       let finalHeight = (imgHeight / imgWidth) * finalWidth;
