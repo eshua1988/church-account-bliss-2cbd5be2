@@ -1,4 +1,5 @@
-import { BarChart3, Settings, FileText, Wallet, LogOut, RefreshCw } from 'lucide-react';
+import { useState } from 'react';
+import { BarChart3, Settings, FileText, Wallet, LogOut, RefreshCw, Upload, Download, ChevronDown, ChevronUp } from 'lucide-react';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
 import {
@@ -12,6 +13,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 
 interface AppSidebarProps {
   activeTab: 'balance' | 'statistics' | 'payout' | 'settings';
@@ -19,14 +25,28 @@ interface AppSidebarProps {
   collapsed: boolean;
   mobileOpen: boolean;
   onMobileOpenChange: (open: boolean) => void;
-  onSyncGoogleSheets?: () => void;
+  onExport?: () => void;
+  onImport?: () => void;
+  isExporting?: boolean;
+  isImporting?: boolean;
 }
 
-export const AppSidebar = ({ activeTab, onTabChange, collapsed, mobileOpen, onMobileOpenChange, onSyncGoogleSheets }: AppSidebarProps) => {
+export const AppSidebar = ({ 
+  activeTab, 
+  onTabChange, 
+  collapsed, 
+  mobileOpen, 
+  onMobileOpenChange, 
+  onExport,
+  onImport,
+  isExporting,
+  isImporting,
+}: AppSidebarProps) => {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const { user, signOut } = useAuth();
   const { toast } = useToast();
+  const [syncOpen, setSyncOpen] = useState(false);
 
   const menuItems = [
     { id: 'balance' as const, icon: Wallet, label: t('balanceByCurrency') },
@@ -83,7 +103,7 @@ export const AppSidebar = ({ activeTab, onTabChange, collapsed, mobileOpen, onMo
       </Avatar>
       {showText && (
         <div className="flex flex-col min-w-0">
-        <p className="text-sm font-medium leading-none truncate">
+          <p className="text-sm font-medium leading-none truncate">
             {user?.user_metadata?.display_name || 'Пользователь'}
           </p>
           <p className="text-xs leading-none text-muted-foreground truncate mt-1">
@@ -94,35 +114,81 @@ export const AppSidebar = ({ activeTab, onTabChange, collapsed, mobileOpen, onMo
     </div>
   );
 
-  const BottomActions = ({ showText = true }: { showText?: boolean }) => (
-    <div className="border-t border-border px-2 py-3 space-y-2">
-      {/* Google Sheets Sync Button */}
-      {showText ? (
-        <Button
-          variant="ghost"
-          className="w-full justify-start gap-3 px-4 py-3 h-auto"
-          onClick={onSyncGoogleSheets}
-        >
-          <RefreshCw className="w-5 h-5 flex-shrink-0" />
-          <span className="font-medium">Синхронизация</span>
-        </Button>
-      ) : (
+  const SyncSection = ({ showText = true }: { showText?: boolean }) => {
+    if (!showText) {
+      return (
         <Tooltip delayDuration={0}>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
               className="w-full"
-              onClick={onSyncGoogleSheets}
+              onClick={() => setSyncOpen(!syncOpen)}
             >
               <RefreshCw className="w-5 h-5" />
             </Button>
           </TooltipTrigger>
           <TooltipContent side="right" sideOffset={10}>
-            Синхронизация
+            <div className="space-y-1">
+              <p className="font-medium">Синхронизация</p>
+              <div className="flex flex-col gap-1">
+                <Button size="sm" variant="ghost" onClick={onExport} disabled={isExporting}>
+                  <Upload className="w-4 h-4 mr-1" /> Экспорт
+                </Button>
+                <Button size="sm" variant="ghost" onClick={onImport} disabled={isImporting}>
+                  <Download className="w-4 h-4 mr-1" /> Импорт
+                </Button>
+              </div>
+            </div>
           </TooltipContent>
         </Tooltip>
-      )}
+      );
+    }
+
+    return (
+      <Collapsible open={syncOpen} onOpenChange={setSyncOpen}>
+        <CollapsibleTrigger asChild>
+          <Button
+            variant="ghost"
+            className="w-full justify-between gap-3 px-4 py-3 h-auto"
+          >
+            <div className="flex items-center gap-3">
+              <RefreshCw className="w-5 h-5 flex-shrink-0" />
+              <span className="font-medium">Синхронизация</span>
+            </div>
+            {syncOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="px-2 pb-2 space-y-1">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full justify-start gap-2"
+            onClick={onExport}
+            disabled={isExporting}
+          >
+            <Upload className="w-4 h-4" />
+            {isExporting ? 'Экспорт...' : 'Экспорт'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full justify-start gap-2"
+            onClick={onImport}
+            disabled={isImporting}
+          >
+            <Download className="w-4 h-4" />
+            {isImporting ? 'Импорт...' : 'Импорт'}
+          </Button>
+        </CollapsibleContent>
+      </Collapsible>
+    );
+  };
+
+  const BottomActions = ({ showText = true }: { showText?: boolean }) => (
+    <div className="border-t border-border px-2 py-3 space-y-2">
+      {/* Google Sheets Sync Section */}
+      <SyncSection showText={showText} />
 
       {/* Logout Button */}
       {showText ? (
