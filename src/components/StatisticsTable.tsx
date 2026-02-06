@@ -18,10 +18,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp, TrendingDown, Trash2, Download } from 'lucide-react';
+import { TrendingUp, TrendingDown, Trash2, Download, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import DateRangeFilter from '@/components/DateRangeFilter';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 
 interface StatisticsTableProps {
   transactions: Transaction[];
@@ -39,6 +45,8 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [customDateRange, setCustomDateRange] = useState<{ from?: Date; to?: Date }>({});
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
+  const [expandedTransactions, setExpandedTransactions] = useState<Set<string>>(new Set());
 
   const filteredTransactions = useMemo(() => {
     let filtered = transactions;
@@ -211,6 +219,40 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
     { value: 'thisYear', label: t('thisYear') },
   ];
 
+  const toggleTransaction = (id: string) => {
+    setSelectedTransactions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleAllTransactions = () => {
+    if (selectedTransactions.size === filteredTransactions.length) {
+      setSelectedTransactions(new Set());
+    } else {
+      setSelectedTransactions(new Set(filteredTransactions.map(t => t.id)));
+    }
+  };
+
+  const toggleExpand = (id: string) => {
+    setExpandedTransactions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
+
+  const isAllSelected = filteredTransactions.length > 0 && selectedTransactions.size === filteredTransactions.length;
+
   return (
     <Card>
       <CardHeader className="flex flex-col space-y-4 pb-4">
@@ -301,11 +343,17 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
           <Table>
             <TableHeader className="sticky top-0 bg-background z-10">
               <TableRow>
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={isAllSelected}
+                    onCheckedChange={toggleAllTransactions}
+                    aria-label="Select all"
+                  />
+                </TableHead>
                 <TableHead>{t('date')}</TableHead>
-                <TableHead>{t('type')}</TableHead>
                 <TableHead>{t('category')}</TableHead>
                 <TableHead className="text-right">{t('amount')}</TableHead>
-                <TableHead>{t('description')}</TableHead>
+                <TableHead className="w-20"></TableHead>
                 {onDelete && <TableHead className="w-12"></TableHead>}
               </TableRow>
             </TableHeader>
@@ -317,53 +365,121 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredTransactions.map(transaction => (
-                  <TableRow key={transaction.id}>
-                    <TableCell className="whitespace-nowrap">
-                      {format(new Date(transaction.date), 'dd.MM.yyyy')}
-                    </TableCell>
-                    <TableCell>
-                      <span className={cn(
-                        'inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium',
-                        transaction.type === 'income' 
-                          ? 'bg-success/10 text-success' 
-                          : 'bg-destructive/10 text-destructive'
-                      )}>
-                        {transaction.type === 'income' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {transaction.type === 'income' ? t('incomeType') : t('expense')}
-                      </span>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">{getCategoryName(transaction.category)}</TableCell>
-                    <TableCell className={cn(
-                      'text-right font-semibold whitespace-nowrap',
-                      transaction.type === 'income' ? 'text-success' : 'text-destructive'
-                    )}>
-                      {transaction.type === 'income' ? '+' : '-'}
-                      {transaction.amount.toLocaleString(getDateLocale())} {CURRENCY_SYMBOLS[transaction.currency]}
-                    </TableCell>
-                    <TableCell className="max-w-[200px] truncate text-muted-foreground">
-                      {transaction.description || '-'}
-                    </TableCell>
-                    {onDelete && (
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                          onClick={() => onDelete(transaction.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))
+                filteredTransactions.map(transaction => {
+                  const isExpanded = expandedTransactions.has(transaction.id);
+                  return (
+                    <>
+                      <TableRow key={transaction.id} className={cn(selectedTransactions.has(transaction.id) && "bg-muted/50")}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedTransactions.has(transaction.id)}
+                            onCheckedChange={() => toggleTransaction(transaction.id)}
+                            aria-label={`Select transaction ${transaction.id}`}
+                          />
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {format(new Date(transaction.date), 'dd.MM.yyyy')}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <span className={cn(
+                              'w-2 h-2 rounded-full',
+                              transaction.type === 'income' ? 'bg-success' : 'bg-destructive'
+                            )} />
+                            {getCategoryName(transaction.category)}
+                          </div>
+                        </TableCell>
+                        <TableCell className={cn(
+                          'text-right font-semibold whitespace-nowrap',
+                          transaction.type === 'income' ? 'text-success' : 'text-destructive'
+                        )}>
+                          {transaction.type === 'income' ? '+' : '-'}
+                          {transaction.amount.toLocaleString(getDateLocale())} {CURRENCY_SYMBOLS[transaction.currency]}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => toggleExpand(transaction.id)}
+                          >
+                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          </Button>
+                        </TableCell>
+                        {onDelete && (
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={() => onDelete(transaction.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                      {isExpanded && (
+                        <TableRow key={`${transaction.id}-details`} className="bg-muted/30">
+                          <TableCell colSpan={onDelete ? 6 : 5} className="py-3">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                              <div>
+                                <p className="text-muted-foreground text-xs">{t('type')}</p>
+                                <p className={cn(
+                                  'font-medium',
+                                  transaction.type === 'income' ? 'text-success' : 'text-destructive'
+                                )}>
+                                  {transaction.type === 'income' ? t('incomeType') : t('expense')}
+                                </p>
+                              </div>
+                              {transaction.description && (
+                                <div className="col-span-2">
+                                  <p className="text-muted-foreground text-xs">{t('description')}</p>
+                                  <p className="font-medium">{transaction.description}</p>
+                                </div>
+                              )}
+                              {transaction.issuedTo && (
+                                <div>
+                                  <p className="text-muted-foreground text-xs">{t('issuedTo') || 'Выдано'}</p>
+                                  <p className="font-medium">{transaction.issuedTo}</p>
+                                </div>
+                              )}
+                              {transaction.decisionNumber && (
+                                <div>
+                                  <p className="text-muted-foreground text-xs">{t('decisionNumber') || 'Номер решения'}</p>
+                                  <p className="font-medium">{transaction.decisionNumber}</p>
+                                </div>
+                              )}
+                              {transaction.amountInWords && (
+                                <div className="col-span-2">
+                                  <p className="text-muted-foreground text-xs">{t('amountInWords') || 'Сумма прописью'}</p>
+                                  <p className="font-medium">{transaction.amountInWords}</p>
+                                </div>
+                              )}
+                              {transaction.cashierName && (
+                                <div>
+                                  <p className="text-muted-foreground text-xs">{t('cashierName') || 'Кассир'}</p>
+                                  <p className="font-medium">{transaction.cashierName}</p>
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </>
+                  );
+                })
               )}
             </TableBody>
           </Table>
         </div>
         
-        <p className="text-xs text-muted-foreground mt-2">
+        {selectedTransactions.size > 0 && (
+          <p className="text-xs text-primary mt-2">
+            Выбрано: {selectedTransactions.size}
+          </p>
+        )}
+        <p className="text-xs text-muted-foreground mt-1">
           {t('showingTransactions')}: {filteredTransactions.length}
         </p>
       </CardContent>
