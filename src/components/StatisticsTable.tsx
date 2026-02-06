@@ -1,15 +1,7 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Transaction, CURRENCY_SYMBOLS } from '@/types/transaction';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { format, startOfMonth, endOfMonth, subMonths, isWithinInterval, startOfYear, endOfYear } from 'date-fns';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import {
   Select,
   SelectContent,
@@ -23,11 +15,6 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import DateRangeFilter from '@/components/DateRangeFilter';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
 
 interface StatisticsTableProps {
   transactions: Transaction[];
@@ -338,47 +325,47 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
 
         {/* Transactions Table */}
         <div className="rounded-md border overflow-auto max-h-[400px]">
-          <Table>
-            <TableHeader className="sticky top-0 bg-background z-10">
-              <TableRow>
-                <TableHead className="w-10 px-2">
+          <table className="text-sm">
+            <thead className="sticky top-0 bg-background z-10 [&_tr]:border-b">
+              <tr className="border-b">
+                <th className="h-12 w-10 px-2 text-left align-middle font-medium text-muted-foreground">
                   <Checkbox
                     checked={isAllSelected}
                     onCheckedChange={toggleAllTransactions}
                     aria-label="Select all"
                   />
-                </TableHead>
-                <TableHead className="w-28 px-3">{t('date')}</TableHead>
-                <TableHead className="px-3">{t('category')}</TableHead>
-                <TableHead className="w-28 px-2 text-right">{t('amount')}</TableHead>
-                <TableHead className="w-8 px-1"></TableHead>
-                {onDelete && <TableHead className="w-8 px-1"></TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+                </th>
+                <th className="h-12 px-3 text-left align-middle font-medium text-muted-foreground whitespace-nowrap">{t('date')}</th>
+                <th className="h-12 px-3 text-left align-middle font-medium text-muted-foreground">{t('category')}</th>
+                <th className="h-12 px-2 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">{t('amount')}</th>
+                <th className="h-12 w-8 px-1"></th>
+                {onDelete && <th className="h-12 w-8 px-1"></th>}
+              </tr>
+            </thead>
+            <tbody className="[&_tr:last-child]:border-0">
               {filteredTransactions.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={onDelete ? 6 : 5} className="text-center text-muted-foreground py-8">
+                <tr>
+                  <td colSpan={onDelete ? 6 : 5} className="text-center text-muted-foreground py-8 p-4">
                     {t('noTransactions')}
-                  </TableCell>
-                </TableRow>
+                  </td>
+                </tr>
               ) : (
                 filteredTransactions.map(transaction => {
                   const isExpanded = expandedTransactions.has(transaction.id);
                   return (
-                    <>
-                      <TableRow key={transaction.id} className={cn(selectedTransactions.has(transaction.id) && "bg-muted/50")}>
-                        <TableCell className="w-10 px-2">
+                    <React.Fragment key={transaction.id}>
+                      <tr className={cn("border-b transition-colors hover:bg-muted/50", selectedTransactions.has(transaction.id) && "bg-muted/50")}>
+                        <td className="p-4 w-10 px-2 align-middle">
                           <Checkbox
                             checked={selectedTransactions.has(transaction.id)}
                             onCheckedChange={() => toggleTransaction(transaction.id)}
                             aria-label={`Select transaction ${transaction.id}`}
                           />
-                        </TableCell>
-                        <TableCell className="w-28 px-3 whitespace-nowrap">
+                        </td>
+                        <td className="p-4 px-3 whitespace-nowrap align-middle">
                           {format(new Date(transaction.date), 'dd.MM.yyyy')}
-                        </TableCell>
-                        <TableCell className="px-3">
+                        </td>
+                        <td className="p-4 px-3 align-middle">
                           <div className="flex items-center gap-2">
                             <span className={cn(
                               'w-2 h-2 rounded-full flex-shrink-0',
@@ -386,15 +373,15 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
                             )} />
                             <span className="truncate">{getCategoryName(transaction.category)}</span>
                           </div>
-                        </TableCell>
-                        <TableCell className={cn(
-                          'w-28 px-2 text-right font-semibold whitespace-nowrap',
+                        </td>
+                        <td className={cn(
+                          'p-4 px-2 text-right font-semibold whitespace-nowrap align-middle',
                           transaction.type === 'income' ? 'text-success' : 'text-destructive'
                         )}>
                           {transaction.type === 'income' ? '+' : '-'}
                           {transaction.amount.toLocaleString(getDateLocale())} {CURRENCY_SYMBOLS[transaction.currency]}
-                        </TableCell>
-                        <TableCell className="w-8 px-1">
+                        </td>
+                        <td className="p-4 w-8 px-1 align-middle">
                           <Button
                             variant="ghost"
                             size="icon"
@@ -403,9 +390,9 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
                           >
                             {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                           </Button>
-                        </TableCell>
+                        </td>
                         {onDelete && (
-                          <TableCell className="w-8 px-1">
+                          <td className="p-4 w-8 px-1 align-middle">
                             <Button
                               variant="ghost"
                               size="icon"
@@ -414,12 +401,12 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
-                          </TableCell>
+                          </td>
                         )}
-                      </TableRow>
+                      </tr>
                       {isExpanded && (
-                        <TableRow key={`${transaction.id}-details`} className="bg-muted/30">
-                          <TableCell colSpan={onDelete ? 6 : 5} className="py-3">
+                        <tr className="bg-muted/30 border-b">
+                          <td colSpan={onDelete ? 6 : 5} className="p-4 py-3">
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                               <div>
                                 <p className="text-muted-foreground text-xs">{t('type')}</p>
@@ -461,15 +448,15 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
                                 </div>
                               )}
                             </div>
-                          </TableCell>
-                        </TableRow>
+                          </td>
+                        </tr>
                       )}
-                    </>
+                    </React.Fragment>
                   );
                 })
               )}
-            </TableBody>
-          </Table>
+            </tbody>
+          </table>
         </div>
         
         {selectedTransactions.size > 0 && (
