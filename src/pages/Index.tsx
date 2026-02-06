@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Header } from '@/components/Header';
-import { TransactionForm } from '@/components/TransactionForm';
 import { CurrencyBalanceCard } from '@/components/CurrencyBalanceCard';
 import { CategoryManager } from '@/components/CategoryManager';
 import { loadVisibleCurrencies, saveVisibleCurrencies, CurrencySettingsContent } from '@/components/CurrencySettingsDialog';
@@ -12,7 +11,6 @@ import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { Currency, CURRENCY_SYMBOLS, Transaction, TransactionType } from '@/types/transaction';
 import { Loader2 } from 'lucide-react';
-import ImportPayout from '@/components/ImportPayout';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
@@ -225,16 +223,6 @@ const Index = () => {
         <div className="flex-1 overflow-auto">
         
         <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
-          {/* Controls Row - only show for statistics tab */}
-          {activeTab === 'statistics' && (
-            <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 sm:gap-4">
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="hidden sm:flex items-center gap-2">
-                  <ImportPayout />
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Balance Tab */}
           {activeTab === 'balance' && (

@@ -224,15 +224,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
     }
   };
 
-  const timeRangeOptions = [
-    { value: 'all', label: t('allTime') },
-    { value: 'thisMonth', label: t('thisMonth') },
-    { value: 'lastMonth', label: t('lastMonth') },
-    { value: 'last3Months', label: t('last3Months') },
-    { value: 'last6Months', label: t('last6Months') },
-    { value: 'thisYear', label: t('thisYear') },
-  ];
-
   const toggleTransaction = (id: string) => {
     setSelectedTransactions(prev => {
       const newSet = new Set(prev);
@@ -273,18 +264,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
         <div className="flex items-center justify-between gap-2">
           <CardTitle className="text-base font-semibold">{t('transactionsTable')}</CardTitle>
           <div className="flex items-center gap-2">
-            <Select value={timeRange} onValueChange={(v) => setTimeRange(v as TimeRange)}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {timeRangeOptions.map(option => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
             <DateRangeFilter value={customDateRange} onChange={setCustomDateRange} />
             {categories.length > 0 && (
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
@@ -314,7 +293,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
             onClick={() => setTypeFilter('all')}
             className="font-medium"
           >
-            {t('allTime')}
+            Все
           </Button>
           <Button
             variant={typeFilter === 'income' ? 'default' : 'outline'}
