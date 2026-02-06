@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Header } from '@/components/Header';
 import { TransactionForm } from '@/components/TransactionForm';
 import { CurrencyBalanceCard } from '@/components/CurrencyBalanceCard';
@@ -83,6 +83,29 @@ const Index = () => {
     expenseCategories,
   });
 
+  // Track previous transaction count for auto-sync on realtime changes
+  const prevTransactionCountRef = useRef<number>(transactions.length);
+  const isInitialMountRef = useRef<boolean>(true);
+
+  // Auto-sync when transactions change via realtime (e.g., from public payout link)
+  useEffect(() => {
+    // Skip initial mount
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      prevTransactionCountRef.current = transactions.length;
+      return;
+    }
+
+    // Only sync if spreadsheet is configured and transaction count changed
+    if (spreadsheetId && transactions.length !== prevTransactionCountRef.current) {
+      const timerId = setTimeout(() => {
+        handleSync();
+      }, 1000);
+      prevTransactionCountRef.current = transactions.length;
+      return () => clearTimeout(timerId);
+    }
+  }, [transactions.length, spreadsheetId, handleSync]);
+
   const handleVisibleCurrenciesChange = useCallback((newCurrencies: Currency[]) => {
     setVisibleCurrencies(newCurrencies);
     saveVisibleCurrencies(newCurrencies);
@@ -98,10 +121,7 @@ const Index = () => {
         title: transaction.type === 'income' ? t('incomeAdded') : t('expenseAdded'),
         description: `${transaction.amount.toLocaleString(getDateLocale())} ${CURRENCY_SYMBOLS[transaction.currency]}`,
       });
-      // Auto-sync with Google Sheets if configured
-      if (spreadsheetId) {
-        setTimeout(() => handleSync(), 500);
-      }
+      // Auto-sync will be triggered by useEffect watching transactions.length
     } catch (error) {
       toast({
         title: 'Ошибка',
@@ -115,10 +135,7 @@ const Index = () => {
     try {
       await deleteTransaction(id);
       toast({ title: t('transactionDeleted'), variant: 'destructive' });
-      // Auto-sync with Google Sheets if configured
-      if (spreadsheetId) {
-        setTimeout(() => handleSync(), 500);
-      }
+      // Auto-sync will be triggered by useEffect watching transactions.length
     } catch (error) {
       toast({
         title: 'Ошибка',
