@@ -197,6 +197,12 @@ export const useGoogleSheetsSync = ({
     return success;
   }, [spreadsheetId, syncToSheets, transactions, toast]);
 
+  // UUID pattern for transaction IDs
+  const isUUID = (str: string): boolean => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(str.trim());
+  };
+
   const handleImport = useCallback(async () => {
     if (!spreadsheetId) {
       toast({
@@ -240,20 +246,45 @@ export const useGoogleSheetsSync = ({
           return;
         }
         
-        let deletedCount = 0;
+        // Collect all transaction IDs to delete
+        const idsToDelete: Set<string> = new Set();
         
         for (let i = 1; i < rows.length; i++) {
           const row = rows[i];
-          const transactionId = row[0];
-          const deleteMarker = row[deleteColumnIndex]?.toString().trim().toLowerCase();
+          const transactionIdInRow = row[0]; // ID column
+          const deleteValue = row[deleteColumnIndex]?.toString().trim();
           
-          if (deleteMarker && deleteMarker !== '' && transactionId) {
-            try {
-              await onDeleteTransaction(transactionId);
-              deletedCount++;
-            } catch (err) {
-              console.error(`Failed to delete transaction ${transactionId}:`, err);
+          if (deleteValue && deleteValue !== '') {
+            // Check if delete value contains UUIDs (could be semicolon-separated from array formula)
+            // Also handle values like "id1;id2;id3" from array formulas
+            const potentialIds = deleteValue.split(/[;,\n]/);
+            
+            for (const potentialId of potentialIds) {
+              const trimmedId = potentialId.trim();
+              if (isUUID(trimmedId)) {
+                // This is a transaction ID - delete this specific transaction
+                idsToDelete.add(trimmedId);
+              }
             }
+            
+            // If no valid UUIDs found in the delete value, but there's content,
+            // treat it as a marker to delete the current row's transaction
+            if (idsToDelete.size === 0 || !potentialIds.some(id => isUUID(id.trim()))) {
+              if (transactionIdInRow && isUUID(transactionIdInRow)) {
+                idsToDelete.add(transactionIdInRow);
+              }
+            }
+          }
+        }
+        
+        let deletedCount = 0;
+        
+        for (const idToDelete of idsToDelete) {
+          try {
+            await onDeleteTransaction(idToDelete);
+            deletedCount++;
+          } catch (err) {
+            console.error(`Failed to delete transaction ${idToDelete}:`, err);
           }
         }
         
@@ -263,10 +294,10 @@ export const useGoogleSheetsSync = ({
             description: `Удалено ${deletedCount} транзакций`,
           });
           
+          // Resync after deletion to update the sheet
           setTimeout(() => {
-            syncToSheets(transactions.filter(t => 
-              !rows.some((row: string[]) => row[0] === t.id && row[deleteColumnIndex]?.toString().trim())
-            ));
+            const remainingTransactions = transactions.filter(t => !idsToDelete.has(t.id));
+            syncToSheets(remainingTransactions);
           }, 500);
           
           return;
