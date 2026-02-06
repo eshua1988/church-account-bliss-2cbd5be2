@@ -242,7 +242,27 @@ serve(async (req) => {
       case 'write': {
         if (!values) throw new Error('Values required for write action');
         
-        // First, write the values
+        // First, clear the entire range to remove old category columns and notes
+        const clearResponse = await fetch(
+          `${baseUrl}/values/${encodeURIComponent(range)}:clear`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+        
+        if (!clearResponse.ok) {
+          const clearError = await clearResponse.json();
+          console.error('Google Sheets clear error:', clearError);
+          // Continue anyway, the write might still work
+        } else {
+          console.log('Cleared existing data from sheet');
+        }
+        
+        // Then, write the new values
         response = await fetch(
           `${baseUrl}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
           {
