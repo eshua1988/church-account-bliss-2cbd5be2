@@ -1,4 +1,4 @@
-import { BarChart3, Settings, FileText, Wallet, LogOut, RefreshCw, Key, Mail } from 'lucide-react';
+import { BarChart3, Settings, FileText, Wallet, LogOut, RefreshCw, Key, Mail, ExternalLink } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
@@ -42,6 +42,7 @@ interface AppSidebarProps {
   onMobileOpenChange: (open: boolean) => void;
   onSync?: () => void;
   isSyncing?: boolean;
+  spreadsheetId?: string;
 }
 
 export const AppSidebar = ({ 
@@ -52,6 +53,7 @@ export const AppSidebar = ({
   onMobileOpenChange, 
   onSync,
   isSyncing,
+  spreadsheetId,
 }: AppSidebarProps) => {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
@@ -68,6 +70,7 @@ export const AppSidebar = ({
     { id: 'settings' as const, icon: Settings, label: t('settings') },
     { id: 'notifications' as const, icon: Mail, label: 'Уведомления', isNotifications: true },
     { id: 'sync' as const, icon: RefreshCw, label: 'Синхронизация', isSync: true },
+    { id: 'openSheet' as const, icon: ExternalLink, label: 'Google Таблица', isOpenSheet: true },
     { id: 'payout' as const, icon: FileText, label: t('payoutGenerator') },
   ];
 
@@ -142,6 +145,21 @@ export const AppSidebar = ({
     }
   };
 
+  const handleOpenSheet = () => {
+    if (spreadsheetId) {
+      window.open(`https://docs.google.com/spreadsheets/d/${spreadsheetId}`, '_blank');
+    } else {
+      toast({
+        title: 'Таблица не настроена',
+        description: 'Укажите ID Google таблицы в настройках',
+        variant: 'destructive',
+      });
+    }
+    if (isMobile) {
+      onMobileOpenChange(false);
+    }
+  };
+
   const MenuButton = ({ item, isSheet = false }: { item: typeof menuItems[0]; isSheet?: boolean }) => {
     if (item.isNotifications) {
       return <NotificationsDropdown collapsed={!isSheet && collapsed} />;
@@ -160,6 +178,21 @@ export const AppSidebar = ({
         >
           <item.icon className={cn("w-5 h-5 flex-shrink-0", isSyncing && "animate-spin")} />
           <span className="font-medium">{isSyncing ? 'Синхронизация...' : item.label}</span>
+        </button>
+      );
+    }
+
+    if (item.isOpenSheet) {
+      return (
+        <button
+          onClick={handleOpenSheet}
+          className={cn(
+            'w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200',
+            'hover:bg-primary/10 text-foreground'
+          )}
+        >
+          <item.icon className="w-5 h-5 flex-shrink-0" />
+          <span className="font-medium">{item.label}</span>
         </button>
       );
     }
@@ -268,6 +301,23 @@ export const AppSidebar = ({
                 <MenuButton item={item} isSheet={isSheet} />
               ) : item.isNotifications ? (
                 <NotificationsDropdown collapsed />
+              ) : item.isOpenSheet ? (
+                <Tooltip delayDuration={0}>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={handleOpenSheet}
+                      className={cn(
+                        'w-full flex items-center justify-center p-3 rounded-lg transition-all duration-200',
+                        'hover:bg-primary/10 text-foreground'
+                      )}
+                    >
+                      <item.icon className="w-5 h-5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={10}>
+                    {item.label}
+                  </TooltipContent>
+                </Tooltip>
               ) : (
                 <Tooltip delayDuration={0}>
                   <TooltipTrigger asChild>
