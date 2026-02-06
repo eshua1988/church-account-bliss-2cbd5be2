@@ -350,9 +350,9 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
                 </TableHead>
                 <TableHead className="w-28 px-3">{t('date')}</TableHead>
                 <TableHead className="px-3">{t('category')}</TableHead>
-                <TableHead className="w-32 px-3 text-right">{t('amount')}</TableHead>
-                <TableHead className="w-10 px-2"></TableHead>
-                {onDelete && <TableHead className="w-10 px-2"></TableHead>}
+                <TableHead className="w-28 px-2 text-right">{t('amount')}</TableHead>
+                <TableHead className="w-8 px-1"></TableHead>
+                {onDelete && <TableHead className="w-8 px-1"></TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -388,28 +388,28 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
                           </div>
                         </TableCell>
                         <TableCell className={cn(
-                          'w-32 px-3 text-right font-semibold whitespace-nowrap',
+                          'w-28 px-2 text-right font-semibold whitespace-nowrap',
                           transaction.type === 'income' ? 'text-success' : 'text-destructive'
                         )}>
                           {transaction.type === 'income' ? '+' : '-'}
                           {transaction.amount.toLocaleString(getDateLocale())} {CURRENCY_SYMBOLS[transaction.currency]}
                         </TableCell>
-                        <TableCell className="w-10 px-2">
+                        <TableCell className="w-8 px-1">
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8"
+                            className="h-7 w-7"
                             onClick={() => toggleExpand(transaction.id)}
                           >
                             {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                           </Button>
                         </TableCell>
                         {onDelete && (
-                          <TableCell className="w-10 px-2">
+                          <TableCell className="w-8 px-1">
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
                               onClick={() => onDelete(transaction.id)}
                             >
                               <Trash2 className="h-4 w-4" />
