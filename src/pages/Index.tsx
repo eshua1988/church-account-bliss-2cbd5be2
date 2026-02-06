@@ -98,6 +98,10 @@ const Index = () => {
         title: transaction.type === 'income' ? t('incomeAdded') : t('expenseAdded'),
         description: `${transaction.amount.toLocaleString(getDateLocale())} ${CURRENCY_SYMBOLS[transaction.currency]}`,
       });
+      // Auto-sync with Google Sheets if configured
+      if (spreadsheetId) {
+        setTimeout(() => handleSync(), 500);
+      }
     } catch (error) {
       toast({
         title: 'Ошибка',
@@ -111,6 +115,10 @@ const Index = () => {
     try {
       await deleteTransaction(id);
       toast({ title: t('transactionDeleted'), variant: 'destructive' });
+      // Auto-sync with Google Sheets if configured
+      if (spreadsheetId) {
+        setTimeout(() => handleSync(), 500);
+      }
     } catch (error) {
       toast({
         title: 'Ошибка',
