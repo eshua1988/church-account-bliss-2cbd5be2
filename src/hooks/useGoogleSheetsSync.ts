@@ -101,12 +101,19 @@ export const useGoogleSheetsSync = ({
         '',
       ]);
 
-      // Create notes for Description column (column index 6) with amount
-      const notes: { row: number; col: number; note: string }[] = sortedTxs.map((tx, index) => ({
-        row: index + 1, // +1 for header row
-        col: 6, // Description column (G)
-        note: `Сумма: ${tx.amount} ${tx.currency}`,
-      }));
+      // Create notes for Amount column (column index 4) with Description, Issued To, Date
+      const notes: { row: number; col: number; note: string }[] = sortedTxs.map((tx, index) => {
+        const noteParts: string[] = [];
+        if (tx.description) noteParts.push(`Описание: ${tx.description}`);
+        if (tx.type === 'expense' && tx.issuedTo) noteParts.push(`Кому: ${tx.issuedTo}`);
+        noteParts.push(`Дата: ${new Date(tx.date).toLocaleDateString('pl-PL')}`);
+        
+        return {
+          row: index + 1, // +1 for header row
+          col: 4, // Amount column (E)
+          note: noteParts.join('\n'),
+        };
+      });
 
       const values = [headers, ...rows];
 
