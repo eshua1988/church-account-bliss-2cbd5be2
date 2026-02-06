@@ -242,7 +242,64 @@ serve(async (req) => {
       case 'write': {
         if (!values) throw new Error('Values required for write action');
         
-        // First, clear the entire range to remove old category columns and notes
+        // Get sheet ID from range (parse sheet name)
+        const sheetName = range.split('!')[0].replace(/'/g, '');
+        
+        // Get spreadsheet metadata to find sheet ID
+        const metadataResponse = await fetch(`${baseUrl}?fields=sheets.properties`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        });
+        
+        let sheetId = 0;
+        if (metadataResponse.ok) {
+          const metadata = await metadataResponse.json();
+          const sheet = metadata.sheets?.find((s: { properties: { title: string } }) => 
+            s.properties.title === sheetName
+          );
+          sheetId = sheet?.properties?.sheetId ?? 0;
+        }
+        
+        // First, clear the entire range including values AND notes
+        // Using batchUpdate to clear notes for the entire data area
+        const clearNotesRequest = {
+          requests: [
+            {
+              // Clear all notes in columns A-Z, rows 1-1000
+              repeatCell: {
+                range: {
+                  sheetId: sheetId,
+                  startRowIndex: 0,
+                  endRowIndex: 1000,
+                  startColumnIndex: 0,
+                  endColumnIndex: 26, // A-Z
+                },
+                cell: {
+                  note: '',
+                },
+                fields: 'note',
+              },
+            },
+          ],
+        };
+        
+        const clearNotesResponse = await fetch(`${baseUrl}:batchUpdate`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(clearNotesRequest),
+        });
+        
+        if (!clearNotesResponse.ok) {
+          const clearNotesError = await clearNotesResponse.json();
+          console.error('Failed to clear notes:', clearNotesError);
+          // Continue anyway
+        } else {
+          console.log('Cleared existing notes from sheet');
+        }
+        
+        // Then clear the values
         const clearResponse = await fetch(
           `${baseUrl}/values/${encodeURIComponent(range)}:clear`,
           {
@@ -283,57 +340,39 @@ serve(async (req) => {
         
         // Then, add notes if provided
         if (notes && notes.length > 0) {
-          // Get sheet ID from range (parse sheet name)
-          const sheetName = range.split('!')[0].replace(/'/g, '');
+          // Build batch update requests for notes (sheetId already fetched above)
+          const notesRequests = notes.map((noteData) => ({
+            repeatCell: {
+              range: {
+                sheetId: sheetId,
+                startRowIndex: noteData.row,
+                endRowIndex: noteData.row + 1,
+                startColumnIndex: noteData.col,
+                endColumnIndex: noteData.col + 1,
+              },
+              cell: {
+                note: noteData.note,
+              },
+              fields: 'note',
+            },
+          }));
           
-          // Get spreadsheet metadata to find sheet ID
-          const metadataResponse = await fetch(`${baseUrl}?fields=sheets.properties`, {
-            headers: { 'Authorization': `Bearer ${accessToken}` },
+          // Send batch update for notes
+          const notesResponse = await fetch(`${baseUrl}:batchUpdate`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ requests: notesRequests }),
           });
           
-          if (!metadataResponse.ok) {
-            console.error('Failed to get spreadsheet metadata');
+          if (!notesResponse.ok) {
+            const notesError = await notesResponse.json();
+            console.error('Failed to add notes:', notesError);
+            // Don't throw, just log - values were written successfully
           } else {
-            const metadata = await metadataResponse.json();
-            const sheet = metadata.sheets?.find((s: { properties: { title: string } }) => 
-              s.properties.title === sheetName
-            );
-            const sheetId = sheet?.properties?.sheetId ?? 0;
-            
-            // Build batch update requests for notes
-            const requests = notes.map((noteData) => ({
-              repeatCell: {
-                range: {
-                  sheetId: sheetId,
-                  startRowIndex: noteData.row,
-                  endRowIndex: noteData.row + 1,
-                  startColumnIndex: noteData.col,
-                  endColumnIndex: noteData.col + 1,
-                },
-                cell: {
-                  note: noteData.note,
-                },
-                fields: 'note',
-              },
-            }));
-            
-            // Send batch update for notes
-            const notesResponse = await fetch(`${baseUrl}:batchUpdate`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ requests }),
-            });
-            
-            if (!notesResponse.ok) {
-              const notesError = await notesResponse.json();
-              console.error('Failed to add notes:', notesError);
-              // Don't throw, just log - values were written successfully
-            } else {
-              console.log(`Added ${notes.length} notes to spreadsheet`);
-            }
+            console.log(`Added ${notes.length} notes to spreadsheet`);
           }
         }
         
