@@ -261,54 +261,52 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
   return (
     <Card>
       <CardHeader className="pb-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <CardTitle className="text-base font-semibold">{t('transactionsTable')}</CardTitle>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant={typeFilter === 'all' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setTypeFilter('all')}
-              className="font-medium"
-            >
-              Все
-            </Button>
-            <Button
-              variant={typeFilter === 'income' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setTypeFilter('income')}
-              className="font-medium"
-            >
-              {t('income')}
-            </Button>
-            <Button
-              variant={typeFilter === 'expense' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setTypeFilter('expense')}
-              className="font-medium"
-            >
-              {t('expenses')}
-            </Button>
-            <DateRangeFilter value={customDateRange} onChange={setCustomDateRange} />
-            {categories.length > 0 && (
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-[160px]">
-                  <SelectValue placeholder={t('category')} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Все категории</SelectItem>
-                  {categories.map(cat => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            <Button variant="outline" size="sm" onClick={exportToPDF} className="font-medium">
-              <Download className="w-4 h-4 mr-2" />
-              {t('export') || 'HTML'}
-            </Button>
-          </div>
+        <CardTitle className="text-base font-semibold mb-3">{t('transactionsTable')}</CardTitle>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant={typeFilter === 'all' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTypeFilter('all')}
+            className="font-medium"
+          >
+            Все
+          </Button>
+          <Button
+            variant={typeFilter === 'income' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTypeFilter('income')}
+            className="font-medium"
+          >
+            {t('income')}
+          </Button>
+          <Button
+            variant={typeFilter === 'expense' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTypeFilter('expense')}
+            className="font-medium"
+          >
+            {t('expenses')}
+          </Button>
+          <DateRangeFilter value={customDateRange} onChange={setCustomDateRange} />
+          {categories.length > 0 && (
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder={t('category')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все категории</SelectItem>
+                {categories.map(cat => (
+                  <SelectItem key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Button variant="outline" size="sm" onClick={exportToPDF} className="font-medium">
+            <Download className="w-4 h-4 mr-2" />
+            {t('export') || 'HTML'}
+          </Button>
         </div>
       </CardHeader>
       <CardContent>
@@ -343,18 +341,18 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
           <Table>
             <TableHeader className="sticky top-0 bg-background z-10">
               <TableRow>
-                <TableHead className="w-12">
+                <TableHead className="w-10 px-2">
                   <Checkbox
                     checked={isAllSelected}
                     onCheckedChange={toggleAllTransactions}
                     aria-label="Select all"
                   />
                 </TableHead>
-                <TableHead className="w-32">{t('date')}</TableHead>
-                <TableHead className="min-w-[200px]">{t('category')}</TableHead>
-                <TableHead className="w-36 text-right">{t('amount')}</TableHead>
-                <TableHead className="w-12"></TableHead>
-                {onDelete && <TableHead className="w-12"></TableHead>}
+                <TableHead className="w-28 px-3">{t('date')}</TableHead>
+                <TableHead className="px-3">{t('category')}</TableHead>
+                <TableHead className="w-32 px-3 text-right">{t('amount')}</TableHead>
+                <TableHead className="w-10 px-2"></TableHead>
+                {onDelete && <TableHead className="w-10 px-2"></TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -370,17 +368,17 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
                   return (
                     <>
                       <TableRow key={transaction.id} className={cn(selectedTransactions.has(transaction.id) && "bg-muted/50")}>
-                        <TableCell className="w-12">
+                        <TableCell className="w-10 px-2">
                           <Checkbox
                             checked={selectedTransactions.has(transaction.id)}
                             onCheckedChange={() => toggleTransaction(transaction.id)}
                             aria-label={`Select transaction ${transaction.id}`}
                           />
                         </TableCell>
-                        <TableCell className="w-32 whitespace-nowrap">
+                        <TableCell className="w-28 px-3 whitespace-nowrap">
                           {format(new Date(transaction.date), 'dd.MM.yyyy')}
                         </TableCell>
-                        <TableCell className="min-w-[200px]">
+                        <TableCell className="px-3">
                           <div className="flex items-center gap-2">
                             <span className={cn(
                               'w-2 h-2 rounded-full flex-shrink-0',
@@ -390,13 +388,13 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
                           </div>
                         </TableCell>
                         <TableCell className={cn(
-                          'w-36 text-right font-semibold whitespace-nowrap',
+                          'w-32 px-3 text-right font-semibold whitespace-nowrap',
                           transaction.type === 'income' ? 'text-success' : 'text-destructive'
                         )}>
                           {transaction.type === 'income' ? '+' : '-'}
                           {transaction.amount.toLocaleString(getDateLocale())} {CURRENCY_SYMBOLS[transaction.currency]}
                         </TableCell>
-                        <TableCell className="w-12">
+                        <TableCell className="w-10 px-2">
                           <Button
                             variant="ghost"
                             size="icon"
@@ -407,7 +405,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
                           </Button>
                         </TableCell>
                         {onDelete && (
-                          <TableCell className="w-12">
+                          <TableCell className="w-10 px-2">
                             <Button
                               variant="ghost"
                               size="icon"
