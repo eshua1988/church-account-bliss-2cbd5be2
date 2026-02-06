@@ -92,8 +92,8 @@ export const useGoogleSheetsSync = ({
         .sort((a, b) => a.name.localeCompare(b.name))
         .map(cat => [cat.id, cat.name] as [string, string]);
       
-      // Headers: ID, Date, Income, [Category columns...], DELETE
-      const headers = ['ID', 'Date', 'Income', ...sortedCategories.map(([, name]) => name), 'DELETE'];
+      // Headers: ID, Date, Income, [Category columns...]
+      const headers = ['ID', 'Date', 'Income', ...sortedCategories.map(([, name]) => name)];
       
       const sortedTxs = [...txs].sort((a, b) => {
         const dateA = new Date(a.date).getTime();
@@ -117,8 +117,6 @@ export const useGoogleSheetsSync = ({
             row[3 + categoryIndex] = `${tx.amount} ${tx.currency}`; // Category column
           }
         }
-        
-        row[headers.length - 1] = ''; // DELETE column (last)
         return row;
       });
 
