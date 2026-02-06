@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Transaction } from '@/types/transaction';
 import { useAuth } from '@/contexts/AuthContext';
 
-const DEFAULT_SHEET_RANGE = "'Data app'!A:I";
+const DEFAULT_SHEET_RANGE = "'Data app'!A:E";
 const AUTO_SYNC_KEY = 'google_sheets_auto_sync';
 const AUTO_DELETE_CHECK_KEY = 'google_sheets_auto_delete_check';
 const DELETE_CHECK_INTERVAL = 60000;
@@ -80,7 +80,7 @@ export const useGoogleSheetsSync = ({
     }
 
     try {
-      const headers = ['ID', 'Date', 'Type', 'Category', 'Amount', 'Currency', 'Description', 'Issued To', 'DELETE'];
+      const headers = ['ID', 'Date', 'Category', 'Amount', 'DELETE'];
       
       const sortedTxs = [...txs].sort((a, b) => {
         const dateA = new Date(a.date).getTime();
@@ -92,16 +92,12 @@ export const useGoogleSheetsSync = ({
       const rows = sortedTxs.map(tx => [
         tx.id,
         new Date(tx.date).toLocaleDateString('pl-PL'),
-        tx.type,
         getCategoryName(tx.category),
-        tx.amount.toString(),
-        tx.currency,
-        tx.description || '',
-        tx.type === 'expense' ? (tx.issuedTo || '') : '',
+        `${tx.amount} ${tx.currency}`, // Amount with currency format
         '',
       ]);
 
-      // Create notes for Amount column (column index 4) with Description, Issued To, Date
+      // Create notes for Amount column (column index 3) with Description, Issued To, Date
       const notes: { row: number; col: number; note: string }[] = sortedTxs.map((tx, index) => {
         const noteParts: string[] = [];
         if (tx.description) noteParts.push(`Описание: ${tx.description}`);
@@ -110,7 +106,7 @@ export const useGoogleSheetsSync = ({
         
         return {
           row: index + 1, // +1 for header row
-          col: 4, // Amount column (E)
+          col: 3, // Amount column (D)
           note: noteParts.join('\n'),
         };
       });
@@ -202,7 +198,7 @@ export const useGoogleSheetsSync = ({
         for (let i = 1; i < rows.length; i++) {
           const row = rows[i];
           const transactionId = row[0];
-          const deleteMarker = row[8]?.toString().trim().toLowerCase();
+          const deleteMarker = row[4]?.toString().trim().toLowerCase(); // DELETE column is now at index 4
           
           if (deleteMarker && deleteMarker !== '' && transactionId) {
             try {
@@ -222,7 +218,7 @@ export const useGoogleSheetsSync = ({
           
           setTimeout(() => {
             syncToSheets(transactions.filter(t => 
-              !rows.some((row: string[]) => row[0] === t.id && row[8]?.toString().trim())
+              !rows.some((row: string[]) => row[0] === t.id && row[4]?.toString().trim())
             ));
           }, 500);
           
