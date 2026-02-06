@@ -242,6 +242,32 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Create notification for the owner
+    const submitterInfo = body.submitterName || 'Аноним';
+    const notificationTitle = 'Новый расходный ордер';
+    const notificationMessage = `${submitterInfo} заполнил расходный ордер на ${body.amount} ${body.currency}`;
+    
+    const { error: notifError } = await supabase
+      .from('notifications')
+      .insert({
+        user_id: linkData.owner_user_id,
+        title: notificationTitle,
+        message: notificationMessage,
+        type: 'payout',
+        metadata: {
+          transaction_id: txData.id,
+          amount: body.amount,
+          currency: body.currency,
+          submitter_name: submitterInfo,
+          issued_to: body.issuedTo || null,
+        },
+      });
+
+    if (notifError) {
+      console.error('Failed to create notification:', notifError);
+      // Don't fail the request if notification fails
+    }
+
     console.log('Transaction saved successfully:', txData.id);
 
     return new Response(
