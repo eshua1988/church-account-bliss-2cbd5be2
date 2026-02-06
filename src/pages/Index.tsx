@@ -74,6 +74,7 @@ const Index = () => {
   const {
     isSyncing,
     handleSync,
+    spreadsheetId,
   } = useGoogleSheetsSync({
     transactions,
     getCategoryName,
@@ -191,6 +192,7 @@ const Index = () => {
           onMobileOpenChange={setMobileMenuOpen}
           onSync={handleSync}
           isSyncing={isSyncing}
+          spreadsheetId={spreadsheetId}
         />
         
         <div className="flex-1 overflow-auto">
