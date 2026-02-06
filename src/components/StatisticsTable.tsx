@@ -47,13 +47,15 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
   const [expandedTransactions, setExpandedTransactions] = useState<Set<string>>(new Set());
+  const [internalCurrencyFilter, setInternalCurrencyFilter] = useState<string | null>(null);
 
   const filteredTransactions = useMemo(() => {
     let filtered = transactions;
 
-    // Apply currency filter
-    if (selectedCurrency) {
-      filtered = filtered.filter(t => t.currency === selectedCurrency);
+    // Apply currency filter (internal or external)
+    const activeCurrency = internalCurrencyFilter || selectedCurrency;
+    if (activeCurrency) {
+      filtered = filtered.filter(t => t.currency === activeCurrency);
     }
 
     // Apply type filter
@@ -111,12 +113,20 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
     }
 
     return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, timeRange, typeFilter, customDateRange, selectedCurrency, categoryFilter]);
+  }, [transactions, timeRange, typeFilter, customDateRange, selectedCurrency, categoryFilter, internalCurrencyFilter]);
 
+  // Calculate totals from all transactions (unfiltered by currency) to always show all currency cards
   const totals = useMemo(() => {
     const result: Record<string, { income: number; expense: number }> = {};
     
-    filteredTransactions.forEach(t => {
+    // Use transactions filtered by everything except currency
+    let filtered = transactions;
+    filtered = filtered.filter(t => typeFilter === 'all' || t.type === typeFilter);
+    if (categoryFilter !== 'all') {
+      filtered = filtered.filter(t => t.category === categoryFilter);
+    }
+    
+    filtered.forEach(t => {
       if (!result[t.currency]) {
         result[t.currency] = { income: 0, expense: 0 };
       }
@@ -128,7 +138,11 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
     });
 
     return result;
-  }, [filteredTransactions]);
+  }, [transactions, typeFilter, categoryFilter]);
+
+  const toggleCurrencyFilter = (currency: string) => {
+    setInternalCurrencyFilter(prev => prev === currency ? null : currency);
+  };
 
   const exportToPDF = () => {
     try {
@@ -324,7 +338,16 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
         {/* Totals Summary */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
           {Object.entries(totals).map(([currency, { income, expense }]) => (
-            <div key={currency} className="p-3 bg-secondary/50 rounded-lg space-y-1">
+            <div 
+              key={currency} 
+              onClick={() => toggleCurrencyFilter(currency)}
+              className={cn(
+                "p-3 rounded-lg space-y-1 cursor-pointer transition-all",
+                internalCurrencyFilter === currency 
+                  ? "bg-primary/20 ring-2 ring-primary" 
+                  : "bg-secondary/50 hover:bg-secondary/70"
+              )}
+            >
               <p className="text-xs text-muted-foreground font-medium">{currency}</p>
               <div className="flex items-center gap-1 text-success">
                 <TrendingUp className="w-3 h-3" />
