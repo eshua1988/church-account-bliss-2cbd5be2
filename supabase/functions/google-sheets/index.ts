@@ -11,12 +11,19 @@ function isValidSpreadsheetId(id: string): boolean {
   return /^[a-zA-Z0-9_-]+$/.test(id) && id.length > 10 && id.length < 100;
 }
 
+interface NoteData {
+  row: number;
+  col: number;
+  note: string;
+}
+
 interface SheetRequest {
   action: 'read' | 'write' | 'append' | 'delete';
   spreadsheetId: string;
   range: string;
   values?: string[][];
   transactionId?: string;
+  notes?: NoteData[];
 }
 
 async function authenticateRequest(req: Request): Promise<{ userId: string; token: string; authHeader: string } | Response> {
@@ -220,6 +227,7 @@ serve(async (req) => {
 
     const accessToken = await getAccessToken();
     const baseUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`;
+    const notes = body.notes as NoteData[] | undefined;
 
     let response;
 
@@ -233,6 +241,8 @@ serve(async (req) => {
       
       case 'write': {
         if (!values) throw new Error('Values required for write action');
+        
+        // First, write the values
         response = await fetch(
           `${baseUrl}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
           {
@@ -244,7 +254,73 @@ serve(async (req) => {
             body: JSON.stringify({ values }),
           }
         );
-        break;
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error('Google Sheets values write error:', errorData);
+          throw new Error(errorData.error?.message || 'Google Sheets values write error');
+        }
+        
+        // Then, add notes if provided
+        if (notes && notes.length > 0) {
+          // Get sheet ID from range (parse sheet name)
+          const sheetName = range.split('!')[0].replace(/'/g, '');
+          
+          // Get spreadsheet metadata to find sheet ID
+          const metadataResponse = await fetch(`${baseUrl}?fields=sheets.properties`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          });
+          
+          if (!metadataResponse.ok) {
+            console.error('Failed to get spreadsheet metadata');
+          } else {
+            const metadata = await metadataResponse.json();
+            const sheet = metadata.sheets?.find((s: { properties: { title: string } }) => 
+              s.properties.title === sheetName
+            );
+            const sheetId = sheet?.properties?.sheetId ?? 0;
+            
+            // Build batch update requests for notes
+            const requests = notes.map((noteData) => ({
+              repeatCell: {
+                range: {
+                  sheetId: sheetId,
+                  startRowIndex: noteData.row,
+                  endRowIndex: noteData.row + 1,
+                  startColumnIndex: noteData.col,
+                  endColumnIndex: noteData.col + 1,
+                },
+                cell: {
+                  note: noteData.note,
+                },
+                fields: 'note',
+              },
+            }));
+            
+            // Send batch update for notes
+            const notesResponse = await fetch(`${baseUrl}:batchUpdate`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ requests }),
+            });
+            
+            if (!notesResponse.ok) {
+              const notesError = await notesResponse.json();
+              console.error('Failed to add notes:', notesError);
+              // Don't throw, just log - values were written successfully
+            } else {
+              console.log(`Added ${notes.length} notes to spreadsheet`);
+            }
+          }
+        }
+        
+        console.log('Google Sheets write successful');
+        return new Response(JSON.stringify({ success: true, updatedRows: values.length }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
       
       case 'append': {

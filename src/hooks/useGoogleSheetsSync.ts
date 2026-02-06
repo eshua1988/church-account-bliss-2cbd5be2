@@ -101,6 +101,13 @@ export const useGoogleSheetsSync = ({
         '',
       ]);
 
+      // Create notes for Description column (column index 6) with amount
+      const notes: { row: number; col: number; note: string }[] = sortedTxs.map((tx, index) => ({
+        row: index + 1, // +1 for header row
+        col: 6, // Description column (G)
+        note: `Сумма: ${tx.amount} ${tx.currency}`,
+      }));
+
       const values = [headers, ...rows];
 
       const { error } = await supabase.functions.invoke('google-sheets', {
@@ -109,6 +116,7 @@ export const useGoogleSheetsSync = ({
           spreadsheetId: spreadsheetId,
           range: sheetRange,
           values,
+          notes,
         },
       });
 
