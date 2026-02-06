@@ -71,14 +71,16 @@ const Index = () => {
     getCategoryName,
   } = useSupabaseCategories();
 
+  const expenseCategories = getExpenseCategories();
+  
   const {
     isSyncing,
     handleSync,
     spreadsheetId,
   } = useGoogleSheetsSync({
     transactions,
-    getCategoryName,
     onDeleteTransaction: deleteTransaction,
+    expenseCategories,
   });
 
   const handleVisibleCurrenciesChange = useCallback((newCurrencies: Currency[]) => {
