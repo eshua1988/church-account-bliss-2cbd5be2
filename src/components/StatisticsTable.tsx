@@ -260,14 +260,38 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
 
   return (
     <Card>
-      <CardHeader className="flex flex-col space-y-4 pb-4">
-        <div className="flex items-center justify-between gap-2">
+      <CardHeader className="pb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <CardTitle className="text-base font-semibold">{t('transactionsTable')}</CardTitle>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant={typeFilter === 'all' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setTypeFilter('all')}
+              className="font-medium"
+            >
+              Все
+            </Button>
+            <Button
+              variant={typeFilter === 'income' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setTypeFilter('income')}
+              className="font-medium"
+            >
+              {t('income')}
+            </Button>
+            <Button
+              variant={typeFilter === 'expense' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setTypeFilter('expense')}
+              className="font-medium"
+            >
+              {t('expenses')}
+            </Button>
             <DateRangeFilter value={customDateRange} onChange={setCustomDateRange} />
             {categories.length > 0 && (
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-[160px]">
                   <SelectValue placeholder={t('category')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -285,32 +309,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
               {t('export') || 'HTML'}
             </Button>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant={typeFilter === 'all' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setTypeFilter('all')}
-            className="font-medium"
-          >
-            Все
-          </Button>
-          <Button
-            variant={typeFilter === 'income' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setTypeFilter('income')}
-            className="font-medium"
-          >
-            {t('income')}
-          </Button>
-          <Button
-            variant={typeFilter === 'expense' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setTypeFilter('expense')}
-            className="font-medium"
-          >
-            {t('expenses')}
-          </Button>
         </div>
       </CardHeader>
       <CardContent>
@@ -345,17 +343,17 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
           <Table>
             <TableHeader className="sticky top-0 bg-background z-10">
               <TableRow>
-                <TableHead className="w-10">
+                <TableHead className="w-12">
                   <Checkbox
                     checked={isAllSelected}
                     onCheckedChange={toggleAllTransactions}
                     aria-label="Select all"
                   />
                 </TableHead>
-                <TableHead>{t('date')}</TableHead>
-                <TableHead>{t('category')}</TableHead>
-                <TableHead className="text-right">{t('amount')}</TableHead>
-                <TableHead className="w-20"></TableHead>
+                <TableHead className="w-32">{t('date')}</TableHead>
+                <TableHead className="min-w-[200px]">{t('category')}</TableHead>
+                <TableHead className="w-36 text-right">{t('amount')}</TableHead>
+                <TableHead className="w-12"></TableHead>
                 {onDelete && <TableHead className="w-12"></TableHead>}
               </TableRow>
             </TableHeader>
@@ -372,33 +370,33 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
                   return (
                     <>
                       <TableRow key={transaction.id} className={cn(selectedTransactions.has(transaction.id) && "bg-muted/50")}>
-                        <TableCell>
+                        <TableCell className="w-12">
                           <Checkbox
                             checked={selectedTransactions.has(transaction.id)}
                             onCheckedChange={() => toggleTransaction(transaction.id)}
                             aria-label={`Select transaction ${transaction.id}`}
                           />
                         </TableCell>
-                        <TableCell className="whitespace-nowrap">
+                        <TableCell className="w-32 whitespace-nowrap">
                           {format(new Date(transaction.date), 'dd.MM.yyyy')}
                         </TableCell>
-                        <TableCell className="whitespace-nowrap">
+                        <TableCell className="min-w-[200px]">
                           <div className="flex items-center gap-2">
                             <span className={cn(
-                              'w-2 h-2 rounded-full',
+                              'w-2 h-2 rounded-full flex-shrink-0',
                               transaction.type === 'income' ? 'bg-success' : 'bg-destructive'
                             )} />
-                            {getCategoryName(transaction.category)}
+                            <span className="truncate">{getCategoryName(transaction.category)}</span>
                           </div>
                         </TableCell>
                         <TableCell className={cn(
-                          'text-right font-semibold whitespace-nowrap',
+                          'w-36 text-right font-semibold whitespace-nowrap',
                           transaction.type === 'income' ? 'text-success' : 'text-destructive'
                         )}>
                           {transaction.type === 'income' ? '+' : '-'}
                           {transaction.amount.toLocaleString(getDateLocale())} {CURRENCY_SYMBOLS[transaction.currency]}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="w-12">
                           <Button
                             variant="ghost"
                             size="icon"
@@ -409,7 +407,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
                           </Button>
                         </TableCell>
                         {onDelete && (
-                          <TableCell>
+                          <TableCell className="w-12">
                             <Button
                               variant="ghost"
                               size="icon"
