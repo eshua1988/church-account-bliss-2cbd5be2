@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { RefreshCw, Upload, Download, Cloud, CloudOff, Settings, Save, ExternalLink } from 'lucide-react';
+import { RefreshCw, Cloud, CloudOff, Settings, Save, ExternalLink } from 'lucide-react';
 import { Transaction } from '@/types/transaction';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -380,22 +380,34 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
   const handleExport = async () => {
     if (!spreadsheetId) {
       setSettingsDialogOpen(true);
-      return;
+      return false;
     }
     
     setIsExporting(true);
     const success = await syncToSheets(transactions);
     setIsExporting(false);
     
-    if (success) {
+    return success;
+  };
+
+  const handleSync = async () => {
+    if (!spreadsheetId) {
+      setSettingsDialogOpen(true);
+      return;
+    }
+
+    toast({
+      title: 'Синхронизация',
+      description: 'Начинаем синхронизацию с Google Sheets...',
+    });
+
+    // First export, then import
+    const exportSuccess = await handleExport();
+    if (exportSuccess) {
+      await handleImport();
       toast({
-        title: 'Экспорт завершен',
-        description: `Экспортировано ${transactions.length} транзакций`,
-      });
-    } else {
-      toast({
-        title: 'Ошибка экспорта',
-        variant: 'destructive',
+        title: 'Синхронизация завершена',
+        description: `Синхронизировано ${transactions.length} транзакций`,
       });
     }
   };
@@ -644,28 +656,16 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
         ) : (
           <>
             <Button
-              variant="outline"
-              onClick={handleExport}
-              disabled={isExporting || syncStatus === 'syncing'}
+              variant="default"
+              onClick={handleSync}
+              disabled={isExporting || isImporting || syncStatus === 'syncing'}
             >
-              {isExporting ? (
+              {(isExporting || isImporting) ? (
                 <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
               ) : (
-                <Upload className="w-4 h-4 mr-2" />
+                <RefreshCw className="w-4 h-4 mr-2" />
               )}
-              Экспорт
-            </Button>
-            <Button
-              variant="outline"
-              onClick={handleImport}
-              disabled={isImporting}
-            >
-              {isImporting ? (
-                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Download className="w-4 h-4 mr-2" />
-              )}
-              Импорт
+              Синхронизация
             </Button>
             <Button
               variant="ghost"
