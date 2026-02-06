@@ -1,4 +1,4 @@
-import { BarChart3, Settings, FileText, Wallet, LogOut, RefreshCw, Key } from 'lucide-react';
+import { BarChart3, Settings, FileText, Wallet, LogOut, RefreshCw, Key, Mail } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
@@ -32,6 +32,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
+import { NotificationsDropdown } from '@/components/NotificationsDropdown';
 
 interface AppSidebarProps {
   activeTab: 'balance' | 'statistics' | 'payout' | 'settings';
@@ -65,6 +66,7 @@ export const AppSidebar = ({
     { id: 'balance' as const, icon: Wallet, label: t('balanceByCurrency') },
     { id: 'statistics' as const, icon: BarChart3, label: t('statistics') },
     { id: 'settings' as const, icon: Settings, label: t('settings') },
+    { id: 'notifications' as const, icon: Mail, label: 'Уведомления', isNotifications: true },
     { id: 'sync' as const, icon: RefreshCw, label: 'Синхронизация', isSync: true },
     { id: 'payout' as const, icon: FileText, label: t('payoutGenerator') },
   ];
@@ -140,7 +142,11 @@ export const AppSidebar = ({
     }
   };
 
-  const MenuButton = ({ item }: { item: typeof menuItems[0] }) => {
+  const MenuButton = ({ item, isSheet = false }: { item: typeof menuItems[0]; isSheet?: boolean }) => {
+    if (item.isNotifications) {
+      return <NotificationsDropdown collapsed={!isSheet && collapsed} />;
+    }
+
     if (item.isSync) {
       return (
         <button
@@ -259,7 +265,9 @@ export const AppSidebar = ({
           {menuItems.map((item) => (
             <li key={item.id}>
               {isSheet || !collapsed ? (
-                <MenuButton item={item} />
+                <MenuButton item={item} isSheet={isSheet} />
+              ) : item.isNotifications ? (
+                <NotificationsDropdown collapsed />
               ) : (
                 <Tooltip delayDuration={0}>
                   <TooltipTrigger asChild>
