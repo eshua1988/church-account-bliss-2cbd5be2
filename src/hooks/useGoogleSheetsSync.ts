@@ -255,23 +255,33 @@ export const useGoogleSheetsSync = ({
           const deleteValue = row[deleteColumnIndex]?.toString().trim();
           
           if (deleteValue && deleteValue !== '') {
-            // Check if delete value contains UUIDs (could be semicolon-separated from array formula)
-            // Also handle values like "id1;id2;id3" from array formulas
-            const potentialIds = deleteValue.split(/[;,\n]/);
+            // Check if delete value is a simple delete marker (д, Д, d, D)
+            const isSimpleDeleteMarker = /^[дДdD]$/i.test(deleteValue);
             
-            for (const potentialId of potentialIds) {
-              const trimmedId = potentialId.trim();
-              if (isUUID(trimmedId)) {
-                // This is a transaction ID - delete this specific transaction
-                idsToDelete.add(trimmedId);
-              }
-            }
-            
-            // If no valid UUIDs found in the delete value, but there's content,
-            // treat it as a marker to delete the current row's transaction
-            if (idsToDelete.size === 0 || !potentialIds.some(id => isUUID(id.trim()))) {
+            if (isSimpleDeleteMarker) {
+              // Delete the current row's transaction
               if (transactionIdInRow && isUUID(transactionIdInRow)) {
                 idsToDelete.add(transactionIdInRow);
+              }
+            } else {
+              // Check if delete value contains UUIDs (could be semicolon-separated from array formula)
+              // Also handle values like "id1;id2;id3" from array formulas
+              const potentialIds = deleteValue.split(/[;,\n]/);
+              
+              for (const potentialId of potentialIds) {
+                const trimmedId = potentialId.trim();
+                if (isUUID(trimmedId)) {
+                  // This is a transaction ID - delete this specific transaction
+                  idsToDelete.add(trimmedId);
+                }
+              }
+              
+              // If no valid UUIDs found in the delete value, but there's content,
+              // treat it as a marker to delete the current row's transaction
+              if (idsToDelete.size === 0 || !potentialIds.some(id => isUUID(id.trim()))) {
+                if (transactionIdInRow && isUUID(transactionIdInRow)) {
+                  idsToDelete.add(transactionIdInRow);
+                }
               }
             }
           }
