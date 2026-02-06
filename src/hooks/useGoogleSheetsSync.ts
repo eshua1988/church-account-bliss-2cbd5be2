@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Transaction } from '@/types/transaction';
 import { useAuth } from '@/contexts/AuthContext';
 
-const DEFAULT_SHEET_RANGE = "'Data app'!A:E";
+const DEFAULT_SHEET_RANGE = "'Data app'!A:Z"; // Wide range to accommodate dynamic category columns
 const AUTO_SYNC_KEY = 'google_sheets_auto_sync';
 const AUTO_DELETE_CHECK_KEY = 'google_sheets_auto_delete_check';
 const DELETE_CHECK_INTERVAL = 60000;
@@ -80,7 +80,23 @@ export const useGoogleSheetsSync = ({
     }
 
     try {
-      const headers = ['ID', 'Date', 'Category', 'Amount', 'DELETE'];
+      // Get unique expense categories from transactions
+      const expenseCategories = new Map<string, string>();
+      txs.forEach(tx => {
+        if (tx.type === 'expense' && tx.category) {
+          const categoryName = getCategoryName(tx.category);
+          if (categoryName && !expenseCategories.has(tx.category)) {
+            expenseCategories.set(tx.category, categoryName);
+          }
+        }
+      });
+      
+      // Sort categories alphabetically
+      const sortedCategories = Array.from(expenseCategories.entries())
+        .sort((a, b) => a[1].localeCompare(b[1]));
+      
+      // Headers: ID, Date, Income, [Category columns...], DELETE
+      const headers = ['ID', 'Date', 'Income', ...sortedCategories.map(([, name]) => name), 'DELETE'];
       
       const sortedTxs = [...txs].sort((a, b) => {
         const dateA = new Date(a.date).getTime();
@@ -89,26 +105,51 @@ export const useGoogleSheetsSync = ({
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
       
-      const rows = sortedTxs.map(tx => [
-        tx.id,
-        new Date(tx.date).toLocaleDateString('pl-PL'),
-        getCategoryName(tx.category),
-        `${tx.amount} ${tx.currency}`, // Amount with currency format
-        '',
-      ]);
+      // Create rows with amounts in appropriate columns
+      const rows = sortedTxs.map(tx => {
+        const row: string[] = new Array(headers.length).fill('');
+        row[0] = tx.id; // ID
+        row[1] = new Date(tx.date).toLocaleDateString('pl-PL'); // Date
+        
+        if (tx.type === 'income') {
+          row[2] = `${tx.amount} ${tx.currency}`; // Income column
+        } else {
+          // Find the category column index
+          const categoryIndex = sortedCategories.findIndex(([id]) => id === tx.category);
+          if (categoryIndex !== -1) {
+            row[3 + categoryIndex] = `${tx.amount} ${tx.currency}`; // Category column
+          }
+        }
+        
+        row[headers.length - 1] = ''; // DELETE column (last)
+        return row;
+      });
 
-      // Create notes for Amount column (column index 3) with Description, Issued To, Date
-      const notes: { row: number; col: number; note: string }[] = sortedTxs.map((tx, index) => {
+      // Create notes for cells with amounts (Description, Issued To, Date)
+      const notes: { row: number; col: number; note: string }[] = [];
+      sortedTxs.forEach((tx, index) => {
         const noteParts: string[] = [];
         if (tx.description) noteParts.push(`Описание: ${tx.description}`);
         if (tx.type === 'expense' && tx.issuedTo) noteParts.push(`Кому: ${tx.issuedTo}`);
         noteParts.push(`Дата: ${new Date(tx.date).toLocaleDateString('pl-PL')}`);
         
-        return {
-          row: index + 1, // +1 for header row
-          col: 3, // Amount column (D)
-          note: noteParts.join('\n'),
-        };
+        if (noteParts.length > 0) {
+          let col: number;
+          if (tx.type === 'income') {
+            col = 2; // Income column
+          } else {
+            const categoryIndex = sortedCategories.findIndex(([id]) => id === tx.category);
+            col = categoryIndex !== -1 ? 3 + categoryIndex : -1;
+          }
+          
+          if (col !== -1) {
+            notes.push({
+              row: index + 1, // +1 for header row
+              col,
+              note: noteParts.join('\n'),
+            });
+          }
+        }
       });
 
       const values = [headers, ...rows];
@@ -193,12 +234,21 @@ export const useGoogleSheetsSync = ({
 
       const rows = data?.values || [];
       if (rows.length > 1 && onDeleteTransaction) {
+        // Find DELETE column dynamically from headers
+        const headers = rows[0] as string[];
+        const deleteColumnIndex = headers.findIndex(h => h === 'DELETE');
+        
+        if (deleteColumnIndex === -1) {
+          console.warn('DELETE column not found in headers');
+          return;
+        }
+        
         let deletedCount = 0;
         
         for (let i = 1; i < rows.length; i++) {
           const row = rows[i];
           const transactionId = row[0];
-          const deleteMarker = row[4]?.toString().trim().toLowerCase(); // DELETE column is now at index 4
+          const deleteMarker = row[deleteColumnIndex]?.toString().trim().toLowerCase();
           
           if (deleteMarker && deleteMarker !== '' && transactionId) {
             try {
@@ -218,7 +268,7 @@ export const useGoogleSheetsSync = ({
           
           setTimeout(() => {
             syncToSheets(transactions.filter(t => 
-              !rows.some((row: string[]) => row[0] === t.id && row[4]?.toString().trim())
+              !rows.some((row: string[]) => row[0] === t.id && row[deleteColumnIndex]?.toString().trim())
             ));
           }, 500);
           
