@@ -1092,6 +1092,9 @@ const PublicPayout = () => {
         setContinuingPayout(null);
         break;
       case 'pending':
+        // Go back to pending selection - need to set isAuthenticated false
+        // to show the pending selection screen (which is inside !isAuthenticated block)
+        setIsAuthenticated(false);
         setShowPendingSelection(true);
         setContinuingPayout(null);
         break;
