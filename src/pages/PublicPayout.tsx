@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe, ArrowLeft } from 'lucide-react';
+import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe, ArrowLeft, ArrowRight, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Switch } from '@/components/ui/switch';
+import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import jsPDF from 'jspdf';
 import { supabase } from '@/integrations/supabase/client';
@@ -19,6 +20,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
 
 type Language = 'pl' | 'ru' | 'en' | 'uk';
+type LinkType = 'standard' | 'stepwise';
 
 const LANGUAGE_NAMES: Record<Language, string> = {
   pl: 'Polski',
@@ -85,6 +87,14 @@ const translations: Record<Language, Record<string, string>> = {
     enterLastName: 'Wpisz nazwisko...',
     enterName: 'Wpisz imię i nazwisko...',
     back: 'Wstecz',
+    next: 'Dalej',
+    step: 'Krok',
+    stepBasicInfo: 'Podstawowe dane',
+    stepCategory: 'Kategoria i opis',
+    stepPhotos: 'Zdjęcia i podpis',
+    stepReview: 'Podsumowanie',
+    downloadPdf: 'Pobierz PDF',
+    reviewTitle: 'Sprawdź dane przed pobraniem',
   },
   ru: {
     title: 'Расходный ордер',
@@ -135,6 +145,14 @@ const translations: Record<Language, Record<string, string>> = {
     enterLastName: 'Введите фамилию...',
     enterName: 'Введите имя и фамилию...',
     back: 'Назад',
+    next: 'Далее',
+    step: 'Шаг',
+    stepBasicInfo: 'Основные данные',
+    stepCategory: 'Категория и описание',
+    stepPhotos: 'Фото и подпись',
+    stepReview: 'Итоги',
+    downloadPdf: 'Скачать PDF',
+    reviewTitle: 'Проверьте данные перед скачиванием',
   },
   en: {
     title: 'Payment Voucher',
@@ -185,6 +203,14 @@ const translations: Record<Language, Record<string, string>> = {
     enterLastName: 'Enter last name...',
     enterName: 'Enter full name...',
     back: 'Back',
+    next: 'Next',
+    step: 'Step',
+    stepBasicInfo: 'Basic info',
+    stepCategory: 'Category & description',
+    stepPhotos: 'Photos & signature',
+    stepReview: 'Review',
+    downloadPdf: 'Download PDF',
+    reviewTitle: 'Review before downloading',
   },
   uk: {
     title: 'Видатковий ордер',
@@ -235,6 +261,14 @@ const translations: Record<Language, Record<string, string>> = {
     enterLastName: 'Введіть прізвище...',
     enterName: 'Введіть ім\'я та прізвище...',
     back: 'Назад',
+    next: 'Далі',
+    step: 'Крок',
+    stepBasicInfo: 'Основні дані',
+    stepCategory: 'Категорія та опис',
+    stepPhotos: 'Фото та підпис',
+    stepReview: 'Підсумок',
+    downloadPdf: 'Завантажити PDF',
+    reviewTitle: 'Перевірте дані перед завантаженням',
   },
 };
 
@@ -465,6 +499,11 @@ const PublicPayout = () => {
   const [language, setLanguage] = useState<Language>('pl');
   const [imagesOptional, setImagesOptional] = useState(false); // false = images required by default
   
+  // Link type and stepwise mode
+  const [linkType, setLinkType] = useState<LinkType>('standard');
+  const [currentStep, setCurrentStep] = useState(1);
+  const totalSteps = 4;
+  
   // Translation helper
   const t = translations[language];
 
@@ -519,6 +558,9 @@ const PublicPayout = () => {
           name: validationData.linkName,
           is_active: true,
         });
+
+        // Set link type
+        setLinkType((validationData.linkType || 'standard') as LinkType);
 
         setCategories(validationData.categories || []);
       } catch (err) {
@@ -1338,6 +1380,22 @@ const PublicPayout = () => {
           </CardHeader>
           
           <CardContent className="pt-6 space-y-6">
+            {/* Stepwise mode - progress indicator */}
+            {linkType === 'stepwise' && !continuingPayout && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{t.step} {currentStep} / {totalSteps}</span>
+                  <span className="font-medium">
+                    {currentStep === 1 && t.stepBasicInfo}
+                    {currentStep === 2 && t.stepCategory}
+                    {currentStep === 3 && t.stepPhotos}
+                    {currentStep === 4 && t.stepReview}
+                  </span>
+                </div>
+                <Progress value={(currentStep / totalSteps) * 100} className="h-2" />
+              </div>
+            )}
+            
             {/* Continuing payout - simplified view */}
             {continuingPayout ? (
               <>
@@ -1468,8 +1526,15 @@ const PublicPayout = () => {
               </>
             ) : (
               <>
+                {/* Back button */}
                 <Button
-                  onClick={goBack}
+                  onClick={() => {
+                    if (linkType === 'stepwise' && currentStep > 1) {
+                      setCurrentStep(currentStep - 1);
+                    } else {
+                      goBack();
+                    }
+                  }}
                   variant="ghost"
                   size="sm"
                   className="mb-2"
@@ -1477,241 +1542,343 @@ const PublicPayout = () => {
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   {t.back}
                 </Button>
-            <p className="text-sm text-muted-foreground">{t.requiredFields}</p>
-            
-            {/* Date, Currency, Amount, Issued To */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>{t.date} *</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        'w-full justify-start text-left font-normal',
-                        !formData.date && 'text-muted-foreground'
-                      )}
-                    >
-                      <Calendar className="mr-2 h-4 w-4" />
-                      {format(formData.date, 'dd.MM.yyyy')}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <CalendarComponent
-                      mode="single"
-                      selected={formData.date}
-                      onSelect={(date) => date && handleInputChange('date', date)}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-              
-              <div className="space-y-2">
-                <Label>{t.amount} *</Label>
-                <div className="flex gap-2">
-                  <Select value={formData.currency} onValueChange={(v) => handleInputChange('currency', v)}>
-                    <SelectTrigger className="w-20">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {currencies.map(c => (
-                        <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={formData.amount}
-                    onChange={(e) => handleInputChange('amount', e.target.value)}
-                    className="flex-1"
-                  />
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label>{t.issuedTo} *</Label>
-                <Input
-                  placeholder={t.enterName}
-                  value={formData.issuedTo}
-                  onChange={(e) => handleInputChange('issuedTo', e.target.value)}
-                />
-              </div>
-            </div>
-            
-            {/* Bank Account */}
-            <div className="space-y-2">
-              <Label>{t.bankAccount}</Label>
-              <Input
-                placeholder={t.bankAccountPlaceholder}
-                value={formData.bankAccount}
-                onChange={(e) => handleInputChange('bankAccount', e.target.value)}
-              />
-            </div>
-            
-            {/* Department Name */}
-            <div className="space-y-2">
-              <Label>{t.department} *</Label>
-              <Select 
-                value={formData.departmentName} 
-                onValueChange={(v) => handleInputChange('departmentName', v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={t.selectCategory} />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((category) => (
-                    <SelectItem key={category.id} value={category.name}>
-                      {category.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            {/* Basis */}
-            <div className="space-y-2">
-              <Label>{t.basis} *</Label>
-              <Textarea
-                placeholder={t.basisPlaceholder}
-                value={formData.basis}
-                onChange={(e) => handleInputChange('basis', e.target.value)}
-                rows={3}
-              />
-            </div>
-            
-            {/* Amount in Words */}
-            <div className="space-y-2">
-              <Label>{t.amountInWords} *</Label>
-              <Textarea
-                value={formData.amountInWords}
-                readOnly
-                rows={2}
-                className="bg-muted cursor-not-allowed"
-              />
-            </div>
-            
-            {/* Image Attachments Toggle */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="allow-images-public">{t.attachments} {!imagesOptional && '*'}</Label>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">{imagesOptional ? t.optional : t.required}</span>
-                  <Switch
-                    id="allow-images-public"
-                    checked={imagesOptional}
-                    onCheckedChange={(checked) => {
-                      setImagesOptional(checked);
-                      if (checked) {
-                        // Clear images when making optional
-                        attachedImages.forEach(img => URL.revokeObjectURL(img.preview));
-                        setAttachedImages([]);
-                      }
-                    }}
-                  />
-                </div>
-              </div>
-              
-              <div className={cn(
-                "transition-all duration-200",
-                imagesOptional && "opacity-50 pointer-events-none"
-              )}>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={handleImageSelect}
-                  className="hidden"
-                  disabled={imagesOptional}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full border-dashed"
-                  disabled={imagesOptional}
-                >
-                  <ImagePlus className="w-4 h-4 mr-2" />
-                  {t.addPhotos}
-                </Button>
                 
-                {attachedImages.length > 0 && (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
-                    {attachedImages.map((img, index) => (
-                      <div key={index} className="relative group">
-                        <img
-                          src={img.preview}
-                          alt={`${t.attachments} ${index + 1}`}
-                          className="w-full h-20 object-cover rounded-lg border border-border"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeImage(index)}
-                          className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
+                {/* Standard mode OR Stepwise Step 1: Basic Info */}
+                {(linkType === 'standard' || currentStep === 1) && (
+                  <>
+                    <p className="text-sm text-muted-foreground">{t.requiredFields}</p>
+                    
+                    {/* Date, Currency, Amount, Issued To */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label>{t.date} *</Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                'w-full justify-start text-left font-normal',
+                                !formData.date && 'text-muted-foreground'
+                              )}
+                            >
+                              <Calendar className="mr-2 h-4 w-4" />
+                              {format(formData.date, 'dd.MM.yyyy')}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0">
+                            <CalendarComponent
+                              mode="single"
+                              selected={formData.date}
+                              onSelect={(date) => date && handleInputChange('date', date)}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
                       </div>
-                    ))}
+                      
+                      <div className="space-y-2">
+                        <Label>{t.amount} *</Label>
+                        <div className="flex gap-2">
+                          <Select value={formData.currency} onValueChange={(v) => handleInputChange('currency', v)}>
+                            <SelectTrigger className="w-20">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {currencies.map(c => (
+                                <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={formData.amount}
+                            onChange={(e) => handleInputChange('amount', e.target.value)}
+                            className="flex-1"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>{t.issuedTo} *</Label>
+                        <Input
+                          placeholder={t.enterName}
+                          value={formData.issuedTo}
+                          onChange={(e) => handleInputChange('issuedTo', e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* Bank Account */}
+                    <div className="space-y-2">
+                      <Label>{t.bankAccount}</Label>
+                      <Input
+                        placeholder={t.bankAccountPlaceholder}
+                        value={formData.bankAccount}
+                        onChange={(e) => handleInputChange('bankAccount', e.target.value)}
+                      />
+                    </div>
+                  </>
+                )}
+                
+                {/* Standard mode OR Stepwise Step 2: Category & Basis */}
+                {(linkType === 'standard' || currentStep === 2) && (
+                  <>
+                    {/* Department Name */}
+                    <div className="space-y-2">
+                      <Label>{t.department} *</Label>
+                      <Select 
+                        value={formData.departmentName} 
+                        onValueChange={(v) => handleInputChange('departmentName', v)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={t.selectCategory} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.map((category) => (
+                            <SelectItem key={category.id} value={category.name}>
+                              {category.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    {/* Basis */}
+                    <div className="space-y-2">
+                      <Label>{t.basis} *</Label>
+                      <Textarea
+                        placeholder={t.basisPlaceholder}
+                        value={formData.basis}
+                        onChange={(e) => handleInputChange('basis', e.target.value)}
+                        rows={3}
+                      />
+                    </div>
+                    
+                    {/* Amount in Words */}
+                    <div className="space-y-2">
+                      <Label>{t.amountInWords} *</Label>
+                      <Textarea
+                        value={formData.amountInWords}
+                        readOnly
+                        rows={2}
+                        className="bg-muted cursor-not-allowed"
+                      />
+                    </div>
+                  </>
+                )}
+                
+                {/* Standard mode OR Stepwise Step 3: Photos & Signature */}
+                {(linkType === 'standard' || currentStep === 3) && (
+                  <>
+                    {/* Image Attachments Toggle */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="allow-images-public">{t.attachments} {!imagesOptional && '*'}</Label>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">{imagesOptional ? t.optional : t.required}</span>
+                          <Switch
+                            id="allow-images-public"
+                            checked={imagesOptional}
+                            onCheckedChange={(checked) => {
+                              setImagesOptional(checked);
+                              if (checked) {
+                                attachedImages.forEach(img => URL.revokeObjectURL(img.preview));
+                                setAttachedImages([]);
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className={cn(
+                        "transition-all duration-200",
+                        imagesOptional && "opacity-50 pointer-events-none"
+                      )}>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          onChange={handleImageSelect}
+                          className="hidden"
+                          disabled={imagesOptional}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="w-full border-dashed"
+                          disabled={imagesOptional}
+                        >
+                          <ImagePlus className="w-4 h-4 mr-2" />
+                          {t.addPhotos}
+                        </Button>
+                        
+                        {attachedImages.length > 0 && (
+                          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
+                            {attachedImages.map((img, index) => (
+                              <div key={index} className="relative group">
+                                <img
+                                  src={img.preview}
+                                  alt={`${t.attachments} ${index + 1}`}
+                                  className="w-full h-20 object-cover rounded-lg border border-border"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => removeImage(index)}
+                                  className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {t.photoNote}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {/* Signature */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label>{t.signature} *</Label>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={clearSignature}
+                          className="text-muted-foreground hover:text-foreground"
+                        >
+                          <Eraser className="w-4 h-4 mr-1" />
+                          {t.clear}
+                        </Button>
+                      </div>
+                      <div className="border-2 border-dashed rounded-lg bg-white">
+                        <canvas
+                          ref={signatureCanvasRef}
+                          width={600}
+                          height={150}
+                          className="w-full h-32 cursor-crosshair touch-none rounded-lg"
+                          style={{ backgroundColor: 'white' }}
+                          onMouseDown={startDrawing}
+                          onMouseMove={draw}
+                          onMouseUp={stopDrawing}
+                          onMouseLeave={stopDrawing}
+                          onTouchStart={startDrawing}
+                          onTouchMove={draw}
+                          onTouchEnd={stopDrawing}
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+                
+                {/* Stepwise Step 4: Review */}
+                {linkType === 'stepwise' && currentStep === 4 && (
+                  <div className="space-y-4">
+                    <h3 className="font-semibold">{t.reviewTitle}</h3>
+                    <div className="bg-muted/50 p-4 rounded-lg space-y-3">
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <span className="text-muted-foreground">{t.date}:</span>
+                        <span>{format(formData.date, 'dd.MM.yyyy')}</span>
+                        
+                        <span className="text-muted-foreground">{t.amount}:</span>
+                        <span>{currencies.find(c => c.value === formData.currency)?.label} {formData.amount}</span>
+                        
+                        <span className="text-muted-foreground">{t.issuedTo}:</span>
+                        <span>{formData.issuedTo}</span>
+                        
+                        {formData.bankAccount && (
+                          <>
+                            <span className="text-muted-foreground">{t.bankAccount}:</span>
+                            <span>{formData.bankAccount}</span>
+                          </>
+                        )}
+                        
+                        <span className="text-muted-foreground">{t.department}:</span>
+                        <span>{formData.departmentName}</span>
+                        
+                        <span className="text-muted-foreground">{t.basis}:</span>
+                        <span className="col-span-1">{formData.basis}</span>
+                      </div>
+                      
+                      <div className="pt-2 border-t">
+                        <span className="text-muted-foreground text-sm">{t.amountInWords}:</span>
+                        <p className="font-medium">{formData.amountInWords}</p>
+                      </div>
+                      
+                      {attachedImages.length > 0 && (
+                        <div className="pt-2 border-t">
+                          <span className="text-muted-foreground text-sm">{t.attachments}: {attachedImages.length}</span>
+                        </div>
+                      )}
+                      
+                      {hasSignature && (
+                        <div className="pt-2 border-t">
+                          <span className="text-muted-foreground text-sm">{t.signature}: ✓</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
-                <p className="text-xs text-muted-foreground mt-2">
-                  {t.photoNote}
-                </p>
-              </div>
-            </div>
-            {/* Signature */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>{t.signature} *</Label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={clearSignature}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <Eraser className="w-4 h-4 mr-1" />
-                  {t.clear}
-                </Button>
-              </div>
-              <div className="border-2 border-dashed rounded-lg bg-white">
-                <canvas
-                  ref={signatureCanvasRef}
-                  width={600}
-                  height={150}
-                  className="w-full h-32 cursor-crosshair touch-none rounded-lg"
-                  style={{ backgroundColor: 'white' }}
-                  onMouseDown={startDrawing}
-                  onMouseMove={draw}
-                  onMouseUp={stopDrawing}
-                  onMouseLeave={stopDrawing}
-                  onTouchStart={startDrawing}
-                  onTouchMove={draw}
-                  onTouchEnd={stopDrawing}
-                />
-              </div>
-            </div>
-            
-            {/* Submit Button */}
-            <div className="flex">
-              <Button
-                onClick={handleSubmit}
-                disabled={!isFormValid || !hasSignature || isSaving || !fontLoaded}
-                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
-                size="lg"
-              >
-                {isSaving ? (
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                
+                {/* Navigation Buttons */}
+                {linkType === 'stepwise' ? (
+                  <div className="flex gap-3 pt-4">
+                    {currentStep < totalSteps && (
+                      <Button
+                        onClick={() => setCurrentStep(currentStep + 1)}
+                        disabled={
+                          (currentStep === 1 && (!formData.amount || !formData.issuedTo)) ||
+                          (currentStep === 2 && (!formData.departmentName || !formData.basis)) ||
+                          (currentStep === 3 && ((!imagesOptional && attachedImages.length === 0) || !hasSignature))
+                        }
+                        className="flex-1"
+                        size="lg"
+                      >
+                        {t.next}
+                        <ArrowRight className="w-4 h-4 ml-2" />
+                      </Button>
+                    )}
+                    
+                    {currentStep === totalSteps && (
+                      <Button
+                        onClick={handleSubmit}
+                        disabled={!isFormValid || !hasSignature || isSaving || !fontLoaded}
+                        className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+                        size="lg"
+                      >
+                        {isSaving ? (
+                          <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                        ) : (
+                          <Download className="w-5 h-5 mr-2" />
+                        )}
+                        {t.downloadPdf}
+                      </Button>
+                    )}
+                  </div>
                 ) : (
-                  <Save className="w-5 h-5 mr-2" />
+                  /* Standard mode Submit Button */
+                  <div className="flex">
+                    <Button
+                      onClick={handleSubmit}
+                      disabled={!isFormValid || !hasSignature || isSaving || !fontLoaded}
+                      className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+                      size="lg"
+                    >
+                      {isSaving ? (
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      ) : (
+                        <Save className="w-5 h-5 mr-2" />
+                      )}
+                      {t.saveAndDownload}
+                    </Button>
+                  </div>
                 )}
-                {t.saveAndDownload}
-              </Button>
-            </div>
               </>
             )}
           </CardContent>

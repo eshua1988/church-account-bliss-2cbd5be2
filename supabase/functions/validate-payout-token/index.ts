@@ -43,7 +43,7 @@ Deno.serve(async (req) => {
     // Validate token
     const { data: linkData, error: linkError } = await supabase
       .from('shared_payout_links')
-      .select('id, owner_user_id, name, is_active, expires_at')
+      .select('id, owner_user_id, name, is_active, expires_at, link_type')
       .eq('token', body.token)
       .single();
 
@@ -88,6 +88,7 @@ Deno.serve(async (req) => {
       JSON.stringify({
         valid: true,
         linkName: linkData.name,
+        linkType: linkData.link_type || 'standard',
         categories: categories || [],
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
