@@ -9,16 +9,22 @@ const AUTO_SYNC_KEY = 'google_sheets_auto_sync';
 const AUTO_DELETE_CHECK_KEY = 'google_sheets_auto_delete_check';
 const DELETE_CHECK_INTERVAL = 60000;
 
+interface Category {
+  id: string;
+  name: string;
+  type: string;
+}
+
 interface UseGoogleSheetsSyncProps {
   transactions: Transaction[];
-  getCategoryName: (id: string) => string;
   onDeleteTransaction?: (id: string) => Promise<void>;
+  expenseCategories?: Category[];
 }
 
 export const useGoogleSheetsSync = ({
   transactions,
-  getCategoryName,
   onDeleteTransaction,
+  expenseCategories = [],
 }: UseGoogleSheetsSyncProps) => {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -80,20 +86,11 @@ export const useGoogleSheetsSync = ({
     }
 
     try {
-      // Get unique expense categories from transactions
-      const expenseCategories = new Map<string, string>();
-      txs.forEach(tx => {
-        if (tx.type === 'expense' && tx.category) {
-          const categoryName = getCategoryName(tx.category);
-          if (categoryName && !expenseCategories.has(tx.category)) {
-            expenseCategories.set(tx.category, categoryName);
-          }
-        }
-      });
-      
-      // Sort categories alphabetically
-      const sortedCategories = Array.from(expenseCategories.entries())
-        .sort((a, b) => a[1].localeCompare(b[1]));
+      // Use all expense categories from database, sorted alphabetically
+      const sortedCategories = expenseCategories
+        .filter(cat => cat.type === 'expense')
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(cat => [cat.id, cat.name] as [string, string]);
       
       // Headers: ID, Date, Income, [Category columns...], DELETE
       const headers = ['ID', 'Date', 'Income', ...sortedCategories.map(([, name]) => name), 'DELETE'];
@@ -175,7 +172,7 @@ export const useGoogleSheetsSync = ({
       });
       return false;
     }
-  }, [getCategoryName, toast, spreadsheetId, sheetRange]);
+  }, [expenseCategories, toast, spreadsheetId, sheetRange]);
 
   const handleExport = useCallback(async () => {
     if (!spreadsheetId) {
