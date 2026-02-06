@@ -1005,6 +1005,46 @@ const PublicPayout = () => {
     );
   }
 
+  // Handle create another document - reset to login screen
+  const handleCreateAnother = () => {
+    // Reset success state
+    setIsSuccess(false);
+    
+    // Reset authentication - go back to login
+    setIsAuthenticated(false);
+    setSubmitterFirstName('');
+    setSubmitterLastName('');
+    
+    // Reset navigation
+    setNavigationHistory(['login']);
+    
+    // Reset pending payout states
+    setContinuingPayout(null);
+    setShowPendingSelection(false);
+    setPendingPayouts([]);
+    
+    // Reset stepwise mode
+    setCurrentStep(1);
+    
+    // Reset form data
+    setFormData({
+      date: new Date(),
+      currency: 'PLN',
+      amount: '',
+      issuedTo: '',
+      bankAccount: '',
+      departmentName: '',
+      basis: '',
+      amountInWords: '',
+    });
+    
+    // Reset images and signature
+    attachedImages.forEach(img => URL.revokeObjectURL(img.preview));
+    setAttachedImages([]);
+    setHasSignature(false);
+    setImagesOptional(false);
+  };
+
   if (isSuccess) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -1016,7 +1056,7 @@ const PublicPayout = () => {
             <p className="text-muted-foreground">
               {t.successMessage}
             </p>
-            <Button onClick={() => setIsSuccess(false)} variant="outline">
+            <Button onClick={handleCreateAnother} variant="outline">
               {t.createAnother}
             </Button>
           </CardContent>
