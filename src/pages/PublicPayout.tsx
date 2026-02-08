@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe, ArrowLeft, ArrowRight, Download, ArrowRightLeft } from 'lucide-react';
+import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe, ArrowLeft, ArrowRight, Download } from 'lucide-react';
+import currencyConvertIcon from '@/assets/currency-convert-icon.png';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -1649,7 +1650,7 @@ const PublicPayout = () => {
                             onClick={() => setShowConverter(true)}
                             title={t.amount}
                           >
-                            <ArrowRightLeft className="w-4 h-4" />
+                            <img src={currencyConvertIcon} alt="Convert" className="w-5 h-5" />
                           </Button>
                         </div>
                       </div>
