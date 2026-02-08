@@ -7,8 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { Bot, Link2, Unlink, Copy, ExternalLink } from 'lucide-react';
+import { Bot, Link2, Unlink, Copy, ExternalLink, RefreshCw, CheckCircle } from 'lucide-react';
 import { useTranslation } from '@/contexts/LanguageContext';
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
 export function TelegramBotSettings() {
   const { t } = useTranslation();
@@ -18,6 +20,8 @@ export function TelegramBotSettings() {
   const [isConnected, setIsConnected] = useState(false);
   const [connectedChatId, setConnectedChatId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [webhookStatus, setWebhookStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [webhookMessage, setWebhookMessage] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -158,7 +162,44 @@ export function TelegramBotSettings() {
     });
   };
 
-  const botUsername = 'ChurchAccountBot'; // Replace with actual bot username
+  const activateWebhook = async () => {
+    setWebhookStatus('loading');
+    setWebhookMessage('');
+    
+    try {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/telegram-bot?setup=true`);
+      const result = await response.json();
+      
+      if (result.ok) {
+        setWebhookStatus('success');
+        setWebhookMessage('Webhook успешно активирован!');
+        toast({
+          title: 'Успешно',
+          description: 'Telegram webhook активирован',
+        });
+      } else {
+        setWebhookStatus('error');
+        setWebhookMessage(result.description || 'Ошибка активации');
+        toast({
+          title: 'Ошибка',
+          description: result.description || 'Не удалось активировать webhook',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      console.error('Webhook activation error:', error);
+      setWebhookStatus('error');
+      setWebhookMessage('Ошибка сети');
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось подключиться к серверу',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Bot username from token: 8489496158:AAEOnm5Z1JU5i3AhCD89ivrdzxTYY7ElRbk
+  const botUsername = 'your_bot_username'; // User should set their own bot username
 
   return (
     <Card>
@@ -175,7 +216,7 @@ export function TelegramBotSettings() {
         {isConnected ? (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
-              <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800">
+              <Badge variant="secondary" className="border-primary/20">
                 <Link2 className="w-3 h-3 mr-1" />
                 Подключен
               </Badge>
@@ -196,15 +237,31 @@ export function TelegramBotSettings() {
               </ul>
             </div>
             
-            <Button
-              variant="destructive"
-              onClick={handleDisconnect}
-              disabled={loading}
-              className="w-full sm:w-auto"
-            >
-              <Unlink className="w-4 h-4 mr-2" />
-              Отключить бота
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={activateWebhook}
+                disabled={webhookStatus === 'loading'}
+              >
+                {webhookStatus === 'loading' ? (
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                ) : webhookStatus === 'success' ? (
+                  <CheckCircle className="w-4 h-4 mr-2 text-primary" />
+                ) : (
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                )}
+                Активировать Webhook
+              </Button>
+              
+              <Button
+                variant="destructive"
+                onClick={handleDisconnect}
+                disabled={loading}
+              >
+                <Unlink className="w-4 h-4 mr-2" />
+                Отключить бота
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="space-y-4">

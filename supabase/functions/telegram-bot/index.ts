@@ -515,8 +515,12 @@ Deno.serve(async (req) => {
   // Handle webhook setup request
   const url = new URL(req.url);
   if (url.searchParams.get('setup') === 'true') {
-    const webhookUrl = url.origin + url.pathname;
+    // Use the correct Supabase function URL
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const webhookUrl = `${supabaseUrl}/functions/v1/telegram-bot`;
     const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook?url=${encodeURIComponent(webhookUrl)}`;
+    
+    console.log('Setting webhook URL:', webhookUrl);
     
     const response = await fetch(telegramUrl);
     const result = await response.json();
