@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe, ArrowLeft, ArrowRight, Download } from 'lucide-react';
+import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe, ArrowLeft, ArrowRight, Download, ArrowRightLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,6 +18,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
+import { CurrencyConverter } from '@/components/CurrencyConverter';
 
 type Language = 'pl' | 'ru' | 'en' | 'uk';
 type LinkType = 'standard' | 'stepwise';
@@ -498,6 +499,7 @@ const PublicPayout = () => {
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   const [language, setLanguage] = useState<Language>('ru');
   const [imagesOptional, setImagesOptional] = useState(false); // false = images required by default
+  const [showConverter, setShowConverter] = useState(false);
   
   // Link type and stepwise mode
   const [linkType, setLinkType] = useState<LinkType>('standard');
@@ -1640,8 +1642,30 @@ const PublicPayout = () => {
                             onChange={(e) => handleInputChange('amount', e.target.value)}
                             className="flex-1"
                           />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            onClick={() => setShowConverter(true)}
+                            title={t.amount}
+                          >
+                            <ArrowRightLeft className="w-4 h-4" />
+                          </Button>
                         </div>
                       </div>
+                      
+                      {/* Currency Converter Dialog */}
+                      <CurrencyConverter
+                        isOpen={showConverter}
+                        onClose={() => setShowConverter(false)}
+                        onApply={(amount, currency) => {
+                          handleInputChange('amount', amount);
+                          handleInputChange('currency', currency);
+                        }}
+                        currentAmount={formData.amount}
+                        currentCurrency={formData.currency}
+                        language={language}
+                      />
                       
                       <div className="space-y-2">
                         <Label>{t.issuedTo} *</Label>

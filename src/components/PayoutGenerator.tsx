@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { format } from 'date-fns';
-import { Calendar, Eraser, Save, Loader2, ImagePlus, X } from 'lucide-react';
+import { Calendar, Eraser, Save, Loader2, ImagePlus, X, ArrowRightLeft } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
+import { CurrencyConverter } from '@/components/CurrencyConverter';
 
 interface AttachedImage {
   file: File;
@@ -199,6 +200,7 @@ export const PayoutGenerator = () => {
   const [fontBase64, setFontBase64] = useState<string | null>(null);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   const [imagesOptional, setImagesOptional] = useState(false); // false = images required by default
+  const [showConverter, setShowConverter] = useState(false);
   
   const [formData, setFormData] = useState<PayoutFormData>({
     date: new Date(),
@@ -690,8 +692,30 @@ export const PayoutGenerator = () => {
                   onChange={(e) => handleInputChange('amount', e.target.value)}
                   className="flex-1"
                 />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setShowConverter(true)}
+                  title={t('convertCurrency')}
+                >
+                  <ArrowRightLeft className="w-4 h-4" />
+                </Button>
               </div>
             </div>
+            
+            {/* Currency Converter Dialog */}
+            <CurrencyConverter
+              isOpen={showConverter}
+              onClose={() => setShowConverter(false)}
+              onApply={(amount, currency) => {
+                handleInputChange('amount', amount);
+                handleInputChange('currency', currency);
+              }}
+              currentAmount={formData.amount}
+              currentCurrency={formData.currency}
+              language={language}
+            />
             
             {/* Issued To */}
             <div className="space-y-2">
