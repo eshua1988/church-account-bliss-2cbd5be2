@@ -496,7 +496,7 @@ const PublicPayout = () => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
-  const [language, setLanguage] = useState<Language>('pl');
+  const [language, setLanguage] = useState<Language>('ru');
   const [imagesOptional, setImagesOptional] = useState(false); // false = images required by default
   
   // Link type and stepwise mode
