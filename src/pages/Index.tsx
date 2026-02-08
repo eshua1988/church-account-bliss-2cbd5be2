@@ -248,7 +248,9 @@ const Index = () => {
                           income={currencyBalance.income} 
                           expense={currencyBalance.expense} 
                           balance={currencyBalance.balance} 
-                          delay={index * 100} 
+                          delay={index * 100}
+                          transactions={transactions}
+                          getCategoryName={getCategoryName}
                         />
                       </div>
                     );

@@ -730,6 +730,48 @@ export const translations = {
     en: 'Transaction saved',
     uk: 'Транзакцію збережено',
   },
+  showHistory: {
+    pl: 'Pokaż historię',
+    ru: 'Показать историю',
+    en: 'Show history',
+    uk: 'Показати історію',
+  },
+  hideHistory: {
+    pl: 'Ukryj historię',
+    ru: 'Скрыть историю',
+    en: 'Hide history',
+    uk: 'Сховати історію',
+  },
+  thisWeek: {
+    pl: 'Ten tydzień',
+    ru: 'Эта неделя',
+    en: 'This week',
+    uk: 'Цей тиждень',
+  },
+  previousWeek: {
+    pl: 'Poprzedni tydzień',
+    ru: 'Предыдущая неделя',
+    en: 'Previous week',
+    uk: 'Попередній тиждень',
+  },
+  weeksAgo: {
+    pl: 'tygodni temu',
+    ru: 'недель назад',
+    en: 'weeks ago',
+    uk: 'тижнів тому',
+  },
+  loadMore: {
+    pl: 'Załaduj więcej',
+    ru: 'Загрузить ещё',
+    en: 'Load more',
+    uk: 'Завантажити ще',
+  },
+  noTransactionsThisWeek: {
+    pl: 'Brak transakcji w tym tygodniu',
+    ru: 'Нет транзакций за эту неделю',
+    en: 'No transactions this week',
+    uk: 'Немає транзакцій за цей тиждень',
+  },
 } as const;
 
 export type TranslationKey = keyof typeof translations;
@@ -744,7 +786,7 @@ export const useLanguage = () => {
     } catch (e) {
       console.error('Failed to load language:', e);
     }
-    return 'pl'; // Default to Polish
+    return 'ru'; // Default to Russian
   });
 
   const setLanguage = useCallback((lang: Language) => {
