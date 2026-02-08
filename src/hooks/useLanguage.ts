@@ -772,6 +772,12 @@ export const translations = {
     en: 'No transactions this week',
     uk: 'Немає транзакцій за цей тиждень',
   },
+  convertCurrency: {
+    pl: 'Konwertuj walutę',
+    ru: 'Конвертировать валюту',
+    en: 'Convert currency',
+    uk: 'Конвертувати валюту',
+  },
 } as const;
 
 export type TranslationKey = keyof typeof translations;
