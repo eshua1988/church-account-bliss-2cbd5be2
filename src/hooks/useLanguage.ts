@@ -778,6 +778,36 @@ export const translations = {
     en: 'Convert currency',
     uk: 'Конвертувати валюту',
   },
+  telegramBot: {
+    pl: 'Bot Telegram',
+    ru: 'Telegram-бот',
+    en: 'Telegram Bot',
+    uk: 'Telegram-бот',
+  },
+  telegramBotDescription: {
+    pl: 'Podłącz bota Telegram do wypełniania dokumentów, przeglądania wydatków i śledzenia',
+    ru: 'Подключите Telegram-бот для заполнения документов, просмотра расходов и отслеживания',
+    en: 'Connect Telegram bot for filling documents, viewing expenses and tracking',
+    uk: 'Підключіть Telegram-бот для заповнення документів, перегляду витрат і відстеження',
+  },
+  connected: {
+    pl: 'Połączono',
+    ru: 'Подключен',
+    en: 'Connected',
+    uk: 'Підключено',
+  },
+  disconnectBot: {
+    pl: 'Odłącz bota',
+    ru: 'Отключить бота',
+    en: 'Disconnect bot',
+    uk: 'Відключити бота',
+  },
+  connectBot: {
+    pl: 'Podłącz',
+    ru: 'Подключить',
+    en: 'Connect',
+    uk: 'Підключити',
+  },
 } as const;
 
 export type TranslationKey = keyof typeof translations;

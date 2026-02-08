@@ -16,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { AppSidebar } from '@/components/AppSidebar';
 import { GoogleSheetsSync } from '@/components/GoogleSheetsSync';
+import { TelegramBotSettings } from '@/components/TelegramBotSettings';
 import { SharePayoutLink } from '@/components/SharePayoutLink';
 import { useGoogleSheetsSync } from '@/hooks/useGoogleSheetsSync';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
@@ -330,6 +331,8 @@ const Index = () => {
                   onDeleteTransaction={deleteTransaction}
                 />
               </div>
+              <Separator />
+              <TelegramBotSettings />
             </div>
           )}
         </main>
