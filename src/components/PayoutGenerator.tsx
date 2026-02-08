@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { format } from 'date-fns';
-import { Calendar, Eraser, Save, Loader2, ImagePlus, X, ArrowRightLeft } from 'lucide-react';
+import { Calendar, Eraser, Save, Loader2, ImagePlus, X } from 'lucide-react';
+import currencyConvertIcon from '@/assets/currency-convert-icon.png';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -699,7 +700,7 @@ export const PayoutGenerator = () => {
                   onClick={() => setShowConverter(true)}
                   title={t('convertCurrency')}
                 >
-                  <ArrowRightLeft className="w-4 h-4" />
+                  <img src={currencyConvertIcon} alt="Convert" className="w-5 h-5" />
                 </Button>
               </div>
             </div>
