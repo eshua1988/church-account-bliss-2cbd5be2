@@ -9,6 +9,9 @@ const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!;
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
+// Published app URL for public payout links
+const APP_URL = 'https://church-account-bliss.lovable.app';
+
 interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
@@ -20,7 +23,6 @@ interface TelegramMessage {
   from: TelegramUser;
   chat: TelegramChat;
   text?: string;
-  contact?: { phone_number: string; user_id: number };
 }
 
 interface TelegramUser {
@@ -43,10 +45,11 @@ interface CallbackQuery {
 }
 
 interface UserSession {
-  step: 'idle' | 'awaiting_link_selection' | 'filling_amount' | 'filling_currency' | 'filling_category' | 'filling_issued_to' | 'filling_description' | 'confirm';
+  step: 'awaiting_name' | 'idle' | 'filling_amount' | 'filling_currency' | 'filling_category' | 'filling_issued_to' | 'filling_description' | 'confirm';
   linkId?: string;
   linkName?: string;
   ownerId?: string;
+  registeredName?: string;
   data: {
     amount?: number;
     currency?: string;
@@ -57,7 +60,6 @@ interface UserSession {
   };
 }
 
-// In-memory session storage (resets on function restart)
 const sessions: Map<number, UserSession> = new Map();
 
 const CURRENCIES = ['PLN', 'EUR', 'USD', 'UAH', 'RUB', 'BYN'];
@@ -82,23 +84,6 @@ async function sendMessage(chatId: number, text: string, replyMarkup?: object) {
   const result = await response.json();
   console.log('sendMessage result:', result);
   return result;
-}
-
-async function sendDocument(chatId: number, document: Blob, filename: string, caption?: string) {
-  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`;
-  const formData = new FormData();
-  formData.append('chat_id', chatId.toString());
-  formData.append('document', document, filename);
-  if (caption) {
-    formData.append('caption', caption);
-  }
-  
-  const response = await fetch(url, {
-    method: 'POST',
-    body: formData,
-  });
-  
-  return await response.json();
 }
 
 async function answerCallbackQuery(callbackQueryId: string, text?: string) {
@@ -245,26 +230,62 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
   
   console.log(`Message from ${chatId}: ${text}, session step: ${session?.step}`);
   
-  // Handle commands
-  if (text === '/start' || text === '/menu') {
+  // Handle /start — always ask for name registration
+  if (text === '/start') {
+    sessions.set(chatId, { step: 'awaiting_name', data: {} });
+    await sendMessage(
+      chatId,
+      '👋 Добро пожаловать!\n\nДля начала работы введите ваше <b>Имя и Фамилию</b>:'
+    );
+    return;
+  }
+  
+  // Handle /menu
+  if (text === '/menu') {
+    const linkedUser = await getLinkedUser(chatId, supabase);
+    const isLinked = !!linkedUser;
+    const name = session?.registeredName || '';
+    
+    await sendMessage(
+      chatId,
+      isLinked 
+        ? `👋 ${name ? name + ', в' : 'В'}ыберите действие:`
+        : `👋 ${name ? name + ', д' : 'Д'}ля начала работы подключите свой аккаунт.`,
+      getMainMenu(isLinked)
+    );
+    return;
+  }
+  
+  // Handle name registration step
+  if (session?.step === 'awaiting_name') {
+    const nameParts = text.split(/\s+/).filter(Boolean);
+    if (nameParts.length < 2) {
+      await sendMessage(chatId, '❌ Пожалуйста, введите <b>Имя и Фамилию</b> через пробел:');
+      return;
+    }
+    
+    const fullName = nameParts.join(' ');
+    session.registeredName = fullName;
+    session.data.submitterName = fullName;
+    session.step = 'idle';
+    sessions.set(chatId, session);
+    
+    // Check if already linked
     const linkedUser = await getLinkedUser(chatId, supabase);
     const isLinked = !!linkedUser;
     
     await sendMessage(
       chatId,
-      isLinked 
-        ? '👋 Добро пожаловать! Выберите действие:'
-        : '👋 Добро пожаловать! Для начала работы подключите свой аккаунт.',
+      `✅ Добро пожаловать, <b>${fullName}</b>!\n\nВыберите действие:`,
       getMainMenu(isLinked)
     );
-    sessions.delete(chatId);
     return;
   }
   
-  // Handle session-based input
+  // Handle session-based input for document filling
   if (session) {
     switch (session.step) {
-      case 'filling_amount':
+      case 'filling_amount': {
         const amount = parseFloat(text.replace(',', '.'));
         if (isNaN(amount) || amount <= 0) {
           await sendMessage(chatId, '❌ Введите корректную сумму (число больше 0)');
@@ -278,6 +299,7 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
           inline_keyboard: CURRENCIES.map(c => [{ text: c, callback_data: `currency_${c}` }]),
         });
         return;
+      }
         
       case 'filling_issued_to':
         session.data.issuedTo = text;
@@ -310,19 +332,26 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
     }
   }
   
-  // Unknown command
+  // Unknown command — prompt to use /start or /menu
   const linkedUser = await getLinkedUser(chatId, supabase);
-  await sendMessage(chatId, 'Используйте /menu для вызова главного меню', getMainMenu(!!linkedUser));
+  await sendMessage(chatId, 'Используйте /start для регистрации или /menu для вызова главного меню', getMainMenu(!!linkedUser));
 }
 
 async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<typeof createClient>) {
   const chatId = query.message.chat.id;
   const data = query.data;
-  const session = sessions.get(chatId) || { step: 'idle', data: {} };
+  const session = sessions.get(chatId) || { step: 'idle' as const, data: {} };
   
   console.log(`Callback from ${chatId}: ${data}`);
   
   await answerCallbackQuery(query.id);
+  
+  // Check if user registered name
+  if (!session.registeredName && data !== 'link_account') {
+    // If no name registered, ask to /start first
+    await sendMessage(chatId, '❌ Сначала зарегистрируйтесь: отправьте /start и введите Имя и Фамилию.');
+    return;
+  }
   
   // Link account
   if (data === 'link_account') {
@@ -352,7 +381,7 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     return;
   }
   
-  // Select link for filling
+  // Select link for filling — show links with redirect URLs
   if (data === 'select_link') {
     const links = await getSharedLinks(linkedUser.user_id, supabase);
     if (links.length === 0) {
@@ -360,37 +389,13 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       return;
     }
     
+    // Show links as URL buttons that open in browser
     await sendMessage(chatId, '🔗 Выберите ссылку для заполнения:', {
       inline_keyboard: links.map(link => [{
         text: `${link.name || 'Без названия'} (${link.link_type})`,
-        callback_data: `link_${link.id}`,
+        url: `${APP_URL}/payout/${link.token}`,
       }]),
     });
-    return;
-  }
-  
-  // Link selected
-  if (data.startsWith('link_')) {
-    const linkId = data.replace('link_', '');
-    const { data: linkData } = await supabase
-      .from('shared_payout_links')
-      .select('id, name, owner_user_id')
-      .eq('id', linkId)
-      .single();
-    
-    if (!linkData) {
-      await sendMessage(chatId, '❌ Ссылка не найдена');
-      return;
-    }
-    
-    session.step = 'filling_amount';
-    session.linkId = linkId;
-    session.linkName = linkData.name;
-    session.ownerId = linkData.owner_user_id;
-    session.data = { submitterName: query.from.first_name + (query.from.last_name ? ' ' + query.from.last_name : '') };
-    sessions.set(chatId, session);
-    
-    await sendMessage(chatId, `📝 Заполнение документа: ${linkData.name || 'Без названия'}\n\n💰 Введите сумму:`);
     return;
   }
   
@@ -398,7 +403,7 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
   if (data === 'fill_document') {
     session.step = 'filling_amount';
     session.ownerId = linkedUser.user_id;
-    session.data = { submitterName: query.from.first_name + (query.from.last_name ? ' ' + query.from.last_name : '') };
+    session.data.submitterName = session.registeredName || query.from.first_name;
     sessions.set(chatId, session);
     
     await sendMessage(chatId, '📝 Заполнение документа\n\n💰 Введите сумму:');
@@ -447,7 +452,6 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     if (tx) {
       await sendMessage(chatId, '✅ Документ успешно сохранён!', getMainMenu(true));
       
-      // Track if no images (always true for Telegram submissions)
       await supabase
         .from('payout_image_tracking')
         .insert({
@@ -459,13 +463,15 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     } else {
       await sendMessage(chatId, '❌ Ошибка при сохранении документа');
     }
-    sessions.delete(chatId);
+    session.step = 'idle';
+    sessions.set(chatId, session);
     return;
   }
   
   // Cancel document
   if (data === 'cancel_document') {
-    sessions.delete(chatId);
+    session.step = 'idle';
+    sessions.set(chatId, session);
     await sendMessage(chatId, '❌ Отменено', getMainMenu(true));
     return;
   }
@@ -507,15 +513,12 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
   
-  // Handle webhook setup request
   const url = new URL(req.url);
   if (url.searchParams.get('setup') === 'true') {
-    // Use the correct Supabase function URL
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const webhookUrl = `${supabaseUrl}/functions/v1/telegram-bot`;
     const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook?url=${encodeURIComponent(webhookUrl)}`;
@@ -532,7 +535,6 @@ Deno.serve(async (req) => {
     });
   }
   
-  // Handle Telegram updates
   if (req.method === 'POST') {
     try {
       const update: TelegramUpdate = await req.json();
