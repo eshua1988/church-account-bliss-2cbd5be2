@@ -381,20 +381,13 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     return;
   }
   
-  // Select link for filling — show links with redirect URLs
+  // Select link for filling — show two fixed links
   if (data === 'select_link') {
-    const links = await getSharedLinks(linkedUser.user_id, supabase);
-    if (links.length === 0) {
-      await sendMessage(chatId, '❌ У вас нет активных публичных ссылок. Создайте их в приложении.');
-      return;
-    }
-    
-    // Show links as URL buttons that open in browser
     await sendMessage(chatId, '🔗 Выберите ссылку для заполнения:', {
-      inline_keyboard: links.map(link => [{
-        text: `${link.name || 'Без названия'} (${link.link_type})`,
-        url: `${APP_URL}/payout/${link.token}`,
-      }]),
+      inline_keyboard: [
+        [{ text: '📄 Standard форма', url: `${APP_URL}/payout/iHEMNKO3cnuD5909l7wxM8b1qnAq7t2f` }],
+        [{ text: '📋 Stepwise форма', url: `${APP_URL}/payout/acfa2b276b11cb2dba1a17919831e2a582398b39832ea381f38834ba8d8cee50` }],
+      ],
     });
     return;
   }
