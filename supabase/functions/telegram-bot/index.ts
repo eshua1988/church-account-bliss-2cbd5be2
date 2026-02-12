@@ -62,7 +62,26 @@ interface UserSession {
 
 const sessions: Map<number, UserSession> = new Map();
 
-const CURRENCIES = ['PLN', 'EUR', 'USD', 'UAH', 'RUB', 'BYN'];
+async function getRegisteredName(chatId: number, supabase: ReturnType<typeof createClient>): Promise<string | null> {
+  const { data } = await supabase
+    .from('telegram_users')
+    .select('registered_name')
+    .eq('telegram_chat_id', chatId)
+    .maybeSingle();
+  return data?.registered_name || null;
+}
+
+async function setRegisteredName(chatId: number, name: string, supabase: ReturnType<typeof createClient>) {
+  // Try to update existing row first
+  const { data } = await supabase
+    .from('telegram_users')
+    .update({ registered_name: name })
+    .eq('telegram_chat_id', chatId)
+    .select();
+  
+  // If no row exists, we just store in session for now (user needs to link account first)
+  return data && data.length > 0;
+}
 
 async function sendMessage(chatId: number, text: string, replyMarkup?: object) {
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
@@ -244,7 +263,7 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
   if (text === '/menu') {
     const linkedUser = await getLinkedUser(chatId, supabase);
     const isLinked = !!linkedUser;
-    const name = session?.registeredName || '';
+    const name = await getRegisteredName(chatId, supabase) || session?.registeredName || '';
     
     await sendMessage(
       chatId,
@@ -269,6 +288,9 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
     session.data.submitterName = fullName;
     session.step = 'idle';
     sessions.set(chatId, session);
+    
+    // Persist name to DB if user exists
+    await setRegisteredName(chatId, fullName, supabase);
     
     // Check if already linked
     const linkedUser = await getLinkedUser(chatId, supabase);
@@ -346,8 +368,9 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
   
   await answerCallbackQuery(query.id);
   
-  // Check if user registered name
-  if (!session.registeredName && data !== 'link_account') {
+  // Check if user registered name - check DB first, then session
+  const registeredName = await getRegisteredName(chatId, supabase) || session.registeredName;
+  if (!registeredName && data !== 'link_account') {
     // If no name registered, ask to /start first
     await sendMessage(chatId, '❌ Сначала зарегистрируйтесь: отправьте /start и введите Имя и Фамилию.');
     return;
@@ -396,7 +419,7 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
   if (data === 'fill_document') {
     session.step = 'filling_amount';
     session.ownerId = linkedUser.user_id;
-    session.data.submitterName = session.registeredName || query.from.first_name;
+    session.data.submitterName = registeredName || session.registeredName || query.from.first_name;
     sessions.set(chatId, session);
     
     await sendMessage(chatId, '📝 Заполнение документа\n\n💰 Введите сумму:');
