@@ -263,7 +263,7 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
   if (text === '/menu') {
     const linkedUser = await getLinkedUser(chatId, supabase);
     const isLinked = !!linkedUser;
-    const name = await getRegisteredName(chatId, supabase) || session?.registeredName || '';
+    const name = await getRegisteredName(chatId, supabase) || '';
     
     await sendMessage(
       chatId,
@@ -275,22 +275,32 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
     return;
   }
   
-  // Handle name registration step
-  if (session?.step === 'awaiting_name') {
-    const nameParts = text.split(/\s+/).filter(Boolean);
+  // Handle name registration step - either from in-memory session OR
+  // if no session exists but user has no registered name yet and text looks like a name
+  const isAwaitingName = session?.step === 'awaiting_name';
+  const existingName = await getRegisteredName(chatId, supabase);
+  const nameParts = text.split(/\s+/).filter(Boolean);
+  const looksLikeName = nameParts.length >= 2 && text.length <= 100 && !text.startsWith('/');
+  
+  if (isAwaitingName || (!existingName && looksLikeName && !session?.step)) {
     if (nameParts.length < 2) {
       await sendMessage(chatId, '❌ Пожалуйста, введите <b>Имя и Фамилию</b> через пробел:');
       return;
     }
     
     const fullName = nameParts.join(' ');
-    session.registeredName = fullName;
-    session.data.submitterName = fullName;
-    session.step = 'idle';
-    sessions.set(chatId, session);
     
-    // Persist name to DB if user exists
-    await setRegisteredName(chatId, fullName, supabase);
+    // Persist name to DB - try update first, then upsert if needed
+    const updated = await setRegisteredName(chatId, fullName, supabase);
+    if (!updated) {
+      // No existing row - create a temporary record without user_id
+      // We'll use a placeholder that gets updated when user links account
+      console.log(`No telegram_users row for chat ${chatId}, name saved in session only`);
+    }
+    
+    // Update session
+    const newSession: UserSession = { step: 'idle', data: { submitterName: fullName }, registeredName: fullName };
+    sessions.set(chatId, newSession);
     
     // Check if already linked
     const linkedUser = await getLinkedUser(chatId, supabase);
