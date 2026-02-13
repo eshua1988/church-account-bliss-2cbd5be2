@@ -276,13 +276,13 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
   }
   
   // Handle name registration step - either from in-memory session OR
-  // if no session exists but user has no registered name yet and text looks like a name
+  // if no session exists and text looks like a name (works even if name already exists after /start)
   const isAwaitingName = session?.step === 'awaiting_name';
   const existingName = await getRegisteredName(chatId, supabase);
   const nameParts = text.split(/\s+/).filter(Boolean);
   const looksLikeName = nameParts.length >= 2 && text.length <= 100 && !text.startsWith('/');
   
-  if (isAwaitingName || (!existingName && looksLikeName && !session?.step)) {
+  if (isAwaitingName || (!existingName && looksLikeName && !session?.step) || (existingName && looksLikeName && !session?.step && !sessions.has(chatId))) {
     if (nameParts.length < 2) {
       await sendMessage(chatId, '❌ Пожалуйста, введите <b>Имя и Фамилию</b> через пробел:');
       return;
@@ -527,23 +527,18 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       return;
     }
 
-    // Search for transactions with "[Bez załączników - Name]" pattern
-    const nameParts = userName.trim().split(/\s+/);
-    let searchPattern: string;
-    if (nameParts.length >= 2) {
-      searchPattern = `%[Bez załączników - ${nameParts[0]}%${nameParts[nameParts.length - 1]}%]%`;
-    } else {
-      searchPattern = `%[Bez załączników - %${userName}%]%`;
-    }
+    // Search for ALL transactions with "[Bez załączników" pattern for this owner
+    // Don't filter by name since user may have used different name variants (Latin/Cyrillic)
+    const searchPattern = `%[Bez załączników%]%`;
 
     const { data: pendingTx } = await supabase
       .from('transactions')
-      .select('id, amount, currency, description, date, category_id')
+      .select('id, amount, currency, description, date, category_id, issued_to')
       .eq('user_id', linkedUser.user_id)
       .eq('type', 'expense')
       .like('description', searchPattern)
       .order('created_at', { ascending: false })
-      .limit(10);
+      .limit(20);
 
     if (!pendingTx || pendingTx.length === 0) {
       await sendMessage(chatId, '✅ У вас нет незаконченных сессий (все фото добавлены).');
@@ -572,11 +567,12 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       const catName = categories?.find(c => c.id === tx.category_id)?.name || '';
       const dateStr = new Date(tx.date).toLocaleDateString('ru-RU');
       const currencySymbol = tx.currency === 'EUR' ? '€' : tx.currency === 'USD' ? '$' : tx.currency;
-      text += `📄 ${catName ? catName + ' — ' : ''}${Number(tx.amount).toLocaleString()} ${currencySymbol}\n📅 ${dateStr}\n\n`;
+      const recipient = tx.issued_to || '';
+      text += `📄 ${catName ? catName + ' — ' : ''}${Number(tx.amount).toLocaleString()} ${currencySymbol}${recipient ? '\n👤 ' + recipient : ''}\n📅 ${dateStr}\n\n`;
       
       // Build link to payout page with pre-filled data
       const payoutUrl = `${APP_URL}/payout/${activeLink.token}`;
-      buttons.push([{ text: `📎 ${catName || 'Документ'} — ${Number(tx.amount).toLocaleString()} ${currencySymbol}`, url: payoutUrl }]);
+      buttons.push([{ text: `📎 ${recipient || catName || 'Документ'} — ${Number(tx.amount).toLocaleString()} ${currencySymbol}`, url: payoutUrl }]);
     }
 
     text += 'Нажмите на документ, чтобы добавить фото:';
