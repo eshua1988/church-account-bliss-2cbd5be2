@@ -236,7 +236,7 @@ function getMainMenu(isLinked: boolean) {
       [{ text: '📝 Заполнить документ', callback_data: 'fill_document' }],
       [{ text: '🔗 Выбрать ссылку для заполнения', callback_data: 'select_link' }],
       [{ text: '📊 Расходы по отделам', callback_data: 'expenses_by_dept' }],
-      [{ text: '📷 Кто не добавил фото', callback_data: 'users_without_images' }],
+      [{ text: '📷 Незаконченная сессия', callback_data: 'unfinished_session' }],
       [{ text: '❌ Отключить аккаунт', callback_data: 'unlink_account' }],
     ],
   };
@@ -519,21 +519,69 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     return;
   }
   
-  // Users without images
-  if (data === 'users_without_images') {
-    const users = await getUsersWithoutImages(linkedUser.user_id, supabase);
-    if (users.length === 0) {
-      await sendMessage(chatId, '📷 Нет записей о пользователях без фото');
+  // Unfinished session - find transactions without photos for current user
+  if (data === 'unfinished_session') {
+    const userName = registeredName || '';
+    if (!userName) {
+      await sendMessage(chatId, '❌ Имя не найдено. Отправьте /start и введите Имя и Фамилию.');
       return;
     }
-    
-    let text = '📷 <b>Пользователи без фото:</b>\n\n';
-    for (const user of users) {
-      const date = new Date(user.skipped_at).toLocaleDateString('ru-RU');
-      text += `👤 ${user.submitter_name} - ${date}\n`;
+
+    // Search for transactions with "[Bez załączników - Name]" pattern
+    const nameParts = userName.trim().split(/\s+/);
+    let searchPattern: string;
+    if (nameParts.length >= 2) {
+      searchPattern = `%[Bez załączników - ${nameParts[0]}%${nameParts[nameParts.length - 1]}%]%`;
+    } else {
+      searchPattern = `%[Bez załączników - %${userName}%]%`;
     }
-    
-    await sendMessage(chatId, text, getMainMenu(true));
+
+    const { data: pendingTx } = await supabase
+      .from('transactions')
+      .select('id, amount, currency, description, date, category_id')
+      .eq('user_id', linkedUser.user_id)
+      .eq('type', 'expense')
+      .like('description', searchPattern)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (!pendingTx || pendingTx.length === 0) {
+      await sendMessage(chatId, '✅ У вас нет незаконченных сессий (все фото добавлены).');
+      return;
+    }
+
+    // Get a shared link token to build the URL
+    const links = await getSharedLinks(linkedUser.user_id, supabase);
+    const activeLink = links.length > 0 ? links[0] : null;
+
+    if (!activeLink) {
+      await sendMessage(chatId, '❌ Нет активных ссылок. Создайте ссылку в приложении.');
+      return;
+    }
+
+    // Get categories for display
+    const { data: categories } = await supabase
+      .from('categories')
+      .select('id, name')
+      .eq('user_id', linkedUser.user_id);
+
+    let text = '📷 <b>Незаконченная сессия — документы без фото:</b>\n\n';
+    const buttons: Array<Array<{text: string, url: string}>> = [];
+
+    for (const tx of pendingTx) {
+      const catName = categories?.find(c => c.id === tx.category_id)?.name || '';
+      const dateStr = new Date(tx.date).toLocaleDateString('ru-RU');
+      const currencySymbol = tx.currency === 'EUR' ? '€' : tx.currency === 'USD' ? '$' : tx.currency;
+      text += `📄 ${catName ? catName + ' — ' : ''}${Number(tx.amount).toLocaleString()} ${currencySymbol}\n📅 ${dateStr}\n\n`;
+      
+      // Build link to payout page with pre-filled data
+      const payoutUrl = `${APP_URL}/payout/${activeLink.token}`;
+      buttons.push([{ text: `📎 ${catName || 'Документ'} — ${Number(tx.amount).toLocaleString()} ${currencySymbol}`, url: payoutUrl }]);
+    }
+
+    text += 'Нажмите на документ, чтобы добавить фото:';
+
+    await sendMessage(chatId, text, { inline_keyboard: buttons });
     return;
   }
 }
