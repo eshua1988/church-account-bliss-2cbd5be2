@@ -7,71 +7,72 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { Bot, Link2, Unlink, Copy, ExternalLink, RefreshCw, CheckCircle } from 'lucide-react';
+import { Bot, Link2, Unlink, Copy, ExternalLink, RefreshCw, CheckCircle, Plus } from 'lucide-react';
 import { useTranslation } from '@/contexts/LanguageContext';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const MAX_BOTS = 3;
+
+interface ConnectedBot {
+  id: string;
+  telegram_chat_id: number;
+  is_active: boolean;
+}
 
 export function TelegramBotSettings() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const { toast } = useToast();
   const [chatId, setChatId] = useState('');
-  const [isConnected, setIsConnected] = useState(false);
-  const [connectedChatId, setConnectedChatId] = useState<string | null>(null);
+  const [connectedBots, setConnectedBots] = useState<ConnectedBot[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
   const [webhookStatus, setWebhookStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [webhookMessage, setWebhookMessage] = useState('');
 
   useEffect(() => {
     if (user) {
-      checkConnection();
+      loadConnectedBots();
     }
   }, [user]);
 
-  const checkConnection = async () => {
+  const loadConnectedBots = async () => {
     if (!user) return;
     
     const { data } = await supabase
       .from('telegram_users')
-      .select('telegram_chat_id, is_active')
+      .select('id, telegram_chat_id, is_active')
       .eq('user_id', user.id)
-      .eq('is_active', true)
-      .single();
+      .eq('is_active', true);
     
-    if (data) {
-      setIsConnected(true);
-      setConnectedChatId(data.telegram_chat_id.toString());
-    } else {
-      setIsConnected(false);
-      setConnectedChatId(null);
-    }
+    setConnectedBots(data || []);
   };
 
   const handleConnect = async () => {
     if (!user || !chatId.trim()) {
-      toast({
-        title: 'Ошибка',
-        description: 'Введите Chat ID',
-        variant: 'destructive',
-      });
+      toast({ title: 'Ошибка', description: 'Введите Chat ID', variant: 'destructive' });
+      return;
+    }
+    
+    if (connectedBots.length >= MAX_BOTS) {
+      toast({ title: 'Ошибка', description: `Максимум ${MAX_BOTS} бота`, variant: 'destructive' });
       return;
     }
     
     const chatIdNum = parseInt(chatId.trim(), 10);
     if (isNaN(chatIdNum)) {
-      toast({
-        title: 'Ошибка',
-        description: 'Chat ID должен быть числом',
-        variant: 'destructive',
-      });
+      toast({ title: 'Ошибка', description: 'Chat ID должен быть числом', variant: 'destructive' });
+      return;
+    }
+    
+    // Check if already connected by this user
+    if (connectedBots.some(b => b.telegram_chat_id === chatIdNum)) {
+      toast({ title: 'Ошибка', description: 'Этот Chat ID уже подключен', variant: 'destructive' });
       return;
     }
     
     setLoading(true);
     
     try {
-      // Check if already connected to another user
       const { data: existing } = await supabase
         .from('telegram_users')
         .select('user_id')
@@ -80,16 +81,11 @@ export function TelegramBotSettings() {
         .single();
       
       if (existing && existing.user_id !== user.id) {
-        toast({
-          title: 'Ошибка',
-          description: 'Этот Telegram-аккаунт уже подключен к другому пользователю',
-          variant: 'destructive',
-        });
+        toast({ title: 'Ошибка', description: 'Этот Telegram-аккаунт уже подключен к другому пользователю', variant: 'destructive' });
         setLoading(false);
         return;
       }
       
-      // Upsert connection
       const { error } = await supabase
         .from('telegram_users')
         .upsert({
@@ -102,69 +98,44 @@ export function TelegramBotSettings() {
       
       if (error) throw error;
       
-      setIsConnected(true);
-      setConnectedChatId(chatId.trim());
       setChatId('');
+      setShowAddForm(false);
+      await loadConnectedBots();
       
-      toast({
-        title: 'Успешно',
-        description: 'Telegram-бот подключен',
-      });
+      toast({ title: 'Успешно', description: 'Telegram-бот подключен' });
     } catch (error) {
       console.error('Error connecting Telegram:', error);
-      toast({
-        title: 'Ошибка',
-        description: 'Не удалось подключить Telegram-бот',
-        variant: 'destructive',
-      });
+      toast({ title: 'Ошибка', description: 'Не удалось подключить Telegram-бот', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDisconnect = async () => {
+  const handleDisconnect = async (botId: string) => {
     if (!user) return;
-    
     setLoading(true);
     
     try {
       const { error } = await supabase
         .from('telegram_users')
         .update({ is_active: false })
+        .eq('id', botId)
         .eq('user_id', user.id);
       
       if (error) throw error;
       
-      setIsConnected(false);
-      setConnectedChatId(null);
-      
-      toast({
-        title: 'Успешно',
-        description: 'Telegram-бот отключен',
-      });
+      await loadConnectedBots();
+      toast({ title: 'Успешно', description: 'Telegram-бот отключен' });
     } catch (error) {
       console.error('Error disconnecting Telegram:', error);
-      toast({
-        title: 'Ошибка',
-        description: 'Не удалось отключить Telegram-бот',
-        variant: 'destructive',
-      });
+      toast({ title: 'Ошибка', description: 'Не удалось отключить Telegram-бот', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast({
-      title: 'Скопировано',
-      description: 'Скопировано в буфер обмена',
-    });
-  };
-
   const activateWebhook = async () => {
     setWebhookStatus('loading');
-    setWebhookMessage('');
     
     try {
       const response = await fetch(`${SUPABASE_URL}/functions/v1/telegram-bot?setup=true`);
@@ -172,34 +143,19 @@ export function TelegramBotSettings() {
       
       if (result.ok) {
         setWebhookStatus('success');
-        setWebhookMessage('Webhook успешно активирован!');
-        toast({
-          title: 'Успешно',
-          description: 'Telegram webhook активирован',
-        });
+        toast({ title: 'Успешно', description: 'Telegram webhook активирован' });
       } else {
         setWebhookStatus('error');
-        setWebhookMessage(result.description || 'Ошибка активации');
-        toast({
-          title: 'Ошибка',
-          description: result.description || 'Не удалось активировать webhook',
-          variant: 'destructive',
-        });
+        toast({ title: 'Ошибка', description: result.description || 'Не удалось активировать webhook', variant: 'destructive' });
       }
     } catch (error) {
       console.error('Webhook activation error:', error);
       setWebhookStatus('error');
-      setWebhookMessage('Ошибка сети');
-      toast({
-        title: 'Ошибка',
-        description: 'Не удалось подключиться к серверу',
-        variant: 'destructive',
-      });
+      toast({ title: 'Ошибка', description: 'Не удалось подключиться к серверу', variant: 'destructive' });
     }
   };
 
-  // Bot username from token: 8489496158:AAEOnm5Z1JU5i3AhCD89ivrdzxTYY7ElRbk
-  const botUsername = 'your_bot_username'; // User should set their own bot username
+  const botUsername = 'churchAccountingOfFinances_bot';
 
   return (
     <Card>
@@ -209,61 +165,64 @@ export function TelegramBotSettings() {
           Telegram-бот
         </CardTitle>
         <CardDescription>
-          Подключите Telegram-бот для заполнения документов, просмотра расходов и отслеживания без фото
+          Подключите Telegram-бот для заполнения документов, просмотра расходов и отслеживания без фото (до {MAX_BOTS} ботов)
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {isConnected ? (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="border-primary/20">
-                <Link2 className="w-3 h-3 mr-1" />
-                Подключен
-              </Badge>
-              {connectedChatId && (
-                <span className="text-sm text-muted-foreground">
-                  Chat ID: {connectedChatId}
-                </span>
-              )}
-            </div>
-            
-            <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-              <p className="text-sm font-medium">Возможности бота:</p>
-              <ul className="text-sm text-muted-foreground space-y-1">
-                <li>• Заполнение расходного ордера через чат</li>
-                <li>• Выбор публичных ссылок для заполнения</li>
-                <li>• Просмотр расходов по отделам</li>
-                <li>• Список пользователей без фото</li>
-              </ul>
-            </div>
-            
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                onClick={activateWebhook}
-                disabled={webhookStatus === 'loading'}
-              >
-                {webhookStatus === 'loading' ? (
-                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                ) : webhookStatus === 'success' ? (
-                  <CheckCircle className="w-4 h-4 mr-2 text-primary" />
-                ) : (
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                )}
-                Активировать Webhook
-              </Button>
-              
-              <Button
-                variant="destructive"
-                onClick={handleDisconnect}
-                disabled={loading}
-              >
-                <Unlink className="w-4 h-4 mr-2" />
-                Отключить бота
-              </Button>
-            </div>
+        {/* Connected bots list */}
+        {connectedBots.length > 0 && (
+          <div className="space-y-3">
+            {connectedBots.map((bot) => (
+              <div key={bot.id} className="flex items-center justify-between bg-muted/50 rounded-lg p-3">
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary" className="border-primary/20">
+                    <Link2 className="w-3 h-3 mr-1" />
+                    Подключен
+                  </Badge>
+                  <span className="text-sm text-muted-foreground">
+                    Chat ID: {bot.telegram_chat_id}
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleDisconnect(bot.id)}
+                  disabled={loading}
+                  className="text-destructive hover:text-destructive"
+                >
+                  <Unlink className="w-4 h-4" />
+                </Button>
+              </div>
+            ))}
           </div>
-        ) : (
+        )}
+
+        {/* Bot capabilities */}
+        {connectedBots.length > 0 && (
+          <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+            <p className="text-sm font-medium">Возможности бота:</p>
+            <ul className="text-sm text-muted-foreground space-y-1">
+              <li>• Заполнение расходного ордера через чат</li>
+              <li>• Выбор публичных ссылок для заполнения</li>
+              <li>• Просмотр расходов по отделам</li>
+              <li>• Незаконченные сессии (документы без фото)</li>
+            </ul>
+          </div>
+        )}
+
+        {/* Add bot form / button */}
+        {connectedBots.length < MAX_BOTS && !showAddForm && (
+          <Button
+            variant="outline"
+            onClick={() => setShowAddForm(true)}
+            className="w-full"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            {connectedBots.length === 0 ? 'Подключить бота' : 'Добавить ещё бота'}
+          </Button>
+        )}
+
+        {(showAddForm || connectedBots.length === 0) && connectedBots.length < MAX_BOTS && (
           <div className="space-y-4">
             <div className="bg-muted/50 rounded-lg p-4 space-y-3">
               <p className="text-sm font-medium">Как подключить:</p>
@@ -284,7 +243,7 @@ export function TelegramBotSettings() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="bg-primary text-primary-foreground rounded-full w-5 h-5 flex items-center justify-center text-xs flex-shrink-0">2</span>
-                  <span>Отправьте команду /start</span>
+                  <span>Отправьте команду /start (только в личных сообщениях)</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="bg-primary text-primary-foreground rounded-full w-5 h-5 flex items-center justify-center text-xs flex-shrink-0">3</span>
@@ -312,7 +271,31 @@ export function TelegramBotSettings() {
                 </Button>
               </div>
             </div>
+            
+            {connectedBots.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={() => { setShowAddForm(false); setChatId(''); }}>
+                Отмена
+              </Button>
+            )}
           </div>
+        )}
+
+        {/* Webhook activation */}
+        {connectedBots.length > 0 && (
+          <Button
+            variant="outline"
+            onClick={activateWebhook}
+            disabled={webhookStatus === 'loading'}
+          >
+            {webhookStatus === 'loading' ? (
+              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+            ) : webhookStatus === 'success' ? (
+              <CheckCircle className="w-4 h-4 mr-2 text-primary" />
+            ) : (
+              <RefreshCw className="w-4 h-4 mr-2" />
+            )}
+            Активировать Webhook
+          </Button>
         )}
       </CardContent>
     </Card>

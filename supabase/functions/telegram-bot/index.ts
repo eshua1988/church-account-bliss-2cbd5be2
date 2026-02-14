@@ -237,14 +237,21 @@ function getMainMenu(isLinked: boolean) {
       [{ text: '🔗 Выбрать ссылку для заполнения', callback_data: 'select_link' }],
       [{ text: '📊 Расходы по отделам', callback_data: 'expenses_by_dept' }],
       [{ text: '📷 Незаконченная сессия', callback_data: 'unfinished_session' }],
-      [{ text: '❌ Отключить аккаунт', callback_data: 'unlink_account' }],
     ],
   };
 }
 
 async function handleMessage(message: TelegramMessage, supabase: ReturnType<typeof createClient>) {
   const chatId = message.chat.id;
+  const chatType = message.chat.type;
   const text = message.text?.trim() || '';
+  
+  // Only respond in private chats, ignore groups/supergroups/channels
+  if (chatType !== 'private') {
+    console.log(`Ignoring message from ${chatType} chat ${chatId}`);
+    return;
+  }
+  
   const session = sessions.get(chatId);
   
   console.log(`Message from ${chatId}: ${text}, session step: ${session?.step}`);
@@ -371,7 +378,15 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
 
 async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<typeof createClient>) {
   const chatId = query.message.chat.id;
+  const chatType = query.message.chat.type;
   const data = query.data;
+  
+  // Only respond in private chats
+  if (chatType !== 'private') {
+    console.log(`Ignoring callback from ${chatType} chat ${chatId}`);
+    return;
+  }
+  
   const session = sessions.get(chatId) || { step: 'idle' as const, data: {} };
   
   console.log(`Callback from ${chatId}: ${data}`);
@@ -396,15 +411,9 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     return;
   }
   
-  // Unlink account
+  // Unlink account (kept for backward compatibility but button removed from menu)
   if (data === 'unlink_account') {
-    await supabase
-      .from('telegram_users')
-      .update({ is_active: false })
-      .eq('telegram_chat_id', chatId);
-    
-    sessions.delete(chatId);
-    await sendMessage(chatId, '✅ Аккаунт отключен', getMainMenu(false));
+    await sendMessage(chatId, '⚠️ Для отключения аккаунта используйте настройки в приложении.');
     return;
   }
   
