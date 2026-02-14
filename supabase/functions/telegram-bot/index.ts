@@ -60,6 +60,8 @@ interface UserSession {
   };
 }
 
+const CURRENCIES = ['PLN', 'EUR', 'USD'];
+
 const sessions: Map<number, UserSession> = new Map();
 
 async function getRegisteredName(chatId: number, supabase: ReturnType<typeof createClient>): Promise<string | null> {
