@@ -12,6 +12,9 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 // Published app URL for public payout links
 const APP_URL = 'https://church-account-bliss.lovable.app';
 
+// Session timeout: 1 hour in milliseconds
+const SESSION_TIMEOUT_MS = 60 * 60 * 1000;
+
 interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
@@ -50,6 +53,7 @@ interface UserSession {
   linkName?: string;
   ownerId?: string;
   registeredName?: string;
+  lastActivity: number; // timestamp ms
   data: {
     amount?: number;
     currency?: string;
@@ -64,6 +68,32 @@ const CURRENCIES = ['PLN', 'EUR', 'USD'];
 
 const sessions: Map<number, UserSession> = new Map();
 
+// Clean up expired sessions (older than 1 hour)
+function cleanExpiredSessions() {
+  const now = Date.now();
+  for (const [chatId, session] of sessions) {
+    if (now - session.lastActivity > SESSION_TIMEOUT_MS) {
+      sessions.delete(chatId);
+      console.log(`Session expired for chat ${chatId}`);
+    }
+  }
+}
+
+// Get or refresh session (returns null if expired)
+function getSession(chatId: number): UserSession | null {
+  cleanExpiredSessions();
+  const session = sessions.get(chatId);
+  if (session) {
+    session.lastActivity = Date.now();
+  }
+  return session || null;
+}
+
+function setSession(chatId: number, session: UserSession) {
+  session.lastActivity = Date.now();
+  sessions.set(chatId, session);
+}
+
 async function getRegisteredName(chatId: number, supabase: ReturnType<typeof createClient>): Promise<string | null> {
   const { data } = await supabase
     .from('telegram_users')
@@ -74,15 +104,82 @@ async function getRegisteredName(chatId: number, supabase: ReturnType<typeof cre
 }
 
 async function setRegisteredName(chatId: number, name: string, supabase: ReturnType<typeof createClient>) {
-  // Try to update existing row first
   const { data } = await supabase
     .from('telegram_users')
     .update({ registered_name: name })
     .eq('telegram_chat_id', chatId)
     .select();
   
-  // If no row exists, we just store in session for now (user needs to link account first)
   return data && data.length > 0;
+}
+
+// Try to find a user in profiles by display_name matching the entered name
+async function findUserByName(name: string, supabase: ReturnType<typeof createClient>) {
+  const nameLower = name.toLowerCase().trim();
+  
+  // Search profiles by display_name (case-insensitive)
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('user_id, display_name')
+    .ilike('display_name', `%${nameLower}%`);
+  
+  if (!profiles || profiles.length === 0) return null;
+  
+  // Try exact match first
+  const exact = profiles.find(p => p.display_name?.toLowerCase().trim() === nameLower);
+  if (exact) return exact;
+  
+  // If only one partial match, use it
+  if (profiles.length === 1) return profiles[0];
+  
+  return null;
+}
+
+// Auto-register telegram user by linking to found profile
+async function autoLinkTelegramUser(chatId: number, userId: string, name: string, username: string | undefined, supabase: ReturnType<typeof createClient>) {
+  // Check if this chat_id already has a record
+  const { data: existing } = await supabase
+    .from('telegram_users')
+    .select('id')
+    .eq('telegram_chat_id', chatId)
+    .maybeSingle();
+  
+  if (existing) {
+    // Update existing record
+    await supabase
+      .from('telegram_users')
+      .update({ user_id: userId, registered_name: name, is_active: true, telegram_username: username || null })
+      .eq('telegram_chat_id', chatId);
+  } else {
+    // Check how many telegram accounts this user already has
+    const { data: userBots } = await supabase
+      .from('telegram_users')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('is_active', true);
+    
+    if (userBots && userBots.length >= 3) {
+      return { success: false, reason: 'limit' };
+    }
+    
+    // Insert new record
+    const { error } = await supabase
+      .from('telegram_users')
+      .insert({
+        telegram_chat_id: chatId,
+        user_id: userId,
+        registered_name: name,
+        is_active: true,
+        telegram_username: username || null,
+      });
+    
+    if (error) {
+      console.error('Error auto-linking telegram user:', error);
+      return { success: false, reason: 'error' };
+    }
+  }
+  
+  return { success: true };
 }
 
 async function sendMessage(chatId: number, text: string, replyMarkup?: object) {
@@ -189,17 +286,6 @@ async function getExpensesByDepartment(userId: string, supabase: ReturnType<type
   }));
 }
 
-async function getUsersWithoutImages(userId: string, supabase: ReturnType<typeof createClient>) {
-  const { data } = await supabase
-    .from('payout_image_tracking')
-    .select('submitter_name, skipped_at, transaction_id')
-    .eq('owner_user_id', userId)
-    .order('skipped_at', { ascending: false })
-    .limit(20);
-  
-  return data || [];
-}
-
 async function createTransaction(ownerId: string, data: UserSession['data'], supabase: ReturnType<typeof createClient>) {
   const { data: txData, error } = await supabase
     .from('transactions')
@@ -224,15 +310,7 @@ async function createTransaction(ownerId: string, data: UserSession['data'], sup
   return txData;
 }
 
-function getMainMenu(isLinked: boolean) {
-  if (!isLinked) {
-    return {
-      inline_keyboard: [
-        [{ text: '🔗 Подключить аккаунт', callback_data: 'link_account' }],
-      ],
-    };
-  }
-  
+function getMainMenu() {
   return {
     inline_keyboard: [
       [{ text: '📝 Заполнить документ', callback_data: 'fill_document' }],
@@ -248,19 +326,19 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
   const chatType = message.chat.type;
   const text = message.text?.trim() || '';
   
-  // Only respond in private chats, ignore groups/supergroups/channels
+  // Only respond in private chats
   if (chatType !== 'private') {
     console.log(`Ignoring message from ${chatType} chat ${chatId}`);
     return;
   }
   
-  const session = sessions.get(chatId);
+  const session = getSession(chatId);
   
   console.log(`Message from ${chatId}: ${text}, session step: ${session?.step}`);
   
   // Handle /start — always ask for name registration
   if (text === '/start') {
-    sessions.set(chatId, { step: 'awaiting_name', data: {} });
+    setSession(chatId, { step: 'awaiting_name', lastActivity: Date.now(), data: {} });
     await sendMessage(
       chatId,
       '👋 Добро пожаловать!\n\nДля начала работы введите ваше <b>Имя и Фамилию</b>:'
@@ -271,27 +349,24 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
   // Handle /menu
   if (text === '/menu') {
     const linkedUser = await getLinkedUser(chatId, supabase);
-    const isLinked = !!linkedUser;
+    if (!linkedUser) {
+      await sendMessage(chatId, '❌ Вы не зарегистрированы. Отправьте /start и введите Имя и Фамилию.');
+      return;
+    }
     const name = await getRegisteredName(chatId, supabase) || '';
-    
     await sendMessage(
       chatId,
-      isLinked 
-        ? `👋 ${name ? name + ', в' : 'В'}ыберите действие:`
-        : `👋 ${name ? name + ', д' : 'Д'}ля начала работы подключите свой аккаунт.`,
-      getMainMenu(isLinked)
+      `👋 ${name ? name + ', в' : 'В'}ыберите действие:`,
+      getMainMenu()
     );
     return;
   }
   
-  // Handle name registration step - either from in-memory session OR
-  // if no session exists and text looks like a name (works even if name already exists after /start)
+  // Handle name registration step
   const isAwaitingName = session?.step === 'awaiting_name';
-  const existingName = await getRegisteredName(chatId, supabase);
-  const nameParts = text.split(/\s+/).filter(Boolean);
-  const looksLikeName = nameParts.length >= 2 && text.length <= 100 && !text.startsWith('/');
   
-  if (isAwaitingName || (!existingName && looksLikeName && !session?.step) || (existingName && looksLikeName && !session?.step && !sessions.has(chatId))) {
+  if (isAwaitingName) {
+    const nameParts = text.split(/\s+/).filter(Boolean);
     if (nameParts.length < 2) {
       await sendMessage(chatId, '❌ Пожалуйста, введите <b>Имя и Фамилию</b> через пробел:');
       return;
@@ -299,26 +374,36 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
     
     const fullName = nameParts.join(' ');
     
-    // Persist name to DB - try update first, then upsert if needed
-    const updated = await setRegisteredName(chatId, fullName, supabase);
-    if (!updated) {
-      // No existing row - create a temporary record without user_id
-      // We'll use a placeholder that gets updated when user links account
-      console.log(`No telegram_users row for chat ${chatId}, name saved in session only`);
+    // Try to find user in profiles by name
+    const foundUser = await findUserByName(fullName, supabase);
+    
+    if (!foundUser) {
+      await sendMessage(
+        chatId,
+        `❌ Пользователь с именем <b>${fullName}</b> не найден в системе.\n\nПроверьте правильность написания и попробуйте снова.\nИмя должно совпадать с именем в приложении.`
+      );
+      return;
+    }
+    
+    // Auto-link this telegram chat to the found user
+    const linkResult = await autoLinkTelegramUser(chatId, foundUser.user_id, fullName, message.from.username, supabase);
+    
+    if (!linkResult.success) {
+      if (linkResult.reason === 'limit') {
+        await sendMessage(chatId, '❌ Достигнут лимит подключений (максимум 3 Telegram-аккаунта на пользователя).');
+      } else {
+        await sendMessage(chatId, '❌ Ошибка при регистрации. Попробуйте позже.');
+      }
+      return;
     }
     
     // Update session
-    const newSession: UserSession = { step: 'idle', data: { submitterName: fullName }, registeredName: fullName };
-    sessions.set(chatId, newSession);
-    
-    // Check if already linked
-    const linkedUser = await getLinkedUser(chatId, supabase);
-    const isLinked = !!linkedUser;
+    setSession(chatId, { step: 'idle', lastActivity: Date.now(), data: { submitterName: fullName }, registeredName: fullName });
     
     await sendMessage(
       chatId,
-      `✅ Добро пожаловать, <b>${fullName}</b>!\n\nВыберите действие:`,
-      getMainMenu(isLinked)
+      `✅ Добро пожаловать, <b>${fullName}</b>!\n\nВы успешно зарегистрированы. Выберите действие:`,
+      getMainMenu()
     );
     return;
   }
@@ -334,7 +419,7 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
         }
         session.data.amount = amount;
         session.step = 'filling_currency';
-        sessions.set(chatId, session);
+        setSession(chatId, session);
         
         await sendMessage(chatId, '💱 Выберите валюту:', {
           inline_keyboard: CURRENCIES.map(c => [{ text: c, callback_data: `currency_${c}` }]),
@@ -345,7 +430,7 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
       case 'filling_issued_to':
         session.data.issuedTo = text;
         session.step = 'filling_description';
-        sessions.set(chatId, session);
+        setSession(chatId, session);
         await sendMessage(chatId, '📝 Введите описание (или /skip чтобы пропустить):');
         return;
         
@@ -354,7 +439,7 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
           session.data.description = text;
         }
         session.step = 'confirm';
-        sessions.set(chatId, session);
+        setSession(chatId, session);
         
         const summary = `
 📋 <b>Проверьте данные:</b>
@@ -373,9 +458,13 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
     }
   }
   
-  // Unknown command — prompt to use /start or /menu
+  // For unrecognized text — check if linked, suggest /start or /menu
   const linkedUser = await getLinkedUser(chatId, supabase);
-  await sendMessage(chatId, 'Используйте /start для регистрации или /menu для вызова главного меню', getMainMenu(!!linkedUser));
+  if (linkedUser) {
+    await sendMessage(chatId, 'Используйте /menu для вызова главного меню', getMainMenu());
+  } else {
+    await sendMessage(chatId, 'Используйте /start для регистрации');
+  }
 }
 
 async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<typeof createClient>) {
@@ -389,41 +478,20 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     return;
   }
   
-  const session = sessions.get(chatId) || { step: 'idle' as const, data: {} };
+  const session = getSession(chatId) || { step: 'idle' as const, lastActivity: Date.now(), data: {} };
   
   console.log(`Callback from ${chatId}: ${data}`);
   
   await answerCallbackQuery(query.id);
   
-  // Check if user registered name - check DB first, then session
-  const registeredName = await getRegisteredName(chatId, supabase) || session.registeredName;
-  if (!registeredName && data !== 'link_account') {
-    // If no name registered, ask to /start first
-    await sendMessage(chatId, '❌ Сначала зарегистрируйтесь: отправьте /start и введите Имя и Фамилию.');
-    return;
-  }
-  
-  // Link account
-  if (data === 'link_account') {
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-    await sendMessage(
-      chatId,
-      `🔗 Для подключения аккаунта:\n\n1. Откройте настройки в приложении\n2. Перейдите в раздел "Telegram-бот"\n3. Введите код: <code>${code}</code>\n\nВаш Chat ID: <code>${chatId}</code>`,
-    );
-    return;
-  }
-  
-  // Unlink account (kept for backward compatibility but button removed from menu)
-  if (data === 'unlink_account') {
-    await sendMessage(chatId, '⚠️ Для отключения аккаунта используйте настройки в приложении.');
-    return;
-  }
-  
+  // Check if user is linked
   const linkedUser = await getLinkedUser(chatId, supabase);
   if (!linkedUser) {
-    await sendMessage(chatId, '❌ Сначала подключите аккаунт', getMainMenu(false));
+    await sendMessage(chatId, '❌ Вы не зарегистрированы. Отправьте /start и введите Имя и Фамилию.');
     return;
   }
+  
+  const registeredName = await getRegisteredName(chatId, supabase) || session.registeredName;
   
   // Select link for filling — show two fixed links
   if (data === 'select_link') {
@@ -440,8 +508,8 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
   if (data === 'fill_document') {
     session.step = 'filling_amount';
     session.ownerId = linkedUser.user_id;
-    session.data.submitterName = registeredName || session.registeredName || query.from.first_name;
-    sessions.set(chatId, session);
+    session.data.submitterName = registeredName || query.from.first_name;
+    setSession(chatId, session);
     
     await sendMessage(chatId, '📝 Заполнение документа\n\n💰 Введите сумму:');
     return;
@@ -456,7 +524,7 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     
     if (categories.length > 0) {
       session.step = 'filling_category';
-      sessions.set(chatId, session);
+      setSession(chatId, session);
       
       await sendMessage(chatId, '📁 Выберите категорию (отдел):', {
         inline_keyboard: [
@@ -466,7 +534,7 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       });
     } else {
       session.step = 'filling_issued_to';
-      sessions.set(chatId, session);
+      setSession(chatId, session);
       await sendMessage(chatId, '👤 Введите кому выдано:');
     }
     return;
@@ -478,7 +546,7 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       session.data.categoryId = data.replace('category_', '');
     }
     session.step = 'filling_issued_to';
-    sessions.set(chatId, session);
+    setSession(chatId, session);
     await sendMessage(chatId, '👤 Введите кому выдано:');
     return;
   }
@@ -487,7 +555,7 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
   if (data === 'confirm_document') {
     const tx = await createTransaction(session.ownerId || linkedUser.user_id, session.data, supabase);
     if (tx) {
-      await sendMessage(chatId, '✅ Документ успешно сохранён!', getMainMenu(true));
+      await sendMessage(chatId, '✅ Документ успешно сохранён!', getMainMenu());
       
       await supabase
         .from('payout_image_tracking')
@@ -501,15 +569,15 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       await sendMessage(chatId, '❌ Ошибка при сохранении документа');
     }
     session.step = 'idle';
-    sessions.set(chatId, session);
+    setSession(chatId, session);
     return;
   }
   
   // Cancel document
   if (data === 'cancel_document') {
     session.step = 'idle';
-    sessions.set(chatId, session);
-    await sendMessage(chatId, '❌ Отменено', getMainMenu(true));
+    setSession(chatId, session);
+    await sendMessage(chatId, '❌ Отменено', getMainMenu());
     return;
   }
   
@@ -526,11 +594,11 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       text += `📁 ${exp.name}: ${exp.amounts || '0'}\n`;
     }
     
-    await sendMessage(chatId, text, getMainMenu(true));
+    await sendMessage(chatId, text, getMainMenu());
     return;
   }
   
-  // Unfinished session - find transactions without photos for current user
+  // Unfinished session
   if (data === 'unfinished_session') {
     const userName = registeredName || '';
     if (!userName) {
@@ -538,8 +606,6 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       return;
     }
 
-    // Search for ALL transactions with "[Bez załączników" pattern for this owner
-    // Don't filter by name since user may have used different name variants (Latin/Cyrillic)
     const searchPattern = `%[Bez załączników%]%`;
 
     const { data: pendingTx } = await supabase
@@ -556,7 +622,6 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       return;
     }
 
-    // Get a shared link token to build the URL
     const links = await getSharedLinks(linkedUser.user_id, supabase);
     const activeLink = links.length > 0 ? links[0] : null;
 
@@ -565,7 +630,6 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       return;
     }
 
-    // Get categories for display
     const { data: categories } = await supabase
       .from('categories')
       .select('id, name')
@@ -581,7 +645,6 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       const recipient = tx.issued_to || '';
       text += `📄 ${catName ? catName + ' — ' : ''}${Number(tx.amount).toLocaleString()} ${currencySymbol}${recipient ? '\n👤 ' + recipient : ''}\n📅 ${dateStr}\n\n`;
       
-      // Build link to payout page with pre-filled data
       const payoutUrl = `${APP_URL}/payout/${activeLink.token}`;
       buttons.push([{ text: `📎 ${recipient || catName || 'Документ'} — ${Number(tx.amount).toLocaleString()} ${currencySymbol}`, url: payoutUrl }]);
     }
