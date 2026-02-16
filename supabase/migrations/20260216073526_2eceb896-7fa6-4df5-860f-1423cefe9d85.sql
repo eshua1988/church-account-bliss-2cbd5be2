@@ -1,0 +1,1 @@
+ALTER TABLE public.telegram_users ADD COLUMN last_activity timestamp with time zone DEFAULT now();
