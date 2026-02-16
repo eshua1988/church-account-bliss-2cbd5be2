@@ -145,10 +145,10 @@ async function autoLinkTelegramUser(chatId: number, userId: string, name: string
     .maybeSingle();
   
   if (existing) {
-    // Update existing record
+    // Update existing record — reactivate and refresh
     await supabase
       .from('telegram_users')
-      .update({ user_id: userId, registered_name: name, is_active: true, telegram_username: username || null })
+      .update({ user_id: userId, registered_name: name, is_active: true, telegram_username: username || null, last_activity: new Date().toISOString() })
       .eq('telegram_chat_id', chatId);
   } else {
     // Check how many telegram accounts this user already has
@@ -162,7 +162,6 @@ async function autoLinkTelegramUser(chatId: number, userId: string, name: string
       return { success: false, reason: 'limit' };
     }
     
-    // Insert new record
     const { error } = await supabase
       .from('telegram_users')
       .insert({
@@ -171,6 +170,7 @@ async function autoLinkTelegramUser(chatId: number, userId: string, name: string
         registered_name: name,
         is_active: true,
         telegram_username: username || null,
+        last_activity: new Date().toISOString(),
       });
     
     if (error) {
@@ -219,10 +219,32 @@ async function answerCallbackQuery(callbackQueryId: string, text?: string) {
 async function getLinkedUser(chatId: number, supabase: ReturnType<typeof createClient>) {
   const { data } = await supabase
     .from('telegram_users')
-    .select('user_id, is_active')
+    .select('user_id, is_active, last_activity')
     .eq('telegram_chat_id', chatId)
     .eq('is_active', true)
-    .single();
+    .maybeSingle();
+  
+  if (!data) return null;
+  
+  // Check if session expired (1 hour of inactivity)
+  if (data.last_activity) {
+    const lastActivity = new Date(data.last_activity).getTime();
+    const now = Date.now();
+    if (now - lastActivity > SESSION_TIMEOUT_MS) {
+      // Session expired — deactivate link, user must re-register via /start
+      await supabase
+        .from('telegram_users')
+        .update({ is_active: false })
+        .eq('telegram_chat_id', chatId);
+      return null;
+    }
+  }
+  
+  // Update last_activity timestamp
+  await supabase
+    .from('telegram_users')
+    .update({ last_activity: new Date().toISOString() })
+    .eq('telegram_chat_id', chatId);
   
   return data;
 }

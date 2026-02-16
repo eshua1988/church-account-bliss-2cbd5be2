@@ -183,6 +183,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          last_activity: string | null
           registered_name: string | null
           telegram_chat_id: number
           telegram_username: string | null
@@ -193,6 +194,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          last_activity?: string | null
           registered_name?: string | null
           telegram_chat_id: number
           telegram_username?: string | null
@@ -203,6 +205,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          last_activity?: string | null
           registered_name?: string | null
           telegram_chat_id?: number
           telegram_username?: string | null
