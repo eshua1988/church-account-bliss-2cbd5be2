@@ -204,6 +204,24 @@ async function sendMessage(chatId: number, text: string, replyMarkup?: object) {
   return result;
 }
 
+async function editMessageReplyMarkup(chatId: number, messageId: number, replyMarkup?: object) {
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageReplyMarkup`;
+  const body: Record<string, unknown> = {
+    chat_id: chatId,
+    message_id: messageId,
+  };
+  if (replyMarkup) {
+    body.reply_markup = replyMarkup;
+  } else {
+    body.reply_markup = { inline_keyboard: [] };
+  }
+  await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
 async function answerCallbackQuery(callbackQueryId: string, text?: string) {
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`;
   await fetch(url, {
@@ -339,6 +357,15 @@ function getMainMenu() {
       [{ text: '🔗 Выбрать ссылку для заполнения', callback_data: 'select_link' }],
       [{ text: '📊 Расходы по отделам', callback_data: 'expenses_by_dept' }],
       [{ text: '📷 Незаконченная сессия', callback_data: 'unfinished_session' }],
+      [{ text: '❌ Закрыть меню', callback_data: 'close_menu' }],
+    ],
+  };
+}
+
+function getCollapsedMenu() {
+  return {
+    inline_keyboard: [
+      [{ text: '📋 Открыть меню', callback_data: 'open_menu' }],
     ],
   };
 }
@@ -505,6 +532,16 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
   console.log(`Callback from ${chatId}: ${data}`);
   
   await answerCallbackQuery(query.id);
+  
+  // Handle close/open menu (no auth needed)
+  if (data === 'close_menu') {
+    await editMessageReplyMarkup(chatId, query.message.message_id, getCollapsedMenu());
+    return;
+  }
+  if (data === 'open_menu') {
+    await editMessageReplyMarkup(chatId, query.message.message_id, getMainMenu());
+    return;
+  }
   
   // Check if user is linked
   const linkedUser = await getLinkedUser(chatId, supabase);
@@ -693,6 +730,18 @@ Deno.serve(async (req) => {
     
     const response = await fetch(telegramUrl);
     const result = await response.json();
+    
+    // Also set bot commands menu
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        commands: [
+          { command: 'start', description: 'Регистрация / перезапуск' },
+          { command: 'menu', description: 'Открыть главное меню' },
+        ],
+      }),
+    });
     
     console.log('Webhook setup result:', result);
     
