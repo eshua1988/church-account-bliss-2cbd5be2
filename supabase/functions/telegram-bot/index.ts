@@ -696,8 +696,31 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       return;
     }
 
-    const searchPattern = `%[Bez załączników%]%`;
+    // Find unfinished sessions for THIS specific user by matching submitter_name
+    const { data: trackingRecords } = await supabase
+      .from('payout_image_tracking')
+      .select('transaction_id, submitter_name')
+      .eq('owner_user_id', linkedUser.user_id)
+      .order('skipped_at', { ascending: false })
+      .limit(20);
 
+    // Filter tracking records by submitter name matching current user
+    const userNameLower = userName.toLowerCase().trim();
+    const userNameParts = userNameLower.split(/\s+/);
+    
+    const userTracking = (trackingRecords || []).filter(r => {
+      const submitter = (r.submitter_name || '').toLowerCase().trim();
+      // Match if all parts of the user's name appear in the submitter name or vice versa
+      return userNameParts.every(part => submitter.includes(part)) || 
+             submitter.split(/\s+/).every((part: string) => userNameLower.includes(part));
+    });
+
+    const trackingTxIds = userTracking
+      .map(r => r.transaction_id)
+      .filter((id): id is string => id !== null);
+
+    // Also search transactions with [Bez załączników] in description, filtered by issued_to matching user name
+    const searchPattern = `%[Bez załączników%]%`;
     const { data: pendingTx } = await supabase
       .from('transactions')
       .select('id, amount, currency, description, date, category_id, issued_to')
@@ -705,9 +728,22 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       .eq('type', 'expense')
       .like('description', searchPattern)
       .order('created_at', { ascending: false })
-      .limit(20);
+      .limit(50);
 
-    if (!pendingTx || pendingTx.length === 0) {
+    // Filter: only show transactions that belong to this user (by tracking or by issued_to)
+    const filteredTx = (pendingTx || []).filter(tx => {
+      // Match by tracking record
+      if (trackingTxIds.includes(tx.id)) return true;
+      // Match by issued_to field
+      if (tx.issued_to) {
+        const issuedLower = tx.issued_to.toLowerCase().trim();
+        return userNameParts.every(part => issuedLower.includes(part)) ||
+               issuedLower.split(/\s+/).every((part: string) => userNameLower.includes(part));
+      }
+      return false;
+    });
+
+    if (filteredTx.length === 0) {
       await editMessageText(chatId, query.message.message_id, '✅ У вас нет незаконченных сессий (все фото добавлены).', {
         inline_keyboard: [[{ text: '◀️ Назад в меню', callback_data: 'back_to_menu' }]],
       });
@@ -732,7 +768,7 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     let text = '📷 <b>Незаконченная сессия — документы без фото:</b>\n\n';
     const buttons: Array<Array<{text: string, url?: string, callback_data?: string}>> = [];
 
-    for (const tx of pendingTx) {
+    for (const tx of filteredTx) {
       const catName = categories?.find(c => c.id === tx.category_id)?.name || '';
       const dateStr = new Date(tx.date).toLocaleDateString('ru-RU');
       const currencySymbol = tx.currency === 'EUR' ? '€' : tx.currency === 'USD' ? '$' : tx.currency;
