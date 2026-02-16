@@ -222,6 +222,24 @@ async function editMessageReplyMarkup(chatId: number, messageId: number, replyMa
   });
 }
 
+async function editMessageText(chatId: number, messageId: number, text: string, replyMarkup?: object) {
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`;
+  const body: Record<string, unknown> = {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    parse_mode: 'HTML',
+  };
+  if (replyMarkup) {
+    body.reply_markup = replyMarkup;
+  }
+  await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
 async function answerCallbackQuery(callbackQueryId: string, text?: string) {
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`;
   await fetch(url, {
@@ -539,7 +557,13 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     return;
   }
   if (data === 'open_menu') {
-    await editMessageReplyMarkup(chatId, query.message.message_id, getMainMenu());
+    const name = await getRegisteredName(chatId, supabase) || '';
+    await editMessageText(chatId, query.message.message_id, `${name ? name + ', в' : 'В'}ыберите действие:`, getMainMenu());
+    return;
+  }
+  if (data === 'back_to_menu') {
+    const name = await getRegisteredName(chatId, supabase) || '';
+    await editMessageText(chatId, query.message.message_id, `${name ? name + ', в' : 'В'}ыберите действие:`, getMainMenu());
     return;
   }
   
@@ -554,10 +578,11 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
   
   // Select link for filling — show two fixed links
   if (data === 'select_link') {
-    await sendMessage(chatId, '🔗 Выберите ссылку для заполнения:', {
+    await editMessageText(chatId, query.message.message_id, '🔗 Выберите ссылку для заполнения:', {
       inline_keyboard: [
         [{ text: '📄 Standard форма', url: `${APP_URL}/payout/iHEMNKO3cnuD5909l7wxM8b1qnAq7t2f` }],
         [{ text: '📋 Stepwise форма', url: `${APP_URL}/payout/acfa2b276b11cb2dba1a17919831e2a582398b39832ea381f38834ba8d8cee50` }],
+        [{ text: '◀️ Назад в меню', callback_data: 'back_to_menu' }],
       ],
     });
     return;
@@ -640,11 +665,13 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     return;
   }
   
-  // Expenses by department
+  // Expenses by department — toggle in same message
   if (data === 'expenses_by_dept') {
     const expenses = await getExpensesByDepartment(linkedUser.user_id, supabase);
     if (expenses.length === 0) {
-      await sendMessage(chatId, '📊 Нет данных о расходах');
+      await editMessageText(chatId, query.message.message_id, '📊 Нет данных о расходах', {
+        inline_keyboard: [[{ text: '◀️ Назад в меню', callback_data: 'back_to_menu' }]],
+      });
       return;
     }
     
@@ -653,15 +680,19 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       text += `📁 ${exp.name}: ${exp.amounts || '0'}\n`;
     }
     
-    await sendMessage(chatId, text, getMainMenu());
+    await editMessageText(chatId, query.message.message_id, text, {
+      inline_keyboard: [[{ text: '◀️ Назад в меню', callback_data: 'back_to_menu' }]],
+    });
     return;
   }
   
-  // Unfinished session
+  // Unfinished session — toggle in same message
   if (data === 'unfinished_session') {
     const userName = registeredName || '';
     if (!userName) {
-      await sendMessage(chatId, '❌ Имя не найдено. Отправьте /start и введите Имя и Фамилию.');
+      await editMessageText(chatId, query.message.message_id, '❌ Имя не найдено. Отправьте /start и введите Имя и Фамилию.', {
+        inline_keyboard: [[{ text: '◀️ Назад в меню', callback_data: 'back_to_menu' }]],
+      });
       return;
     }
 
@@ -677,7 +708,9 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       .limit(20);
 
     if (!pendingTx || pendingTx.length === 0) {
-      await sendMessage(chatId, '✅ У вас нет незаконченных сессий (все фото добавлены).');
+      await editMessageText(chatId, query.message.message_id, '✅ У вас нет незаконченных сессий (все фото добавлены).', {
+        inline_keyboard: [[{ text: '◀️ Назад в меню', callback_data: 'back_to_menu' }]],
+      });
       return;
     }
 
@@ -685,7 +718,9 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     const activeLink = links.length > 0 ? links[0] : null;
 
     if (!activeLink) {
-      await sendMessage(chatId, '❌ Нет активных ссылок. Создайте ссылку в приложении.');
+      await editMessageText(chatId, query.message.message_id, '❌ Нет активных ссылок. Создайте ссылку в приложении.', {
+        inline_keyboard: [[{ text: '◀️ Назад в меню', callback_data: 'back_to_menu' }]],
+      });
       return;
     }
 
@@ -695,7 +730,7 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       .eq('user_id', linkedUser.user_id);
 
     let text = '📷 <b>Незаконченная сессия — документы без фото:</b>\n\n';
-    const buttons: Array<Array<{text: string, url: string}>> = [];
+    const buttons: Array<Array<{text: string, url?: string, callback_data?: string}>> = [];
 
     for (const tx of pendingTx) {
       const catName = categories?.find(c => c.id === tx.category_id)?.name || '';
@@ -709,8 +744,9 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     }
 
     text += 'Нажмите на документ, чтобы добавить фото:';
+    buttons.push([{ text: '◀️ Назад в меню', callback_data: 'back_to_menu' }]);
 
-    await sendMessage(chatId, text, { inline_keyboard: buttons });
+    await editMessageText(chatId, query.message.message_id, text, { inline_keyboard: buttons });
     return;
   }
 }
