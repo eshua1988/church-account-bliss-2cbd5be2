@@ -178,8 +178,39 @@ export type Database = {
         }
         Relationships: []
       }
+      telegram_link_codes: {
+        Row: {
+          bot_token: string | null
+          code: string
+          created_at: string
+          expires_at: string
+          id: string
+          used: boolean
+          user_id: string
+        }
+        Insert: {
+          bot_token?: string | null
+          code: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          used?: boolean
+          user_id: string
+        }
+        Update: {
+          bot_token?: string | null
+          code?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          used?: boolean
+          user_id?: string
+        }
+        Relationships: []
+      }
       telegram_users: {
         Row: {
+          bot_token: string | null
           created_at: string
           id: string
           is_active: boolean
@@ -191,6 +222,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          bot_token?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
@@ -202,6 +234,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          bot_token?: string | null
           created_at?: string
           id?: string
           is_active?: boolean

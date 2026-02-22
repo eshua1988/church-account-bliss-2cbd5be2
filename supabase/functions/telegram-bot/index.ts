@@ -53,7 +53,7 @@ interface UserSession {
   linkName?: string;
   ownerId?: string;
   registeredName?: string;
-  lastActivity: number; // timestamp ms
+  lastActivity: number;
   data: {
     amount?: number;
     currency?: string;
@@ -68,7 +68,6 @@ const CURRENCIES = ['PLN', 'EUR', 'USD'];
 
 const sessions: Map<number, UserSession> = new Map();
 
-// Clean up expired sessions (older than 1 hour)
 function cleanExpiredSessions() {
   const now = Date.now();
   for (const [chatId, session] of sessions) {
@@ -79,7 +78,6 @@ function cleanExpiredSessions() {
   }
 }
 
-// Get or refresh session (returns null if expired)
 function getSession(chatId: number): UserSession | null {
   cleanExpiredSessions();
   const session = sessions.get(chatId);
@@ -92,6 +90,18 @@ function getSession(chatId: number): UserSession | null {
 function setSession(chatId: number, session: UserSession) {
   session.lastActivity = Date.now();
   sessions.set(chatId, session);
+}
+
+// Get bot token for a specific chat (user's own bot or shared)
+async function getBotToken(chatId: number, supabase: ReturnType<typeof createClient>): Promise<string> {
+  const { data } = await supabase
+    .from('telegram_users')
+    .select('bot_token')
+    .eq('telegram_chat_id', chatId)
+    .eq('is_active', true)
+    .maybeSingle();
+  
+  return data?.bot_token || TELEGRAM_BOT_TOKEN;
 }
 
 async function getRegisteredName(chatId: number, supabase: ReturnType<typeof createClient>): Promise<string | null> {
@@ -113,11 +123,9 @@ async function setRegisteredName(chatId: number, name: string, supabase: ReturnT
   return data && data.length > 0;
 }
 
-// Try to find a user in profiles by display_name matching the entered name
 async function findUserByName(name: string, supabase: ReturnType<typeof createClient>) {
   const nameLower = name.toLowerCase().trim();
   
-  // Search profiles by display_name (case-insensitive)
   const { data: profiles } = await supabase
     .from('profiles')
     .select('user_id, display_name')
@@ -125,19 +133,15 @@ async function findUserByName(name: string, supabase: ReturnType<typeof createCl
   
   if (!profiles || profiles.length === 0) return null;
   
-  // Try exact match first
   const exact = profiles.find(p => p.display_name?.toLowerCase().trim() === nameLower);
   if (exact) return exact;
   
-  // If only one partial match, use it
   if (profiles.length === 1) return profiles[0];
   
   return null;
 }
 
-// Auto-register telegram user by linking to found profile
-async function autoLinkTelegramUser(chatId: number, userId: string, name: string, username: string | undefined, supabase: ReturnType<typeof createClient>) {
-  // Check if this chat_id already has a record
+async function autoLinkTelegramUser(chatId: number, userId: string, name: string, username: string | undefined, supabase: ReturnType<typeof createClient>, botToken?: string) {
   const { data: existing } = await supabase
     .from('telegram_users')
     .select('id')
@@ -145,13 +149,11 @@ async function autoLinkTelegramUser(chatId: number, userId: string, name: string
     .maybeSingle();
   
   if (existing) {
-    // Update existing record — reactivate and refresh
     await supabase
       .from('telegram_users')
-      .update({ user_id: userId, registered_name: name, is_active: true, telegram_username: username || null, last_activity: new Date().toISOString() })
+      .update({ user_id: userId, registered_name: name, is_active: true, telegram_username: username || null, last_activity: new Date().toISOString(), bot_token: botToken || null })
       .eq('telegram_chat_id', chatId);
   } else {
-    // Check how many telegram accounts this user already has
     const { data: userBots } = await supabase
       .from('telegram_users')
       .select('id')
@@ -171,6 +173,7 @@ async function autoLinkTelegramUser(chatId: number, userId: string, name: string
         is_active: true,
         telegram_username: username || null,
         last_activity: new Date().toISOString(),
+        bot_token: botToken || null,
       });
     
     if (error) {
@@ -182,8 +185,10 @@ async function autoLinkTelegramUser(chatId: number, userId: string, name: string
   return { success: true };
 }
 
-async function sendMessage(chatId: number, text: string, replyMarkup?: object) {
-  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+// Telegram API helpers - use token parameter
+async function sendMessage(chatId: number, text: string, replyMarkup?: object, token?: string) {
+  const botToken = token || TELEGRAM_BOT_TOKEN;
+  const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
   const body: Record<string, unknown> = {
     chat_id: chatId,
     text,
@@ -204,8 +209,9 @@ async function sendMessage(chatId: number, text: string, replyMarkup?: object) {
   return result;
 }
 
-async function editMessageReplyMarkup(chatId: number, messageId: number, replyMarkup?: object) {
-  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageReplyMarkup`;
+async function editMessageReplyMarkup(chatId: number, messageId: number, replyMarkup?: object, token?: string) {
+  const botToken = token || TELEGRAM_BOT_TOKEN;
+  const url = `https://api.telegram.org/bot${botToken}/editMessageReplyMarkup`;
   const body: Record<string, unknown> = {
     chat_id: chatId,
     message_id: messageId,
@@ -222,8 +228,9 @@ async function editMessageReplyMarkup(chatId: number, messageId: number, replyMa
   });
 }
 
-async function editMessageText(chatId: number, messageId: number, text: string, replyMarkup?: object) {
-  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`;
+async function editMessageText(chatId: number, messageId: number, text: string, replyMarkup?: object, token?: string) {
+  const botToken = token || TELEGRAM_BOT_TOKEN;
+  const url = `https://api.telegram.org/bot${botToken}/editMessageText`;
   const body: Record<string, unknown> = {
     chat_id: chatId,
     message_id: messageId,
@@ -240,8 +247,9 @@ async function editMessageText(chatId: number, messageId: number, text: string, 
   });
 }
 
-async function answerCallbackQuery(callbackQueryId: string, text?: string) {
-  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`;
+async function answerCallbackQuery(callbackQueryId: string, text?: string, token?: string) {
+  const botToken = token || TELEGRAM_BOT_TOKEN;
+  const url = `https://api.telegram.org/bot${botToken}/answerCallbackQuery`;
   await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -262,12 +270,10 @@ async function getLinkedUser(chatId: number, supabase: ReturnType<typeof createC
   
   if (!data) return null;
   
-  // Check if session expired (1 hour of inactivity)
   if (data.last_activity) {
     const lastActivity = new Date(data.last_activity).getTime();
     const now = Date.now();
     if (now - lastActivity > SESSION_TIMEOUT_MS) {
-      // Session expired — deactivate link, user must re-register via /start
       await supabase
         .from('telegram_users')
         .update({ is_active: false })
@@ -276,7 +282,6 @@ async function getLinkedUser(chatId: number, supabase: ReturnType<typeof createC
     }
   }
   
-  // Update last_activity timestamp
   await supabase
     .from('telegram_users')
     .update({ last_activity: new Date().toISOString() })
@@ -368,6 +373,52 @@ async function createTransaction(ownerId: string, data: UserSession['data'], sup
   return txData;
 }
 
+// Try to redeem a link code (6-digit code from the app)
+async function tryRedeemLinkCode(chatId: number, code: string, username: string | undefined, supabase: ReturnType<typeof createClient>): Promise<{ redeemed: boolean; message?: string }> {
+  // Look up unused, non-expired code (using service role, bypasses RLS)
+  const { data: linkCode } = await supabase
+    .from('telegram_link_codes')
+    .select('id, user_id, bot_token, expires_at, used')
+    .eq('code', code.toUpperCase())
+    .eq('used', false)
+    .maybeSingle();
+  
+  if (!linkCode) return { redeemed: false };
+  
+  // Check expiry
+  if (new Date(linkCode.expires_at) < new Date()) {
+    await supabase.from('telegram_link_codes').update({ used: true }).eq('id', linkCode.id);
+    return { redeemed: true, message: '❌ Код истёк. Сгенерируйте новый в приложении.' };
+  }
+  
+  // Get user's display name from profile
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('display_name')
+    .eq('user_id', linkCode.user_id)
+    .maybeSingle();
+  
+  const displayName = profile?.display_name || 'Пользователь';
+  
+  // Link this chat to the user
+  const linkResult = await autoLinkTelegramUser(chatId, linkCode.user_id, displayName, username, supabase, linkCode.bot_token || undefined);
+  
+  if (!linkResult.success) {
+    if (linkResult.reason === 'limit') {
+      return { redeemed: true, message: '❌ Достигнут лимит подключений (максимум 3).' };
+    }
+    return { redeemed: true, message: '❌ Ошибка привязки. Попробуйте позже.' };
+  }
+  
+  // Mark code as used
+  await supabase.from('telegram_link_codes').update({ used: true }).eq('id', linkCode.id);
+  
+  // Set session
+  setSession(chatId, { step: 'idle', lastActivity: Date.now(), data: { submitterName: displayName }, registeredName: displayName });
+  
+  return { redeemed: true, message: `✅ Аккаунт привязан! Добро пожаловать, <b>${displayName}</b>!` };
+}
+
 function getMainMenu() {
   return {
     inline_keyboard: [
@@ -393,22 +444,40 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
   const chatType = message.chat.type;
   const text = message.text?.trim() || '';
   
-  // Only respond in private chats
   if (chatType !== 'private') {
     console.log(`Ignoring message from ${chatType} chat ${chatId}`);
     return;
   }
   
+  // Get per-user bot token for replies
+  const botToken = await getBotToken(chatId, supabase);
+  
   const session = getSession(chatId);
   
   console.log(`Message from ${chatId}: ${text}, session step: ${session?.step}`);
   
-  // Handle /start — always ask for name registration
+  // Check if text looks like a 6-digit link code (before other handlers)
+  if (/^[A-Z0-9]{6}$/i.test(text) && !session?.step?.startsWith('filling_')) {
+    const result = await tryRedeemLinkCode(chatId, text, message.from.username, supabase);
+    if (result.redeemed) {
+      if (result.message?.startsWith('✅')) {
+        await sendMessage(chatId, result.message, getMainMenu(), botToken);
+      } else {
+        await sendMessage(chatId, result.message || '❌ Ошибка', undefined, botToken);
+      }
+      return;
+    }
+    // If not a valid code, fall through to other handlers
+  }
+  
+  // Handle /start
   if (text === '/start') {
     setSession(chatId, { step: 'awaiting_name', lastActivity: Date.now(), data: {} });
     await sendMessage(
       chatId,
-      '👋 Добро пожаловать!\n\nДля начала работы введите ваше <b>Имя и Фамилию</b>:'
+      '👋 Добро пожаловать!\n\nВы можете:\n1️⃣ Ввести <b>Имя и Фамилию</b> для регистрации\n2️⃣ Ввести <b>6-значный код</b> из приложения для быстрой привязки',
+      undefined,
+      botToken
     );
     return;
   }
@@ -417,14 +486,15 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
   if (text === '/menu') {
     const linkedUser = await getLinkedUser(chatId, supabase);
     if (!linkedUser) {
-      await sendMessage(chatId, '❌ Вы не зарегистрированы. Отправьте /start и введите Имя и Фамилию.');
+      await sendMessage(chatId, '❌ Вы не зарегистрированы. Отправьте /start и введите Имя и Фамилию, или 6-значный код из приложения.', undefined, botToken);
       return;
     }
     const name = await getRegisteredName(chatId, supabase) || '';
     await sendMessage(
       chatId,
       `👋 ${name ? name + ', в' : 'В'}ыберите действие:`,
-      getMainMenu()
+      getMainMenu(),
+      botToken
     );
     return;
   }
@@ -433,44 +503,57 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
   const isAwaitingName = session?.step === 'awaiting_name';
   
   if (isAwaitingName) {
+    // Check if it's a link code
+    if (/^[A-Z0-9]{6}$/i.test(text)) {
+      const result = await tryRedeemLinkCode(chatId, text, message.from.username, supabase);
+      if (result.redeemed) {
+        if (result.message?.startsWith('✅')) {
+          await sendMessage(chatId, result.message, getMainMenu(), botToken);
+        } else {
+          await sendMessage(chatId, result.message || '❌ Ошибка', undefined, botToken);
+        }
+        return;
+      }
+    }
+    
     const nameParts = text.split(/\s+/).filter(Boolean);
     if (nameParts.length < 2) {
-      await sendMessage(chatId, '❌ Пожалуйста, введите <b>Имя и Фамилию</b> через пробел:');
+      await sendMessage(chatId, '❌ Пожалуйста, введите <b>Имя и Фамилию</b> через пробел, или <b>6-значный код</b> из приложения:', undefined, botToken);
       return;
     }
     
     const fullName = nameParts.join(' ');
     
-    // Try to find user in profiles by name
     const foundUser = await findUserByName(fullName, supabase);
     
     if (!foundUser) {
       await sendMessage(
         chatId,
-        `❌ Пользователь с именем <b>${fullName}</b> не найден в системе.\n\nПроверьте правильность написания и попробуйте снова.\nИмя должно совпадать с именем в приложении.`
+        `❌ Пользователь с именем <b>${fullName}</b> не найден в системе.\n\nПроверьте правильность написания и попробуйте снова.\nИмя должно совпадать с именем в приложении.`,
+        undefined,
+        botToken
       );
       return;
     }
     
-    // Auto-link this telegram chat to the found user
     const linkResult = await autoLinkTelegramUser(chatId, foundUser.user_id, fullName, message.from.username, supabase);
     
     if (!linkResult.success) {
       if (linkResult.reason === 'limit') {
-        await sendMessage(chatId, '❌ Достигнут лимит подключений (максимум 3 Telegram-аккаунта на пользователя).');
+        await sendMessage(chatId, '❌ Достигнут лимит подключений (максимум 3 Telegram-аккаунта на пользователя).', undefined, botToken);
       } else {
-        await sendMessage(chatId, '❌ Ошибка при регистрации. Попробуйте позже.');
+        await sendMessage(chatId, '❌ Ошибка при регистрации. Попробуйте позже.', undefined, botToken);
       }
       return;
     }
     
-    // Update session
     setSession(chatId, { step: 'idle', lastActivity: Date.now(), data: { submitterName: fullName }, registeredName: fullName });
     
     await sendMessage(
       chatId,
       `✅ Добро пожаловать, <b>${fullName}</b>!\n\nВы успешно зарегистрированы. Выберите действие:`,
-      getMainMenu()
+      getMainMenu(),
+      botToken
     );
     return;
   }
@@ -481,7 +564,7 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
       case 'filling_amount': {
         const amount = parseFloat(text.replace(',', '.'));
         if (isNaN(amount) || amount <= 0) {
-          await sendMessage(chatId, '❌ Введите корректную сумму (число больше 0)');
+          await sendMessage(chatId, '❌ Введите корректную сумму (число больше 0)', undefined, botToken);
           return;
         }
         session.data.amount = amount;
@@ -490,7 +573,7 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
         
         await sendMessage(chatId, '💱 Выберите валюту:', {
           inline_keyboard: CURRENCIES.map(c => [{ text: c, callback_data: `currency_${c}` }]),
-        });
+        }, botToken);
         return;
       }
         
@@ -498,7 +581,7 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
         session.data.issuedTo = text;
         session.step = 'filling_description';
         setSession(chatId, session);
-        await sendMessage(chatId, '📝 Введите описание (или /skip чтобы пропустить):');
+        await sendMessage(chatId, '📝 Введите описание (или /skip чтобы пропустить):', undefined, botToken);
         return;
         
       case 'filling_description':
@@ -520,17 +603,17 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
             [{ text: '✅ Подтвердить', callback_data: 'confirm_document' }],
             [{ text: '❌ Отменить', callback_data: 'cancel_document' }],
           ],
-        });
+        }, botToken);
         return;
     }
   }
   
-  // For unrecognized text — check if linked, suggest /start or /menu
+  // For unrecognized text
   const linkedUser = await getLinkedUser(chatId, supabase);
   if (linkedUser) {
-    await sendMessage(chatId, 'Используйте /menu для вызова главного меню', getMainMenu());
+    await sendMessage(chatId, 'Используйте /menu для вызова главного меню', getMainMenu(), botToken);
   } else {
-    await sendMessage(chatId, 'Используйте /start для регистрации');
+    await sendMessage(chatId, 'Используйте /start для регистрации или введите 6-значный код из приложения', undefined, botToken);
   }
 }
 
@@ -539,44 +622,44 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
   const chatType = query.message.chat.type;
   const data = query.data;
   
-  // Only respond in private chats
   if (chatType !== 'private') {
     console.log(`Ignoring callback from ${chatType} chat ${chatId}`);
     return;
   }
   
+  const botToken = await getBotToken(chatId, supabase);
   const session = getSession(chatId) || { step: 'idle' as const, lastActivity: Date.now(), data: {} };
   
   console.log(`Callback from ${chatId}: ${data}`);
   
-  await answerCallbackQuery(query.id);
+  await answerCallbackQuery(query.id, undefined, botToken);
   
-  // Handle close/open menu (no auth needed)
+  // Handle close/open menu
   if (data === 'close_menu') {
-    await editMessageReplyMarkup(chatId, query.message.message_id, getCollapsedMenu());
+    await editMessageReplyMarkup(chatId, query.message.message_id, getCollapsedMenu(), botToken);
     return;
   }
   if (data === 'open_menu') {
     const name = await getRegisteredName(chatId, supabase) || '';
-    await editMessageText(chatId, query.message.message_id, `${name ? name + ', в' : 'В'}ыберите действие:`, getMainMenu());
+    await editMessageText(chatId, query.message.message_id, `${name ? name + ', в' : 'В'}ыберите действие:`, getMainMenu(), botToken);
     return;
   }
   if (data === 'back_to_menu') {
     const name = await getRegisteredName(chatId, supabase) || '';
-    await editMessageText(chatId, query.message.message_id, `${name ? name + ', в' : 'В'}ыберите действие:`, getMainMenu());
+    await editMessageText(chatId, query.message.message_id, `${name ? name + ', в' : 'В'}ыберите действие:`, getMainMenu(), botToken);
     return;
   }
   
   // Check if user is linked
   const linkedUser = await getLinkedUser(chatId, supabase);
   if (!linkedUser) {
-    await sendMessage(chatId, '❌ Вы не зарегистрированы. Отправьте /start и введите Имя и Фамилию.');
+    await sendMessage(chatId, '❌ Вы не зарегистрированы. Отправьте /start и введите Имя и Фамилию.', undefined, botToken);
     return;
   }
   
   const registeredName = await getRegisteredName(chatId, supabase) || session.registeredName;
   
-  // Select link for filling — show two fixed links
+  // Select link for filling
   if (data === 'select_link') {
     await editMessageText(chatId, query.message.message_id, '🔗 Выберите ссылку для заполнения:', {
       inline_keyboard: [
@@ -584,7 +667,7 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
         [{ text: '📋 Stepwise форма', url: `${APP_URL}/payout/acfa2b276b11cb2dba1a17919831e2a582398b39832ea381f38834ba8d8cee50` }],
         [{ text: '◀️ Назад в меню', callback_data: 'back_to_menu' }],
       ],
-    });
+    }, botToken);
     return;
   }
   
@@ -595,7 +678,7 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     session.data.submitterName = registeredName || query.from.first_name;
     setSession(chatId, session);
     
-    await sendMessage(chatId, '📝 Заполнение документа\n\n💰 Введите сумму:');
+    await sendMessage(chatId, '📝 Заполнение документа\n\n💰 Введите сумму:', undefined, botToken);
     return;
   }
   
@@ -615,11 +698,11 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
           ...categories.map(cat => [{ text: cat.name, callback_data: `category_${cat.id}` }]),
           [{ text: '➡️ Пропустить', callback_data: 'category_skip' }],
         ],
-      });
+      }, botToken);
     } else {
       session.step = 'filling_issued_to';
       setSession(chatId, session);
-      await sendMessage(chatId, '👤 Введите кому выдано:');
+      await sendMessage(chatId, '👤 Введите кому выдано:', undefined, botToken);
     }
     return;
   }
@@ -631,7 +714,7 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     }
     session.step = 'filling_issued_to';
     setSession(chatId, session);
-    await sendMessage(chatId, '👤 Введите кому выдано:');
+    await sendMessage(chatId, '👤 Введите кому выдано:', undefined, botToken);
     return;
   }
   
@@ -639,7 +722,7 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
   if (data === 'confirm_document') {
     const tx = await createTransaction(session.ownerId || linkedUser.user_id, session.data, supabase);
     if (tx) {
-      await sendMessage(chatId, '✅ Документ успешно сохранён!', getMainMenu());
+      await sendMessage(chatId, '✅ Документ успешно сохранён!', getMainMenu(), botToken);
       
       await supabase
         .from('payout_image_tracking')
@@ -650,7 +733,7 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
           telegram_chat_id: chatId,
         });
     } else {
-      await sendMessage(chatId, '❌ Ошибка при сохранении документа');
+      await sendMessage(chatId, '❌ Ошибка при сохранении документа', undefined, botToken);
     }
     session.step = 'idle';
     setSession(chatId, session);
@@ -661,17 +744,17 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
   if (data === 'cancel_document') {
     session.step = 'idle';
     setSession(chatId, session);
-    await sendMessage(chatId, '❌ Отменено', getMainMenu());
+    await sendMessage(chatId, '❌ Отменено', getMainMenu(), botToken);
     return;
   }
   
-  // Expenses by department — toggle in same message
+  // Expenses by department
   if (data === 'expenses_by_dept') {
     const expenses = await getExpensesByDepartment(linkedUser.user_id, supabase);
     if (expenses.length === 0) {
       await editMessageText(chatId, query.message.message_id, '📊 Нет данных о расходах', {
         inline_keyboard: [[{ text: '◀️ Назад в меню', callback_data: 'back_to_menu' }]],
-      });
+      }, botToken);
       return;
     }
     
@@ -682,21 +765,20 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     
     await editMessageText(chatId, query.message.message_id, text, {
       inline_keyboard: [[{ text: '◀️ Назад в меню', callback_data: 'back_to_menu' }]],
-    });
+    }, botToken);
     return;
   }
   
-  // Unfinished session — toggle in same message
+  // Unfinished session
   if (data === 'unfinished_session') {
     const userName = registeredName || '';
     if (!userName) {
       await editMessageText(chatId, query.message.message_id, '❌ Имя не найдено. Отправьте /start и введите Имя и Фамилию.', {
         inline_keyboard: [[{ text: '◀️ Назад в меню', callback_data: 'back_to_menu' }]],
-      });
+      }, botToken);
       return;
     }
 
-    // Find unfinished sessions for THIS specific user by matching submitter_name
     const { data: trackingRecords } = await supabase
       .from('payout_image_tracking')
       .select('transaction_id, submitter_name')
@@ -704,13 +786,11 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       .order('skipped_at', { ascending: false })
       .limit(20);
 
-    // Filter tracking records by submitter name matching current user
     const userNameLower = userName.toLowerCase().trim();
     const userNameParts = userNameLower.split(/\s+/);
     
     const userTracking = (trackingRecords || []).filter(r => {
       const submitter = (r.submitter_name || '').toLowerCase().trim();
-      // Match if all parts of the user's name appear in the submitter name or vice versa
       return userNameParts.every(part => submitter.includes(part)) || 
              submitter.split(/\s+/).every((part: string) => userNameLower.includes(part));
     });
@@ -719,7 +799,6 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       .map(r => r.transaction_id)
       .filter((id): id is string => id !== null);
 
-    // Also search transactions with [Bez załączników] in description, filtered by issued_to matching user name
     const searchPattern = `%[Bez załączników%]%`;
     const { data: pendingTx } = await supabase
       .from('transactions')
@@ -730,11 +809,8 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
       .order('created_at', { ascending: false })
       .limit(50);
 
-    // Filter: only show transactions that belong to this user (by tracking or by issued_to)
     const filteredTx = (pendingTx || []).filter(tx => {
-      // Match by tracking record
       if (trackingTxIds.includes(tx.id)) return true;
-      // Match by issued_to field
       if (tx.issued_to) {
         const issuedLower = tx.issued_to.toLowerCase().trim();
         return userNameParts.every(part => issuedLower.includes(part)) ||
@@ -746,7 +822,7 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     if (filteredTx.length === 0) {
       await editMessageText(chatId, query.message.message_id, '✅ У вас нет незаконченных сессий (все фото добавлены).', {
         inline_keyboard: [[{ text: '◀️ Назад в меню', callback_data: 'back_to_menu' }]],
-      });
+      }, botToken);
       return;
     }
 
@@ -756,7 +832,7 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     if (!activeLink) {
       await editMessageText(chatId, query.message.message_id, '❌ Нет активных ссылок. Создайте ссылку в приложении.', {
         inline_keyboard: [[{ text: '◀️ Назад в меню', callback_data: 'back_to_menu' }]],
-      });
+      }, botToken);
       return;
     }
 
@@ -782,7 +858,7 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
     text += 'Нажмите на документ, чтобы добавить фото:';
     buttons.push([{ text: '◀️ Назад в меню', callback_data: 'back_to_menu' }]);
 
-    await editMessageText(chatId, query.message.message_id, text, { inline_keyboard: buttons });
+    await editMessageText(chatId, query.message.message_id, text, { inline_keyboard: buttons }, botToken);
     return;
   }
 }
@@ -793,6 +869,8 @@ Deno.serve(async (req) => {
   }
   
   const url = new URL(req.url);
+  
+  // Setup webhook for shared bot
   if (url.searchParams.get('setup') === 'true') {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const webhookUrl = `${supabaseUrl}/functions/v1/telegram-bot`;
@@ -803,7 +881,6 @@ Deno.serve(async (req) => {
     const response = await fetch(telegramUrl);
     const result = await response.json();
     
-    // Also set bot commands menu
     await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -820,6 +897,61 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
+  }
+  
+  // Setup webhook for a custom bot token
+  if (url.searchParams.get('setup_custom') === 'true') {
+    try {
+      const body = await req.json();
+      const customToken = body.bot_token;
+      
+      if (!customToken) {
+        return new Response(JSON.stringify({ ok: false, description: 'bot_token required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const webhookUrl = `${supabaseUrl}/functions/v1/telegram-bot`;
+      
+      // Verify token by calling getMe
+      const getMeRes = await fetch(`https://api.telegram.org/bot${customToken}/getMe`);
+      const getMeResult = await getMeRes.json();
+      
+      if (!getMeResult.ok) {
+        return new Response(JSON.stringify({ ok: false, description: 'Недействительный токен бота' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      // Set webhook
+      const whRes = await fetch(`https://api.telegram.org/bot${customToken}/setWebhook?url=${encodeURIComponent(webhookUrl)}`);
+      const whResult = await whRes.json();
+      
+      // Set commands
+      await fetch(`https://api.telegram.org/bot${customToken}/setMyCommands`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          commands: [
+            { command: 'start', description: 'Регистрация / перезапуск' },
+            { command: 'menu', description: 'Открыть главное меню' },
+          ],
+        }),
+      });
+      
+      return new Response(JSON.stringify({ ok: whResult.ok, bot: getMeResult.result }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    } catch (error) {
+      console.error('Custom bot setup error:', error);
+      return new Response(JSON.stringify({ ok: false, description: 'Server error' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
   }
   
   if (req.method === 'POST') {
