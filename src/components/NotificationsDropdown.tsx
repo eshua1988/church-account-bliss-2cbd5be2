@@ -1,4 +1,4 @@
-import { Mail, Check, CheckCheck, Trash2, X } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, FileDown } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -42,6 +42,18 @@ const NotificationItem = ({
           <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
             {notification.message}
           </p>
+          {notification.metadata?.pdf_url && (
+            <a
+              href={notification.metadata.pdf_url as string}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <FileDown className="h-3 w-3" />
+              Скачать PDF
+            </a>
+          )}
           <p className="text-xs text-muted-foreground mt-2">
             {formatDistanceToNow(new Date(notification.created_at), {
               addSuffix: true,

@@ -901,6 +901,10 @@ const PublicPayout = () => {
     
     const fileName = `dowod_wyplaty_${format(formData.date, 'yyyy-MM-dd')}_${formData.issuedTo.replace(/\s/g, '_') || 'dokument'}.pdf`;
     doc.save(fileName);
+    
+    // Return base64 for upload
+    const pdfBase64 = doc.output('datauristring').split(',')[1];
+    return { pdfBase64, fileName };
   };
 
   const handleSubmit = async () => {
@@ -926,8 +930,22 @@ const PublicPayout = () => {
           throw new Error(updateData.error);
         }
         
-        // Generate PDF with images
-        await generatePDF();
+        // Generate PDF with images and upload
+        const pdfResult = await generatePDF();
+        if (pdfResult && token) {
+          try {
+            await supabase.functions.invoke('upload-payout-pdf', {
+              body: {
+                token,
+                transactionId: continuingPayout.id,
+                pdfBase64: pdfResult.pdfBase64,
+                fileName: pdfResult.fileName,
+              }
+            });
+          } catch (e) {
+            console.error('PDF upload failed:', e);
+          }
+        }
 
         setIsSuccess(true);
         toast({
@@ -962,8 +980,22 @@ const PublicPayout = () => {
         throw new Error(data.error);
       }
 
-      // Generate PDF
-      await generatePDF();
+      // Generate PDF and upload
+      const pdfResult = await generatePDF();
+      if (pdfResult && data?.transactionId && token) {
+        try {
+          await supabase.functions.invoke('upload-payout-pdf', {
+            body: {
+              token,
+              transactionId: data.transactionId,
+              pdfBase64: pdfResult.pdfBase64,
+              fileName: pdfResult.fileName,
+            }
+          });
+        } catch (e) {
+          console.error('PDF upload failed:', e);
+        }
+      }
 
       setIsSuccess(true);
       toast({
