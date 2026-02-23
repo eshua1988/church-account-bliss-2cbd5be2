@@ -497,6 +497,7 @@ const PublicPayout = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
+  const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   const [language, setLanguage] = useState<Language>('ru');
   const [imagesOptional, setImagesOptional] = useState(false); // false = images required by default
@@ -663,6 +664,10 @@ const PublicPayout = () => {
 
   const stopDrawing = () => {
     setIsDrawing(false);
+    // Save signature as data URL when user finishes drawing
+    if (signatureCanvasRef.current && hasSignature) {
+      setSignatureDataUrl(signatureCanvasRef.current.toDataURL('image/png'));
+    }
   };
 
   const clearSignature = () => {
@@ -672,6 +677,7 @@ const PublicPayout = () => {
     
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     setHasSignature(false);
+    setSignatureDataUrl(null);
   };
 
   // Image attachment handlers
@@ -851,9 +857,10 @@ const PublicPayout = () => {
     doc.setLineWidth(0.5);
     doc.rect(leftMargin, yPos, signatureBoxWidth, signatureBoxHeight, 'S');
     
-    if (hasSignature && signatureCanvasRef.current) {
-      const signatureData = signatureCanvasRef.current.toDataURL('image/png');
-      doc.addImage(signatureData, 'PNG', leftMargin + 5, yPos + 2, signatureBoxWidth - 10, signatureBoxHeight - 4);
+    // Use saved signatureDataUrl (persists even when canvas is unmounted on step 4)
+    const sigData = signatureDataUrl || (signatureCanvasRef.current ? signatureCanvasRef.current.toDataURL('image/png') : null);
+    if (hasSignature && sigData) {
+      doc.addImage(sigData, 'PNG', leftMargin + 5, yPos + 2, signatureBoxWidth - 10, signatureBoxHeight - 4);
     }
 
     // Add each attached image on a new page
@@ -1077,6 +1084,7 @@ const PublicPayout = () => {
     attachedImages.forEach(img => URL.revokeObjectURL(img.preview));
     setAttachedImages([]);
     setHasSignature(false);
+    setSignatureDataUrl(null);
     setImagesOptional(false);
   };
 
@@ -1118,6 +1126,7 @@ const PublicPayout = () => {
     // Reset form state
     setAttachedImages([]);
     setHasSignature(false);
+    setSignatureDataUrl(null);
     clearSignature();
     
     switch (prevScreen) {
