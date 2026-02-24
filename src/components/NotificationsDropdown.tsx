@@ -1,4 +1,5 @@
-import { Mail, Check, CheckCheck, Trash2, X, FileDown } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { Mail, Check, CheckCheck, Trash2, X, FileDown, Loader2 } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -10,10 +11,33 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { formatDistanceToNow } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { supabase } from '@/integrations/supabase/client';
 
 interface NotificationsDropdownProps {
   collapsed?: boolean;
 }
+
+const PdfDownloadButton = ({ metadata }: { metadata: Record<string, any> }) => {
+  const [loading, setLoading] = useState(false);
+  const handleClick = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setLoading(true);
+    try {
+      const pdfPath = metadata.pdf_path as string | undefined;
+      if (pdfPath) {
+        const { data } = await supabase.storage.from('documents').createSignedUrl(pdfPath, 3600);
+        if (data?.signedUrl) { window.open(data.signedUrl, '_blank'); return; }
+      }
+      if (metadata.pdf_url) window.open(metadata.pdf_url as string, '_blank');
+    } finally { setLoading(false); }
+  }, [metadata]);
+  return (
+    <button onClick={handleClick} disabled={loading} className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1">
+      {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileDown className="h-3 w-3" />}
+      Скачать PDF
+    </button>
+  );
+};
 
 const NotificationItem = ({
   notification,
@@ -42,17 +66,8 @@ const NotificationItem = ({
           <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
             {notification.message}
           </p>
-          {notification.metadata?.pdf_url && (
-            <a
-              href={notification.metadata.pdf_url as string}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <FileDown className="h-3 w-3" />
-              Скачать PDF
-            </a>
+          {(notification.metadata?.pdf_path || notification.metadata?.pdf_url) && (
+            <PdfDownloadButton metadata={notification.metadata} />
           )}
           <p className="text-xs text-muted-foreground mt-2">
             {formatDistanceToNow(new Date(notification.created_at), {
