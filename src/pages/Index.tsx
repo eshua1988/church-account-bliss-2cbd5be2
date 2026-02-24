@@ -18,6 +18,7 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { GoogleSheetsSync } from '@/components/GoogleSheetsSync';
 import { TelegramBotSettings } from '@/components/TelegramBotSettings';
 import { SharePayoutLink } from '@/components/SharePayoutLink';
+import { NotificationsPage } from '@/components/NotificationsPage';
 import { useGoogleSheetsSync } from '@/hooks/useGoogleSheetsSync';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -28,7 +29,7 @@ const Index = () => {
   const { t, getDateLocale } = useTranslation();
   const [selectedCurrency, setSelectedCurrency] = useState<Currency | null>(null);
   const [visibleCurrencies, setVisibleCurrencies] = useState<Currency[]>(loadVisibleCurrencies);
-  const [activeTab, setActiveTab] = useState<'balance' | 'statistics' | 'payout' | 'settings'>('balance');
+  const [activeTab, setActiveTab] = useState<'balance' | 'statistics' | 'payout' | 'settings' | 'notifications'>('balance');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { toast } = useToast();
@@ -334,6 +335,11 @@ const Index = () => {
               <Separator />
               <TelegramBotSettings />
             </div>
+          )}
+
+          {/* Notifications Tab */}
+          {activeTab === 'notifications' && (
+            <NotificationsPage />
           )}
         </main>
         </div>
