@@ -32,11 +32,13 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
-import { NotificationsDropdown } from '@/components/NotificationsDropdown';
+import { useNotifications } from '@/hooks/useNotifications';
+
+type TabType = 'balance' | 'statistics' | 'payout' | 'settings' | 'notifications';
 
 interface AppSidebarProps {
-  activeTab: 'balance' | 'statistics' | 'payout' | 'settings';
-  onTabChange: (tab: 'balance' | 'statistics' | 'payout' | 'settings') => void;
+  activeTab: TabType;
+  onTabChange: (tab: TabType) => void;
   collapsed: boolean;
   mobileOpen: boolean;
   onMobileOpenChange: (open: boolean) => void;
@@ -64,17 +66,19 @@ export const AppSidebar = ({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
+  const { unreadCount } = useNotifications();
+
   const menuItems = [
     { id: 'balance' as const, icon: Wallet, label: t('balanceByCurrency') },
     { id: 'statistics' as const, icon: BarChart3, label: t('statistics') },
     { id: 'settings' as const, icon: Settings, label: t('settings') },
-    { id: 'notifications' as const, icon: Mail, label: 'Уведомления', isNotifications: true },
+    { id: 'notifications' as const, icon: Mail, label: 'Уведомления' },
     { id: 'sync' as const, icon: RefreshCw, label: 'Синхронизация', isSync: true },
     { id: 'openSheet' as const, icon: ExternalLink, label: 'Google Таблица', isOpenSheet: true },
     { id: 'payout' as const, icon: FileText, label: t('payoutGenerator') },
   ];
 
-  const handleTabChange = (tab: 'balance' | 'statistics' | 'payout' | 'settings') => {
+  const handleTabChange = (tab: TabType) => {
     onTabChange(tab);
     if (isMobile) {
       onMobileOpenChange(false);
@@ -161,10 +165,6 @@ export const AppSidebar = ({
   };
 
   const MenuButton = ({ item, isSheet = false }: { item: typeof menuItems[0]; isSheet?: boolean }) => {
-    if (item.isNotifications) {
-      return <NotificationsDropdown collapsed={!isSheet && collapsed} />;
-    }
-
     if (item.isSync) {
       return (
         <button
@@ -199,7 +199,7 @@ export const AppSidebar = ({
 
     return (
       <button
-        onClick={() => handleTabChange(item.id as 'balance' | 'statistics' | 'payout' | 'settings')}
+        onClick={() => handleTabChange(item.id as TabType)}
         className={cn(
           'w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200',
           'hover:bg-primary/10',
@@ -208,7 +208,14 @@ export const AppSidebar = ({
             : 'text-foreground'
         )}
       >
-        <item.icon className="w-5 h-5 flex-shrink-0" />
+        <div className="relative">
+          <item.icon className="w-5 h-5 flex-shrink-0" />
+          {item.id === 'notifications' && unreadCount > 0 && activeTab !== 'notifications' && (
+            <span className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground text-xs font-bold rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-0.5 text-[10px]">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
+        </div>
         <span className="font-medium">{item.label}</span>
       </button>
     );
@@ -299,8 +306,6 @@ export const AppSidebar = ({
             <li key={item.id}>
               {isSheet || !collapsed ? (
                 <MenuButton item={item} isSheet={isSheet} />
-              ) : item.isNotifications ? (
-                <NotificationsDropdown collapsed />
               ) : item.isOpenSheet ? (
                 <Tooltip delayDuration={0}>
                   <TooltipTrigger asChild>
@@ -335,7 +340,7 @@ export const AppSidebar = ({
                       </button>
                     ) : (
                       <button
-                        onClick={() => handleTabChange(item.id as 'balance' | 'statistics' | 'payout' | 'settings')}
+                        onClick={() => handleTabChange(item.id as TabType)}
                         className={cn(
                           'w-full flex items-center justify-center p-3 rounded-lg transition-all duration-200',
                           'hover:bg-primary/10',
@@ -344,7 +349,14 @@ export const AppSidebar = ({
                             : 'text-foreground'
                         )}
                       >
-                        <item.icon className="w-5 h-5" />
+                        <div className="relative">
+                          <item.icon className="w-5 h-5" />
+                          {item.id === 'notifications' && unreadCount > 0 && activeTab !== 'notifications' && (
+                            <span className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
+                              {unreadCount > 99 ? '99+' : unreadCount}
+                            </span>
+                          )}
+                        </div>
                       </button>
                     )}
                   </TooltipTrigger>
