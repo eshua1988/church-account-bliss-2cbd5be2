@@ -1,10 +1,12 @@
-import { Mail, Check, CheckCheck, Trash2, X, FileDown } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { Mail, Check, CheckCheck, Trash2, X, FileDown, Loader2 } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { formatDistanceToNow } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { supabase } from '@/integrations/supabase/client';
 
 const NotificationCard = ({
   notification,
@@ -15,6 +17,39 @@ const NotificationCard = ({
   onMarkAsRead: (id: string) => void;
   onDelete: (id: string) => void;
 }) => {
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownloadPdf = useCallback(async () => {
+    const meta = notification.metadata;
+    if (!meta) return;
+
+    setDownloading(true);
+    try {
+      // Try pdf_path first (generates fresh signed URL)
+      const pdfPath = meta.pdf_path as string | undefined;
+      if (pdfPath) {
+        const { data } = await supabase.storage
+          .from('documents')
+          .createSignedUrl(pdfPath, 3600);
+        if (data?.signedUrl) {
+          window.open(data.signedUrl, '_blank');
+          return;
+        }
+      }
+      // Fallback to stored pdf_url
+      const pdfUrl = meta.pdf_url as string | undefined;
+      if (pdfUrl) {
+        window.open(pdfUrl, '_blank');
+      }
+    } catch (e) {
+      console.error('Download failed:', e);
+    } finally {
+      setDownloading(false);
+    }
+  }, [notification.metadata]);
+
+  const hasPdf = notification.metadata?.pdf_path || notification.metadata?.pdf_url;
+
   return (
     <div
       className={cn(
@@ -35,17 +70,21 @@ const NotificationCard = ({
           <p className="text-sm text-muted-foreground mt-1">
             {notification.message}
           </p>
-          {notification.metadata?.pdf_url && (
-            <a
-              href={notification.metadata.pdf_url as string}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 mt-3 px-4 py-2 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors text-sm font-medium"
-              onClick={(e) => e.stopPropagation()}
+          {hasPdf && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3 gap-2"
+              onClick={handleDownloadPdf}
+              disabled={downloading}
             >
-              <FileDown className="h-4 w-4" />
+              {downloading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <FileDown className="h-4 w-4" />
+              )}
               Скачать PDF ордер
-            </a>
+            </Button>
           )}
           <p className="text-xs text-muted-foreground mt-3">
             {formatDistanceToNow(new Date(notification.created_at), {
