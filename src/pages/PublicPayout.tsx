@@ -962,10 +962,13 @@ const PublicPayout = () => {
         return;
       }
 
+      // Generate PDF first so we can send it with the submission
+      const pdfResult = await generatePDF();
+
       // Find category ID by name
       const category = categories.find(c => c.name === formData.departmentName);
 
-      // Submit via secure edge function with validation and rate limiting
+      // Submit via secure edge function with PDF included
       const { data, error: submitError } = await supabase.functions.invoke('submit-public-payout', {
         body: {
           token,
@@ -978,6 +981,8 @@ const PublicPayout = () => {
           amountInWords: formData.amountInWords,
           submitterName: `${submitterFirstName} ${submitterLastName}`,
           imagesSkipped: imagesOptional,
+          pdfBase64: pdfResult?.pdfBase64 || null,
+          pdfFileName: pdfResult?.fileName || null,
         }
       });
 
@@ -985,23 +990,6 @@ const PublicPayout = () => {
       
       if (data?.error) {
         throw new Error(data.error);
-      }
-
-      // Generate PDF and upload
-      const pdfResult = await generatePDF();
-      if (pdfResult && data?.transactionId && token) {
-        try {
-          await supabase.functions.invoke('upload-payout-pdf', {
-            body: {
-              token,
-              transactionId: data.transactionId,
-              pdfBase64: pdfResult.pdfBase64,
-              fileName: pdfResult.fileName,
-            }
-          });
-        } catch (e) {
-          console.error('PDF upload failed:', e);
-        }
       }
 
       setIsSuccess(true);

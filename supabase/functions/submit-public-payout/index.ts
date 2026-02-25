@@ -26,10 +26,11 @@ interface SubmitPayoutRequest {
   amountInWords?: string;
   submitterName?: string;
   imagesSkipped?: boolean;
+  pdfBase64?: string;
+  pdfFileName?: string;
 }
 
 // Simple in-memory rate limiting (per token)
-// In production, you'd use Redis or database
 const rateLimitStore: Map<string, { count: number; resetTime: number }> = new Map();
 
 function checkRateLimit(token: string): boolean {
@@ -52,12 +53,10 @@ function checkRateLimit(token: string): boolean {
 }
 
 function validateInput(data: SubmitPayoutRequest): { valid: boolean; error?: string } {
-  // Validate token presence
   if (!data.token || typeof data.token !== 'string' || data.token.length < 10 || data.token.length > 100) {
     return { valid: false, error: 'Invalid token format' };
   }
   
-  // Validate amount
   if (typeof data.amount !== 'number' || isNaN(data.amount)) {
     return { valid: false, error: 'Amount must be a number' };
   }
@@ -68,17 +67,14 @@ function validateInput(data: SubmitPayoutRequest): { valid: boolean; error?: str
     return { valid: false, error: `Amount cannot exceed ${MAX_AMOUNT}` };
   }
   
-  // Validate currency
   if (!data.currency || !VALID_CURRENCIES.includes(data.currency)) {
     return { valid: false, error: `Invalid currency. Must be one of: ${VALID_CURRENCIES.join(', ')}` };
   }
   
-  // Validate date format (YYYY-MM-DD)
   if (!data.date || !/^\d{4}-\d{2}-\d{2}$/.test(data.date)) {
     return { valid: false, error: 'Invalid date format. Use YYYY-MM-DD' };
   }
   
-  // Validate date range (not too far in past or future)
   const dateObj = new Date(data.date);
   const now = new Date();
   const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
@@ -91,7 +87,6 @@ function validateInput(data: SubmitPayoutRequest): { valid: boolean; error?: str
     return { valid: false, error: 'Date cannot be more than 1 month in the future' };
   }
   
-  // Validate text fields (optional but with length limits)
   const textFields: (keyof SubmitPayoutRequest)[] = ['description', 'issuedTo', 'amountInWords'];
   for (const field of textFields) {
     const value = data[field];
@@ -105,22 +100,24 @@ function validateInput(data: SubmitPayoutRequest): { valid: boolean; error?: str
     }
   }
   
-  // Validate categoryId format if provided (UUID)
   if (data.categoryId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.categoryId)) {
     return { valid: false, error: 'Invalid category ID format' };
+  }
+
+  // Limit PDF size (~10MB base64)
+  if (data.pdfBase64 && data.pdfBase64.length > 14_000_000) {
+    return { valid: false, error: 'PDF too large' };
   }
   
   return { valid: true };
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    // Only allow POST
     if (req.method !== 'POST') {
       return new Response(
         JSON.stringify({ error: 'Method not allowed' }),
@@ -130,7 +127,6 @@ Deno.serve(async (req) => {
 
     const body = await req.json() as SubmitPayoutRequest;
     
-    // Input validation
     const validation = validateInput(body);
     if (!validation.valid) {
       console.log('Validation failed:', validation.error);
@@ -140,7 +136,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Rate limiting
     if (!checkRateLimit(body.token)) {
       console.log('Rate limit exceeded for token');
       return new Response(
@@ -149,13 +144,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Create Supabase client with service role to bypass RLS for secure validation
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Validate token and get owner (using service role - not exposed to client)
     const { data: linkData, error: linkError } = await supabase
       .from('shared_payout_links')
       .select('id, owner_user_id, is_active, expires_at')
@@ -170,7 +162,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check if link is active
     if (!linkData.is_active) {
       return new Response(
         JSON.stringify({ error: 'This link is no longer active' }),
@@ -178,7 +169,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check expiration
     if (linkData.expires_at && new Date(linkData.expires_at) < new Date()) {
       return new Response(
         JSON.stringify({ error: 'This link has expired' }),
@@ -186,7 +176,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Validate category ownership if provided
     if (body.categoryId) {
       const { data: categoryData, error: categoryError } = await supabase
         .from('categories')
@@ -204,18 +193,10 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Insert transaction (using service role to bypass RLS safely after validation)
-    // Build description with submitter tracking info
     let finalDescription = body.description?.slice(0, MAX_TEXT_LENGTH) || '';
-    
-    // Add submitter tracking info if images were skipped
     if (body.imagesSkipped && body.submitterName) {
       const trackingNote = `[Bez załączników - ${body.submitterName}]`;
-      if (finalDescription) {
-        finalDescription = `${finalDescription} ${trackingNote}`;
-      } else {
-        finalDescription = trackingNote;
-      }
+      finalDescription = finalDescription ? `${finalDescription} ${trackingNote}` : trackingNote;
     }
     
     const { data: txData, error: txError } = await supabase
@@ -242,11 +223,57 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Create notification for the owner
+    // Upload PDF to storage if provided
+    let pdfPath: string | null = null;
+    let pdfUrl: string | null = null;
+
+    if (body.pdfBase64) {
+      try {
+        const pdfBytes = Uint8Array.from(atob(body.pdfBase64), c => c.charCodeAt(0));
+        const storagePath = `${linkData.owner_user_id}/${txData.id}/${body.pdfFileName || 'payout.pdf'}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('documents')
+          .upload(storagePath, pdfBytes, {
+            contentType: 'application/pdf',
+            upsert: true,
+          });
+
+        if (uploadError) {
+          console.error('PDF upload error:', uploadError);
+        } else {
+          pdfPath = storagePath;
+          const { data: urlData } = await supabase.storage
+            .from('documents')
+            .createSignedUrl(storagePath, 60 * 60 * 24 * 30);
+          pdfUrl = urlData?.signedUrl || null;
+          console.log('PDF uploaded successfully:', storagePath);
+        }
+      } catch (e) {
+        console.error('PDF processing error:', e);
+      }
+    }
+
+    // Create notification with PDF metadata included
     const submitterInfo = body.submitterName || 'Аноним';
     const notificationTitle = 'Новый расходный ордер';
     const notificationMessage = `${submitterInfo} заполнил расходный ордер на ${body.amount} ${body.currency}`;
     
+    const notificationMetadata: Record<string, any> = {
+      transaction_id: txData.id,
+      amount: body.amount,
+      currency: body.currency,
+      submitter_name: submitterInfo,
+      issued_to: body.issuedTo || null,
+    };
+
+    if (pdfPath) {
+      notificationMetadata.pdf_path = pdfPath;
+    }
+    if (pdfUrl) {
+      notificationMetadata.pdf_url = pdfUrl;
+    }
+
     const { error: notifError } = await supabase
       .from('notifications')
       .insert({
@@ -254,21 +281,14 @@ Deno.serve(async (req) => {
         title: notificationTitle,
         message: notificationMessage,
         type: 'payout',
-        metadata: {
-          transaction_id: txData.id,
-          amount: body.amount,
-          currency: body.currency,
-          submitter_name: submitterInfo,
-          issued_to: body.issuedTo || null,
-        },
+        metadata: notificationMetadata,
       });
 
     if (notifError) {
       console.error('Failed to create notification:', notifError);
-      // Don't fail the request if notification fails
     }
 
-    console.log('Transaction saved successfully:', txData.id);
+    console.log('Transaction saved successfully:', txData.id, 'PDF:', pdfPath ? 'yes' : 'no');
 
     return new Response(
       JSON.stringify({ success: true, transactionId: txData.id }),
