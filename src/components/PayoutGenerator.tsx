@@ -621,10 +621,12 @@ export const PayoutGenerator = () => {
     }
   };
 
-  // Generate PDF and save transaction
+  // Save transaction first (instant), then download PDF in background
   const handleGenerateAndSave = async () => {
-    await generatePDF();
+    // 1. Save transaction and create notification immediately (no wait for PDF download)
     await saveAsTransaction();
+    // 2. Generate + download PDF after save (non-blocking feel: save happened already)
+    await generatePDF();
   };
 
   const isFormValid = formData.amount && formData.issuedTo && formData.departmentName && formData.basis && formData.amountInWords && (imagesOptional || attachedImages.length > 0);
