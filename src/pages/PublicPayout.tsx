@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { downloadPdfBlob, openPdfUrl } from '@/lib/pdfDownload';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe, ArrowLeft, ArrowRight, Download } from 'lucide-react';
@@ -907,8 +908,11 @@ const PublicPayout = () => {
     }
     
     const fileName = `dowod_wyplaty_${format(formData.date, 'yyyy-MM-dd')}_${formData.issuedTo.replace(/\s/g, '_') || 'dokument'}.pdf`;
-    doc.save(fileName);
-    
+
+    // iOS-compatible download (doc.save uses <a download> which doesn't work on Safari/iOS)
+    const pdfBlob = doc.output('blob');
+    downloadPdfBlob(pdfBlob, fileName);
+
     // Return base64 for upload
     const pdfBase64 = doc.output('datauristring').split(',')[1];
     return { pdfBase64, fileName };

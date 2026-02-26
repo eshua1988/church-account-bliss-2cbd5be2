@@ -7,6 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { formatDistanceToNow } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
+import { openPdfUrl } from '@/lib/pdfDownload';
 
 const NotificationCard = ({
   notification,
@@ -32,14 +33,14 @@ const NotificationCard = ({
           .from('documents')
           .createSignedUrl(pdfPath, 3600);
         if (data?.signedUrl) {
-          window.open(data.signedUrl, '_blank');
+          openPdfUrl(data.signedUrl);
           return;
         }
       }
       // Fallback to stored pdf_url
       const pdfUrl = meta.pdf_url as string | undefined;
       if (pdfUrl) {
-        window.open(pdfUrl, '_blank');
+        openPdfUrl(pdfUrl);
       }
     } catch (e) {
       console.error('Download failed:', e);
