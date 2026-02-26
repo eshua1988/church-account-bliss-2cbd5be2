@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { downloadPdfBlob } from '@/lib/pdfDownload';
 import { format } from 'date-fns';
 import { Calendar, Eraser, Save, Loader2, ImagePlus, X } from 'lucide-react';
 import currencyConvertIcon from '@/assets/currency-convert-icon.png';
@@ -546,9 +547,10 @@ export const PayoutGenerator = () => {
       doc.addImage(imageData, format, xPos, imgYPos, finalWidth, finalHeight);
     }
     
-    // Save PDF
+    // Save PDF - iOS-compatible (doc.save uses <a download> which is blocked on Safari/iOS)
     const fileName = `dowod_wyplaty_${format(formData.date, 'yyyy-MM-dd')}_${formData.issuedTo.replace(/\s/g, '_') || 'dokument'}.pdf`;
-    doc.save(fileName);
+    const pdfBlob = doc.output('blob');
+    downloadPdfBlob(pdfBlob, fileName);
   };
 
   // Save transaction to database and sync to Google Sheets
