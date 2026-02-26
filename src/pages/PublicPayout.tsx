@@ -909,13 +909,11 @@ const PublicPayout = () => {
     
     const fileName = `dowod_wyplaty_${format(formData.date, 'yyyy-MM-dd')}_${formData.issuedTo.replace(/\s/g, '_') || 'dokument'}.pdf`;
 
-    // iOS-compatible download (doc.save uses <a download> which doesn't work on Safari/iOS)
+    // Return blob + base64 WITHOUT downloading yet
+    // Download is triggered separately AFTER the transaction is saved
     const pdfBlob = doc.output('blob');
-    downloadPdfBlob(pdfBlob, fileName);
-
-    // Return base64 for upload
     const pdfBase64 = doc.output('datauristring').split(',')[1];
-    return { pdfBase64, fileName };
+    return { pdfBase64, fileName, pdfBlob };
   };
 
   const handleSubmit = async () => {
@@ -941,8 +939,10 @@ const PublicPayout = () => {
           throw new Error(updateData.error);
         }
         
-        // Generate PDF with images and upload
+        // Generate PDF with images
         const pdfResult = await generatePDF();
+        
+        // Upload PDF to server
         if (pdfResult && token) {
           try {
             await supabase.functions.invoke('upload-payout-pdf', {
@@ -958,6 +958,11 @@ const PublicPayout = () => {
           }
         }
 
+        // Download PDF AFTER server operations complete
+        if (pdfResult) {
+          downloadPdfBlob(pdfResult.pdfBlob, pdfResult.fileName);
+        }
+
         setIsSuccess(true);
         toast({
           title: t.success,
@@ -966,13 +971,13 @@ const PublicPayout = () => {
         return;
       }
 
-      // Generate PDF first so we can send it with the submission
+      // Generate PDF data (no download yet)
       const pdfResult = await generatePDF();
 
       // Find category ID by name
       const category = categories.find(c => c.name === formData.departmentName);
 
-      // Submit via secure edge function with PDF included
+      // Submit via secure edge function with PDF included - this creates transaction + notification
       const { data, error: submitError } = await supabase.functions.invoke('submit-public-payout', {
         body: {
           token,
@@ -994,6 +999,11 @@ const PublicPayout = () => {
       
       if (data?.error) {
         throw new Error(data.error);
+      }
+
+      // Download PDF AFTER successful server submission
+      if (pdfResult) {
+        downloadPdfBlob(pdfResult.pdfBlob, pdfResult.fileName);
       }
 
       setIsSuccess(true);

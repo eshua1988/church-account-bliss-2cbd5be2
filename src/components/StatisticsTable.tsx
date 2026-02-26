@@ -99,7 +99,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
       }
     }
 
-    return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [transactions, timeRange, typeFilter, customDateRange, selectedCurrency, categoryFilter, internalCurrencyFilter]);
 
   // Calculate totals from all transactions (unfiltered by currency) to always show all currency cards
@@ -298,13 +298,13 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
       </CardHeader>
       <CardContent>
         {/* Totals Summary */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+        <div className="flex gap-3 mb-4 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
           {Object.entries(totals).map(([currency, { income, expense }]) => (
             <div 
               key={currency} 
               onClick={() => toggleCurrencyFilter(currency)}
               className={cn(
-                "p-3 rounded-lg space-y-1 cursor-pointer transition-all",
+                "p-3 rounded-lg space-y-1 cursor-pointer transition-all flex-shrink-0 min-w-[110px]",
                 internalCurrencyFilter === currency 
                   ? "bg-primary/20 ring-2 ring-primary" 
                   : "bg-secondary/50 hover:bg-secondary/70"
