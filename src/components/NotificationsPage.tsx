@@ -1,53 +1,23 @@
-import { useState, useCallback } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, FileDown, Loader2, ChevronDown } from 'lucide-react';
+import { useState } from 'react';
+import { Mail, Check, CheckCheck, Trash2, X, ExternalLink } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
-import { supabase } from '@/integrations/supabase/client';
-import { openPdfUrl } from '@/lib/pdfDownload';
+import { PayoutOrderModal } from '@/components/PayoutOrderModal';
 
 const NotificationCard = ({
   notification,
   onMarkAsRead,
   onDelete,
+  onOpenOrder,
 }: {
   notification: Notification;
   onMarkAsRead: (id: string) => void;
   onDelete: (id: string) => void;
+  onOpenOrder: (transactionId: string) => void;
 }) => {
-  const [downloading, setDownloading] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-
-  const handleDownloadPdf = useCallback(async () => {
-    const meta = notification.metadata;
-    if (!meta) return;
-
-    setDownloading(true);
-    try {
-      const pdfPath = meta.pdf_path as string | undefined;
-      if (pdfPath) {
-        const { data } = await supabase.storage
-          .from('documents')
-          .createSignedUrl(pdfPath, 3600);
-        if (data?.signedUrl) {
-          openPdfUrl(data.signedUrl);
-          return;
-        }
-      }
-      const pdfUrl = meta.pdf_url as string | undefined;
-      if (pdfUrl) {
-        openPdfUrl(pdfUrl);
-      }
-    } catch (e) {
-      console.error('Download failed:', e);
-    } finally {
-      setDownloading(false);
-    }
-  }, [notification.metadata]);
-
-  const hasPdf = notification.metadata?.pdf_path || notification.metadata?.pdf_url;
+  const hasTransaction = !!notification.metadata?.transaction_id;
 
   return (
     <div
@@ -72,33 +42,17 @@ const NotificationCard = ({
           <p className="text-xs text-muted-foreground mt-3">
             {format(new Date(notification.created_at), 'dd.MM.yyyy HH:mm')}
           </p>
-          {hasPdf && (
-            <div className="mt-2">
-              <button
-                onClick={() => setExpanded(v => !v)}
-                className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline font-medium"
+          {hasTransaction && (
+            <div className="mt-3">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 h-8"
+                onClick={() => onOpenOrder(notification.metadata!.transaction_id as string)}
               >
-                <ChevronDown className={cn('h-4 w-4 transition-transform duration-200', expanded && 'rotate-180')} />
-                {expanded ? 'Скрыть файл' : 'Показать файл PDF'}
-              </button>
-              {expanded && (
-                <div className="mt-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                    onClick={handleDownloadPdf}
-                    disabled={downloading}
-                  >
-                    {downloading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <FileDown className="h-4 w-4" />
-                    )}
-                    Скачать PDF ордер
-                  </Button>
-                </div>
-              )}
+                <ExternalLink className="h-3.5 w-3.5" />
+                Открыть ордер
+              </Button>
             </div>
           )}
         </div>
@@ -139,6 +93,7 @@ export const NotificationsPage = () => {
     deleteNotification,
     clearAllNotifications,
   } = useNotifications();
+  const [orderTransactionId, setOrderTransactionId] = useState<string | null>(null);
 
   return (
     <div className="animate-fade-in">
@@ -197,6 +152,7 @@ export const NotificationsPage = () => {
               notification={notification}
               onMarkAsRead={markAsRead}
               onDelete={deleteNotification}
+              onOpenOrder={setOrderTransactionId}
             />
           ))}
           <p className="text-xs text-center text-muted-foreground pt-2">
@@ -204,6 +160,12 @@ export const NotificationsPage = () => {
           </p>
         </div>
       )}
+
+      <PayoutOrderModal
+        transactionId={orderTransactionId}
+        open={!!orderTransactionId}
+        onClose={() => setOrderTransactionId(null)}
+      />
     </div>
   );
 };

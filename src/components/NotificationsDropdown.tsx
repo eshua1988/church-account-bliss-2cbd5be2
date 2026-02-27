@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, FileDown, Loader2, ChevronDown } from 'lucide-react';
+import { useState } from 'react';
+import { Mail, Check, CheckCheck, Trash2, X, ExternalLink } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -10,46 +10,24 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
-import { supabase } from '@/integrations/supabase/client';
-import { openPdfUrl } from '@/lib/pdfDownload';
+import { PayoutOrderModal } from '@/components/PayoutOrderModal';
 
 interface NotificationsDropdownProps {
   collapsed?: boolean;
 }
 
-const PdfDownloadButton = ({ metadata }: { metadata: Record<string, any> }) => {
-  const [loading, setLoading] = useState(false);
-  const handleClick = useCallback(async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setLoading(true);
-    try {
-      const pdfPath = metadata.pdf_path as string | undefined;
-      if (pdfPath) {
-        const { data } = await supabase.storage.from('documents').createSignedUrl(pdfPath, 3600);
-        if (data?.signedUrl) { openPdfUrl(data.signedUrl); return; }
-      }
-      if (metadata.pdf_url) openPdfUrl(metadata.pdf_url as string);
-    } finally { setLoading(false); }
-  }, [metadata]);
-  return (
-    <button onClick={handleClick} disabled={loading} className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1">
-      {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileDown className="h-3 w-3" />}
-      Скачать PDF
-    </button>
-  );
-};
-
 const NotificationItem = ({
   notification,
   onMarkAsRead,
   onDelete,
+  onOpenOrder,
 }: {
   notification: Notification;
   onMarkAsRead: (id: string) => void;
   onDelete: (id: string) => void;
+  onOpenOrder: (transactionId: string) => void;
 }) => {
-  const [expanded, setExpanded] = useState(false);
-  const hasPdf = notification.metadata?.pdf_path || notification.metadata?.pdf_url;
+  const hasTransaction = !!notification.metadata?.transaction_id;
 
   return (
     <div
@@ -72,20 +50,18 @@ const NotificationItem = ({
           <p className="text-xs text-muted-foreground mt-2">
             {format(new Date(notification.created_at), 'dd.MM.yyyy HH:mm')}
           </p>
-          {hasPdf && (
+          {hasTransaction && (
             <div className="mt-2">
               <button
-                onClick={(e) => { e.stopPropagation(); setExpanded(v => !v); }}
-                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenOrder(notification.metadata!.transaction_id as string);
+                }}
+                className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-medium"
               >
-                <ChevronDown className={cn('h-3 w-3 transition-transform', expanded && 'rotate-180')} />
-                {expanded ? 'Скрыть' : 'Показать файл'}
+                <ExternalLink className="h-3 w-3" />
+                Открыть ордер
               </button>
-              {expanded && (
-                <div className="mt-1">
-                  <PdfDownloadButton metadata={notification.metadata as Record<string, any>} />
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -132,9 +108,11 @@ export const NotificationsDropdown = ({ collapsed = false }: NotificationsDropdo
     deleteNotification,
     clearAllNotifications,
   } = useNotifications();
+  const [orderTransactionId, setOrderTransactionId] = useState<string | null>(null);
 
   return (
-    <DropdownMenu>
+    <>
+      <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           className={cn(
@@ -205,11 +183,19 @@ export const NotificationsDropdown = ({ collapsed = false }: NotificationsDropdo
                 notification={notification}
                 onMarkAsRead={markAsRead}
                 onDelete={deleteNotification}
+                onOpenOrder={setOrderTransactionId}
               />
             ))
           )}
         </ScrollArea>
       </DropdownMenuContent>
     </DropdownMenu>
+
+    <PayoutOrderModal
+      transactionId={orderTransactionId}
+      open={!!orderTransactionId}
+      onClose={() => setOrderTransactionId(null)}
+    />
+    </>
   );
 };
