@@ -186,6 +186,28 @@ async function autoLinkTelegramUser(chatId: number, userId: string, name: string
 }
 
 // Telegram API helpers - use token parameter
+async function sendDocument(chatId: number, pdfBase64: string, fileName: string, caption: string, token?: string) {
+  const botToken = token || TELEGRAM_BOT_TOKEN;
+  const url = `https://api.telegram.org/bot${botToken}/sendDocument`;
+
+  // Convert base64 to Uint8Array
+  const binaryStr = atob(pdfBase64);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+
+  const formData = new FormData();
+  formData.append('chat_id', String(chatId));
+  formData.append('caption', caption);
+  formData.append('document', new Blob([bytes], { type: 'application/pdf' }), fileName);
+
+  const response = await fetch(url, { method: 'POST', body: formData });
+  const result = await response.json();
+  console.log('sendDocument result:', result);
+  return result;
+}
+
 async function sendMessage(chatId: number, text: string, replyMarkup?: object, token?: string) {
   const botToken = token || TELEGRAM_BOT_TOKEN;
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
@@ -720,14 +742,46 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
   
   // Confirm document
   if (data === 'confirm_document') {
-    const tx = await createTransaction(session.ownerId || linkedUser.user_id, session.data, supabase);
+    const ownerId = session.ownerId || linkedUser.user_id;
+    const tx = await createTransaction(ownerId, session.data, supabase);
     if (tx) {
-      await sendMessage(chatId, '✅ Документ успешно сохранён!', getMainMenu(), botToken);
-      
+      // Try to generate and send PDF
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const generateUrl = `${supabaseUrl}/functions/v1/generate-payout-pdf`;
+        const pdfRes = await fetch(generateUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY') || '' },
+          body: JSON.stringify({ transactionId: tx.id, ownerUserId: ownerId }),
+        });
+
+        if (pdfRes.ok) {
+          const pdfData = await pdfRes.json();
+          if (pdfData.pdfBase64 && pdfData.fileName) {
+            await sendDocument(
+              chatId,
+              pdfData.pdfBase64,
+              pdfData.fileName,
+              `✅ Документ сохранён!\n📄 ${pdfData.fileName}`,
+              botToken
+            );
+          } else {
+            await sendMessage(chatId, '✅ Документ успешно сохранён!', undefined, botToken);
+          }
+        } else {
+          await sendMessage(chatId, '✅ Документ успешно сохранён!', undefined, botToken);
+        }
+      } catch (pdfErr) {
+        console.error('PDF generation error:', pdfErr);
+        await sendMessage(chatId, '✅ Документ успешно сохранён!', undefined, botToken);
+      }
+
+      await sendMessage(chatId, '📋 Главное меню:', getMainMenu(), botToken);
+
       await supabase
         .from('payout_image_tracking')
         .insert({
-          owner_user_id: session.ownerId || linkedUser.user_id,
+          owner_user_id: ownerId,
           transaction_id: tx.id,
           submitter_name: session.data.submitterName || 'Telegram',
           telegram_chat_id: chatId,
