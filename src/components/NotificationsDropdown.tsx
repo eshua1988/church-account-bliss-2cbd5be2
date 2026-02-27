@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, ExternalLink } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, FileText } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -27,7 +27,7 @@ const NotificationItem = ({
   onDelete: (id: string) => void;
   onOpenOrder: (transactionId: string) => void;
 }) => {
-  const hasTransaction = !!notification.metadata?.transaction_id;
+  const transactionId = notification.metadata?.transaction_id;
 
   return (
     <div
@@ -50,16 +50,16 @@ const NotificationItem = ({
           <p className="text-xs text-muted-foreground mt-2">
             {format(new Date(notification.created_at), 'dd.MM.yyyy HH:mm')}
           </p>
-          {hasTransaction && (
+          {transactionId && (
             <div className="mt-2">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  onOpenOrder(notification.metadata!.transaction_id as string);
+                  onOpenOrder(transactionId);
                 }}
-                className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-medium"
+                className="inline-flex items-center gap-1.5 text-xs bg-primary text-primary-foreground hover:bg-primary/90 font-medium px-2.5 py-1.5 rounded-md transition-colors"
               >
-                <ExternalLink className="h-3 w-3" />
+                <FileText className="h-3 w-3" />
                 Открыть ордер
               </button>
             </div>
