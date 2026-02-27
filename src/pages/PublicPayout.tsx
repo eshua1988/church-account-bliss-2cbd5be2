@@ -924,7 +924,6 @@ const PublicPayout = () => {
     try {
       // If continuing an existing payout, update it instead of creating new
       if (continuingPayout) {
-        // Update the existing transaction to mark images as added
         const { data: updateData, error: updateError } = await supabase.functions.invoke('add-images-to-payout', {
           body: {
             token,
@@ -934,50 +933,48 @@ const PublicPayout = () => {
         });
 
         if (updateError) throw updateError;
-        
-        if (updateData?.error) {
-          throw new Error(updateData.error);
-        }
+        if (updateData?.error) throw new Error(updateData.error);
         
         // Generate PDF with images
         const pdfResult = await generatePDF();
-        
-        // Upload PDF to server
-        if (pdfResult && token) {
+
+        // Upload PDF directly from client to Storage
+        if (pdfResult) {
           try {
-            await supabase.functions.invoke('upload-payout-pdf', {
-              body: {
-                token,
-                transactionId: continuingPayout.id,
-                pdfBase64: pdfResult.pdfBase64,
-                fileName: pdfResult.fileName,
-              }
-            });
+            const { data: linkData } = await supabase
+              .from('shared_payout_links')
+              .select('owner_user_id')
+              .eq('token', token)
+              .single();
+
+            if (linkData?.owner_user_id) {
+              const storagePath = `${linkData.owner_user_id}/${continuingPayout.id}/${pdfResult.fileName}`;
+              await supabase.storage
+                .from('documents')
+                .upload(storagePath, pdfResult.pdfBlob, {
+                  contentType: 'application/pdf',
+                  upsert: true,
+                });
+            }
           } catch (e) {
             console.error('PDF upload failed:', e);
           }
         }
 
-        // Download PDF AFTER server operations complete
+        // Download PDF locally
         if (pdfResult) {
           downloadPdfBlob(pdfResult.pdfBlob, pdfResult.fileName);
         }
 
         setIsSuccess(true);
-        toast({
-          title: t.success,
-          description: t.photosAdded,
-        });
+        toast({ title: t.success, description: t.photosAdded });
         return;
       }
 
-      // Generate PDF data (no download yet)
-      const pdfResult = await generatePDF();
-
-      // Find category ID by name
+      // 1. Submit transaction via Edge Function (WITHOUT PDF data)
       const category = categories.find(c => c.name === formData.departmentName);
+      const submitterName = `${submitterFirstName} ${submitterLastName}`;
 
-      // Submit via secure edge function with PDF included - this creates transaction + notification
       const { data, error: submitError } = await supabase.functions.invoke('submit-public-payout', {
         body: {
           token,
@@ -988,29 +985,85 @@ const PublicPayout = () => {
           date: format(formData.date, 'yyyy-MM-dd'),
           issuedTo: formData.issuedTo,
           amountInWords: formData.amountInWords,
-          submitterName: `${submitterFirstName} ${submitterLastName}`,
+          submitterName,
           imagesSkipped: imagesOptional,
-          pdfBase64: pdfResult?.pdfBase64 || null,
-          pdfFileName: pdfResult?.fileName || null,
+          // No pdfBase64 here - we upload separately
         }
       });
 
       if (submitError) throw submitError;
-      
-      if (data?.error) {
-        throw new Error(data.error);
+      if (data?.error) throw new Error(data.error);
+
+      const transactionId = data?.transactionId;
+
+      // 2. Generate PDF
+      const pdfResult = await generatePDF();
+
+      // 3. Upload PDF directly from client to Storage and attach to notification
+      if (pdfResult && transactionId) {
+        try {
+          const { data: linkData } = await supabase
+            .from('shared_payout_links')
+            .select('owner_user_id')
+            .eq('token', token)
+            .single();
+
+          if (linkData?.owner_user_id) {
+            const storagePath = `${linkData.owner_user_id}/${transactionId}/${pdfResult.fileName}`;
+
+            // Enforce max 25 PDF files per user
+            const { data: existingFiles } = await supabase.storage
+              .from('documents')
+              .list(linkData.owner_user_id, { sortBy: { column: 'created_at', order: 'asc' } });
+
+            if (existingFiles && existingFiles.length >= 25) {
+              const toDelete = existingFiles
+                .slice(0, existingFiles.length - 24)
+                .map((f: any) => `${linkData.owner_user_id}/${f.name}`);
+              if (toDelete.length > 0) {
+                await supabase.storage.from('documents').remove(toDelete);
+              }
+            }
+
+            const { error: uploadError } = await supabase.storage
+              .from('documents')
+              .upload(storagePath, pdfResult.pdfBlob, {
+                contentType: 'application/pdf',
+                upsert: true,
+              });
+
+            if (!uploadError) {
+              // Update the notification to include pdf_path
+              const { data: notifs } = await supabase
+                .from('notifications')
+                .select('id, metadata')
+                .eq('user_id', linkData.owner_user_id)
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+              if (notifs && notifs.length > 0) {
+                const existingMeta = (notifs[0].metadata as Record<string, any>) || {};
+                await supabase
+                  .from('notifications')
+                  .update({
+                    metadata: { ...existingMeta, pdf_path: storagePath }
+                  })
+                  .eq('id', notifs[0].id);
+              }
+            }
+          }
+        } catch (e) {
+          console.error('PDF upload failed (non-critical):', e);
+        }
       }
 
-      // Download PDF AFTER successful server submission
+      // 4. Download PDF locally
       if (pdfResult) {
         downloadPdfBlob(pdfResult.pdfBlob, pdfResult.fileName);
       }
 
       setIsSuccess(true);
-      toast({
-        title: t.success,
-        description: t.successMessage,
-      });
+      toast({ title: t.success, description: t.successMessage });
     } catch (err) {
       console.error('Save error:', err);
       const errorMessage = err instanceof Error ? err.message : t.cannotLoad;
