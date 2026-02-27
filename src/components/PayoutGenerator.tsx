@@ -595,15 +595,22 @@ export const PayoutGenerator = () => {
           const storagePath = `${user.id}/${savedTx.id}/${pdfResult.fileName}`;
           const pdfBytes = new Uint8Array(await pdfResult.pdfBlob.arrayBuffer());
 
-          // Enforce max 25 files: delete oldest beyond limit before uploading
-          const { data: existingFiles } = await supabase.storage
+          // Enforce max 25 files: list subfolders (transaction folders), delete oldest files
+          const { data: folders } = await supabase.storage
             .from('documents')
             .list(user.id, { sortBy: { column: 'created_at', order: 'asc' } });
 
-          if (existingFiles && existingFiles.length >= 25) {
-            const toDelete = existingFiles.slice(0, existingFiles.length - 24).map(f => `${user.id}/${f.name}`);
-            if (toDelete.length > 0) {
-              await supabase.storage.from('documents').remove(toDelete);
+          if (folders && folders.length >= 25) {
+            // folders are transaction-id directories — collect all files inside oldest ones
+            const foldersToDelete = folders.slice(0, folders.length - 24);
+            for (const folder of foldersToDelete) {
+              const { data: files } = await supabase.storage
+                .from('documents')
+                .list(`${user.id}/${folder.name}`);
+              if (files && files.length > 0) {
+                const filePaths = files.map(f => `${user.id}/${folder.name}/${f.name}`);
+                await supabase.storage.from('documents').remove(filePaths);
+              }
             }
           }
 
@@ -611,7 +618,9 @@ export const PayoutGenerator = () => {
             .from('documents')
             .upload(storagePath, pdfBytes, { contentType: 'application/pdf', upsert: true });
 
-          if (!uploadError) {
+          if (uploadError) {
+            console.error('PDF upload error:', uploadError);
+          } else {
             pdfPath = storagePath;
           }
         } catch (uploadErr) {

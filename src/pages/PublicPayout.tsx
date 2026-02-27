@@ -999,59 +999,26 @@ const PublicPayout = () => {
       // 2. Generate PDF
       const pdfResult = await generatePDF();
 
-      // 3. Upload PDF directly from client to Storage and attach to notification
+      // 3. Upload PDF via Edge Function (uses service role — bypasses RLS for anonymous users)
       if (pdfResult && transactionId) {
         try {
-          const { data: linkData } = await supabase
-            .from('shared_payout_links')
-            .select('owner_user_id')
-            .eq('token', token)
-            .single();
-
-          if (linkData?.owner_user_id) {
-            const storagePath = `${linkData.owner_user_id}/${transactionId}/${pdfResult.fileName}`;
-
-            // Enforce max 25 PDF files per user
-            const { data: existingFiles } = await supabase.storage
-              .from('documents')
-              .list(linkData.owner_user_id, { sortBy: { column: 'created_at', order: 'asc' } });
-
-            if (existingFiles && existingFiles.length >= 25) {
-              const toDelete = existingFiles
-                .slice(0, existingFiles.length - 24)
-                .map((f: any) => `${linkData.owner_user_id}/${f.name}`);
-              if (toDelete.length > 0) {
-                await supabase.storage.from('documents').remove(toDelete);
-              }
-            }
-
-            const { error: uploadError } = await supabase.storage
-              .from('documents')
-              .upload(storagePath, pdfResult.pdfBlob, {
-                contentType: 'application/pdf',
-                upsert: true,
-              });
-
-            if (!uploadError) {
-              // Update the notification to include pdf_path
-              const { data: notifs } = await supabase
-                .from('notifications')
-                .select('id, metadata')
-                .eq('user_id', linkData.owner_user_id)
-                .order('created_at', { ascending: false })
-                .limit(1);
-
-              if (notifs && notifs.length > 0) {
-                const existingMeta = (notifs[0].metadata as Record<string, any>) || {};
-                await supabase
-                  .from('notifications')
-                  .update({
-                    metadata: { ...existingMeta, pdf_path: storagePath }
-                  })
-                  .eq('id', notifs[0].id);
-              }
-            }
+          // Convert blob to base64
+          const arrayBuffer = await pdfResult.pdfBlob.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = '';
+          for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
           }
+          const pdfBase64 = btoa(binary);
+
+          await supabase.functions.invoke('upload-payout-pdf', {
+            body: {
+              token,
+              transactionId,
+              pdfBase64,
+              fileName: pdfResult.fileName,
+            },
+          });
         } catch (e) {
           console.error('PDF upload failed (non-critical):', e);
         }
