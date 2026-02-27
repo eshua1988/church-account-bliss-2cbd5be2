@@ -1850,16 +1850,18 @@ const PublicPayout = () => {
                       />
                     </div>
                     
-                    {/* Amount in Words */}
-                    <div className="space-y-2">
-                      <Label>{t.amountInWords} *</Label>
-                      <Textarea
-                        value={formData.amountInWords}
-                        readOnly
-                        rows={2}
-                        className="bg-muted cursor-not-allowed"
-                      />
-                    </div>
+                    {/* Amount in Words - hidden in stepwise mode (shown only in review step) */}
+                    {linkType === 'standard' && (
+                      <div className="space-y-2">
+                        <Label>{t.amountInWords} *</Label>
+                        <Textarea
+                          value={formData.amountInWords}
+                          readOnly
+                          rows={2}
+                          className="bg-muted cursor-not-allowed"
+                        />
+                      </div>
+                    )}
                   </>
                 )}
                 
