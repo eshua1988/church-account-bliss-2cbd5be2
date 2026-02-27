@@ -4,8 +4,7 @@ import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { formatDistanceToNow } from 'date-fns';
-import { ru } from 'date-fns/locale';
+import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { openPdfUrl } from '@/lib/pdfDownload';
 
@@ -88,10 +87,7 @@ const NotificationCard = ({
             </Button>
           )}
           <p className="text-xs text-muted-foreground mt-3">
-            {formatDistanceToNow(new Date(notification.created_at), {
-              addSuffix: true,
-              locale: ru,
-            })}
+            {format(new Date(notification.created_at), 'dd.MM.yyyy HH:mm')}
           </p>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">

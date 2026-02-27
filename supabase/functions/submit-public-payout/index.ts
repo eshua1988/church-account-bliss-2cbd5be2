@@ -26,8 +26,6 @@ interface SubmitPayoutRequest {
   amountInWords?: string;
   submitterName?: string;
   imagesSkipped?: boolean;
-  pdfBase64?: string;
-  pdfFileName?: string;
 }
 
 // Simple in-memory rate limiting (per token)
@@ -104,11 +102,6 @@ function validateInput(data: SubmitPayoutRequest): { valid: boolean; error?: str
     return { valid: false, error: 'Invalid category ID format' };
   }
 
-  // Limit PDF size (~10MB base64)
-  if (data.pdfBase64 && data.pdfBase64.length > 14_000_000) {
-    return { valid: false, error: 'PDF too large' };
-  }
-  
   return { valid: true };
 }
 
@@ -223,37 +216,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Upload PDF to storage if provided
-    let pdfPath: string | null = null;
-    let pdfUrl: string | null = null;
-
-    if (body.pdfBase64) {
-      try {
-        const pdfBytes = Uint8Array.from(atob(body.pdfBase64), c => c.charCodeAt(0));
-        const storagePath = `${linkData.owner_user_id}/${txData.id}/${body.pdfFileName || 'payout.pdf'}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('documents')
-          .upload(storagePath, pdfBytes, {
-            contentType: 'application/pdf',
-            upsert: true,
-          });
-
-        if (uploadError) {
-          console.error('PDF upload error:', uploadError);
-        } else {
-          pdfPath = storagePath;
-          const { data: urlData } = await supabase.storage
-            .from('documents')
-            .createSignedUrl(storagePath, 60 * 60 * 24 * 30);
-          pdfUrl = urlData?.signedUrl || null;
-          console.log('PDF uploaded successfully:', storagePath);
-        }
-      } catch (e) {
-        console.error('PDF processing error:', e);
-      }
-    }
-
     // Enforce max 25 notifications per user (delete oldest beyond limit)
     const { data: existingNotifs } = await supabase
       .from('notifications')
@@ -268,26 +230,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Enforce max 25 PDF files per user (delete oldest beyond limit)
-    if (pdfPath) {
-      const userPrefix = linkData.owner_user_id;
-      const { data: existingFiles } = await supabase.storage
-        .from('documents')
-        .list(userPrefix, { sortBy: { column: 'created_at', order: 'asc' } });
-
-      if (existingFiles && existingFiles.length >= 25) {
-        const toDeleteFiles = existingFiles.slice(0, existingFiles.length - 24).map((f: any) => `${userPrefix}/${f.name}`);
-        if (toDeleteFiles.length > 0) {
-          await supabase.storage.from('documents').remove(toDeleteFiles);
-        }
-      }
-    }
-
-    // Create notification with PDF metadata included
+    // Create notification (pdf_path will be attached by client after upload)
     const submitterInfo = body.submitterName || 'Аноним';
     const notificationTitle = 'Новый расходный ордер';
     const notificationMessage = `${submitterInfo} заполнил расходный ордер на ${body.amount} ${body.currency}`;
-    
+
     const notificationMetadata: Record<string, any> = {
       transaction_id: txData.id,
       amount: body.amount,
@@ -295,9 +242,6 @@ Deno.serve(async (req) => {
       submitter_name: submitterInfo,
       issued_to: body.issuedTo || null,
     };
-
-    if (pdfPath) notificationMetadata.pdf_path = pdfPath;
-    if (pdfUrl) notificationMetadata.pdf_url = pdfUrl;
 
     const { error: notifError } = await supabase
       .from('notifications')
@@ -313,7 +257,7 @@ Deno.serve(async (req) => {
       console.error('Failed to create notification:', notifError);
     }
 
-    console.log('Transaction saved successfully:', txData.id, 'PDF:', pdfPath ? 'yes' : 'no');
+    console.log('Transaction saved successfully:', txData.id);
 
     return new Response(
       JSON.stringify({ success: true, transactionId: txData.id }),
