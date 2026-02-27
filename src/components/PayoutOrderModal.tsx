@@ -73,7 +73,7 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
       .catch(console.error);
   }, []);
 
-  // Fetch transaction data
+  // Fetch transaction data + load files from Storage by transactionId
   useEffect(() => {
     if (!open || !transactionId) return;
     setIsLoading(true);
@@ -85,73 +85,75 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
 
     supabase
       .from('transactions')
-      .select('id, date, amount, currency, issued_to, description, amount_in_words, cashier_name, decision_number')
+      .select('id, date, amount, currency, issued_to, description, amount_in_words, cashier_name, decision_number, user_id')
       .eq('id', transactionId)
       .single()
-      .then(({ data: tx, error }) => {
+      .then(async ({ data: tx, error }) => {
         if (error || !tx) {
           toast({ title: 'Ошибка', description: 'Не удалось загрузить данные ордера', variant: 'destructive' });
           onClose();
-        } else {
-          setData(tx as PayoutOrderData);
-          setEditData(tx as PayoutOrderData);
+          setIsLoading(false);
+          return;
         }
+        setData(tx as PayoutOrderData);
+        setEditData(tx as PayoutOrderData);
         setIsLoading(false);
+
+        // Load attached files from Storage using user_id/transactionId folder
+        const folderPath = `${(tx as any).user_id}/${tx.id}`;
+        setIsLoadingFiles(true);
+        try {
+          const { data: files } = await supabase.storage
+            .from('documents')
+            .list(folderPath);
+
+          if (!files || files.length === 0) {
+            setIsLoadingFiles(false);
+            return;
+          }
+
+          // Find PDF, images and signature
+          const pdfFile = files.find(f => f.name.endsWith('.pdf'));
+          const imageFiles = files.filter(f => /^image_\d+\.(jpg|jpeg|png)$/i.test(f.name));
+          const sigFile = files.find(f => f.name === 'signature.png');
+
+          // PDF signed URL
+          if (pdfFile) {
+            const { data: urlData } = await supabase.storage
+              .from('documents')
+              .createSignedUrl(`${folderPath}/${pdfFile.name}`, 60 * 60 * 24 * 7);
+            if (urlData?.signedUrl) setPdfSignedUrl(urlData.signedUrl);
+          }
+
+          // Images signed URLs
+          const imgUrls: string[] = [];
+          for (const imgFile of imageFiles) {
+            const { data: urlData } = await supabase.storage
+              .from('documents')
+              .createSignedUrl(`${folderPath}/${imgFile.name}`, 60 * 60 * 24 * 7);
+            if (urlData?.signedUrl) imgUrls.push(urlData.signedUrl);
+          }
+          setAttachedImageUrls(imgUrls);
+
+          // Signature signed URL
+          if (sigFile) {
+            const { data: urlData } = await supabase.storage
+              .from('documents')
+              .createSignedUrl(`${folderPath}/signature.png`, 60 * 60 * 24 * 7);
+            if (urlData?.signedUrl) setSignatureUrl(urlData.signedUrl);
+          }
+        } catch (e) {
+          console.error('Error loading files:', e);
+        } finally {
+          setIsLoadingFiles(false);
+        }
       });
   }, [open, transactionId]);
 
   // Load signed URLs for PDF, signature and attached images from Storage
   useEffect(() => {
-    if (!open || !pdfPath) return;
-
-    // Extract folder: owner_user_id/transactionId
-    const parts = pdfPath.split('/');
-    const folderPath = parts.slice(0, 2).join('/'); // e.g. "user_id/tx_id"
-
-    setIsLoadingFiles(true);
-
-    // Load PDF signed URL
-    supabase.storage
-      .from('documents')
-      .createSignedUrl(pdfPath, 60 * 60 * 24 * 7)
-      .then(({ data: urlData }) => {
-        setPdfSignedUrl(urlData?.signedUrl || null);
-      })
-      .catch(console.error);
-
-    // List all files in the transaction folder
-    supabase.storage
-      .from('documents')
-      .list(folderPath)
-      .then(async ({ data: files }) => {
-        if (!files) { setIsLoadingFiles(false); return; }
-
-        // Filter images and signature
-        const imageFiles = files.filter(f => /^image_\d+\.(jpg|jpeg|png)$/i.test(f.name));
-        const sigFile = files.find(f => f.name === 'signature.png');
-
-        // Get signed URLs for images
-        const imgUrls: string[] = [];
-        for (const imgFile of imageFiles) {
-          const { data } = await supabase.storage
-            .from('documents')
-            .createSignedUrl(`${folderPath}/${imgFile.name}`, 60 * 60 * 24 * 7);
-          if (data?.signedUrl) imgUrls.push(data.signedUrl);
-        }
-        setAttachedImageUrls(imgUrls);
-
-        // Get signed URL for signature
-        if (sigFile) {
-          const { data } = await supabase.storage
-            .from('documents')
-            .createSignedUrl(`${folderPath}/signature.png`, 60 * 60 * 24 * 7);
-          if (data?.signedUrl) setSignatureUrl(data.signedUrl);
-        }
-
-        setIsLoadingFiles(false);
-      })
-      .catch(() => setIsLoadingFiles(false));
-  }, [open, pdfPath]);
+    // Files are now loaded in the transaction fetch effect above
+  }, [open]);
 
   // Signature drawing
   const getCoordinates = (e: React.MouseEvent | React.TouchEvent) => {
@@ -589,78 +591,76 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
               <p className="text-xs text-muted-foreground">Нарисуйте подпись для включения в PDF (необязательно)</p>
             </div>
 
-            {/* Attached files section: PDF, images, signature */}
-            {pdfPath && (
-              <div className="space-y-3 pt-2 border-t border-border">
-                <Label className="text-xs text-muted-foreground font-semibold">Прикреплённые файлы</Label>
+            {/* Attached files section: PDF, images, signature — always shown */}
+            <div className="space-y-3 pt-2 border-t border-border">
+              <Label className="text-xs text-muted-foreground font-semibold">Прикреплённые файлы</Label>
 
-                {isLoadingFiles ? (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Загрузка файлов...
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {/* Attached PDF */}
-                    {pdfSignedUrl && (
-                      <a
-                        href={pdfSignedUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 text-sm text-primary hover:underline bg-primary/5 border border-primary/20 rounded-md px-3 py-2"
-                      >
-                        <Download className="h-4 w-4" />
-                        Скачать PDF ордера
-                      </a>
-                    )}
+              {isLoadingFiles ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Загрузка файлов...
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Attached PDF */}
+                  {pdfSignedUrl && (
+                    <a
+                      href={pdfSignedUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 text-sm text-primary hover:underline bg-primary/5 border border-primary/20 rounded-md px-3 py-2"
+                    >
+                      <Download className="h-4 w-4" />
+                      Скачать PDF ордера
+                    </a>
+                  )}
 
-                    {/* Signature from Storage */}
-                    {signatureUrl && (
-                      <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground">Подпись получателя</p>
-                        <div className="border border-border rounded-md bg-white p-2 inline-block">
-                          <img
-                            src={signatureUrl}
-                            alt="Подпись"
-                            className="max-h-20 max-w-xs object-contain"
-                          />
-                        </div>
+                  {/* Signature from Storage */}
+                  {signatureUrl && (
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Подпись получателя</p>
+                      <div className="border border-border rounded-md bg-white p-2 inline-block">
+                        <img
+                          src={signatureUrl}
+                          alt="Подпись"
+                          className="max-h-20 max-w-xs object-contain"
+                        />
                       </div>
-                    )}
+                    </div>
+                  )}
 
-                    {/* Attached images from Storage */}
-                    {attachedImageUrls.length > 0 && (
-                      <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground">
-                          Прикреплённые фото ({attachedImageUrls.length})
-                        </p>
-                        <div className="grid grid-cols-2 gap-2">
-                          {attachedImageUrls.map((url, idx) => (
-                            <a
-                              key={idx}
-                              href={url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="block rounded-md overflow-hidden border border-border hover:opacity-80 transition-opacity"
-                            >
-                              <img
-                                src={url}
-                                alt={`Фото ${idx + 1}`}
-                                className="w-full h-32 object-cover"
-                              />
-                            </a>
-                          ))}
-                        </div>
+                  {/* Attached images from Storage */}
+                  {attachedImageUrls.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">
+                        Прикреплённые фото ({attachedImageUrls.length})
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {attachedImageUrls.map((url, idx) => (
+                          <a
+                            key={idx}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block rounded-md overflow-hidden border border-border hover:opacity-80 transition-opacity"
+                          >
+                            <img
+                              src={url}
+                              alt={`Фото ${idx + 1}`}
+                              className="w-full h-32 object-cover"
+                            />
+                          </a>
+                        ))}
                       </div>
-                    )}
+                    </div>
+                  )}
 
-                    {!pdfSignedUrl && !signatureUrl && attachedImageUrls.length === 0 && (
-                      <p className="text-sm text-muted-foreground">Файлы недоступны</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+                  {!pdfSignedUrl && !signatureUrl && attachedImageUrls.length === 0 && !isLoadingFiles && (
+                    <p className="text-sm text-muted-foreground italic">Нет прикреплённых файлов</p>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Action buttons */}
             <div className="flex flex-wrap gap-3 pt-2 border-t border-border">
