@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.telegram-bot]
 verify_jwt = false
+
+[functions.generate-payout-pdf]
+verify_jwt = false
