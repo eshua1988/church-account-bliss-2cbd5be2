@@ -445,7 +445,7 @@ const numberToWords = (num: number, currency: string, lang: string = 'pl'): stri
   result = result.trim() + ' ' + getCurrencyWord(intPart);
 
   if (decPart > 0) {
-  // Fractional unit names per currency and language
+    // Fractional unit names per currency and language
     const fractionalWords: Record<string, Record<string, string>> = {
       PLN: { pl: 'groszy', ru: 'грошей', uk: 'грошів', en: 'groszy' },
       EUR: { pl: 'centów', ru: 'центов', uk: 'центів', en: 'cents' },
@@ -455,7 +455,8 @@ const numberToWords = (num: number, currency: string, lang: string = 'pl'): stri
       BYN: { pl: 'kopiejek', ru: 'копеек', uk: 'копійок', en: 'kopecks' },
     };
     const fractUnit = fractionalWords[currency]?.[l] || fractionalWords['PLN'][l];
-    result += ` ${decPart}/100 ${fractUnit}`;
+    const decWords = convertHundreds(decPart);
+    result += ` ${decWords} ${fractUnit}`;
   }
 
   return result.charAt(0).toUpperCase() + result.slice(1);
