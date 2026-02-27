@@ -156,7 +156,7 @@ const translations: Record<Language, Record<string, string>> = {
     stepPhotos: 'Фото и вложения',
     stepSignature: 'Подпись',
     stepReview: 'Итоги',
-    downloadPdf: 'Скачать PDF',
+    downloadPdf: 'Отправить',
     reviewTitle: 'Проверьте данные перед отправкой',
   },
   en: {
@@ -215,7 +215,7 @@ const translations: Record<Language, Record<string, string>> = {
     stepPhotos: 'Photos',
     stepSignature: 'Signature',
     stepReview: 'Review',
-    downloadPdf: 'Download PDF',
+    downloadPdf: 'Send',
     reviewTitle: 'Review before sending',
   },
   uk: {
