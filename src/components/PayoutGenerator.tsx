@@ -547,13 +547,13 @@ export const PayoutGenerator = () => {
       doc.addImage(imageData, format, xPos, imgYPos, finalWidth, finalHeight);
     }
     
-    // Save PDF - iOS-compatible (doc.save uses <a download> which is blocked on Safari/iOS)
     const fileName = `dowod_wyplaty_${format(formData.date, 'yyyy-MM-dd')}_${formData.issuedTo.replace(/\s/g, '_') || 'dokument'}.pdf`;
     const pdfBlob = doc.output('blob');
-    downloadPdfBlob(pdfBlob, fileName);
+    const pdfBase64 = doc.output('datauristring').split(',')[1];
+    return { pdfBlob, pdfBase64, fileName };
   };
 
-  // Save transaction to database and sync to Google Sheets
+  // Save transaction to database, upload PDF, create notification, then download
   const saveAsTransaction = async () => {
     if (!user) {
       toast({
@@ -573,8 +573,8 @@ export const PayoutGenerator = () => {
         || expenseCategories[0]?.id 
         || 'other';
 
-      // Add transaction to database
-      await addTransaction({
+      // 1. Add transaction to database - get ID back
+      const savedTx = await addTransaction({
         type: 'expense',
         amount: parseFloat(formData.amount),
         currency: formData.currency as Currency,
@@ -585,30 +585,87 @@ export const PayoutGenerator = () => {
         amountInWords: formData.amountInWords,
       });
 
-      // Sync to Google Sheets if configured
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('spreadsheet_id')
-            .eq('user_id', user.id)
-            .single();
+      // 2. Generate PDF
+      const pdfResult = await generatePDF();
 
-          // Show success - auto-sync will handle Google Sheets if configured
-          toast({
-            title: t('payoutGenerateAndSave'),
-            description: `${formData.amount} ${CURRENCY_SYMBOLS[formData.currency as Currency]} - ${formData.issuedTo}`,
-          });
+      // 3. Upload PDF to storage and create notification with pdf_path
+      let pdfPath: string | null = null;
+      if (pdfResult && savedTx?.id) {
+        try {
+          const storagePath = `${user.id}/${savedTx.id}/${pdfResult.fileName}`;
+          const pdfBytes = new Uint8Array(await pdfResult.pdfBlob.arrayBuffer());
+
+          // Enforce max 25 files: delete oldest beyond limit before uploading
+          const { data: existingFiles } = await supabase.storage
+            .from('documents')
+            .list(user.id, { sortBy: { column: 'created_at', order: 'asc' } });
+
+          if (existingFiles && existingFiles.length >= 25) {
+            const toDelete = existingFiles.slice(0, existingFiles.length - 24).map(f => `${user.id}/${f.name}`);
+            if (toDelete.length > 0) {
+              await supabase.storage.from('documents').remove(toDelete);
+            }
+          }
+
+          const { error: uploadError } = await supabase.storage
+            .from('documents')
+            .upload(storagePath, pdfBytes, { contentType: 'application/pdf', upsert: true });
+
+          if (!uploadError) {
+            pdfPath = storagePath;
+          }
+        } catch (uploadErr) {
+          console.error('PDF upload error:', uploadErr);
         }
-      } catch (sheetError) {
-        console.error('Sheet sync error:', sheetError);
-        // Still show success for database save
-        toast({
-          title: t('payoutGenerateAndSave'),
-          description: `${formData.amount} ${CURRENCY_SYMBOLS[formData.currency as Currency]} - ${formData.issuedTo}`,
-        });
       }
+
+      // 4. Create notification
+      if (savedTx?.id) {
+        try {
+          // Enforce max 25 notifications: delete oldest beyond limit
+          const { data: existingNotifs } = await supabase
+            .from('notifications')
+            .select('id, created_at')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: true });
+
+          if (existingNotifs && existingNotifs.length >= 25) {
+            const toDeleteIds = existingNotifs.slice(0, existingNotifs.length - 24).map(n => n.id);
+            if (toDeleteIds.length > 0) {
+              await supabase.from('notifications').delete().in('id', toDeleteIds);
+            }
+          }
+
+          const notifMeta: Record<string, any> = {
+            transaction_id: savedTx.id,
+            amount: parseFloat(formData.amount),
+            currency: formData.currency,
+            issued_to: formData.issuedTo,
+          };
+          if (pdfPath) notifMeta.pdf_path = pdfPath;
+
+          await supabase.from('notifications').insert({
+            user_id: user.id,
+            title: 'Новый расходный ордер',
+            message: `Расходный ордер на ${formData.amount} ${formData.currency} — ${formData.issuedTo}`,
+            type: 'payout',
+            metadata: notifMeta,
+          });
+        } catch (notifErr) {
+          console.error('Notification error:', notifErr);
+        }
+      }
+
+      toast({
+        title: t('payoutGenerateAndSave'),
+        description: `${formData.amount} ${CURRENCY_SYMBOLS[formData.currency as Currency]} - ${formData.issuedTo}`,
+      });
+
+      // 5. Download PDF on device
+      if (pdfResult) {
+        downloadPdfBlob(pdfResult.pdfBlob, pdfResult.fileName);
+      }
+
     } catch (error) {
       console.error('Save error:', error);
       toast({
@@ -621,12 +678,8 @@ export const PayoutGenerator = () => {
     }
   };
 
-  // Save transaction first (instant), then download PDF in background
   const handleGenerateAndSave = async () => {
-    // 1. Save transaction and create notification immediately (no wait for PDF download)
     await saveAsTransaction();
-    // 2. Generate + download PDF after save (non-blocking feel: save happened already)
-    await generatePDF();
   };
 
   const isFormValid = formData.amount && formData.issuedTo && formData.departmentName && formData.basis && formData.amountInWords && (imagesOptional || attachedImages.length > 0);

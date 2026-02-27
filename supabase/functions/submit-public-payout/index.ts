@@ -254,6 +254,35 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Enforce max 25 notifications per user (delete oldest beyond limit)
+    const { data: existingNotifs } = await supabase
+      .from('notifications')
+      .select('id')
+      .eq('user_id', linkData.owner_user_id)
+      .order('created_at', { ascending: true });
+
+    if (existingNotifs && existingNotifs.length >= 25) {
+      const toDeleteIds = existingNotifs.slice(0, existingNotifs.length - 24).map((n: any) => n.id);
+      if (toDeleteIds.length > 0) {
+        await supabase.from('notifications').delete().in('id', toDeleteIds);
+      }
+    }
+
+    // Enforce max 25 PDF files per user (delete oldest beyond limit)
+    if (pdfPath) {
+      const userPrefix = linkData.owner_user_id;
+      const { data: existingFiles } = await supabase.storage
+        .from('documents')
+        .list(userPrefix, { sortBy: { column: 'created_at', order: 'asc' } });
+
+      if (existingFiles && existingFiles.length >= 25) {
+        const toDeleteFiles = existingFiles.slice(0, existingFiles.length - 24).map((f: any) => `${userPrefix}/${f.name}`);
+        if (toDeleteFiles.length > 0) {
+          await supabase.storage.from('documents').remove(toDeleteFiles);
+        }
+      }
+    }
+
     // Create notification with PDF metadata included
     const submitterInfo = body.submitterName || 'Аноним';
     const notificationTitle = 'Новый расходный ордер';
@@ -267,12 +296,8 @@ Deno.serve(async (req) => {
       issued_to: body.issuedTo || null,
     };
 
-    if (pdfPath) {
-      notificationMetadata.pdf_path = pdfPath;
-    }
-    if (pdfUrl) {
-      notificationMetadata.pdf_url = pdfUrl;
-    }
+    if (pdfPath) notificationMetadata.pdf_path = pdfPath;
+    if (pdfUrl) notificationMetadata.pdf_url = pdfUrl;
 
     const { error: notifError } = await supabase
       .from('notifications')
