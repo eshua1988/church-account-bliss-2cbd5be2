@@ -987,6 +987,7 @@ const PublicPayout = () => {
           amountInWords: formData.amountInWords,
           submitterName,
           imagesSkipped: imagesOptional,
+          departmentName: formData.departmentName,
           // No pdfBase64 here - we upload separately
         }
       });

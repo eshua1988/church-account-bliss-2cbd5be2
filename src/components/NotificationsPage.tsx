@@ -15,9 +15,10 @@ const NotificationCard = ({
   notification: Notification;
   onMarkAsRead: (id: string) => void;
   onDelete: (id: string) => void;
-  onOpenOrder: (transactionId: string) => void;
+  onOpenOrder: (transactionId: string, pdfPath?: string | null) => void;
 }) => {
   const transactionId = notification.metadata?.transaction_id;
+  const pdfPath = notification.metadata?.pdf_path as string | undefined;
 
   return (
     <div
@@ -48,7 +49,7 @@ const NotificationCard = ({
                 variant="default"
                 size="sm"
                 className="gap-2 h-8"
-                onClick={() => onOpenOrder(transactionId)}
+                onClick={() => onOpenOrder(transactionId, pdfPath)}
               >
                 <FileText className="h-3.5 w-3.5" />
                 Открыть ордер
@@ -94,6 +95,12 @@ export const NotificationsPage = () => {
     clearAllNotifications,
   } = useNotifications();
   const [orderTransactionId, setOrderTransactionId] = useState<string | null>(null);
+  const [orderPdfPath, setOrderPdfPath] = useState<string | null>(null);
+
+  const handleOpenOrder = (transactionId: string, pdfPath?: string | null) => {
+    setOrderTransactionId(transactionId);
+    setOrderPdfPath(pdfPath || null);
+  };
 
   return (
     <div className="animate-fade-in">
@@ -152,7 +159,7 @@ export const NotificationsPage = () => {
               notification={notification}
               onMarkAsRead={markAsRead}
               onDelete={deleteNotification}
-              onOpenOrder={setOrderTransactionId}
+              onOpenOrder={handleOpenOrder}
             />
           ))}
           <p className="text-xs text-center text-muted-foreground pt-2">
@@ -164,9 +171,10 @@ export const NotificationsPage = () => {
       <PayoutOrderModal
         transactionId={orderTransactionId}
         open={!!orderTransactionId}
-        onClose={() => setOrderTransactionId(null)}
-        onBack={() => setOrderTransactionId(null)}
+        onClose={() => { setOrderTransactionId(null); setOrderPdfPath(null); }}
+        onBack={() => { setOrderTransactionId(null); setOrderPdfPath(null); }}
         backLabel="К уведомлениям"
+        pdfPath={orderPdfPath}
       />
     </div>
   );

@@ -33,6 +33,7 @@ interface PayoutOrderModalProps {
   onClose: () => void;
   onBack?: () => void; // Optional: show back button (e.g. back to notifications)
   backLabel?: string;
+  pdfPath?: string | null; // Storage path to attached PDF
 }
 
 const loadFontAsBase64 = async (url: string): Promise<string> => {
@@ -46,7 +47,7 @@ const loadFontAsBase64 = async (url: string): Promise<string> => {
   });
 };
 
-export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLabel }: PayoutOrderModalProps) => {
+export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLabel, pdfPath }: PayoutOrderModalProps) => {
   const [data, setData] = useState<PayoutOrderData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -56,6 +57,8 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
   const [hasSignature, setHasSignature] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
   const [fontBase64, setFontBase64] = useState<string | null>(null);
+  const [pdfSignedUrl, setPdfSignedUrl] = useState<string | null>(null);
+  const [isLoadingPdf, setIsLoadingPdf] = useState(false);
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
   const { getExpenseCategories } = useSupabaseCategories();
@@ -74,6 +77,7 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
     setIsLoading(true);
     setIsEditing(false);
     setHasSignature(false);
+    setPdfSignedUrl(null);
 
     supabase
       .from('transactions')
@@ -91,6 +95,20 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
         setIsLoading(false);
       });
   }, [open, transactionId]);
+
+  // Load signed PDF URL from Storage if pdfPath provided
+  useEffect(() => {
+    if (!open || !pdfPath) return;
+    setIsLoadingPdf(true);
+    supabase.storage
+      .from('documents')
+      .createSignedUrl(pdfPath, 60 * 60 * 24 * 7) // 7 days
+      .then(({ data: urlData }) => {
+        setPdfSignedUrl(urlData?.signedUrl || null);
+      })
+      .catch(console.error)
+      .finally(() => setIsLoadingPdf(false));
+  }, [open, pdfPath]);
 
   // Signature drawing
   const getCoordinates = (e: React.MouseEvent | React.TouchEvent) => {
@@ -527,6 +545,31 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
               </div>
               <p className="text-xs text-muted-foreground">Нарисуйте подпись для включения в PDF (необязательно)</p>
             </div>
+
+            {/* Attached PDF from storage */}
+            {(pdfPath || isLoadingPdf) && (
+              <div className="space-y-2 pt-2 border-t border-border">
+                <Label className="text-xs text-muted-foreground">Прикреплённый PDF</Label>
+                {isLoadingPdf ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Загрузка файла...
+                  </div>
+                ) : pdfSignedUrl ? (
+                  <a
+                    href={pdfSignedUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-sm text-primary hover:underline bg-primary/5 border border-primary/20 rounded-md px-3 py-2"
+                  >
+                    <Download className="h-4 w-4" />
+                    Открыть / скачать PDF
+                  </a>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Файл недоступен</p>
+                )}
+              </div>
+            )}
 
             {/* Action buttons */}
             <div className="flex flex-wrap gap-3 pt-2 border-t border-border">
