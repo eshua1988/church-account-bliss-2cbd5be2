@@ -79,6 +79,24 @@ Deno.serve(async (req) => {
     const pdfBytes = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0));
     const storagePath = `${linkData.owner_user_id}/${transactionId}/${fileName || 'payout.pdf'}`;
 
+    // Enforce max 25 PDF files per user — list transaction-id folders, delete oldest
+    const { data: folders } = await supabase.storage
+      .from('documents')
+      .list(linkData.owner_user_id, { sortBy: { column: 'created_at', order: 'asc' } });
+
+    if (folders && folders.length >= 25) {
+      const foldersToDelete = folders.slice(0, folders.length - 24);
+      for (const folder of foldersToDelete) {
+        const { data: files } = await supabase.storage
+          .from('documents')
+          .list(`${linkData.owner_user_id}/${folder.name}`);
+        if (files && files.length > 0) {
+          const filePaths = files.map((f: any) => `${linkData.owner_user_id}/${folder.name}/${f.name}`);
+          await supabase.storage.from('documents').remove(filePaths);
+        }
+      }
+    }
+
     const { error: uploadError } = await supabase.storage
       .from('documents')
       .upload(storagePath, pdfBytes, {
@@ -101,18 +119,7 @@ Deno.serve(async (req) => {
 
     const pdfUrl = urlData?.signedUrl || null;
 
-    // Update the notification with PDF URL
-    const { error: notifError } = await supabase
-      .from('notifications')
-      .update({
-        metadata: supabase.rpc ? undefined : undefined, // We'll use raw update
-      })
-      .eq('user_id', linkData.owner_user_id)
-      .eq('type', 'payout')
-      .filter('metadata->>transaction_id', 'eq', transactionId);
-
-    // Use direct SQL-style update for JSONB merge
-    // Fetch existing notification first
+    // Find notification for this transaction and update with pdf_path
     const { data: notifData } = await supabase
       .from('notifications')
       .select('id, metadata')
