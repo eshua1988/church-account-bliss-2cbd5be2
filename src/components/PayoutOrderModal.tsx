@@ -1,17 +1,18 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { format } from 'date-fns';
-import { Download, Loader2, Eraser, Edit2, X, Calendar, Save } from 'lucide-react';
+import { Download, Loader2, Eraser, Edit2, X, Calendar, Save, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { downloadPdfBlob } from '@/lib/pdfDownload';
 import { useToast } from '@/hooks/use-toast';
+import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import jsPDF from 'jspdf';
 
 interface PayoutOrderData {
@@ -30,6 +31,8 @@ interface PayoutOrderModalProps {
   transactionId: string | null;
   open: boolean;
   onClose: () => void;
+  onBack?: () => void; // Optional: show back button (e.g. back to notifications)
+  backLabel?: string;
 }
 
 const loadFontAsBase64 = async (url: string): Promise<string> => {
@@ -43,7 +46,7 @@ const loadFontAsBase64 = async (url: string): Promise<string> => {
   });
 };
 
-export const PayoutOrderModal = ({ transactionId, open, onClose }: PayoutOrderModalProps) => {
+export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLabel }: PayoutOrderModalProps) => {
   const [data, setData] = useState<PayoutOrderData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -55,6 +58,8 @@ export const PayoutOrderModal = ({ transactionId, open, onClose }: PayoutOrderMo
   const [fontBase64, setFontBase64] = useState<string | null>(null);
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
+  const { getExpenseCategories } = useSupabaseCategories();
+  const expenseCategories = getExpenseCategories();
 
   // Load font
   useEffect(() => {
@@ -309,9 +314,22 @@ export const PayoutOrderModal = ({ transactionId, open, onClose }: PayoutOrderMo
     <Dialog open={open} onOpenChange={(v) => { if (!v) { onClose(); setIsEditing(false); } }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-primary">
-            Расходный ордер
-          </DialogTitle>
+          <div className="flex items-center gap-2">
+            {onBack && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { onClose(); onBack(); }}
+                className="gap-1 text-muted-foreground hover:text-foreground -ml-2"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                {backLabel || 'Назад'}
+              </Button>
+            )}
+            <DialogTitle className="flex items-center gap-2 text-primary">
+              Расходный ордер
+            </DialogTitle>
+          </div>
         </DialogHeader>
 
         {isLoading ? (
@@ -413,15 +431,34 @@ export const PayoutOrderModal = ({ transactionId, open, onClose }: PayoutOrderMo
               )}
             </div>
 
-            {/* Department (cashier_name field) */}
+            {/* Department (cashier_name field) — Select with categories in edit mode */}
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Nazwa działu</Label>
               {isEditing ? (
-                <Input
-                  value={editData.cashier_name || ''}
-                  onChange={(e) => setEditData(prev => ({ ...prev, cashier_name: e.target.value }))}
-                  className="text-sm"
-                />
+                expenseCategories.length > 0 ? (
+                  <Select
+                    value={editData.cashier_name || ''}
+                    onValueChange={(v) => setEditData(prev => ({ ...prev, cashier_name: v }))}
+                  >
+                    <SelectTrigger className="text-sm">
+                      <SelectValue placeholder="Выберите отдел..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {expenseCategories.map((cat) => (
+                        <SelectItem key={cat.id} value={cat.name}>
+                          {cat.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    value={editData.cashier_name || ''}
+                    onChange={(e) => setEditData(prev => ({ ...prev, cashier_name: e.target.value }))}
+                    className="text-sm"
+                    placeholder="Название отдела..."
+                  />
+                )
               ) : (
                 <p className="text-sm font-medium text-foreground bg-muted/40 rounded-md px-3 py-2 min-h-[36px]">
                   {data.cashier_name || '—'}

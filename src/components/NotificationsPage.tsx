@@ -165,6 +165,8 @@ export const NotificationsPage = () => {
         transactionId={orderTransactionId}
         open={!!orderTransactionId}
         onClose={() => setOrderTransactionId(null)}
+        onBack={() => setOrderTransactionId(null)}
+        backLabel="К уведомлениям"
       />
     </div>
   );
