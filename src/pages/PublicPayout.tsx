@@ -1508,15 +1508,16 @@ const PublicPayout = () => {
             {/* Continuing payout - simplified view */}
             {continuingPayout ? (
               <>
-                <Button
-                  onClick={goBack}
-                  variant="ghost"
-                  size="sm"
-                  className="mb-2"
-                >
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  {t.back}
-                </Button>
+                <div className="flex items-center justify-between mb-3">
+                  <Button
+                    onClick={goBack}
+                    variant="ghost"
+                    size="sm"
+                  >
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    {t.back}
+                  </Button>
+                </div>
                 <div className="bg-muted/50 p-4 rounded-lg space-y-2">
                   <p className="text-sm font-medium">{t.documentData}</p>
                   <div className="grid grid-cols-2 gap-2 text-sm">
@@ -1635,22 +1636,7 @@ const PublicPayout = () => {
               </>
             ) : (
               <>
-                {/* Back button */}
-                <Button
-                  onClick={() => {
-                    if (linkType === 'stepwise' && currentStep > 1) {
-                      setCurrentStep(currentStep - 1);
-                    } else {
-                      goBack();
-                    }
-                  }}
-                  variant="ghost"
-                  size="sm"
-                  className="mb-2"
-                >
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  {t.back}
-                </Button>
+                {/* Back button removed - moved to navigation row */}
                 
                 {/* Standard mode OR Stepwise Step 1: Basic Info */}
                 {(linkType === 'standard' || currentStep === 1) && (
@@ -1959,7 +1945,25 @@ const PublicPayout = () => {
                 
                 {/* Navigation Buttons */}
                 {linkType === 'stepwise' ? (
-                  <div className="flex gap-3 pt-4">
+                  <div className="flex items-center justify-between gap-3 pt-4">
+                    {/* Back button - left side */}
+                    <Button
+                      onClick={() => {
+                        if (currentStep > 1) {
+                          setCurrentStep(currentStep - 1);
+                        } else {
+                          goBack();
+                        }
+                      }}
+                      variant="ghost"
+                      size="lg"
+                      className="gap-2"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      {t.back}
+                    </Button>
+
+                    {/* Next / Download button - right side */}
                     {currentStep < totalSteps && (
                       <Button
                         onClick={() => setCurrentStep(currentStep + 1)}
@@ -1995,10 +1999,20 @@ const PublicPayout = () => {
                 ) : (
                   /* Standard mode Submit Button */
                   <div className="flex">
+                  <div className="flex items-center justify-between gap-3 pt-4">
+                    <Button
+                      onClick={goBack}
+                      variant="ghost"
+                      size="lg"
+                      className="gap-2"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      {t.back}
+                    </Button>
                     <Button
                       onClick={handleSubmit}
                       disabled={!isFormValid || !hasSignature || isSaving || !fontLoaded}
-                      className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+                      className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
                       size="lg"
                     >
                       {isSaving ? (
@@ -2009,6 +2023,7 @@ const PublicPayout = () => {
                       {t.saveAndDownload}
                     </Button>
                   </div>
+                </div>
                 )}
               </>
             )}
