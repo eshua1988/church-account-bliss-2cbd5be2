@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, FileDown, Loader2 } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, FileDown, Loader2, ChevronDown } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -48,6 +48,9 @@ const NotificationItem = ({
   onMarkAsRead: (id: string) => void;
   onDelete: (id: string) => void;
 }) => {
+  const [expanded, setExpanded] = useState(false);
+  const hasPdf = notification.metadata?.pdf_path || notification.metadata?.pdf_url;
+
   return (
     <div
       className={cn(
@@ -66,12 +69,25 @@ const NotificationItem = ({
           <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
             {notification.message}
           </p>
-          {(notification.metadata?.pdf_path || notification.metadata?.pdf_url) && (
-            <PdfDownloadButton metadata={notification.metadata} />
-          )}
           <p className="text-xs text-muted-foreground mt-2">
             {format(new Date(notification.created_at), 'dd.MM.yyyy HH:mm')}
           </p>
+          {hasPdf && (
+            <div className="mt-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); setExpanded(v => !v); }}
+                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+              >
+                <ChevronDown className={cn('h-3 w-3 transition-transform', expanded && 'rotate-180')} />
+                {expanded ? 'Скрыть' : 'Показать файл'}
+              </button>
+              {expanded && (
+                <div className="mt-1">
+                  <PdfDownloadButton metadata={notification.metadata as Record<string, any>} />
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           {!notification.is_read && (
