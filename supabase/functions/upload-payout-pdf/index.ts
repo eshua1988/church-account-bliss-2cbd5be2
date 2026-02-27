@@ -121,7 +121,12 @@ Deno.serve(async (req) => {
 
     // Decode base64 and upload to storage
     const pdfBytes = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0));
-    const storagePath = `${linkData.owner_user_id}/${transactionId}/${fileName || 'payout.pdf'}`;
+    // Sanitize fileName: replace non-ASCII chars and spaces to avoid storage key errors
+    const sanitizedFileName = (fileName || 'payout.pdf')
+      .replace(/[^\x00-\x7F]/g, '_')
+      .replace(/\s+/g, '_')
+      .replace(/[^a-zA-Z0-9._\-]/g, '_');
+    const storagePath = `${linkData.owner_user_id}/${transactionId}/${sanitizedFileName}`;
 
     // Enforce max 25 PDF files per user — list transaction-id folders, delete oldest
     const { data: folders } = await supabase.storage
