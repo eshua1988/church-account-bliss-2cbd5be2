@@ -26,6 +26,7 @@ interface SubmitPayoutRequest {
   amountInWords?: string;
   submitterName?: string;
   imagesSkipped?: boolean;
+  departmentName?: string;
 }
 
 // Simple in-memory rate limiting (per token)
@@ -204,6 +205,7 @@ Deno.serve(async (req) => {
         date: body.date,
         issued_to: body.issuedTo?.slice(0, MAX_TEXT_LENGTH) || null,
         amount_in_words: body.amountInWords?.slice(0, MAX_TEXT_LENGTH) || null,
+        cashier_name: body.departmentName?.slice(0, MAX_TEXT_LENGTH) || null,
       })
       .select('id')
       .single();

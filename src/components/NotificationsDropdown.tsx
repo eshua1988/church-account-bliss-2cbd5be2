@@ -25,9 +25,10 @@ const NotificationItem = ({
   notification: Notification;
   onMarkAsRead: (id: string) => void;
   onDelete: (id: string) => void;
-  onOpenOrder: (transactionId: string) => void;
+  onOpenOrder: (transactionId: string, pdfPath?: string | null) => void;
 }) => {
   const transactionId = notification.metadata?.transaction_id;
+  const pdfPath = notification.metadata?.pdf_path as string | undefined;
 
   return (
     <div
@@ -55,7 +56,7 @@ const NotificationItem = ({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  onOpenOrder(transactionId);
+                  onOpenOrder(transactionId, pdfPath);
                 }}
                 className="inline-flex items-center gap-1.5 text-xs bg-primary text-primary-foreground hover:bg-primary/90 font-medium px-2.5 py-1.5 rounded-md transition-colors"
               >
@@ -109,6 +110,12 @@ export const NotificationsDropdown = ({ collapsed = false }: NotificationsDropdo
     clearAllNotifications,
   } = useNotifications();
   const [orderTransactionId, setOrderTransactionId] = useState<string | null>(null);
+  const [orderPdfPath, setOrderPdfPath] = useState<string | null>(null);
+
+  const handleOpenOrder = (transactionId: string, pdfPath?: string | null) => {
+    setOrderTransactionId(transactionId);
+    setOrderPdfPath(pdfPath || null);
+  };
 
   return (
     <>
@@ -183,7 +190,7 @@ export const NotificationsDropdown = ({ collapsed = false }: NotificationsDropdo
                 notification={notification}
                 onMarkAsRead={markAsRead}
                 onDelete={deleteNotification}
-                onOpenOrder={setOrderTransactionId}
+                onOpenOrder={handleOpenOrder}
               />
             ))
           )}
@@ -194,7 +201,8 @@ export const NotificationsDropdown = ({ collapsed = false }: NotificationsDropdo
     <PayoutOrderModal
       transactionId={orderTransactionId}
       open={!!orderTransactionId}
-      onClose={() => setOrderTransactionId(null)}
+      onClose={() => { setOrderTransactionId(null); setOrderPdfPath(null); }}
+      pdfPath={orderPdfPath}
     />
     </>
   );
