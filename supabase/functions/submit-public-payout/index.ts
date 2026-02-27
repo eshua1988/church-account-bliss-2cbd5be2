@@ -106,6 +106,7 @@ function validateInput(data: SubmitPayoutRequest): { valid: boolean; error?: str
   return { valid: true };
 }
 
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });

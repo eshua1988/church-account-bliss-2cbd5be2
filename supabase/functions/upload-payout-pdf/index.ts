@@ -5,6 +5,50 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
+async function sendPdfToOwnerTelegram(
+  ownerUserId: string,
+  pdfBase64: string,
+  fileName: string,
+  supabase: ReturnType<typeof createClient>
+) {
+  const { data: telegramUsers } = await supabase
+    .from('telegram_users')
+    .select('telegram_chat_id, bot_token')
+    .eq('user_id', ownerUserId)
+    .eq('is_active', true);
+
+  if (!telegramUsers || telegramUsers.length === 0) return;
+
+  const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') || '';
+
+  const binaryStr = atob(pdfBase64);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+
+  for (const tgUser of telegramUsers) {
+    try {
+      const botToken = tgUser.bot_token || TELEGRAM_BOT_TOKEN;
+      const formData = new FormData();
+      formData.append('chat_id', String(tgUser.telegram_chat_id));
+      formData.append('caption', `📄 Новый расходный ордер\n${fileName}`);
+      formData.append('document', new Blob([bytes], { type: 'application/pdf' }), fileName);
+
+      const res = await fetch(`https://api.telegram.org/bot${botToken}/sendDocument`, {
+        method: 'POST',
+        body: formData,
+      });
+      const result = await res.json();
+      console.log(`PDF sent to Telegram chat ${tgUser.telegram_chat_id}:`, result.ok);
+    } catch (e) {
+      console.error(`Failed to send PDF to chat ${tgUser.telegram_chat_id}:`, e);
+    }
+  }
+}
+
+
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -182,6 +226,14 @@ Deno.serve(async (req) => {
     }
 
     console.log('PDF uploaded successfully for transaction:', transactionId);
+
+    // Send the uploaded PDF to owner via Telegram (fire-and-forget)
+    sendPdfToOwnerTelegram(
+      linkData.owner_user_id,
+      pdfBase64,
+      fileName || 'payout.pdf',
+      supabase
+    ).catch(e => console.error('Telegram PDF send error:', e));
 
     return new Response(
       JSON.stringify({ success: true, pdfUrl }),
