@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, FileDown, Loader2 } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, FileDown, Loader2, ChevronDown } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ const NotificationCard = ({
   onDelete: (id: string) => void;
 }) => {
   const [downloading, setDownloading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const handleDownloadPdf = useCallback(async () => {
     const meta = notification.metadata;
@@ -25,7 +26,6 @@ const NotificationCard = ({
 
     setDownloading(true);
     try {
-      // Try pdf_path first (generates fresh signed URL)
       const pdfPath = meta.pdf_path as string | undefined;
       if (pdfPath) {
         const { data } = await supabase.storage
@@ -36,7 +36,6 @@ const NotificationCard = ({
           return;
         }
       }
-      // Fallback to stored pdf_url
       const pdfUrl = meta.pdf_url as string | undefined;
       if (pdfUrl) {
         openPdfUrl(pdfUrl);
@@ -70,25 +69,38 @@ const NotificationCard = ({
           <p className="text-sm text-muted-foreground mt-1">
             {notification.message}
           </p>
-          {hasPdf && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-3 gap-2"
-              onClick={handleDownloadPdf}
-              disabled={downloading}
-            >
-              {downloading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <FileDown className="h-4 w-4" />
-              )}
-              Скачать PDF ордер
-            </Button>
-          )}
           <p className="text-xs text-muted-foreground mt-3">
             {format(new Date(notification.created_at), 'dd.MM.yyyy HH:mm')}
           </p>
+          {hasPdf && (
+            <div className="mt-2">
+              <button
+                onClick={() => setExpanded(v => !v)}
+                className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline font-medium"
+              >
+                <ChevronDown className={cn('h-4 w-4 transition-transform duration-200', expanded && 'rotate-180')} />
+                {expanded ? 'Скрыть файл' : 'Показать файл PDF'}
+              </button>
+              {expanded && (
+                <div className="mt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={handleDownloadPdf}
+                    disabled={downloading}
+                  >
+                    {downloading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <FileDown className="h-4 w-4" />
+                    )}
+                    Скачать PDF ордер
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           {!notification.is_read && (
