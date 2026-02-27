@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { downloadPdfBlob, openPdfUrl } from '@/lib/pdfDownload';
+import { openPdfUrl } from '@/lib/pdfDownload';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe, ArrowLeft, ArrowRight, Download } from 'lucide-react';
+import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe, ArrowLeft, ArrowRight, Send } from 'lucide-react';
 import currencyConvertIcon from '@/assets/currency-convert-icon.png';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -62,9 +62,9 @@ const translations: Record<Language, Record<string, string>> = {
     photoNote: 'Każde zdjęcie zostanie umieszczone na osobnej stronie PDF',
     signature: 'Podpis odbiorcy',
     clear: 'Wyczyść',
-    saveAndDownload: 'Zapisz i pobierz PDF',
-    saving: 'Zapisywanie...',
-    success: 'Zapisano!',
+    saveAndDownload: 'Wyślij',
+    saving: 'Wysyłanie...',
+    success: 'Wysłano!',
     successMessage: 'Dokument został zapisany. Możesz zamknąć tę stronę.',
     createAnother: 'Utwórz kolejny dokument',
     loading: 'Ładowanie...',
@@ -97,8 +97,8 @@ const translations: Record<Language, Record<string, string>> = {
     stepPhotos: 'Zdjęcia',
     stepSignature: 'Podpis',
     stepReview: 'Podsumowanie',
-    downloadPdf: 'Pobierz PDF',
-    reviewTitle: 'Sprawdź dane przed pobraniem',
+    downloadPdf: 'Wyślij',
+    reviewTitle: 'Sprawdź dane przed wysłaniem',
   },
   ru: {
     title: 'Расходный ордер',
@@ -121,9 +121,9 @@ const translations: Record<Language, Record<string, string>> = {
     photoNote: 'Каждое фото будет размещено на отдельной странице PDF',
     signature: 'Подпись получателя',
     clear: 'Очистить',
-    saveAndDownload: 'Сохранить и скачать PDF',
-    saving: 'Сохранение...',
-    success: 'Сохранено!',
+    saveAndDownload: 'Отправить',
+    saving: 'Отправка...',
+    success: 'Отправлено!',
     successMessage: 'Документ сохранён. Можете закрыть эту страницу.',
     createAnother: 'Создать ещё один документ',
     loading: 'Загрузка...',
@@ -157,7 +157,7 @@ const translations: Record<Language, Record<string, string>> = {
     stepSignature: 'Подпись',
     stepReview: 'Итоги',
     downloadPdf: 'Скачать PDF',
-    reviewTitle: 'Проверьте данные перед скачиванием',
+    reviewTitle: 'Проверьте данные перед отправкой',
   },
   en: {
     title: 'Payment Voucher',
@@ -180,10 +180,10 @@ const translations: Record<Language, Record<string, string>> = {
     photoNote: 'Each photo will be placed on a separate PDF page',
     signature: 'Recipient signature',
     clear: 'Clear',
-    saveAndDownload: 'Save and download PDF',
-    saving: 'Saving...',
-    success: 'Saved!',
-    successMessage: 'Document saved. You can close this page.',
+    saveAndDownload: 'Send',
+    saving: 'Sending...',
+    success: 'Sent!',
+    successMessage: 'Document sent. You can close this page.',
     createAnother: 'Create another document',
     loading: 'Loading...',
     invalidLink: 'Invalid link',
@@ -216,7 +216,7 @@ const translations: Record<Language, Record<string, string>> = {
     stepSignature: 'Signature',
     stepReview: 'Review',
     downloadPdf: 'Download PDF',
-    reviewTitle: 'Review before downloading',
+    reviewTitle: 'Review before sending',
   },
   uk: {
     title: 'Видатковий ордер',
@@ -239,9 +239,9 @@ const translations: Record<Language, Record<string, string>> = {
     photoNote: 'Кожне фото буде розміщено на окремій сторінці PDF',
     signature: 'Підпис отримувача',
     clear: 'Очистити',
-    saveAndDownload: 'Зберегти та завантажити PDF',
-    saving: 'Збереження...',
-    success: 'Збережено!',
+    saveAndDownload: 'Надіслати',
+    saving: 'Надсилання...',
+    success: 'Надіслано!',
     successMessage: 'Документ збережено. Можете закрити цю сторінку.',
     createAnother: 'Створити ще один документ',
     loading: 'Завантаження...',
@@ -274,8 +274,8 @@ const translations: Record<Language, Record<string, string>> = {
     stepPhotos: 'Фото та вкладення',
     stepSignature: 'Підпис',
     stepReview: 'Підсумок',
-    downloadPdf: 'Завантажити PDF',
-    reviewTitle: 'Перевірте дані перед завантаженням',
+    downloadPdf: 'Надіслати',
+    reviewTitle: 'Перевірте дані перед відправкою',
   },
 };
 
@@ -970,10 +970,8 @@ const PublicPayout = () => {
           }
         }
 
-        // Download PDF locally
-        if (pdfResult) {
-          downloadPdfBlob(pdfResult.pdfBlob, pdfResult.fileName);
-        }
+
+
 
         setIsSuccess(true);
         toast({ title: t.success, description: t.photosAdded });
@@ -1050,10 +1048,6 @@ const PublicPayout = () => {
         }
       }
 
-      // 4. Download PDF locally
-      if (pdfResult) {
-        downloadPdfBlob(pdfResult.pdfBlob, pdfResult.fileName);
-      }
 
       setIsSuccess(true);
       toast({ title: t.success, description: t.successMessage });
@@ -1575,7 +1569,7 @@ const PublicPayout = () => {
                       {isSaving ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
-                        <Download className="w-4 h-4" />
+                        <Send className="w-4 h-4" />
                       )}
                       {t.downloadPdf}
                     </Button>
@@ -1707,7 +1701,7 @@ const PublicPayout = () => {
                     {isSaving ? (
                       <Loader2 className="w-5 h-5 mr-2 animate-spin" />
                     ) : (
-                      <Save className="w-5 h-5 mr-2" />
+                      <Send className="w-5 h-5 mr-2" />
                     )}
                     {t.saveAndDownload}
                   </Button>
@@ -2059,7 +2053,7 @@ const PublicPayout = () => {
                       {isSaving ? (
                         <Loader2 className="w-5 h-5 mr-2 animate-spin" />
                       ) : (
-                        <Save className="w-5 h-5 mr-2" />
+                        <Send className="w-5 h-5 mr-2" />
                       )}
                       {t.saveAndDownload}
                     </Button>
