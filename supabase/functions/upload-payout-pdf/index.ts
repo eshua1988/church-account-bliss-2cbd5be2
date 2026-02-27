@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { token, transactionId, pdfBase64, fileName } = await req.json();
+    const { token, transactionId, pdfBase64, fileName, signatureBase64, images } = await req.json();
 
     if (!token || !transactionId || !pdfBase64) {
       return new Response(
@@ -110,6 +110,41 @@ Deno.serve(async (req) => {
         JSON.stringify({ error: 'Failed to upload PDF' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // Upload signature if provided
+    if (signatureBase64) {
+      try {
+        const sigBytes = Uint8Array.from(atob(signatureBase64), c => c.charCodeAt(0));
+        await supabase.storage
+          .from('documents')
+          .upload(`${linkData.owner_user_id}/${transactionId}/signature.png`, sigBytes, {
+            contentType: 'image/png',
+            upsert: true,
+          });
+      } catch (e) {
+        console.error('Signature upload failed:', e);
+      }
+    }
+
+    // Upload attached images
+    if (images && Array.isArray(images)) {
+      for (let i = 0; i < images.length; i++) {
+        try {
+          const imgData = images[i];
+          const imgBytes = Uint8Array.from(atob(imgData.base64), c => c.charCodeAt(0));
+          const ext = imgData.mimeType?.includes('png') ? 'png' : 'jpg';
+          const imgPath = `${linkData.owner_user_id}/${transactionId}/image_${i + 1}.${ext}`;
+          await supabase.storage
+            .from('documents')
+            .upload(imgPath, imgBytes, {
+              contentType: imgData.mimeType || 'image/jpeg',
+              upsert: true,
+            });
+        } catch (e) {
+          console.error(`Image ${i + 1} upload failed:`, e);
+        }
+      }
     }
 
     // Get signed URL (valid for 30 days)
