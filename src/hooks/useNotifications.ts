@@ -3,6 +3,15 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 
+export interface NotificationMetadata {
+  transaction_id?: string;
+  amount?: number;
+  currency?: string;
+  issued_to?: string;
+  submitter_name?: string;
+  [key: string]: unknown;
+}
+
 export interface Notification {
   id: string;
   user_id: string;
@@ -10,7 +19,7 @@ export interface Notification {
   message: string;
   type: string;
   is_read: boolean;
-  metadata: Record<string, any> | null;
+  metadata: NotificationMetadata | null;
   created_at: string;
 }
 
@@ -39,8 +48,11 @@ export const useNotifications = () => {
 
       if (error) throw error;
 
-      // Cast the data to our Notification type
-      const typedNotifications = (data || []) as Notification[];
+      // Cast the data to our Notification type, ensuring metadata is correctly typed
+      const typedNotifications: Notification[] = (data || []).map(n => ({
+        ...n,
+        metadata: n.metadata as NotificationMetadata | null,
+      }));
       setNotifications(typedNotifications);
       setUnreadCount(typedNotifications.filter(n => !n.is_read).length);
     } catch (error) {
