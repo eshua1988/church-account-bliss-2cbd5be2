@@ -1000,7 +1000,7 @@ const PublicPayout = () => {
       // 2. Generate PDF
       const pdfResult = await generatePDF();
 
-      // 3. Upload PDF via Edge Function (uses service role — bypasses RLS for anonymous users)
+      // 3. Upload PDF + images + signature via Edge Function
       if (pdfResult && transactionId) {
         try {
           // Convert blob to base64
@@ -1012,12 +1012,28 @@ const PublicPayout = () => {
           }
           const pdfBase64 = btoa(binary);
 
+          // Convert attached images to base64
+          const imagesBase64: { base64: string; mimeType: string; name: string }[] = [];
+          for (const img of attachedImages) {
+            const buf = await img.file.arrayBuffer();
+            const imgBytes = new Uint8Array(buf);
+            let imgBin = '';
+            for (let i = 0; i < imgBytes.byteLength; i++) imgBin += String.fromCharCode(imgBytes[i]);
+            imagesBase64.push({
+              base64: btoa(imgBin),
+              mimeType: img.file.type || 'image/jpeg',
+              name: img.file.name,
+            });
+          }
+
           await supabase.functions.invoke('upload-payout-pdf', {
             body: {
               token,
               transactionId,
               pdfBase64,
               fileName: pdfResult.fileName,
+              signatureBase64: signatureDataUrl ? signatureDataUrl.split(',')[1] : null,
+              images: imagesBase64,
             },
           });
         } catch (e) {

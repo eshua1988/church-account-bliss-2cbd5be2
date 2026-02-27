@@ -58,7 +58,9 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
   const [isDrawing, setIsDrawing] = useState(false);
   const [fontBase64, setFontBase64] = useState<string | null>(null);
   const [pdfSignedUrl, setPdfSignedUrl] = useState<string | null>(null);
-  const [isLoadingPdf, setIsLoadingPdf] = useState(false);
+  const [attachedImageUrls, setAttachedImageUrls] = useState<string[]>([]);
+  const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
   const { getExpenseCategories } = useSupabaseCategories();
@@ -78,6 +80,8 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
     setIsEditing(false);
     setHasSignature(false);
     setPdfSignedUrl(null);
+    setAttachedImageUrls([]);
+    setSignatureUrl(null);
 
     supabase
       .from('transactions')
@@ -96,18 +100,57 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
       });
   }, [open, transactionId]);
 
-  // Load signed PDF URL from Storage if pdfPath provided
+  // Load signed URLs for PDF, signature and attached images from Storage
   useEffect(() => {
     if (!open || !pdfPath) return;
-    setIsLoadingPdf(true);
+
+    // Extract folder: owner_user_id/transactionId
+    const parts = pdfPath.split('/');
+    const folderPath = parts.slice(0, 2).join('/'); // e.g. "user_id/tx_id"
+
+    setIsLoadingFiles(true);
+
+    // Load PDF signed URL
     supabase.storage
       .from('documents')
-      .createSignedUrl(pdfPath, 60 * 60 * 24 * 7) // 7 days
+      .createSignedUrl(pdfPath, 60 * 60 * 24 * 7)
       .then(({ data: urlData }) => {
         setPdfSignedUrl(urlData?.signedUrl || null);
       })
-      .catch(console.error)
-      .finally(() => setIsLoadingPdf(false));
+      .catch(console.error);
+
+    // List all files in the transaction folder
+    supabase.storage
+      .from('documents')
+      .list(folderPath)
+      .then(async ({ data: files }) => {
+        if (!files) { setIsLoadingFiles(false); return; }
+
+        // Filter images and signature
+        const imageFiles = files.filter(f => /^image_\d+\.(jpg|jpeg|png)$/i.test(f.name));
+        const sigFile = files.find(f => f.name === 'signature.png');
+
+        // Get signed URLs for images
+        const imgUrls: string[] = [];
+        for (const imgFile of imageFiles) {
+          const { data } = await supabase.storage
+            .from('documents')
+            .createSignedUrl(`${folderPath}/${imgFile.name}`, 60 * 60 * 24 * 7);
+          if (data?.signedUrl) imgUrls.push(data.signedUrl);
+        }
+        setAttachedImageUrls(imgUrls);
+
+        // Get signed URL for signature
+        if (sigFile) {
+          const { data } = await supabase.storage
+            .from('documents')
+            .createSignedUrl(`${folderPath}/signature.png`, 60 * 60 * 24 * 7);
+          if (data?.signedUrl) setSignatureUrl(data.signedUrl);
+        }
+
+        setIsLoadingFiles(false);
+      })
+      .catch(() => setIsLoadingFiles(false));
   }, [open, pdfPath]);
 
   // Signature drawing
@@ -546,27 +589,75 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
               <p className="text-xs text-muted-foreground">Нарисуйте подпись для включения в PDF (необязательно)</p>
             </div>
 
-            {/* Attached PDF from storage */}
-            {(pdfPath || isLoadingPdf) && (
-              <div className="space-y-2 pt-2 border-t border-border">
-                <Label className="text-xs text-muted-foreground">Прикреплённый PDF</Label>
-                {isLoadingPdf ? (
+            {/* Attached files section: PDF, images, signature */}
+            {pdfPath && (
+              <div className="space-y-3 pt-2 border-t border-border">
+                <Label className="text-xs text-muted-foreground font-semibold">Прикреплённые файлы</Label>
+
+                {isLoadingFiles ? (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Загрузка файла...
+                    Загрузка файлов...
                   </div>
-                ) : pdfSignedUrl ? (
-                  <a
-                    href={pdfSignedUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 text-sm text-primary hover:underline bg-primary/5 border border-primary/20 rounded-md px-3 py-2"
-                  >
-                    <Download className="h-4 w-4" />
-                    Открыть / скачать PDF
-                  </a>
                 ) : (
-                  <p className="text-sm text-muted-foreground">Файл недоступен</p>
+                  <div className="space-y-3">
+                    {/* Attached PDF */}
+                    {pdfSignedUrl && (
+                      <a
+                        href={pdfSignedUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 text-sm text-primary hover:underline bg-primary/5 border border-primary/20 rounded-md px-3 py-2"
+                      >
+                        <Download className="h-4 w-4" />
+                        Скачать PDF ордера
+                      </a>
+                    )}
+
+                    {/* Signature from Storage */}
+                    {signatureUrl && (
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Подпись получателя</p>
+                        <div className="border border-border rounded-md bg-white p-2 inline-block">
+                          <img
+                            src={signatureUrl}
+                            alt="Подпись"
+                            className="max-h-20 max-w-xs object-contain"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Attached images from Storage */}
+                    {attachedImageUrls.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">
+                          Прикреплённые фото ({attachedImageUrls.length})
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {attachedImageUrls.map((url, idx) => (
+                            <a
+                              key={idx}
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block rounded-md overflow-hidden border border-border hover:opacity-80 transition-opacity"
+                            >
+                              <img
+                                src={url}
+                                alt={`Фото ${idx + 1}`}
+                                className="w-full h-32 object-cover"
+                              />
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {!pdfSignedUrl && !signatureUrl && attachedImageUrls.length === 0 && (
+                      <p className="text-sm text-muted-foreground">Файлы недоступны</p>
+                    )}
+                  </div>
                 )}
               </div>
             )}
