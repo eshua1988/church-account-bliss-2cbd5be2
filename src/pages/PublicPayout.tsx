@@ -1489,7 +1489,7 @@ const PublicPayout = () => {
           </CardHeader>
           
           <CardContent className="pt-6 space-y-6">
-            {/* Stepwise mode - progress indicator */}
+            {/* Stepwise mode - progress indicator + navigation buttons */}
             {linkType === 'stepwise' && !continuingPayout && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-sm">
@@ -1502,6 +1502,57 @@ const PublicPayout = () => {
                   </span>
                 </div>
                 <Progress value={(currentStep / totalSteps) * 100} className="h-2" />
+                
+                {/* Navigation buttons right below progress bar */}
+                <div className="flex items-center justify-between gap-3 pt-1">
+                  <Button
+                    onClick={() => {
+                      if (currentStep > 1) {
+                        setCurrentStep(currentStep - 1);
+                      } else {
+                        goBack();
+                      }
+                    }}
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    {t.back}
+                  </Button>
+
+                  {currentStep < totalSteps && (
+                    <Button
+                      onClick={() => setCurrentStep(currentStep + 1)}
+                      disabled={
+                        (currentStep === 1 && (!formData.amount || !formData.issuedTo)) ||
+                        (currentStep === 2 && (!formData.departmentName || !formData.basis)) ||
+                        (currentStep === 3 && ((!imagesOptional && attachedImages.length === 0) || !hasSignature))
+                      }
+                      size="sm"
+                      className="gap-1"
+                    >
+                      {t.next}
+                      <ArrowRight className="w-4 h-4" />
+                    </Button>
+                  )}
+
+                  {currentStep === totalSteps && (
+                    <Button
+                      onClick={handleSubmit}
+                      disabled={!isFormValid || !hasSignature || isSaving || !fontLoaded}
+                      size="sm"
+                      className="gap-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+                    >
+                      {isSaving ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Download className="w-4 h-4" />
+                      )}
+                      {t.downloadPdf}
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
             
@@ -1943,62 +1994,8 @@ const PublicPayout = () => {
                   </div>
                 )}
                 
-                {/* Navigation Buttons */}
-                {linkType === 'stepwise' ? (
-                  <div className="flex items-center justify-between gap-3 pt-4">
-                    {/* Back button - left side */}
-                    <Button
-                      onClick={() => {
-                        if (currentStep > 1) {
-                          setCurrentStep(currentStep - 1);
-                        } else {
-                          goBack();
-                        }
-                      }}
-                      variant="ghost"
-                      size="lg"
-                      className="gap-2"
-                    >
-                      <ArrowLeft className="w-4 h-4" />
-                      {t.back}
-                    </Button>
-
-                    {/* Next / Download button - right side */}
-                    {currentStep < totalSteps && (
-                      <Button
-                        onClick={() => setCurrentStep(currentStep + 1)}
-                        disabled={
-                          (currentStep === 1 && (!formData.amount || !formData.issuedTo)) ||
-                          (currentStep === 2 && (!formData.departmentName || !formData.basis)) ||
-                          (currentStep === 3 && ((!imagesOptional && attachedImages.length === 0) || !hasSignature))
-                        }
-                        className="flex-1"
-                        size="lg"
-                      >
-                        {t.next}
-                        <ArrowRight className="w-4 h-4 ml-2" />
-                      </Button>
-                    )}
-                    
-                    {currentStep === totalSteps && (
-                      <Button
-                        onClick={handleSubmit}
-                        disabled={!isFormValid || !hasSignature || isSaving || !fontLoaded}
-                        className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
-                        size="lg"
-                      >
-                        {isSaving ? (
-                          <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                        ) : (
-                          <Download className="w-5 h-5 mr-2" />
-                        )}
-                        {t.downloadPdf}
-                      </Button>
-                    )}
-                  </div>
-                ) : (
-                  /* Standard mode Submit Button */
-                  <div className="flex">
+                {/* Navigation Buttons - standard mode only (stepwise uses buttons near progress bar) */}
+                {linkType !== 'stepwise' && (
                   <div className="flex items-center justify-between gap-3 pt-4">
                     <Button
                       onClick={goBack}
@@ -2023,7 +2020,6 @@ const PublicPayout = () => {
                       {t.saveAndDownload}
                     </Button>
                   </div>
-                </div>
                 )}
               </>
             )}
