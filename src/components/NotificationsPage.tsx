@@ -1,24 +1,64 @@
 import { useState } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, FileText } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, FileText, Download, Loader2 } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { format } from 'date-fns';
-import { PayoutOrderModal } from '@/components/PayoutOrderModal';
+import { supabase } from '@/integrations/supabase/client';
 
 const NotificationCard = ({
   notification,
   onMarkAsRead,
   onDelete,
-  onOpenOrder,
 }: {
   notification: Notification;
   onMarkAsRead: (id: string) => void;
   onDelete: (id: string) => void;
-  onOpenOrder: (transactionId: string, pdfPath?: string | null) => void;
 }) => {
-  const transactionId = notification.metadata?.transaction_id;
+  const [isDownloading, setIsDownloading] = useState(false);
+  const transactionId = notification.metadata?.transaction_id as string | undefined;
   const pdfPath = notification.metadata?.pdf_path as string | undefined;
+
+  const handleDownloadPdf = async () => {
+    if (!transactionId) return;
+    setIsDownloading(true);
+    try {
+      // Try pdf_path from metadata first, then fallback to listing storage folder
+      let filePath = pdfPath;
+
+      if (!filePath) {
+        // Find owner_user_id from the transaction via a storage listing heuristic
+        // We'll use the notification user_id as the owner
+        const userId = notification.user_id;
+        const { data: files } = await supabase.storage
+          .from('documents')
+          .list(`${userId}/${transactionId}`);
+        const pdfFile = files?.find(f => f.name.endsWith('.pdf'));
+        if (pdfFile) {
+          filePath = `${userId}/${transactionId}/${pdfFile.name}`;
+        }
+      }
+
+      if (!filePath) {
+        alert('PDF файл не найден');
+        return;
+      }
+
+      const { data: urlData } = await supabase.storage
+        .from('documents')
+        .createSignedUrl(filePath, 60 * 60);
+
+      if (urlData?.signedUrl) {
+        window.open(urlData.signedUrl, '_blank');
+      } else {
+        alert('Не удалось получить ссылку на PDF');
+      }
+    } catch (e) {
+      console.error('PDF download error:', e);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   return (
     <div
@@ -49,10 +89,15 @@ const NotificationCard = ({
                 variant="default"
                 size="sm"
                 className="gap-2 h-8"
-                onClick={() => onOpenOrder(transactionId, pdfPath)}
+                onClick={handleDownloadPdf}
+                disabled={isDownloading}
               >
-                <FileText className="h-3.5 w-3.5" />
-                Открыть ордер
+                {isDownloading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Download className="h-3.5 w-3.5" />
+                )}
+                {isDownloading ? 'Загрузка...' : 'Скачать PDF'}
               </Button>
             </div>
           )}
@@ -94,13 +139,6 @@ export const NotificationsPage = () => {
     deleteNotification,
     clearAllNotifications,
   } = useNotifications();
-  const [orderTransactionId, setOrderTransactionId] = useState<string | null>(null);
-  const [orderPdfPath, setOrderPdfPath] = useState<string | null>(null);
-
-  const handleOpenOrder = (transactionId: string, pdfPath?: string | null) => {
-    setOrderTransactionId(transactionId);
-    setOrderPdfPath(pdfPath || null);
-  };
 
   return (
     <div className="animate-fade-in">
@@ -159,7 +197,6 @@ export const NotificationsPage = () => {
               notification={notification}
               onMarkAsRead={markAsRead}
               onDelete={deleteNotification}
-              onOpenOrder={handleOpenOrder}
             />
           ))}
           <p className="text-xs text-center text-muted-foreground pt-2">
@@ -167,15 +204,6 @@ export const NotificationsPage = () => {
           </p>
         </div>
       )}
-
-      <PayoutOrderModal
-        transactionId={orderTransactionId}
-        open={!!orderTransactionId}
-        onClose={() => { setOrderTransactionId(null); setOrderPdfPath(null); }}
-        onBack={() => { setOrderTransactionId(null); setOrderPdfPath(null); }}
-        backLabel="К уведомлениям"
-        pdfPath={orderPdfPath}
-      />
     </div>
   );
 };
