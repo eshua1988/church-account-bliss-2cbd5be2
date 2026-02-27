@@ -144,9 +144,16 @@ export const useNotifications = () => {
           table: 'notifications',
           filter: `user_id=eq.${user.id}`,
         },
-        (payload) => {
-          const newNotification = payload.new as Notification;
-          setNotifications(prev => [newNotification, ...prev]);
+        async (payload) => {
+          // Fetch full notification data including metadata (Realtime may not include JSONB fields)
+          const { data: fullNotif } = await supabase
+            .from('notifications')
+            .select('*')
+            .eq('id', payload.new.id)
+            .single();
+
+          const newNotification = (fullNotif || payload.new) as Notification;
+          setNotifications(prev => [newNotification, ...prev.filter(n => n.id !== newNotification.id)]);
           setUnreadCount(prev => prev + 1);
           
           // Show toast for new notification
