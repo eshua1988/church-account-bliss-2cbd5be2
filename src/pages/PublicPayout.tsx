@@ -94,7 +94,8 @@ const translations: Record<Language, Record<string, string>> = {
     step: 'Krok',
     stepBasicInfo: 'Podstawowe dane',
     stepCategory: 'Kategoria i opis',
-    stepPhotos: 'Zdjęcia i podpis',
+    stepPhotos: 'Zdjęcia',
+    stepSignature: 'Podpis',
     stepReview: 'Podsumowanie',
     downloadPdf: 'Pobierz PDF',
     reviewTitle: 'Sprawdź dane przed pobraniem',
@@ -152,7 +153,8 @@ const translations: Record<Language, Record<string, string>> = {
     step: 'Шаг',
     stepBasicInfo: 'Основные данные',
     stepCategory: 'Категория и описание',
-    stepPhotos: 'Фото и подпись',
+    stepPhotos: 'Фото и вложения',
+    stepSignature: 'Подпись',
     stepReview: 'Итоги',
     downloadPdf: 'Скачать PDF',
     reviewTitle: 'Проверьте данные перед скачиванием',
@@ -210,7 +212,8 @@ const translations: Record<Language, Record<string, string>> = {
     step: 'Step',
     stepBasicInfo: 'Basic info',
     stepCategory: 'Category & description',
-    stepPhotos: 'Photos & signature',
+    stepPhotos: 'Photos',
+    stepSignature: 'Signature',
     stepReview: 'Review',
     downloadPdf: 'Download PDF',
     reviewTitle: 'Review before downloading',
@@ -268,7 +271,8 @@ const translations: Record<Language, Record<string, string>> = {
     step: 'Крок',
     stepBasicInfo: 'Основні дані',
     stepCategory: 'Категорія та опис',
-    stepPhotos: 'Фото та підпис',
+    stepPhotos: 'Фото та вкладення',
+    stepSignature: 'Підпис',
     stepReview: 'Підсумок',
     downloadPdf: 'Завантажити PDF',
     reviewTitle: 'Перевірте дані перед завантаженням',
@@ -441,13 +445,17 @@ const numberToWords = (num: number, currency: string, lang: string = 'pl'): stri
   result = result.trim() + ' ' + getCurrencyWord(intPart);
 
   if (decPart > 0) {
-    const copeckWords: Record<string, string> = {
-      pl: 'groszy',
-      ru: 'копеек',
-      uk: 'копійок',
-      en: 'cents',
+  // Fractional unit names per currency and language
+    const fractionalWords: Record<string, Record<string, string>> = {
+      PLN: { pl: 'groszy', ru: 'грошей', uk: 'грошів', en: 'groszy' },
+      EUR: { pl: 'centów', ru: 'центов', uk: 'центів', en: 'cents' },
+      USD: { pl: 'centów', ru: 'центов', uk: 'центів', en: 'cents' },
+      UAH: { pl: 'kopiejek', ru: 'копеек', uk: 'копійок', en: 'kopiyok' },
+      RUB: { pl: 'kopiejek', ru: 'копеек', uk: 'копійок', en: 'kopecks' },
+      BYN: { pl: 'kopiejek', ru: 'копеек', uk: 'копійок', en: 'kopecks' },
     };
-    result += ` ${decPart}/100 ${copeckWords[l] || 'cents'}`;
+    const fractUnit = fractionalWords[currency]?.[l] || fractionalWords['PLN'][l];
+    result += ` ${decPart}/100 ${fractUnit}`;
   }
 
   return result.charAt(0).toUpperCase() + result.slice(1);
@@ -507,7 +515,7 @@ const PublicPayout = () => {
   // Link type and stepwise mode
   const [linkType, setLinkType] = useState<LinkType>('standard');
   const [currentStep, setCurrentStep] = useState(1);
-  const totalSteps = 4;
+  const totalSteps = 5;
   
   // Translation helper
   const t = translations[language];
@@ -1515,7 +1523,8 @@ const PublicPayout = () => {
                     {currentStep === 1 && t.stepBasicInfo}
                     {currentStep === 2 && t.stepCategory}
                     {currentStep === 3 && t.stepPhotos}
-                    {currentStep === 4 && t.stepReview}
+                    {currentStep === 4 && t.stepSignature}
+                    {currentStep === 5 && t.stepReview}
                   </span>
                 </div>
                 <Progress value={(currentStep / totalSteps) * 100} className="h-2" />
@@ -1544,7 +1553,8 @@ const PublicPayout = () => {
                       disabled={
                         (currentStep === 1 && (!formData.amount || !formData.issuedTo)) ||
                         (currentStep === 2 && (!formData.departmentName || !formData.basis)) ||
-                        (currentStep === 3 && ((!imagesOptional && attachedImages.length === 0) || !hasSignature))
+                        (currentStep === 3 && (!imagesOptional && attachedImages.length === 0)) ||
+                        (currentStep === 4 && !hasSignature)
                       }
                       size="sm"
                       className="gap-1"
@@ -1795,13 +1805,17 @@ const PublicPayout = () => {
                       </div>
                     </div>
                     
-                    {/* Bank Account */}
+                    {/* Bank Account - digits and + only */}
                     <div className="space-y-2">
                       <Label>{t.bankAccount}</Label>
                       <Input
                         placeholder={t.bankAccountPlaceholder}
                         value={formData.bankAccount}
-                        onChange={(e) => handleInputChange('bankAccount', e.target.value)}
+                        inputMode="tel"
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9+]/g, '');
+                          handleInputChange('bankAccount', val);
+                        }}
                       />
                     </div>
                   </>
@@ -1854,7 +1868,7 @@ const PublicPayout = () => {
                   </>
                 )}
                 
-                {/* Standard mode OR Stepwise Step 3: Photos & Signature */}
+                {/* Standard mode OR Stepwise Step 3: Photos only */}
                 {(linkType === 'standard' || currentStep === 3) && (
                   <>
                     {/* Image Attachments Toggle */}
@@ -1890,16 +1904,22 @@ const PublicPayout = () => {
                           className="hidden"
                           disabled={imagesOptional}
                         />
-                        <Button
+                        {/* Wide, prominent photo button */}
+                        <button
                           type="button"
-                          variant="outline"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="w-full border-dashed"
+                          onClick={() => !imagesOptional && fileInputRef.current?.click()}
                           disabled={imagesOptional}
+                          className={cn(
+                            "w-full flex flex-col items-center justify-center gap-2 py-6 px-4 rounded-xl border-2 border-dashed transition-all duration-200",
+                            imagesOptional
+                              ? "border-border text-muted-foreground cursor-not-allowed"
+                              : "border-primary/50 text-primary hover:border-primary hover:bg-primary/5 active:bg-primary/10 cursor-pointer"
+                          )}
                         >
-                          <ImagePlus className="w-4 h-4 mr-2" />
-                          {t.addPhotos}
-                        </Button>
+                          <ImagePlus className="w-8 h-8" />
+                          <span className="text-base font-semibold">{t.addPhotos}</span>
+                          <span className="text-xs text-muted-foreground">{t.photoNote}</span>
+                        </button>
                         
                         {attachedImages.length > 0 && (
                           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
@@ -1908,12 +1928,12 @@ const PublicPayout = () => {
                                 <img
                                   src={img.preview}
                                   alt={`${t.attachments} ${index + 1}`}
-                                  className="w-full h-20 object-cover rounded-lg border border-border"
+                                  className="w-full h-24 object-cover rounded-lg border border-border"
                                 />
                                 <button
                                   type="button"
                                   onClick={() => removeImage(index)}
-                                  className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 shadow-md"
                                 >
                                   <X className="w-3 h-3" />
                                 </button>
@@ -1921,12 +1941,14 @@ const PublicPayout = () => {
                             ))}
                           </div>
                         )}
-                        <p className="text-xs text-muted-foreground mt-2">
-                          {t.photoNote}
-                        </p>
                       </div>
                     </div>
-                    
+                  </>
+                )}
+                
+                {/* Standard mode OR Stepwise Step 4: Signature only */}
+                {(linkType === 'standard' || currentStep === 4) && (
+                  <>
                     {/* Signature */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
@@ -1942,28 +1964,32 @@ const PublicPayout = () => {
                           {t.clear}
                         </Button>
                       </div>
-                      <div className="border-2 border-dashed rounded-lg bg-white">
+                      <p className="text-xs text-muted-foreground">Нарисуйте подпись пальцем в поле ниже</p>
+                      <div className="border-2 border-dashed border-primary/40 rounded-xl bg-white overflow-hidden"
+                        style={{ touchAction: 'none' }}
+                      >
                         <canvas
                           ref={signatureCanvasRef}
                           width={600}
-                          height={150}
-                          className="w-full h-32 cursor-crosshair touch-none rounded-lg"
-                          style={{ backgroundColor: 'white' }}
+                          height={200}
+                          className="w-full h-40 cursor-crosshair rounded-xl"
+                          style={{ backgroundColor: 'white', touchAction: 'none', display: 'block' }}
                           onMouseDown={startDrawing}
                           onMouseMove={draw}
                           onMouseUp={stopDrawing}
                           onMouseLeave={stopDrawing}
-                          onTouchStart={startDrawing}
-                          onTouchMove={draw}
-                          onTouchEnd={stopDrawing}
+                          onTouchStart={(e) => { e.preventDefault(); startDrawing(e); }}
+                          onTouchMove={(e) => { e.preventDefault(); draw(e); }}
+                          onTouchEnd={(e) => { e.preventDefault(); stopDrawing(); }}
                         />
                       </div>
+                      {hasSignature && <p className="text-xs text-success">✓ Подпись добавлена</p>}
                     </div>
                   </>
                 )}
                 
                 {/* Stepwise Step 4: Review */}
-                {linkType === 'stepwise' && currentStep === 4 && (
+                {linkType === 'stepwise' && currentStep === 5 && (
                   <div className="space-y-4">
                     <h3 className="font-semibold">{t.reviewTitle}</h3>
                     <div className="bg-muted/50 p-4 rounded-lg space-y-3">
