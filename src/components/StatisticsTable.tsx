@@ -323,17 +323,91 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
           ))}
         </div>
 
-        {/* Transactions Table */}
-        <div className="rounded-md border overflow-auto max-h-[400px]">
-          <table className="text-sm">
+        {/* Transactions — mobile cards / desktop table */}
+
+        {/* Mobile: card list */}
+        <div className="sm:hidden space-y-2">
+          {filteredTransactions.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">{t('noTransactions')}</p>
+          ) : (
+            filteredTransactions.map(transaction => {
+              const isExpanded = expandedTransactions.has(transaction.id);
+              return (
+                <React.Fragment key={transaction.id}>
+                  <div
+                    className={cn(
+                      'rounded-lg border p-3 transition-colors',
+                      selectedTransactions.has(transaction.id) ? 'bg-muted/50' : 'bg-card'
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Checkbox
+                          checked={selectedTransactions.has(transaction.id)}
+                          onCheckedChange={() => toggleTransaction(transaction.id)}
+                        />
+                        <span className={cn(
+                          'w-2 h-2 rounded-full flex-shrink-0',
+                          transaction.type === 'income' ? 'bg-success' : 'bg-destructive'
+                        )} />
+                        <span className="text-sm truncate">{getCategoryName(transaction.category)}</span>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <span className={cn(
+                          'text-sm font-semibold',
+                          transaction.type === 'income' ? 'text-success' : 'text-destructive'
+                        )}>
+                          {transaction.type === 'income' ? '+' : '-'}{transaction.amount.toLocaleString(getDateLocale())} {CURRENCY_SYMBOLS[transaction.currency]}
+                        </span>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0" onClick={() => toggleExpand(transaction.id)}>
+                          {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </Button>
+                        {onDelete && (
+                          <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-destructive" onClick={() => onDelete(transaction.id)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 ml-8">
+                      {format(new Date(transaction.date), 'dd.MM.yyyy')}
+                    </p>
+                    {isExpanded && (
+                      <div className="mt-3 pt-3 border-t grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <p className="text-muted-foreground text-xs">{t('type')}</p>
+                          <p className={cn('font-medium', transaction.type === 'income' ? 'text-success' : 'text-destructive')}>
+                            {transaction.type === 'income' ? t('incomeType') : t('expense')}
+                          </p>
+                        </div>
+                        {transaction.description && (
+                          <div className="col-span-2">
+                            <p className="text-muted-foreground text-xs">{t('description')}</p>
+                            <p className="font-medium">{transaction.description}</p>
+                          </div>
+                        )}
+                        {transaction.issuedTo && (
+                          <div className="col-span-2">
+                            <p className="text-muted-foreground text-xs">Wydano</p>
+                            <p className="font-medium">{transaction.issuedTo}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </React.Fragment>
+              );
+            })
+          )}
+        </div>
+
+        {/* Desktop: table */}
+        <div className="hidden sm:block rounded-md border overflow-auto max-h-[500px]">
+          <table className="w-full text-sm">
             <thead className="sticky top-0 bg-background z-10 [&_tr]:border-b">
               <tr className="border-b">
                 <th className="h-12 w-10 px-2 text-left align-middle font-medium text-muted-foreground">
-                  <Checkbox
-                    checked={isAllSelected}
-                    onCheckedChange={toggleAllTransactions}
-                    aria-label="Select all"
-                  />
+                  <Checkbox checked={isAllSelected} onCheckedChange={toggleAllTransactions} aria-label="Select all" />
                 </th>
                 <th className="h-12 px-3 text-left align-middle font-medium text-muted-foreground whitespace-nowrap">{t('date')}</th>
                 <th className="h-12 px-3 text-left align-middle font-medium text-muted-foreground">{t('category')}</th>
@@ -356,49 +430,28 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
                     <React.Fragment key={transaction.id}>
                       <tr className={cn("border-b transition-colors hover:bg-muted/50", selectedTransactions.has(transaction.id) && "bg-muted/50")}>
                         <td className="p-4 w-10 px-2 align-middle">
-                          <Checkbox
-                            checked={selectedTransactions.has(transaction.id)}
-                            onCheckedChange={() => toggleTransaction(transaction.id)}
-                            aria-label={`Select transaction ${transaction.id}`}
-                          />
+                          <Checkbox checked={selectedTransactions.has(transaction.id)} onCheckedChange={() => toggleTransaction(transaction.id)} aria-label={`Select transaction ${transaction.id}`} />
                         </td>
                         <td className="p-4 px-3 whitespace-nowrap align-middle">
                           {format(new Date(transaction.date), 'dd.MM.yyyy')}
                         </td>
                         <td className="p-4 px-3 align-middle">
                           <div className="flex items-center gap-2">
-                            <span className={cn(
-                              'w-2 h-2 rounded-full flex-shrink-0',
-                              transaction.type === 'income' ? 'bg-success' : 'bg-destructive'
-                            )} />
+                            <span className={cn('w-2 h-2 rounded-full flex-shrink-0', transaction.type === 'income' ? 'bg-success' : 'bg-destructive')} />
                             <span className="truncate">{getCategoryName(transaction.category)}</span>
                           </div>
                         </td>
-                        <td className={cn(
-                          'p-4 px-2 text-right font-semibold whitespace-nowrap align-middle',
-                          transaction.type === 'income' ? 'text-success' : 'text-destructive'
-                        )}>
-                          {transaction.type === 'income' ? '+' : '-'}
-                          {transaction.amount.toLocaleString(getDateLocale())} {CURRENCY_SYMBOLS[transaction.currency]}
+                        <td className={cn('p-4 px-2 text-right font-semibold whitespace-nowrap align-middle', transaction.type === 'income' ? 'text-success' : 'text-destructive')}>
+                          {transaction.type === 'income' ? '+' : '-'}{transaction.amount.toLocaleString(getDateLocale())} {CURRENCY_SYMBOLS[transaction.currency]}
                         </td>
                         <td className="p-4 w-8 px-1 align-middle">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={() => toggleExpand(transaction.id)}
-                          >
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => toggleExpand(transaction.id)}>
                             {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                           </Button>
                         </td>
                         {onDelete && (
                           <td className="p-4 w-8 px-1 align-middle">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                              onClick={() => onDelete(transaction.id)}
-                            >
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => onDelete(transaction.id)}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </td>

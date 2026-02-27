@@ -276,8 +276,8 @@ const Index = () => {
                   <TabsTrigger value="pie" className="text-xs sm:text-sm">{t('categoryDistribution')}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="table">
-                  <div className="overflow-x-auto -mx-3 sm:mx-0">
-                    <div className="min-w-[600px] sm:min-w-0 px-3 sm:px-0">
+                  <div>
+                    <div>
                       <StatisticsTable 
                         transactions={transactions} 
                         getCategoryName={getCategoryName} 
