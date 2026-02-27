@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
+import { openPdfUrl } from '@/lib/pdfDownload';
 
 const NotificationCard = ({
   notification,
@@ -49,7 +50,7 @@ const NotificationCard = ({
         .createSignedUrl(filePath, 60 * 60);
 
       if (urlData?.signedUrl) {
-        window.open(urlData.signedUrl, '_blank');
+        openPdfUrl(urlData.signedUrl);
       } else {
         alert('Не удалось получить ссылку на PDF');
       }
