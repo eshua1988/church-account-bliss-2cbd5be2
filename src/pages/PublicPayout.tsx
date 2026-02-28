@@ -512,6 +512,7 @@ const PublicPayout = () => {
   const [language, setLanguage] = useState<Language>('ru');
   const [imagesOptional, setImagesOptional] = useState(false); // false = images required by default
   const [showConverter, setShowConverter] = useState(false);
+  const [conversionInfo, setConversionInfo] = useState<{ fromAmount: string; fromCurrency: string; toAmount: string; toCurrency: string; rate: string } | null>(null);
   
   // Link type and stepwise mode
   const [linkType, setLinkType] = useState<LinkType>('standard');
@@ -813,7 +814,18 @@ const PublicPayout = () => {
     drawCell(amountTableX, yPos, smallLabelWidth + 10, rowHeight, `Kwota (${formData.currency})`, { fill: true });
     drawCell(amountTableX + smallLabelWidth + 10, yPos, smallValueWidth - 10, rowHeight, `${currencySymbol} ${formData.amount}`);
     
-    yPos += rowHeight + 8;
+    yPos += rowHeight + 4;
+
+    // Conversion info row (if currency was converted)
+    if (conversionInfo) {
+      const convText = `Konwersja: ${conversionInfo.fromAmount} ${conversionInfo.fromCurrency} → ${conversionInfo.toAmount} ${conversionInfo.toCurrency} (kurs: 1 ${conversionInfo.fromCurrency} = ${conversionInfo.rate} ${conversionInfo.toCurrency})`;
+      const convLabelWidth = 50;
+      drawCell(leftMargin, yPos, convLabelWidth, rowHeight, 'Konwersja', { fill: true });
+      drawCell(leftMargin + convLabelWidth, yPos, tableWidth - convLabelWidth, rowHeight, `${conversionInfo.fromAmount} ${conversionInfo.fromCurrency} → ${conversionInfo.toAmount} ${conversionInfo.toCurrency}  (1 ${conversionInfo.fromCurrency} = ${conversionInfo.rate} ${conversionInfo.toCurrency})`);
+      yPos += rowHeight + 4;
+    } else {
+      yPos += 4;
+    }
     
     // Main table rows
     drawTableRow(yPos, 'Wydano (imię nazwisko)', formData.issuedTo);
@@ -1121,6 +1133,9 @@ const PublicPayout = () => {
       basis: '',
       amountInWords: '',
     });
+    
+    // Reset conversion info
+    setConversionInfo(null);
     
     // Reset images and signature
     attachedImages.forEach(img => URL.revokeObjectURL(img.preview));
@@ -1747,7 +1762,7 @@ const PublicPayout = () => {
                       <div className="space-y-2">
                         <Label>{t.amount} *</Label>
                         <div className="flex gap-2">
-                          <Select value={formData.currency} onValueChange={(v) => handleInputChange('currency', v)}>
+                          <Select value={formData.currency} onValueChange={(v) => { handleInputChange('currency', v); setConversionInfo(null); }}>
                             <SelectTrigger className="w-20">
                               <SelectValue />
                             </SelectTrigger>
@@ -1762,33 +1777,11 @@ const PublicPayout = () => {
                             step="0.01"
                             placeholder="0.00"
                             value={formData.amount}
-                            onChange={(e) => handleInputChange('amount', e.target.value)}
+                            onChange={(e) => { handleInputChange('amount', e.target.value); setConversionInfo(null); }}
                             className="flex-1"
                           />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            onClick={() => setShowConverter(true)}
-                            title={t.amount}
-                          >
-                            <img src={currencyConvertIcon} alt="Convert" className="w-5 h-5" />
-                          </Button>
                         </div>
                       </div>
-                      
-                      {/* Currency Converter Dialog */}
-                      <CurrencyConverter
-                        isOpen={showConverter}
-                        onClose={() => setShowConverter(false)}
-                        onApply={(amount, currency) => {
-                          handleInputChange('amount', amount);
-                          handleInputChange('currency', currency);
-                        }}
-                        currentAmount={formData.amount}
-                        currentCurrency={formData.currency}
-                        language={language}
-                      />
                       
                       <div className="space-y-2">
                         <Label>{t.issuedTo} *</Label>
@@ -1799,6 +1792,48 @@ const PublicPayout = () => {
                         />
                       </div>
                     </div>
+
+                    {/* Currency Converter Button - standalone row */}
+                    <div className="flex items-center gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setShowConverter(true)}
+                        className="flex items-center gap-2 px-4 py-2 h-10"
+                      >
+                        <img src={currencyConvertIcon} alt="Convert" className="w-5 h-5" />
+                        <span className="text-sm font-medium">
+                          {language === 'ru' ? 'Конвертировать валюту' :
+                           language === 'uk' ? 'Конвертувати валюту' :
+                           language === 'pl' ? 'Konwertuj walutę' :
+                           'Convert currency'}
+                        </span>
+                      </Button>
+                      {conversionInfo && (
+                        <span className="text-sm text-muted-foreground">
+                          {conversionInfo.fromAmount} {conversionInfo.fromCurrency} → {conversionInfo.toAmount} {conversionInfo.toCurrency}
+                          {' '}(1 {conversionInfo.fromCurrency} = {conversionInfo.rate} {conversionInfo.toCurrency})
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Currency Converter Dialog */}
+                    <CurrencyConverter
+                      isOpen={showConverter}
+                      onClose={() => setShowConverter(false)}
+                      onApply={(amount, currency) => {
+                        const fromAmt = formData.amount;
+                        const fromCurr = formData.currency;
+                        const staticRates: Record<string, number> = { USD: 1, EUR: 0.92, PLN: 4.0, UAH: 41.5, RUB: 96.0, BYN: 3.27 };
+                        const rate = ((staticRates[currency] || 1) / (staticRates[fromCurr] || 1)).toFixed(4);
+                        setConversionInfo({ fromAmount: fromAmt, fromCurrency: fromCurr, toAmount: amount, toCurrency: currency, rate });
+                        handleInputChange('amount', amount);
+                        handleInputChange('currency', currency);
+                      }}
+                      currentAmount={formData.amount}
+                      currentCurrency={formData.currency}
+                      language={language}
+                    />
                     
                     {/* Bank Account - digits and + only */}
                     <div className="space-y-2">
