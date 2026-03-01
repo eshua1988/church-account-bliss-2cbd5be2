@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { token, transactionId, pdfBase64, fileName, signatureBase64, images } = await req.json();
+    const { token, transactionId, pdfBase64, fileName, signatureBase64, images, telegramOnly } = await req.json();
 
     if (!token || !transactionId || !pdfBase64) {
       return new Response(
@@ -116,6 +116,20 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({ error: 'Transaction not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // If telegramOnly mode - skip storage upload, just send via Telegram
+    if (telegramOnly) {
+      sendPdfToOwnerTelegram(
+        linkData.owner_user_id,
+        pdfBase64,
+        fileName || 'payout.pdf',
+        supabase
+      ).catch(e => console.error('Telegram PDF send error:', e));
+      return new Response(
+        JSON.stringify({ success: true }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
