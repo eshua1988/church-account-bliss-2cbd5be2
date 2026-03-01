@@ -1083,33 +1083,16 @@ const PublicPayout = () => {
                 }
               }
 
-              // Send PDF via Edge Function: update notification pdf_path + send Telegram
-              try {
-                const arrayBuffer = await pdfResult.pdfBlob.arrayBuffer();
-                const bytes = new Uint8Array(arrayBuffer);
-                // Chunked btoa to avoid call stack overflow on large PDFs
-                const chunkSize = 8192;
-                let binary = '';
-                for (let i = 0; i < bytes.byteLength; i += chunkSize) {
-                  const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.byteLength));
-                  for (let j = 0; j < chunk.length; j++) {
-                    binary += String.fromCharCode(chunk[j]);
-                  }
-                }
-                const pdfBase64 = btoa(binary);
-                supabase.functions.invoke('upload-payout-pdf', {
-                  body: {
-                    token,
-                    transactionId,
-                    pdfBase64,
-                    fileName: pdfResult.fileName,
-                    pdfPath: storagePath,
-                    telegramAndNotify: true,
-                  },
-                }).catch(e => console.error('Telegram/notify send error:', e));
-              } catch (e) {
-                console.error('Telegram PDF send error:', e);
-              }
+              // Notify edge function: update notification pdf_path + send Telegram
+              // No base64 needed - EF downloads from Storage directly
+              supabase.functions.invoke('upload-payout-pdf', {
+                body: {
+                  token,
+                  transactionId,
+                  pdfPath: storagePath,
+                  fileName: pdfResult.fileName,
+                },
+              }).catch(e => console.error('Notify/Telegram error:', e));
             }
           }
         } catch (e) {
