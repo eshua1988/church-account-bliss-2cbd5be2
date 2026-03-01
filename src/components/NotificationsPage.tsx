@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, FileText, Download, Loader2 } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2 } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { openPdfUrl } from '@/lib/pdfDownload';
+import { useToast } from '@/hooks/use-toast';
 
 const NotificationCard = ({
   notification,
@@ -17,6 +18,7 @@ const NotificationCard = ({
   onDelete: (id: string) => void;
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
+  const { toast } = useToast();
   const transactionId = notification.metadata?.transaction_id as string | undefined;
   const pdfPath = notification.metadata?.pdf_path as string | undefined;
 
@@ -28,12 +30,11 @@ const NotificationCard = ({
       let filePath = pdfPath;
 
       if (!filePath) {
-        // Find owner_user_id from the transaction via a storage listing heuristic
-        // We'll use the notification user_id as the owner
         const userId = notification.user_id;
-        const { data: files } = await supabase.storage
+        const { data: files, error: listError } = await supabase.storage
           .from('documents')
           .list(`${userId}/${transactionId}`);
+        if (listError) console.error('Storage list error:', listError);
         const pdfFile = files?.find(f => f.name.endsWith('.pdf'));
         if (pdfFile) {
           filePath = `${userId}/${transactionId}/${pdfFile.name}`;
@@ -41,21 +42,24 @@ const NotificationCard = ({
       }
 
       if (!filePath) {
-        alert('PDF файл не найден');
+        toast({ title: 'PDF не найден', description: 'Файл ещё не загружен или был удалён', variant: 'destructive' });
         return;
       }
 
-      const { data: urlData } = await supabase.storage
+      const { data: urlData, error: urlError } = await supabase.storage
         .from('documents')
         .createSignedUrl(filePath, 60 * 60);
+
+      if (urlError) console.error('Signed URL error:', urlError);
 
       if (urlData?.signedUrl) {
         openPdfUrl(urlData.signedUrl);
       } else {
-        alert('Не удалось получить ссылку на PDF');
+        toast({ title: 'Ошибка', description: 'Не удалось получить ссылку на PDF', variant: 'destructive' });
       }
     } catch (e) {
       console.error('PDF download error:', e);
+      toast({ title: 'Ошибка загрузки PDF', variant: 'destructive' });
     } finally {
       setIsDownloading(false);
     }
