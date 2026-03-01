@@ -1019,42 +1019,115 @@ const PublicPayout = () => {
       // 2. Generate PDF
       const pdfResult = await generatePDF();
 
-      // 3. Upload PDF + images + signature via Edge Function
+      // 3. Upload PDF directly to Storage from client (no edge function needed)
       if (pdfResult && transactionId) {
         try {
-          // Convert blob to base64
-          const arrayBuffer = await pdfResult.pdfBlob.arrayBuffer();
-          const bytes = new Uint8Array(arrayBuffer);
-          let binary = '';
-          for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
-          }
-          const pdfBase64 = btoa(binary);
+          // Get owner_user_id via token validation result (already validated above)
+          const { data: linkData } = await supabase
+            .from('shared_payout_links')
+            .select('owner_user_id')
+            .eq('token', token)
+            .single();
 
-          // Convert attached images to base64
-          const imagesBase64: { base64: string; mimeType: string; name: string }[] = [];
-          for (const img of attachedImages) {
-            const buf = await img.file.arrayBuffer();
-            const imgBytes = new Uint8Array(buf);
-            let imgBin = '';
-            for (let i = 0; i < imgBytes.byteLength; i++) imgBin += String.fromCharCode(imgBytes[i]);
-            imagesBase64.push({
-              base64: btoa(imgBin),
-              mimeType: img.file.type || 'image/jpeg',
-              name: img.file.name,
-            });
-          }
+          if (linkData?.owner_user_id) {
+            const ownerId = linkData.owner_user_id;
 
-          await supabase.functions.invoke('upload-payout-pdf', {
-            body: {
-              token,
-              transactionId,
-              pdfBase64,
-              fileName: pdfResult.fileName,
-              signatureBase64: signatureDataUrl ? signatureDataUrl.split(',')[1] : null,
-              images: imagesBase64,
-            },
-          });
+            // Sanitize filename
+            const sanitizedFileName = pdfResult.fileName
+              .replace(/[^\x00-\x7F]/g, '_')
+              .replace(/\s+/g, '_')
+              .replace(/[^a-zA-Z0-9._\-]/g, '_');
+            const storagePath = `${ownerId}/${transactionId}/${sanitizedFileName}`;
+
+            // Upload PDF blob directly
+            const { error: uploadError } = await supabase.storage
+              .from('documents')
+              .upload(storagePath, pdfResult.pdfBlob, {
+                contentType: 'application/pdf',
+                upsert: true,
+              });
+
+            if (uploadError) {
+              console.error('PDF upload error:', uploadError);
+            } else {
+              // Upload signature if present
+              if (signatureDataUrl) {
+                try {
+                  const sigBase64 = signatureDataUrl.split(',')[1];
+                  const sigBytes = Uint8Array.from(atob(sigBase64), c => c.charCodeAt(0));
+                  await supabase.storage
+                    .from('documents')
+                    .upload(`${ownerId}/${transactionId}/signature.png`, sigBytes, {
+                      contentType: 'image/png',
+                      upsert: true,
+                    });
+                } catch (e) {
+                  console.error('Signature upload failed:', e);
+                }
+              }
+
+              // Upload attached images
+              for (let i = 0; i < attachedImages.length; i++) {
+                try {
+                  const img = attachedImages[i];
+                  const imgBuf = await img.file.arrayBuffer();
+                  const ext = img.file.type.includes('png') ? 'png' : 'jpg';
+                  await supabase.storage
+                    .from('documents')
+                    .upload(`${ownerId}/${transactionId}/image_${i + 1}.${ext}`, imgBuf, {
+                      contentType: img.file.type || 'image/jpeg',
+                      upsert: true,
+                    });
+                } catch (e) {
+                  console.error(`Image ${i + 1} upload failed:`, e);
+                }
+              }
+
+              // Update notification with pdf_path
+              try {
+                const { data: notifData } = await supabase
+                  .from('notifications')
+                  .select('id, metadata')
+                  .eq('user_id', ownerId)
+                  .eq('type', 'payout')
+                  .order('created_at', { ascending: false })
+                  .limit(5);
+
+                if (notifData) {
+                  const targetNotif = notifData.find(
+                    (n: any) => n.metadata?.transaction_id === transactionId
+                  );
+                  if (targetNotif) {
+                    await supabase
+                      .from('notifications')
+                      .update({
+                        metadata: {
+                          ...(targetNotif.metadata as Record<string, any>),
+                          pdf_path: storagePath,
+                        },
+                      })
+                      .eq('id', targetNotif.id);
+                  }
+                }
+              } catch (e) {
+                console.error('Notification update failed:', e);
+              }
+
+              // Send PDF via Telegram (fire-and-forget via edge function - small call)
+              try {
+                const arrayBuffer = await pdfResult.pdfBlob.arrayBuffer();
+                const bytes = new Uint8Array(arrayBuffer);
+                let binary = '';
+                for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+                const pdfBase64 = btoa(binary);
+                supabase.functions.invoke('upload-payout-pdf', {
+                  body: { token, transactionId, pdfBase64, fileName: pdfResult.fileName, telegramOnly: true },
+                }).catch(e => console.error('Telegram send error:', e));
+              } catch (e) {
+                console.error('Telegram PDF send error:', e);
+              }
+            }
+          }
         } catch (e) {
           console.error('PDF upload failed (non-critical):', e);
         }
