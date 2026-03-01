@@ -95,59 +95,96 @@ export const useGoogleSheetsSync = ({
       // Headers: ID, Date, Income, [Category columns...]
       const headers = ['ID', 'Date', 'Income', ...sortedCategories.map(([, name]) => name)];
       
-      const sortedTxs = [...txs].sort((a, b) => {
-        const dateA = new Date(a.date).getTime();
-        const dateB = new Date(b.date).getTime();
-        if (dateA !== dateB) return dateB - dateA;
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      });
-      
-      // Create rows with amounts in appropriate columns
-      const rows = sortedTxs.map(tx => {
-        const row: string[] = new Array(headers.length).fill('');
-        row[0] = tx.id; // ID
-        row[1] = new Date(tx.date).toLocaleDateString('pl-PL'); // Date
-        
-        if (tx.type === 'income') {
-          row[2] = `${tx.amount} ${tx.currency}`; // Income column
-        } else {
-          // Find the category column index
-          const categoryIndex = sortedCategories.findIndex(([id]) => id === tx.category);
-          if (categoryIndex !== -1) {
-            row[3 + categoryIndex] = `${tx.amount} ${tx.currency}`; // Category column
-          }
-        }
-        return row;
+      // Group transactions by date (date string key)
+      const dateMap = new Map<string, Transaction[]>();
+      for (const tx of txs) {
+        const dateKey = new Date(tx.date).toLocaleDateString('pl-PL');
+        if (!dateMap.has(dateKey)) dateMap.set(dateKey, []);
+        dateMap.get(dateKey)!.push(tx);
+      }
+
+      // Sort dates descending
+      const sortedDates = Array.from(dateMap.keys()).sort((a, b) => {
+        const parse = (s: string) => {
+          const [d, m, y] = s.split('.');
+          return new Date(+y, +m - 1, +d).getTime();
+        };
+        return parse(b) - parse(a);
       });
 
-      // Create notes for cells with amounts (Description, Issued To, Date)
+      // Build rows: one row per date, accumulating amounts per column
+      const rows: string[][] = [];
       const notes: { row: number; col: number; note: string }[] = [];
-      sortedTxs.forEach((tx, index) => {
-        const noteParts: string[] = [];
-        if (tx.description) noteParts.push(`Описание: ${tx.description}`);
-        if (tx.type === 'expense' && tx.issuedTo) noteParts.push(`Кому: ${tx.issuedTo}`);
-        noteParts.push(`Дата: ${new Date(tx.date).toLocaleDateString('pl-PL')}`);
-        
-        if (noteParts.length > 0) {
+
+      sortedDates.forEach((dateKey) => {
+        const dayTxs = dateMap.get(dateKey)!;
+        // Sort within day by createdAt descending
+        dayTxs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        // Accumulate amounts per column (sum by currency per column)
+        // We use Map<colIndex, Map<currency, {total, notes}>>
+        const colData = new Map<number, Map<string, { total: number; noteParts: string[] }>>();
+
+        for (const tx of dayTxs) {
           let col: number;
           if (tx.type === 'income') {
-            col = 2; // Income column
+            col = 2;
           } else {
             const categoryIndex = sortedCategories.findIndex(([id]) => id === tx.category);
             col = categoryIndex !== -1 ? 3 + categoryIndex : -1;
           }
-          
-          if (col !== -1) {
-            notes.push({
-              row: index + 1, // +1 for header row
-              col,
-              note: noteParts.join('\n'),
-            });
+          if (col === -1) continue;
+
+          if (!colData.has(col)) colData.set(col, new Map());
+          const currencyMap = colData.get(col)!;
+          if (!currencyMap.has(tx.currency)) {
+            currencyMap.set(tx.currency, { total: 0, noteParts: [] });
+          }
+          const entry = currencyMap.get(tx.currency)!;
+          entry.total += tx.amount;
+
+          // Build note part for this transaction
+          const txNoteParts: string[] = [];
+          if (tx.description) txNoteParts.push(`Описание: ${tx.description}`);
+          if (tx.type === 'expense' && tx.issuedTo) txNoteParts.push(`Кому: ${tx.issuedTo}`);
+          if (txNoteParts.length > 0) {
+            entry.noteParts.push(`[${tx.amount} ${tx.currency}] ${txNoteParts.join(', ')}`);
           }
         }
+
+        // Build the row
+        const rowIndex = rows.length;
+        const row: string[] = new Array(headers.length).fill('');
+        // ID column: join all IDs for this date (for delete detection)
+        row[0] = dayTxs.map(t => t.id).join(';');
+        row[1] = dateKey;
+
+        colData.forEach((currencyMap, col) => {
+          const parts: string[] = [];
+          currencyMap.forEach(({ total }, currency) => {
+            parts.push(`${total} ${currency}`);
+          });
+          row[col] = parts.join(' | ');
+
+          // Collect notes
+          const allNoteParts: string[] = [];
+          currencyMap.forEach(({ noteParts: np }) => {
+            allNoteParts.push(...np);
+          });
+          if (allNoteParts.length > 0) {
+            notes.push({
+              row: rowIndex + 1,
+              col,
+              note: allNoteParts.join('\n'),
+            });
+          }
+        });
+
+        rows.push(row);
       });
 
       const values = [headers, ...rows];
+
 
       const { error } = await supabase.functions.invoke('google-sheets', {
         body: {
