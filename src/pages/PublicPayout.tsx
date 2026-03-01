@@ -945,155 +945,150 @@ const PublicPayout = () => {
     try {
       // If continuing an existing payout, update it instead of creating new
       if (continuingPayout) {
-        const { data: updateData, error: updateError } = await supabase.functions.invoke('add-images-to-payout', {
-          body: {
-            token,
-            transactionId: continuingPayout.id,
-            submitterName: `${submitterFirstName} ${submitterLastName}`,
-          }
-        });
+        const { data: linkData } = await supabase
+          .from('shared_payout_links')
+          .select('owner_user_id')
+          .eq('token', token)
+          .single();
 
-        if (updateError) throw updateError;
-        if (updateData?.error) throw new Error(updateData.error);
-        
-        // Generate PDF with images
-        const pdfResult = await generatePDF();
+        // Run update + PDF generation in parallel
+        const [updateResult, pdfResult] = await Promise.all([
+          supabase.functions.invoke('add-images-to-payout', {
+            body: {
+              token,
+              transactionId: continuingPayout.id,
+              submitterName: `${submitterFirstName} ${submitterLastName}`,
+            }
+          }),
+          generatePDF(),
+        ]);
+
+        if (updateResult.error) throw updateResult.error;
+        if (updateResult.data?.error) throw new Error(updateResult.data.error);
 
         // Upload PDF directly from client to Storage
-        if (pdfResult) {
+        if (pdfResult && linkData?.owner_user_id) {
           try {
-            const { data: linkData } = await supabase
-              .from('shared_payout_links')
-              .select('owner_user_id')
-              .eq('token', token)
-              .single();
-
-            if (linkData?.owner_user_id) {
-              const storagePath = `${linkData.owner_user_id}/${continuingPayout.id}/${pdfResult.fileName}`;
-              await supabase.storage
-                .from('documents')
-                .upload(storagePath, pdfResult.pdfBlob, {
-                  contentType: 'application/pdf',
-                  upsert: true,
-                });
-            }
+            const storagePath = `${linkData.owner_user_id}/${continuingPayout.id}/${pdfResult.fileName}`;
+            await supabase.storage
+              .from('documents')
+              .upload(storagePath, pdfResult.pdfBlob, {
+                contentType: 'application/pdf',
+                upsert: true,
+              });
           } catch (e) {
             console.error('PDF upload failed:', e);
           }
         }
-
-
-
 
         setIsSuccess(true);
         toast({ title: t.success, description: t.photosAdded });
         return;
       }
 
-      // 1. Submit transaction via Edge Function (WITHOUT PDF data)
+      // 1. Submit transaction AND generate PDF in parallel
       const category = categories.find(c => c.name === formData.departmentName);
       const submitterName = `${submitterFirstName} ${submitterLastName}`;
 
-      const { data, error: submitError } = await supabase.functions.invoke('submit-public-payout', {
-        body: {
-          token,
-          amount: parseFloat(formData.amount),
-          currency: formData.currency,
-          categoryId: category?.id || null,
-          description: formData.basis,
-          date: format(formData.date, 'yyyy-MM-dd'),
-          issuedTo: formData.issuedTo,
-          amountInWords: formData.amountInWords,
-          submitterName,
-          imagesSkipped: imagesOptional,
-          departmentName: formData.departmentName,
-          // No pdfBase64 here - we upload separately
-        }
-      });
+      const [submitResult, pdfResult, linkResult] = await Promise.all([
+        supabase.functions.invoke('submit-public-payout', {
+          body: {
+            token,
+            amount: parseFloat(formData.amount),
+            currency: formData.currency,
+            categoryId: category?.id || null,
+            description: formData.basis,
+            date: format(formData.date, 'yyyy-MM-dd'),
+            issuedTo: formData.issuedTo,
+            amountInWords: formData.amountInWords,
+            submitterName,
+            imagesSkipped: imagesOptional,
+            departmentName: formData.departmentName,
+          }
+        }),
+        generatePDF(),
+        supabase
+          .from('shared_payout_links')
+          .select('owner_user_id')
+          .eq('token', token)
+          .single(),
+      ]);
 
-      if (submitError) throw submitError;
-      if (data?.error) throw new Error(data.error);
+      if (submitResult.error) throw submitResult.error;
+      if (submitResult.data?.error) throw new Error(submitResult.data.error);
 
-      const transactionId = data?.transactionId;
+      const transactionId = submitResult.data?.transactionId;
+      const ownerId = linkResult.data?.owner_user_id;
 
-      // 2. Generate PDF
-      const pdfResult = await generatePDF();
-
-      // 3. Upload PDF directly to Storage from client (no edge function needed)
-      if (pdfResult && transactionId) {
+      // 2. Upload everything to Storage in parallel
+      if (pdfResult && transactionId && ownerId) {
         try {
-          // Get owner_user_id via token validation result (already validated above)
-          const { data: linkData } = await supabase
-            .from('shared_payout_links')
-            .select('owner_user_id')
-            .eq('token', token)
-            .single();
+          const sanitizedFileName = pdfResult.fileName
+            .replace(/[^\x00-\x7F]/g, '_')
+            .replace(/\s+/g, '_')
+            .replace(/[^a-zA-Z0-9._\-]/g, '_');
+          const storagePath = `${ownerId}/${transactionId}/${sanitizedFileName}`;
 
-          if (linkData?.owner_user_id) {
-            const ownerId = linkData.owner_user_id;
-
-            // Sanitize filename
-            const sanitizedFileName = pdfResult.fileName
-              .replace(/[^\x00-\x7F]/g, '_')
-              .replace(/\s+/g, '_')
-              .replace(/[^a-zA-Z0-9._\-]/g, '_');
-            const storagePath = `${ownerId}/${transactionId}/${sanitizedFileName}`;
-
-            // Upload PDF blob directly
-            const { error: uploadError } = await supabase.storage
+          // Build parallel upload tasks
+          const uploadTasks: Promise<any>[] = [
+            supabase.storage
               .from('documents')
               .upload(storagePath, pdfResult.pdfBlob, {
                 contentType: 'application/pdf',
                 upsert: true,
-              });
+              }),
+          ];
 
-            if (uploadError) {
-              console.error('PDF upload error:', uploadError);
-            } else {
-              // Upload signature if present
-              if (signatureDataUrl) {
-                try {
-                  const sigBase64 = signatureDataUrl.split(',')[1];
-                  const sigBytes = Uint8Array.from(atob(sigBase64), c => c.charCodeAt(0));
-                  await supabase.storage
-                    .from('documents')
-                    .upload(`${ownerId}/${transactionId}/signature.png`, sigBytes, {
-                      contentType: 'image/png',
-                      upsert: true,
-                    });
-                } catch (e) {
-                  console.error('Signature upload failed:', e);
-                }
-              }
-
-              // Upload attached images
-              for (let i = 0; i < attachedImages.length; i++) {
-                try {
-                  const img = attachedImages[i];
-                  const imgBuf = await img.file.arrayBuffer();
-                  const ext = img.file.type.includes('png') ? 'png' : 'jpg';
-                  await supabase.storage
-                    .from('documents')
-                    .upload(`${ownerId}/${transactionId}/image_${i + 1}.${ext}`, imgBuf, {
-                      contentType: img.file.type || 'image/jpeg',
-                      upsert: true,
-                    });
-                } catch (e) {
-                  console.error(`Image ${i + 1} upload failed:`, e);
-                }
-              }
-
-              // Notify edge function: update notification pdf_path + send Telegram
-              // No base64 needed - EF downloads from Storage directly
-              supabase.functions.invoke('upload-payout-pdf', {
-                body: {
-                  token,
-                  transactionId,
-                  pdfPath: storagePath,
-                  fileName: pdfResult.fileName,
-                },
-              }).catch(e => console.error('Notify/Telegram error:', e));
+          // Signature upload
+          if (signatureDataUrl) {
+            try {
+              const sigBase64 = signatureDataUrl.split(',')[1];
+              const sigBytes = Uint8Array.from(atob(sigBase64), c => c.charCodeAt(0));
+              uploadTasks.push(
+                supabase.storage
+                  .from('documents')
+                  .upload(`${ownerId}/${transactionId}/signature.png`, sigBytes, {
+                    contentType: 'image/png',
+                    upsert: true,
+                  })
+              );
+            } catch (e) {
+              console.error('Signature prepare failed:', e);
             }
+          }
+
+          // Images upload (parallel)
+          const imageUploadTasks = attachedImages.map(async (img, i) => {
+            try {
+              const imgBuf = await img.file.arrayBuffer();
+              const ext = img.file.type.includes('png') ? 'png' : 'jpg';
+              return supabase.storage
+                .from('documents')
+                .upload(`${ownerId}/${transactionId}/image_${i + 1}.${ext}`, imgBuf, {
+                  contentType: img.file.type || 'image/jpeg',
+                  upsert: true,
+                });
+            } catch (e) {
+              console.error(`Image ${i + 1} prepare failed:`, e);
+            }
+          });
+          uploadTasks.push(...imageUploadTasks);
+
+          const uploadResults = await Promise.all(uploadTasks);
+          const pdfUploadResult = uploadResults[0] as { error: any } | undefined;
+
+          if (pdfUploadResult?.error) {
+            console.error('PDF upload error:', pdfUploadResult.error);
+          } else {
+            // Notify edge function: update notification pdf_path + send Telegram (fire-and-forget)
+            supabase.functions.invoke('upload-payout-pdf', {
+              body: {
+                token,
+                transactionId,
+                pdfPath: storagePath,
+                fileName: pdfResult.fileName,
+              },
+            }).catch(e => console.error('Notify/Telegram error:', e));
           }
         } catch (e) {
           console.error('PDF upload failed (non-critical):', e);
