@@ -1083,46 +1083,30 @@ const PublicPayout = () => {
                 }
               }
 
-              // Update notification with pdf_path
-              try {
-                const { data: notifData } = await supabase
-                  .from('notifications')
-                  .select('id, metadata')
-                  .eq('user_id', ownerId)
-                  .eq('type', 'payout')
-                  .order('created_at', { ascending: false })
-                  .limit(5);
-
-                if (notifData) {
-                  const targetNotif = notifData.find(
-                    (n: any) => n.metadata?.transaction_id === transactionId
-                  );
-                  if (targetNotif) {
-                    await supabase
-                      .from('notifications')
-                      .update({
-                        metadata: {
-                          ...(targetNotif.metadata as Record<string, any>),
-                          pdf_path: storagePath,
-                        },
-                      })
-                      .eq('id', targetNotif.id);
-                  }
-                }
-              } catch (e) {
-                console.error('Notification update failed:', e);
-              }
-
-              // Send PDF via Telegram (fire-and-forget via edge function - small call)
+              // Send PDF via Edge Function: update notification pdf_path + send Telegram
               try {
                 const arrayBuffer = await pdfResult.pdfBlob.arrayBuffer();
                 const bytes = new Uint8Array(arrayBuffer);
+                // Chunked btoa to avoid call stack overflow on large PDFs
+                const chunkSize = 8192;
                 let binary = '';
-                for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+                for (let i = 0; i < bytes.byteLength; i += chunkSize) {
+                  const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.byteLength));
+                  for (let j = 0; j < chunk.length; j++) {
+                    binary += String.fromCharCode(chunk[j]);
+                  }
+                }
                 const pdfBase64 = btoa(binary);
                 supabase.functions.invoke('upload-payout-pdf', {
-                  body: { token, transactionId, pdfBase64, fileName: pdfResult.fileName, telegramOnly: true },
-                }).catch(e => console.error('Telegram send error:', e));
+                  body: {
+                    token,
+                    transactionId,
+                    pdfBase64,
+                    fileName: pdfResult.fileName,
+                    pdfPath: storagePath,
+                    telegramAndNotify: true,
+                  },
+                }).catch(e => console.error('Telegram/notify send error:', e));
               } catch (e) {
                 console.error('Telegram PDF send error:', e);
               }

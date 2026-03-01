@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { token, transactionId, pdfBase64, fileName, signatureBase64, images, telegramOnly } = await req.json();
+    const { token, transactionId, pdfBase64, fileName, signatureBase64, images, telegramOnly, telegramAndNotify, pdfPath } = await req.json();
 
     if (!token || !transactionId || !pdfBase64) {
       return new Response(
@@ -116,6 +116,55 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({ error: 'Transaction not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // telegramAndNotify mode: update notification pdf_path + send via Telegram
+    if (telegramAndNotify) {
+      // Update notification with pdf_path using service role
+      if (pdfPath) {
+        try {
+          const { data: notifData } = await supabase
+            .from('notifications')
+            .select('id, metadata')
+            .eq('user_id', linkData.owner_user_id)
+            .eq('type', 'payout')
+            .order('created_at', { ascending: false })
+            .limit(5);
+
+          if (notifData) {
+            const targetNotif = notifData.find(
+              (n: any) => n.metadata?.transaction_id === transactionId
+            );
+            if (targetNotif) {
+              await supabase
+                .from('notifications')
+                .update({
+                  metadata: {
+                    ...(targetNotif.metadata as Record<string, any>),
+                    pdf_path: pdfPath,
+                  },
+                })
+                .eq('id', targetNotif.id);
+              console.log('Notification updated with pdf_path:', pdfPath);
+            }
+          }
+        } catch (e) {
+          console.error('Notification update failed:', e);
+        }
+      }
+
+      // Send PDF to Telegram
+      sendPdfToOwnerTelegram(
+        linkData.owner_user_id,
+        pdfBase64,
+        fileName || 'payout.pdf',
+        supabase
+      ).catch(e => console.error('Telegram PDF send error:', e));
+
+      return new Response(
+        JSON.stringify({ success: true }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
