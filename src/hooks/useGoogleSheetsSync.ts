@@ -121,9 +121,9 @@ export const useGoogleSheetsSync = ({
         // Sort within day by createdAt descending
         dayTxs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-        // Accumulate amounts per column (sum by currency per column)
-        // We use Map<colIndex, Map<currency, {total, notes}>>
-        const colData = new Map<number, Map<string, { total: number; noteParts: string[] }>>();
+        // List individual amounts per column (no summing)
+        // Map<colIndex, {amounts: string[], noteParts: string[]}>
+        const colData = new Map<number, { amounts: string[]; noteParts: string[] }>();
 
         for (const tx of dayTxs) {
           let col: number;
@@ -135,13 +135,9 @@ export const useGoogleSheetsSync = ({
           }
           if (col === -1) continue;
 
-          if (!colData.has(col)) colData.set(col, new Map());
-          const currencyMap = colData.get(col)!;
-          if (!currencyMap.has(tx.currency)) {
-            currencyMap.set(tx.currency, { total: 0, noteParts: [] });
-          }
-          const entry = currencyMap.get(tx.currency)!;
-          entry.total += tx.amount;
+          if (!colData.has(col)) colData.set(col, { amounts: [], noteParts: [] });
+          const entry = colData.get(col)!;
+          entry.amounts.push(`${tx.amount} ${tx.currency}`);
 
           // Build note part for this transaction
           const txNoteParts: string[] = [];
@@ -155,27 +151,17 @@ export const useGoogleSheetsSync = ({
         // Build the row
         const rowIndex = rows.length;
         const row: string[] = new Array(headers.length).fill('');
-        // ID column: join all IDs for this date (for delete detection)
         row[0] = dayTxs.map(t => t.id).join(';');
         row[1] = dateKey;
 
-        colData.forEach((currencyMap, col) => {
-          const parts: string[] = [];
-          currencyMap.forEach(({ total }, currency) => {
-            parts.push(`${total} ${currency}`);
-          });
-          row[col] = parts.join(' | ');
+        colData.forEach(({ amounts, noteParts }, col) => {
+          row[col] = amounts.join(' | ');
 
-          // Collect notes
-          const allNoteParts: string[] = [];
-          currencyMap.forEach(({ noteParts: np }) => {
-            allNoteParts.push(...np);
-          });
-          if (allNoteParts.length > 0) {
+          if (noteParts.length > 0) {
             notes.push({
               row: rowIndex + 1,
               col,
-              note: allNoteParts.join('\n'),
+              note: noteParts.join('\n'),
             });
           }
         });
