@@ -885,47 +885,59 @@ const PublicPayout = () => {
       doc.addImage(sigData, 'PNG', leftMargin + 5, yPos + 2, signatureBoxWidth - 10, signatureBoxHeight - 4);
     }
 
-    // Add each attached image on a new page
+    // Add each attached image on a new page (compressed)
     for (const img of attachedImages) {
-      // Add new page for each image
       doc.addPage();
-      
-      // Read the image file
-      const imageData = await new Promise<string>((resolve) => {
+
+      // Load original image
+      const originalDataUrl = await new Promise<string>((resolve) => {
         const reader = new FileReader();
         reader.onloadend = () => resolve(reader.result as string);
         reader.readAsDataURL(img.file);
       });
 
-      // Get image dimensions to maintain aspect ratio
       const imgElement = await new Promise<HTMLImageElement>((resolve) => {
         const image = new Image();
         image.onload = () => resolve(image);
-        image.src = imageData;
+        image.src = originalDataUrl;
       });
 
-      const imgWidth = imgElement.width;
-      const imgHeight = imgElement.height;
-      
-      // Calculate dimensions to fit within page margins with proper padding
+      // Resize to max 1920px on the longest side to reduce PDF size
+      const MAX_PX = 1920;
+      let srcW = imgElement.naturalWidth;
+      let srcH = imgElement.naturalHeight;
+      if (srcW > MAX_PX || srcH > MAX_PX) {
+        if (srcW >= srcH) {
+          srcH = Math.round((srcH / srcW) * MAX_PX);
+          srcW = MAX_PX;
+        } else {
+          srcW = Math.round((srcW / srcH) * MAX_PX);
+          srcH = MAX_PX;
+        }
+      }
+
+      // Draw to offscreen canvas and export as JPEG quality 0.82
+      const canvas = document.createElement('canvas');
+      canvas.width = srcW;
+      canvas.height = srcH;
+      const ctx2d = canvas.getContext('2d')!;
+      ctx2d.drawImage(imgElement, 0, 0, srcW, srcH);
+      const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+
+      // Fit into PDF page
       const imgMargin = 15;
       const maxWidth = pageWidth - 2 * imgMargin;
       const maxHeight = pageHeight - 2 * imgMargin;
-      
       let finalWidth = maxWidth;
-      let finalHeight = (imgHeight / imgWidth) * finalWidth;
-      
+      let finalHeight = (srcH / srcW) * finalWidth;
       if (finalHeight > maxHeight) {
         finalHeight = maxHeight;
-        finalWidth = (imgWidth / imgHeight) * finalHeight;
+        finalWidth = (srcW / srcH) * finalHeight;
       }
-      
-      // Center the image on the page
+
       const xPos = (pageWidth - finalWidth) / 2;
       const imgYPos = (pageHeight - finalHeight) / 2;
-      
-      const imgFormat = img.file.type.includes('png') ? 'PNG' : 'JPEG';
-      doc.addImage(imageData, imgFormat, xPos, imgYPos, finalWidth, finalHeight);
+      doc.addImage(compressedDataUrl, 'JPEG', xPos, imgYPos, finalWidth, finalHeight);
     }
     
     const fileName = `dowod_wyplaty_${format(formData.date, 'yyyy-MM-dd')}_${formData.issuedTo.replace(/\s/g, '_') || 'dokument'}.pdf`;
