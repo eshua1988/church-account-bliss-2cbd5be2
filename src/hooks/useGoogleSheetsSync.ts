@@ -45,15 +45,21 @@ export const useGoogleSheetsSync = ({
           .from('profiles')
           .select('spreadsheet_id, sheet_range')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
         
-        if (error && error.code !== 'PGRST116') {
+        if (error) {
           console.error('Error loading settings:', error);
         }
         
         if (data) {
           setSpreadsheetId(data.spreadsheet_id || '');
           setSheetRange(data.sheet_range || DEFAULT_SHEET_RANGE);
+        } else {
+          // Profile doesn't exist yet — create it
+          await supabase.from('profiles').upsert(
+            { user_id: user.id, email: user.email ?? '', display_name: user.email ?? '' },
+            { onConflict: 'user_id' }
+          );
         }
       } catch (error) {
         console.error('Error loading user settings:', error);

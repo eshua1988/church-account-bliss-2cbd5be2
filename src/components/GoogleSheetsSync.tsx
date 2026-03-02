@@ -69,9 +69,9 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
           .from('profiles')
           .select('spreadsheet_id, sheet_range')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
         
-        if (error && error.code !== 'PGRST116') {
+        if (error) {
           console.error('Error loading settings:', error);
         }
         
@@ -80,6 +80,12 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
           setSheetRange(data.sheet_range || DEFAULT_SHEET_RANGE);
           setTempSpreadsheetId(data.spreadsheet_id || '');
           setTempSheetRange(data.sheet_range || DEFAULT_SHEET_RANGE);
+        } else {
+          // Profile doesn't exist yet — create it
+          await supabase.from('profiles').upsert(
+            { user_id: user.id, email: user.email ?? '', display_name: user.email ?? '' },
+            { onConflict: 'user_id' }
+          );
         }
       } catch (error) {
         console.error('Error loading user settings:', error);
@@ -98,11 +104,11 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
     try {
       const { error } = await supabase
         .from('profiles')
-        .update({
+        .upsert({
+          user_id: user.id,
           spreadsheet_id: tempSpreadsheetId || null,
           sheet_range: tempSheetRange || DEFAULT_SHEET_RANGE,
-        })
-        .eq('user_id', user.id);
+        }, { onConflict: 'user_id' });
       
       if (error) throw error;
       
