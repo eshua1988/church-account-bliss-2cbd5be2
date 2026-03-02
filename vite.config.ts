@@ -5,8 +5,10 @@ import { componentTagger } from "lovable-tagger";
 import { VitePWA } from "vite-plugin-pwa";
 
 // https://vitejs.dev/config/
+const basePath = process.env.VITE_BASE_PATH || '/';
+
 export default defineConfig(({ mode }) => ({
-  base: process.env.VITE_BASE_PATH || '/',
+  base: basePath,
   server: {
     host: "::",
     port: 8080,
@@ -25,21 +27,21 @@ export default defineConfig(({ mode }) => ({
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait',
-        scope: '/',
-        start_url: '/',
+        scope: basePath,
+        start_url: basePath,
         icons: [
           {
-            src: '/Kosciol.ico.png',
+            src: `${basePath}Kosciol.ico.png`.replace('//', '/'),
             sizes: '192x192',
             type: 'image/png'
           },
           {
-            src: '/Kosciol.ico.png',
+            src: `${basePath}Kosciol.ico.png`.replace('//', '/'),
             sizes: '512x512',
             type: 'image/png'
           },
           {
-            src: '/Kosciol.ico.png',
+            src: `${basePath}Kosciol.ico.png`.replace('//', '/'),
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable'
