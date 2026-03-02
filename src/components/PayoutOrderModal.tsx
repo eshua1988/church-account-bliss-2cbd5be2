@@ -68,7 +68,7 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
 
   // Load font
   useEffect(() => {
-    loadFontAsBase64('/fonts/Roboto-Regular.ttf')
+    loadFontAsBase64(`${import.meta.env.BASE_URL}Roboto-Regular.ttf`)
       .then(setFontBase64)
       .catch(console.error);
   }, []);

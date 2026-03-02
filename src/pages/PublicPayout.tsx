@@ -593,7 +593,7 @@ const PublicPayout = () => {
   useEffect(() => {
     const loadFont = async () => {
       try {
-        const base64 = await loadFontAsBase64('/fonts/Roboto-Regular.ttf');
+        const base64 = await loadFontAsBase64(`${import.meta.env.BASE_URL}Roboto-Regular.ttf`);
         setFontBase64(base64);
         setFontLoaded(true);
       } catch (error) {
@@ -675,9 +675,18 @@ const PublicPayout = () => {
 
   const stopDrawing = () => {
     setIsDrawing(false);
-    // Save signature as data URL when user finishes drawing
-    if (signatureCanvasRef.current && hasSignature) {
-      setSignatureDataUrl(signatureCanvasRef.current.toDataURL('image/png'));
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) return;
+    // Always check canvas pixel data directly (avoids React async setState race condition)
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const hasContent = imageData.data.some((v, i) => i % 4 === 3 && v > 0);
+      if (hasContent) {
+        const dataUrl = canvas.toDataURL('image/png');
+        setHasSignature(true);
+        setSignatureDataUrl(dataUrl);
+      }
     }
   };
 
@@ -790,12 +799,12 @@ const PublicPayout = () => {
     
     // Header
     doc.setFontSize(11);
-    doc.text('ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE', pageWidth / 2, 20, { align: 'center' });
+    doc.text('СОБРАНИЕ ХРИСТИАН БАПТИСТОВ «БОЖЬЯ БЛАГОДАТЬ» В ВАРШАВЕ', pageWidth / 2, 20, { align: 'center' });
     
     // Title
     doc.setFontSize(16);
     doc.setFont('Roboto', 'normal');
-    doc.text('Dowód wypłaty', pageWidth / 2, 32, { align: 'center' });
+    doc.text('Расходный ордер', pageWidth / 2, 32, { align: 'center' });
     
     let yPos = 45;
     
@@ -805,22 +814,21 @@ const PublicPayout = () => {
     const smallValueWidth = smallTableWidth - smallLabelWidth;
     
     // Date table
-    drawCell(leftMargin, yPos, smallLabelWidth, rowHeight, 'Data', { fill: true });
+    drawCell(leftMargin, yPos, smallLabelWidth, rowHeight, 'Дата', { fill: true });
     drawCell(leftMargin + smallLabelWidth, yPos, smallValueWidth, rowHeight, format(formData.date, 'yyyy-MM-dd'));
     
     // Amount table  
     const currencySymbol = currencies.find(c => c.value === formData.currency)?.label || formData.currency;
     const amountTableX = leftMargin + smallTableWidth + 10;
-    drawCell(amountTableX, yPos, smallLabelWidth + 10, rowHeight, `Kwota (${formData.currency})`, { fill: true });
+    drawCell(amountTableX, yPos, smallLabelWidth + 10, rowHeight, `Сумма (${formData.currency})`, { fill: true });
     drawCell(amountTableX + smallLabelWidth + 10, yPos, smallValueWidth - 10, rowHeight, `${currencySymbol} ${formData.amount}`);
     
     yPos += rowHeight + 4;
 
     // Conversion info row (if currency was converted)
     if (conversionInfo) {
-      const convText = `Konwersja: ${conversionInfo.fromAmount} ${conversionInfo.fromCurrency} → ${conversionInfo.toAmount} ${conversionInfo.toCurrency} (kurs: 1 ${conversionInfo.fromCurrency} = ${conversionInfo.rate} ${conversionInfo.toCurrency})`;
       const convLabelWidth = 50;
-      drawCell(leftMargin, yPos, convLabelWidth, rowHeight, 'Konwersja', { fill: true });
+      drawCell(leftMargin, yPos, convLabelWidth, rowHeight, 'Конвертация', { fill: true });
       drawCell(leftMargin + convLabelWidth, yPos, tableWidth - convLabelWidth, rowHeight, `${conversionInfo.fromAmount} ${conversionInfo.fromCurrency} → ${conversionInfo.toAmount} ${conversionInfo.toCurrency}  (1 ${conversionInfo.fromCurrency} = ${conversionInfo.rate} ${conversionInfo.toCurrency})`);
       yPos += rowHeight + 4;
     } else {
@@ -828,20 +836,20 @@ const PublicPayout = () => {
     }
     
     // Main table rows
-    drawTableRow(yPos, 'Wydano (imię nazwisko)', formData.issuedTo);
+    drawTableRow(yPos, 'Выдано (имя фамилия)', formData.issuedTo);
     yPos += rowHeight;
     
-    drawTableRow(yPos, 'Konto dla przelewu', formData.bankAccount);
+    drawTableRow(yPos, 'Счёт для перевода', formData.bankAccount);
     yPos += rowHeight;
     
-    drawTableRow(yPos, 'Nazwa działu', formData.departmentName);
+    drawTableRow(yPos, 'Название отдела', formData.departmentName);
     yPos += rowHeight;
-    
+
     // Basis (multi-line)
     const basisLines = doc.splitTextToSize(formData.basis, valueColWidth - cellPadding * 2);
     const basisHeight = Math.max(rowHeight * 2, basisLines.length * 6 + cellPadding * 2);
     
-    drawCell(leftMargin, yPos, labelColWidth, basisHeight, 'Na podstawie', { fill: true });
+    drawCell(leftMargin, yPos, labelColWidth, basisHeight, 'Основание', { fill: true });
     doc.setDrawColor(0);
     doc.setLineWidth(0.3);
     doc.rect(leftMargin + labelColWidth, yPos, valueColWidth, basisHeight, 'S');
@@ -853,7 +861,7 @@ const PublicPayout = () => {
     const wordsLines = doc.splitTextToSize(formData.amountInWords, valueColWidth - cellPadding * 2);
     const wordsHeight = Math.max(rowHeight * 2, wordsLines.length * 6 + cellPadding * 2);
     
-    drawCell(leftMargin, yPos, labelColWidth, wordsHeight, 'Kwota słownie', { fill: true });
+    drawCell(leftMargin, yPos, labelColWidth, wordsHeight, 'Сумма прописью', { fill: true });
     doc.setDrawColor(0);
     doc.setLineWidth(0.3);
     doc.rect(leftMargin + labelColWidth, yPos, valueColWidth, wordsHeight, 'S');
@@ -863,13 +871,13 @@ const PublicPayout = () => {
     
     // Cashier line
     doc.setFontSize(10);
-    doc.text('Kasjer: ________________________________', leftMargin, yPos);
-    doc.text('Podpis kasjera: ________________________________', pageWidth / 2, yPos);
+    doc.text('Кассир: ________________________________', leftMargin, yPos);
+    doc.text('Подпись кассира: ________________________________', pageWidth / 2, yPos);
     yPos += 15;
     
     // Recipient signature
     doc.setFontSize(11);
-    doc.text('Podpis odbiorcy', leftMargin, yPos);
+    doc.text('Подпись получателя:', leftMargin, yPos);
     yPos += 5;
     
     // Signature box
@@ -881,8 +889,12 @@ const PublicPayout = () => {
     
     // Use saved signatureDataUrl (persists even when canvas is unmounted on step 4)
     const sigData = signatureDataUrl || (signatureCanvasRef.current ? signatureCanvasRef.current.toDataURL('image/png') : null);
-    if (hasSignature && sigData) {
-      doc.addImage(sigData, 'PNG', leftMargin + 5, yPos + 2, signatureBoxWidth - 10, signatureBoxHeight - 4);
+    if (sigData) {
+      try {
+        doc.addImage(sigData, 'PNG', leftMargin + 5, yPos + 2, signatureBoxWidth - 10, signatureBoxHeight - 4);
+      } catch (e) {
+        console.warn('Could not add signature image:', e);
+      }
     }
 
     // Add each attached image on a new page (compressed)
