@@ -55,7 +55,7 @@ export const SharePayoutLink = () => {
   const [selectedLink, setSelectedLink] = useState<SharedLink | null>(null);
   const [showQrDialog, setShowQrDialog] = useState(false);
 
-  const baseUrl = window.location.origin;
+  const baseUrl = window.location.origin + import.meta.env.BASE_URL.replace(/\/$/, '');
 
   useEffect(() => {
     if (user) {
