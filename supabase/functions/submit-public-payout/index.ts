@@ -660,6 +660,8 @@ Deno.serve(async (req) => {
       decisionNumber: body.decisionNumber,
       tempSigPath: body.tempSigPath,
       tempImgPaths,
+      signatureBase64: body.signatureBase64,
+      imagesBase64: body.imagesBase64,
     });
 
     // Create notification with pdf_path already set
