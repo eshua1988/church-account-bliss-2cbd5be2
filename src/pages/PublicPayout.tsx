@@ -1010,59 +1010,41 @@ const PublicPayout = () => {
         return;
       }
 
-      // 1. Get owner info and pre-upload signature/images BEFORE submit
-      //    so the server can embed the signature in the PDF
+      // 1. Encode signature and images as base64 to send directly to the server
+      //    (anonymous users cannot upload to Storage, so we bypass it entirely)
       const category = categories.find(c => c.name === formData.departmentName);
       const submitterName = `${submitterFirstName} ${submitterLastName}`;
 
-      const linkResult = await supabase
-        .from('shared_payout_links')
-        .select('owner_user_id')
-        .eq('token', token)
-        .single();
+      // Encode signature as base64 string (strip data: prefix)
+      const signatureBase64 = signatureDataUrl ? signatureDataUrl.split(',')[1] : undefined;
 
-      const ownerId = linkResult.data?.owner_user_id;
-
-      // Pre-upload signature to a temp path so server can include it in PDF
-      // We use a temporary transaction placeholder ID that will be replaced
-      let tempSigPath: string | null = null;
-      let tempImgPaths: string[] = [];
-
-      if (ownerId && signatureDataUrl) {
-        try {
-          const sigBase64 = signatureDataUrl.split(',')[1];
-          const sigBytes = Uint8Array.from(atob(sigBase64), c => c.charCodeAt(0));
-          // Use a temp path; we'll move it after we get the real transactionId
-          const tempId = `temp_${Date.now()}`;
-          tempSigPath = `${ownerId}/${tempId}/signature.png`;
-          await supabase.storage
-            .from('documents')
-            .upload(tempSigPath, sigBytes, { contentType: 'image/png', upsert: true });
-        } catch (e) {
-          console.error('Pre-upload signature failed:', e);
-        }
-      }
-
-      // Pre-upload images to temp paths so server can embed them in PDF
-      if (ownerId && attachedImages.length > 0 && !imagesOptional) {
-        const ts = Date.now();
-        const imgUploads = attachedImages.map(async (img, i) => {
+      // Compress and encode each image as JPEG base64 (max 1024px, quality 0.65)
+      const imagesBase64: string[] = [];
+      if (attachedImages.length > 0 && !imagesOptional) {
+        for (const img of attachedImages) {
           try {
-            const ext = img.file.type.includes('png') ? 'png' : 'jpg';
-            const path = `${ownerId}/temp_${ts}/image_${i + 1}.${ext}`;
-            const buf = await img.file.arrayBuffer();
-            const { error } = await supabase.storage
-              .from('documents')
-              .upload(path, buf, { contentType: img.file.type || 'image/jpeg', upsert: true });
-            if (error) { console.error(`Image ${i + 1} pre-upload failed:`, error); return null; }
-            return path;
+            const canvas = document.createElement('canvas');
+            const image = new Image();
+            await new Promise<void>(resolve => {
+              image.onload = () => resolve();
+              image.src = img.preview;
+            });
+            const MAX = 1024;
+            let w = image.naturalWidth || image.width;
+            let h = image.naturalHeight || image.height;
+            if (w > MAX || h > MAX) {
+              if (w >= h) { h = Math.round(h / w * MAX); w = MAX; }
+              else { w = Math.round(w / h * MAX); h = MAX; }
+            }
+            canvas.width = w;
+            canvas.height = h;
+            canvas.getContext('2d')!.drawImage(image, 0, 0, w, h);
+            const b64 = canvas.toDataURL('image/jpeg', 0.65).split(',')[1];
+            imagesBase64.push(b64);
           } catch (e) {
-            console.error(`Image ${i + 1} pre-upload error:`, e);
-            return null;
+            console.error('Image compress error:', e);
           }
-        });
-        const results = await Promise.all(imgUploads);
-        tempImgPaths = results.filter((p): p is string => p !== null);
+        }
       }
 
       // 2. Submit transaction — server generates PDF (with signature + images)
@@ -1080,8 +1062,8 @@ const PublicPayout = () => {
           imagesSkipped: imagesOptional,
           departmentName: formData.departmentName,
           decisionNumber: formData.bankAccount,
-          tempSigPath: tempSigPath || undefined,
-          tempImgPaths: tempImgPaths.length > 0 ? tempImgPaths : undefined,
+          signatureBase64: signatureBase64 || undefined,
+          imagesBase64: imagesBase64.length > 0 ? imagesBase64 : undefined,
           language: language,
         }
       });

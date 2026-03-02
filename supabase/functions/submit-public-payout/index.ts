@@ -24,8 +24,12 @@ interface SubmitPayoutRequest {
   imagesSkipped?: boolean;
   departmentName?: string;
   decisionNumber?: string;
+  // Legacy storage-based paths (kept for backward compat)
   tempSigPath?: string;
   tempImgPaths?: string[];
+  // New: direct base64 payloads (bypass Storage for anonymous users)
+  signatureBase64?: string;
+  imagesBase64?: string[];
   language?: string;
 }
 
@@ -194,6 +198,8 @@ async function generateAndUploadPdf(
     decisionNumber?: string;
     tempSigPath?: string;
     tempImgPaths?: string[];
+    signatureBase64?: string;
+    imagesBase64?: string[];
     language?: string;
   }
 ): Promise<string | null> {
@@ -344,59 +350,105 @@ async function generateAndUploadPdf(
     doc.setLineWidth(0.5);
     doc.rect(leftMargin, yPos, 155, 40, 'S');
 
-    // Embed signature
-    const sigDownloadPath = data.tempSigPath || `${ownerUserId}/${transactionId}/signature.png`;
-    const { data: sigBlob } = await supabase.storage.from('documents').download(sigDownloadPath);
+    // Embed signature: prefer direct base64 payload, fall back to Storage path
+    let sigBase64ForEmbed: string | null = null;
 
-    if (sigBlob) {
+    if (data.signatureBase64) {
+      // Direct base64 from client (new method — works for anonymous users)
+      sigBase64ForEmbed = data.signatureBase64;
+      // Also save to permanent Storage path for future reference
       try {
-        const sigArrayBuf = await sigBlob.arrayBuffer();
-        const sigBytes = new Uint8Array(sigArrayBuf);
-        let binary = '';
-        for (let i = 0; i < sigBytes.length; i++) binary += String.fromCharCode(sigBytes[i]);
-        const sigBase64 = btoa(binary);
-        doc.addImage(`data:image/png;base64,${sigBase64}`, 'PNG', leftMargin + 5, yPos + 2, 145, 36);
-
-        // Copy sig to permanent location and clean up temp
-        if (data.tempSigPath) {
-          const permanentPath = `${ownerUserId}/${transactionId}/signature.png`;
-          await supabase.storage.from('documents').upload(permanentPath, sigBytes, {
-            contentType: 'image/png', upsert: true,
-          });
-          supabase.storage.from('documents').remove([data.tempSigPath])
-            .catch(e => console.error('Failed to clean up temp sig:', e));
-        }
+        const sigBytes = Uint8Array.from(atob(data.signatureBase64), c => c.charCodeAt(0));
+        await supabase.storage.from('documents').upload(
+          `${ownerUserId}/${transactionId}/signature.png`,
+          sigBytes,
+          { contentType: 'image/png', upsert: true }
+        );
       } catch (e) {
-        console.error('Failed to embed signature:', e);
+        console.warn('Failed to save signature to Storage (non-critical):', e);
+      }
+    } else {
+      // Legacy: download from Storage path
+      const sigDownloadPath = data.tempSigPath || `${ownerUserId}/${transactionId}/signature.png`;
+      const { data: sigBlob } = await supabase.storage.from('documents').download(sigDownloadPath);
+      if (sigBlob) {
+        try {
+          const sigArrayBuf = await sigBlob.arrayBuffer();
+          const sigBytes = new Uint8Array(sigArrayBuf);
+          let binary = '';
+          for (let i = 0; i < sigBytes.length; i++) binary += String.fromCharCode(sigBytes[i]);
+          sigBase64ForEmbed = btoa(binary);
+          if (data.tempSigPath) {
+            const permanentPath = `${ownerUserId}/${transactionId}/signature.png`;
+            await supabase.storage.from('documents').upload(permanentPath, sigBytes, {
+              contentType: 'image/png', upsert: true,
+            });
+            supabase.storage.from('documents').remove([data.tempSigPath])
+              .catch(e => console.error('Failed to clean up temp sig:', e));
+          }
+        } catch (e) {
+          console.error('Failed to process signature from Storage:', e);
+        }
       }
     }
 
-    // Embed attached images as additional pages
-    const tempImgPaths = data.tempImgPaths || [];
-    const validImgPaths = tempImgPaths.filter(p => typeof p === 'string' && p.length > 0).slice(0, 10);
+    if (sigBase64ForEmbed) {
+      try {
+        doc.addImage(`data:image/png;base64,${sigBase64ForEmbed}`, 'PNG', leftMargin + 5, yPos + 2, 145, 36);
+      } catch (e) {
+        console.error('Failed to embed signature in PDF:', e);
+      }
+    }
+
+    // Embed attached images: prefer direct base64 payload, fall back to Storage paths
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
-    for (let i = 0; i < validImgPaths.length; i++) {
-      const imgPath = validImgPaths[i];
-      try {
-        const { data: imgBlob } = await supabase.storage.from('documents').download(imgPath);
-        if (!imgBlob) { console.warn(`Image not found: ${imgPath}`); continue; }
-        const imgBuf = await imgBlob.arrayBuffer();
-        const imgBytes = new Uint8Array(imgBuf);
-        let imgBinary = '';
-        for (let j = 0; j < imgBytes.length; j++) imgBinary += String.fromCharCode(imgBytes[j]);
-        const imgBase64 = btoa(imgBinary);
-        const isJpeg = imgPath.toLowerCase().endsWith('.jpg') || imgPath.toLowerCase().endsWith('.jpeg');
-        const fmt = isJpeg ? 'JPEG' : 'PNG';
-        const mime = isJpeg ? 'image/jpeg' : 'image/png';
-        doc.addPage();
-        doc.addImage(`data:${mime};base64,${imgBase64}`, fmt, 5, 5, pageW - 10, pageH - 10);
-        console.log(`Embedded image ${i + 1}: ${imgPath}`);
-        // Clean up temp image
-        supabase.storage.from('documents').remove([imgPath])
-          .catch(e => console.error(`Failed to clean up temp image ${imgPath}:`, e));
-      } catch (e) {
-        console.error(`Failed to embed image ${imgPath}:`, e);
+    if (data.imagesBase64 && data.imagesBase64.length > 0) {
+      // New method: base64 images sent directly from client
+      for (let i = 0; i < data.imagesBase64.length; i++) {
+        try {
+          doc.addPage();
+          doc.addImage(`data:image/jpeg;base64,${data.imagesBase64[i]}`, 'JPEG', 5, 5, pageW - 10, pageH - 10);
+          // Save to Storage for archival
+          try {
+            const imgBytes = Uint8Array.from(atob(data.imagesBase64[i]), c => c.charCodeAt(0));
+            await supabase.storage.from('documents').upload(
+              `${ownerUserId}/${transactionId}/image_${i + 1}.jpg`,
+              imgBytes,
+              { contentType: 'image/jpeg', upsert: true }
+            );
+          } catch (e) {
+            console.warn(`Failed to archive image ${i + 1} (non-critical):`, e);
+          }
+        } catch (e) {
+          console.error(`Failed to embed base64 image ${i + 1}:`, e);
+        }
+      }
+    } else {
+      // Legacy: download from Storage paths
+      const tempImgPaths = data.tempImgPaths || [];
+      const validImgPaths = tempImgPaths.filter(p => typeof p === 'string' && p.length > 0).slice(0, 10);
+      for (let i = 0; i < validImgPaths.length; i++) {
+        const imgPath = validImgPaths[i];
+        try {
+          const { data: imgBlob } = await supabase.storage.from('documents').download(imgPath);
+          if (!imgBlob) { console.warn(`Image not found: ${imgPath}`); continue; }
+          const imgBuf = await imgBlob.arrayBuffer();
+          const imgBytes = new Uint8Array(imgBuf);
+          let imgBinary = '';
+          for (let j = 0; j < imgBytes.length; j++) imgBinary += String.fromCharCode(imgBytes[j]);
+          const imgBase64 = btoa(imgBinary);
+          const isJpeg = imgPath.toLowerCase().endsWith('.jpg') || imgPath.toLowerCase().endsWith('.jpeg');
+          const fmt = isJpeg ? 'JPEG' : 'PNG';
+          const mime = isJpeg ? 'image/jpeg' : 'image/png';
+          doc.addPage();
+          doc.addImage(`data:${mime};base64,${imgBase64}`, fmt, 5, 5, pageW - 10, pageH - 10);
+          console.log(`Embedded image ${i + 1}: ${imgPath}`);
+          supabase.storage.from('documents').remove([imgPath])
+            .catch(e => console.error(`Failed to clean up temp image ${imgPath}:`, e));
+        } catch (e) {
+          console.error(`Failed to embed image ${imgPath}:`, e);
+        }
       }
     }
 
