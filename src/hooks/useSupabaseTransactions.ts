@@ -70,14 +70,15 @@ export const useSupabaseTransactions = () => {
     }
   }, [user]);
 
-  // Subscribe to realtime changes
+  // Subscribe to realtime changes + polling fallback
   useEffect(() => {
     if (!user) return;
 
     fetchTransactions();
 
+    // Unique channel name per user prevents multi-device conflicts
     const channel = supabase
-      .channel('transactions-changes')
+      .channel(`transactions-${user.id}`)
       .on(
         'postgres_changes',
         {
@@ -87,14 +88,23 @@ export const useSupabaseTransactions = () => {
           filter: `user_id=eq.${user.id}`,
         },
         () => {
-          // Refetch on any change
           fetchTransactions();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Realtime: transactions subscribed');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('Realtime: transactions subscription issue, falling back to polling');
+        }
+      });
+
+    // Polling fallback every 30s in case Realtime drops
+    const poll = setInterval(() => fetchTransactions(), 30_000);
 
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(poll);
     };
   }, [user, fetchTransactions]);
 

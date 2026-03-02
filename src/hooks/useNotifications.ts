@@ -146,8 +146,9 @@ export const useNotifications = () => {
   useEffect(() => {
     if (!user) return;
 
+    // Unique channel name per user prevents multi-device conflicts
     const channel = supabase
-      .channel('notifications-changes')
+      .channel(`notifications-${user.id}`)
       .on(
         'postgres_changes',
         {
@@ -194,12 +195,20 @@ export const useNotifications = () => {
           });
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('Realtime: notifications subscription issue, falling back to polling');
+        }
+      });
+
+    // Polling fallback every 30s
+    const poll = setInterval(() => fetchNotifications(), 30_000);
 
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(poll);
     };
-  }, [user, toast]);
+  }, [user, toast, fetchNotifications]);
 
   return {
     notifications,
