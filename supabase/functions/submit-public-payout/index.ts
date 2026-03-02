@@ -25,6 +25,7 @@ interface SubmitPayoutRequest {
   departmentName?: string;
   decisionNumber?: string;
   tempSigPath?: string;
+  tempImgPaths?: string[];
   language?: string;
 }
 
@@ -136,26 +137,44 @@ const pdfLabels: Record<string, Record<string, string>> = {
   },
 };
 
-// Load Roboto font supporting Cyrillic and Latin Extended
-async function loadRobotoFont(): Promise<string | null> {
+// Load Roboto font: try Storage first, then cache from CDN
+async function loadRobotoFont(supabase: ReturnType<typeof createClient>): Promise<string | null> {
   try {
-    // Use a CDN that serves the font
-    const res = await fetch('https://fonts.gstatic.com/s/roboto/v47/KFOMCnqEu92Fr1ME7kSn66aGLdTylUAMQXC89YmC2DPNWuZNAA.woff2');
-    if (!res.ok) return null;
-    // We need TTF for jsPDF, try alternate source
-    const ttfRes = await fetch('https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Regular.ttf');
-    if (!ttfRes.ok) {
-      // Fallback: try jsDelivr CDN
-      const cdn = await fetch('https://cdn.jsdelivr.net/npm/@fontsource/roboto@5.0.12/files/roboto-cyrillic-400-normal.woff2');
-      return null; // woff2 not supported by jsPDF easily
+    // Try Storage first (fastest, no external dep)
+    const { data: storageFont } = await supabase.storage
+      .from('documents')
+      .download('fonts/Roboto-Regular.ttf');
+    if (storageFont) {
+      const buf = await storageFont.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      console.log('Roboto font loaded from Storage');
+      return btoa(binary);
     }
-    const buf = await ttfRes.arrayBuffer();
+  } catch (e) {
+    console.log('Font not in Storage, fetching from CDN...');
+  }
+
+  // Fetch from CDN and cache to Storage for next time
+  try {
+    const cdnRes = await fetch(
+      'https://cdn.jsdelivr.net/gh/googlefonts/roboto@main/fonts/ttf/Roboto-Regular.ttf'
+    );
+    if (!cdnRes.ok) throw new Error(`CDN returned ${cdnRes.status}`);
+    const buf = await cdnRes.arrayBuffer();
     const bytes = new Uint8Array(buf);
+    // Cache to Storage (fire-and-forget)
+    supabase.storage.from('documents').upload('fonts/Roboto-Regular.ttf', bytes, {
+      contentType: 'font/ttf', upsert: true,
+    }).then(() => console.log('Font cached to Storage'))
+      .catch(e => console.error('Font cache failed:', e));
     let binary = '';
     for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    console.log('Roboto font loaded from CDN');
     return btoa(binary);
   } catch (e) {
-    console.error('Failed to load Roboto font:', e);
+    console.error('Failed to load Roboto font from CDN:', e);
     return null;
   }
 }
@@ -174,12 +193,13 @@ async function generateAndUploadPdf(
     amountInWords?: string;
     decisionNumber?: string;
     tempSigPath?: string;
+    tempImgPaths?: string[];
     language?: string;
   }
 ): Promise<string | null> {
   try {
-    const lang = data.language && pdfLabels[data.language] ? data.language : 'pl';
-    const L = pdfLabels[lang];
+    // Always use Russian labels regardless of submitted language
+    const L = pdfLabels['ru'];
 
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -191,10 +211,10 @@ async function generateAndUploadPdf(
     const rowHeight = 10;
     const cellPadding = 2;
 
-    // Try to load and register Roboto font for Unicode support
+    // Try to load and register Roboto font (Storage → CDN fallback)
     let fontLoaded = false;
     try {
-      const fontBase64 = await loadRobotoFont();
+      const fontBase64 = await loadRobotoFont(supabase);
       if (fontBase64) {
         doc.addFileToVFS('Roboto-Regular.ttf', fontBase64);
         doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
@@ -348,6 +368,35 @@ async function generateAndUploadPdf(
         }
       } catch (e) {
         console.error('Failed to embed signature:', e);
+      }
+    }
+
+    // Embed attached images as additional pages
+    const tempImgPaths = data.tempImgPaths || [];
+    const validImgPaths = tempImgPaths.filter(p => typeof p === 'string' && p.length > 0).slice(0, 10);
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    for (let i = 0; i < validImgPaths.length; i++) {
+      const imgPath = validImgPaths[i];
+      try {
+        const { data: imgBlob } = await supabase.storage.from('documents').download(imgPath);
+        if (!imgBlob) { console.warn(`Image not found: ${imgPath}`); continue; }
+        const imgBuf = await imgBlob.arrayBuffer();
+        const imgBytes = new Uint8Array(imgBuf);
+        let imgBinary = '';
+        for (let j = 0; j < imgBytes.length; j++) imgBinary += String.fromCharCode(imgBytes[j]);
+        const imgBase64 = btoa(imgBinary);
+        const isJpeg = imgPath.toLowerCase().endsWith('.jpg') || imgPath.toLowerCase().endsWith('.jpeg');
+        const fmt = isJpeg ? 'JPEG' : 'PNG';
+        const mime = isJpeg ? 'image/jpeg' : 'image/png';
+        doc.addPage();
+        doc.addImage(`data:${mime};base64,${imgBase64}`, fmt, 5, 5, pageW - 10, pageH - 10);
+        console.log(`Embedded image ${i + 1}: ${imgPath}`);
+        // Clean up temp image
+        supabase.storage.from('documents').remove([imgPath])
+          .catch(e => console.error(`Failed to clean up temp image ${imgPath}:`, e));
+      } catch (e) {
+        console.error(`Failed to embed image ${imgPath}:`, e);
       }
     }
 
@@ -542,6 +591,11 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Validate tempImgPaths
+    const tempImgPaths = Array.isArray(body.tempImgPaths)
+      ? body.tempImgPaths.filter(p => typeof p === 'string' && p.length < 300).slice(0, 10)
+      : [];
+
     // Generate PDF on server
     const pdfPath = await generateAndUploadPdf(supabase, linkData.owner_user_id, txData.id, {
       date: body.date,
@@ -553,7 +607,7 @@ Deno.serve(async (req) => {
       amountInWords: body.amountInWords,
       decisionNumber: body.decisionNumber,
       tempSigPath: body.tempSigPath,
-      language: body.language || 'pl',
+      tempImgPaths,
     });
 
     // Create notification with pdf_path already set

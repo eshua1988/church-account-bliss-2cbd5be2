@@ -1031,7 +1031,29 @@ const PublicPayout = () => {
         }
       }
 
-      // 2. Submit transaction — server generates PDF (with signature if available)
+      // Pre-upload images to temp paths so server can embed them in PDF
+      if (ownerId && attachedImages.length > 0 && !imagesOptional) {
+        const ts = Date.now();
+        const imgUploads = attachedImages.map(async (img, i) => {
+          try {
+            const ext = img.file.type.includes('png') ? 'png' : 'jpg';
+            const path = `${ownerId}/temp_${ts}/image_${i + 1}.${ext}`;
+            const buf = await img.file.arrayBuffer();
+            const { error } = await supabase.storage
+              .from('documents')
+              .upload(path, buf, { contentType: img.file.type || 'image/jpeg', upsert: true });
+            if (error) { console.error(`Image ${i + 1} pre-upload failed:`, error); return null; }
+            return path;
+          } catch (e) {
+            console.error(`Image ${i + 1} pre-upload error:`, e);
+            return null;
+          }
+        });
+        const results = await Promise.all(imgUploads);
+        tempImgPaths = results.filter((p): p is string => p !== null);
+      }
+
+      // 2. Submit transaction — server generates PDF (with signature + images)
       const submitResult = await supabase.functions.invoke('submit-public-payout', {
         body: {
           token,
@@ -1047,6 +1069,7 @@ const PublicPayout = () => {
           departmentName: formData.departmentName,
           decisionNumber: formData.bankAccount,
           tempSigPath: tempSigPath || undefined,
+          tempImgPaths: tempImgPaths.length > 0 ? tempImgPaths : undefined,
           language: language,
         }
       });
@@ -1056,45 +1079,9 @@ const PublicPayout = () => {
 
       const transactionId = submitResult.data?.transactionId;
 
-      // 3. Upload signature and images to the correct path (fire-and-forget, non-critical)
-      if (transactionId && ownerId) {
-        const uploadTasks: Promise<any>[] = [];
-
-        if (signatureDataUrl) {
-          try {
-            const sigBase64 = signatureDataUrl.split(',')[1];
-            const sigBytes = Uint8Array.from(atob(sigBase64), c => c.charCodeAt(0));
-            uploadTasks.push(
-              supabase.storage
-                .from('documents')
-                .upload(`${ownerId}/${transactionId}/signature.png`, sigBytes, {
-                  contentType: 'image/png',
-                  upsert: true,
-                })
-            );
-          } catch (e) {
-            console.error('Signature upload failed:', e);
-          }
-        }
-
-        const imageUploadTasks = attachedImages.map(async (img, i) => {
-          try {
-            const imgBuf = await img.file.arrayBuffer();
-            const ext = img.file.type.includes('png') ? 'png' : 'jpg';
-            return supabase.storage
-              .from('documents')
-              .upload(`${ownerId}/${transactionId}/image_${i + 1}.${ext}`, imgBuf, {
-                contentType: img.file.type || 'image/jpeg',
-                upsert: true,
-              });
-          } catch (e) {
-            console.error(`Image ${i + 1} upload failed:`, e);
-          }
-        });
-        uploadTasks.push(...imageUploadTasks);
-
-        Promise.all(uploadTasks).catch(e => console.error('File uploads error:', e));
-      }
+      // Signature was already uploaded to temp path and moved by the server.
+      // Images were pre-uploaded as tempImgPaths and embedded by the server.
+      // No additional file uploads needed here.
 
 
       setIsSuccess(true);
