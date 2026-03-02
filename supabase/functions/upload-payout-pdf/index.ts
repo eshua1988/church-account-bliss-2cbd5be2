@@ -102,29 +102,57 @@ Deno.serve(async (req) => {
 
     // Update notification with pdf_path using service role
     try {
-      const { data: notifData } = await supabase
+      // Search directly by transaction_id in metadata using filter
+      const { data: notifData, error: notifError } = await supabase
         .from('notifications')
         .select('id, metadata')
         .eq('user_id', linkData.owner_user_id)
         .eq('type', 'payout')
-        .order('created_at', { ascending: false })
-        .limit(10);
+        .filter('metadata->>transaction_id', 'eq', transactionId)
+        .limit(1);
 
-      if (notifData) {
-        const targetNotif = notifData.find(
-          (n: any) => n.metadata?.transaction_id === transactionId
-        );
-        if (targetNotif) {
+      if (notifError) {
+        console.error('Notification query error:', notifError);
+      }
+
+      const targetNotif = notifData?.[0];
+      if (targetNotif) {
+        const { error: updateError } = await supabase
+          .from('notifications')
+          .update({
+            metadata: {
+              ...(targetNotif.metadata as Record<string, any>),
+              pdf_path: pdfPath,
+            },
+          })
+          .eq('id', targetNotif.id);
+        if (updateError) {
+          console.error('Notification update error:', updateError);
+        } else {
+          console.log('Notification updated with pdf_path:', pdfPath);
+        }
+      } else {
+        // Fallback: retry once after 2 seconds (notification may not be created yet)
+        await new Promise(r => setTimeout(r, 2000));
+        const { data: retryData } = await supabase
+          .from('notifications')
+          .select('id, metadata')
+          .eq('user_id', linkData.owner_user_id)
+          .eq('type', 'payout')
+          .filter('metadata->>transaction_id', 'eq', transactionId)
+          .limit(1);
+        const retryNotif = retryData?.[0];
+        if (retryNotif) {
           await supabase
             .from('notifications')
             .update({
               metadata: {
-                ...(targetNotif.metadata as Record<string, any>),
+                ...(retryNotif.metadata as Record<string, any>),
                 pdf_path: pdfPath,
               },
             })
-            .eq('id', targetNotif.id);
-          console.log('Notification updated with pdf_path:', pdfPath);
+            .eq('id', retryNotif.id);
+          console.log('Notification updated with pdf_path (retry):', pdfPath);
         } else {
           console.log('Target notification not found for transactionId:', transactionId);
         }
