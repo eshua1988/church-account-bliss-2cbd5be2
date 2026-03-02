@@ -23,7 +23,9 @@ interface SubmitPayoutRequest {
   submitterName?: string;
   imagesSkipped?: boolean;
   departmentName?: string;
+  decisionNumber?: string;
   tempSigPath?: string;
+  language?: string;
 }
 
 const rateLimitStore: Map<string, { count: number; resetTime: number }> = new Map();
@@ -74,6 +76,90 @@ function validateInput(data: SubmitPayoutRequest): { valid: boolean; error?: str
   return { valid: true };
 }
 
+// PDF labels for each language
+const pdfLabels: Record<string, Record<string, string>> = {
+  pl: {
+    org: 'ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE',
+    title: 'Dowód wypłaty',
+    date: 'Data',
+    amount: 'Kwota',
+    issuedTo: 'Wydano (imię i nazwisko)',
+    account: 'Konto do przelewu',
+    department: 'Nazwa działu',
+    basis: 'Na podstawie',
+    amountInWords: 'Kwota słownie',
+    cashier: 'Kasjer:',
+    cashierSig: 'Podpis kasjera:',
+    recipientSig: 'Podpis odbiorcy:',
+  },
+  ru: {
+    org: 'СОБРАНИЕ ХРИСТИАН-БАПТИСТОВ «БОЖЬЯ БЛАГОДАТЬ» В ВАРШАВЕ',
+    title: 'Расходный ордер',
+    date: 'Дата',
+    amount: 'Сумма',
+    issuedTo: 'Выдано (ФИО)',
+    account: 'Счёт для перевода',
+    department: 'Название отдела',
+    basis: 'Основание',
+    amountInWords: 'Сумма прописью',
+    cashier: 'Кассир:',
+    cashierSig: 'Подпись кассира:',
+    recipientSig: 'Подпись получателя:',
+  },
+  uk: {
+    org: 'ЗІБРАННЯ ХРИСТИЯН-БАПТИСТІВ «БОЖА БЛАГОДАТЬ» У ВАРШАВІ',
+    title: 'Видатковий ордер',
+    date: 'Дата',
+    amount: 'Сума',
+    issuedTo: 'Видано (ПІБ)',
+    account: 'Рахунок для переказу',
+    department: 'Назва відділу',
+    basis: 'Підстава',
+    amountInWords: 'Сума прописом',
+    cashier: 'Касир:',
+    cashierSig: 'Підпис касира:',
+    recipientSig: 'Підпис отримувача:',
+  },
+  en: {
+    org: 'BAPTIST CHRISTIAN CONGREGATION «GOD\'S GRACE» IN WARSAW',
+    title: 'Payment Voucher',
+    date: 'Date',
+    amount: 'Amount',
+    issuedTo: 'Issued to (Full Name)',
+    account: 'Bank Account',
+    department: 'Department',
+    basis: 'Description / Basis',
+    amountInWords: 'Amount in words',
+    cashier: 'Cashier:',
+    cashierSig: 'Cashier signature:',
+    recipientSig: 'Recipient signature:',
+  },
+};
+
+// Load Roboto font supporting Cyrillic and Latin Extended
+async function loadRobotoFont(): Promise<string | null> {
+  try {
+    // Use a CDN that serves the font
+    const res = await fetch('https://fonts.gstatic.com/s/roboto/v47/KFOMCnqEu92Fr1ME7kSn66aGLdTylUAMQXC89YmC2DPNWuZNAA.woff2');
+    if (!res.ok) return null;
+    // We need TTF for jsPDF, try alternate source
+    const ttfRes = await fetch('https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Regular.ttf');
+    if (!ttfRes.ok) {
+      // Fallback: try jsDelivr CDN
+      const cdn = await fetch('https://cdn.jsdelivr.net/npm/@fontsource/roboto@5.0.12/files/roboto-cyrillic-400-normal.woff2');
+      return null; // woff2 not supported by jsPDF easily
+    }
+    const buf = await ttfRes.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  } catch (e) {
+    console.error('Failed to load Roboto font:', e);
+    return null;
+  }
+}
+
 async function generateAndUploadPdf(
   supabase: ReturnType<typeof createClient>,
   ownerUserId: string,
@@ -86,91 +172,159 @@ async function generateAndUploadPdf(
     departmentName?: string;
     description?: string;
     amountInWords?: string;
+    decisionNumber?: string;
     tempSigPath?: string;
+    language?: string;
   }
 ): Promise<string | null> {
   try {
-    const doc = new jsPDF();
+    const lang = data.language && pdfLabels[data.language] ? data.language : 'pl';
+    const L = pdfLabels[lang];
+
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageWidth = doc.internal.pageSize.getWidth();
-    const leftMargin = 20;
-    const tableWidth = pageWidth - 40;
-    const labelColWidth = 50;
+    const leftMargin = 15;
+    const rightMargin = 15;
+    const tableWidth = pageWidth - leftMargin - rightMargin;
+    const labelColWidth = 55;
     const valueColWidth = tableWidth - labelColWidth;
     const rowHeight = 10;
-    const cellPadding = 3;
+    const cellPadding = 2;
 
-    const drawCell = (x: number, y: number, width: number, height: number, text: string, fill = false) => {
-      if (fill) {
-        doc.setFillColor(240, 240, 240);
-        doc.rect(x, y, width, height, 'F');
+    // Try to load and register Roboto font for Unicode support
+    let fontLoaded = false;
+    try {
+      const fontBase64 = await loadRobotoFont();
+      if (fontBase64) {
+        doc.addFileToVFS('Roboto-Regular.ttf', fontBase64);
+        doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
+        doc.setFont('Roboto');
+        fontLoaded = true;
+        console.log('Roboto font loaded successfully');
       }
-      doc.setDrawColor(0);
-      doc.setLineWidth(0.3);
-      doc.rect(x, y, width, height, 'S');
-      doc.setFontSize(10);
-      const lines = doc.splitTextToSize(String(text || ''), width - cellPadding * 2);
-      doc.text(lines[0] || '', x + cellPadding, y + height / 2 + 3);
+    } catch (e) {
+      console.error('Font loading failed, using default:', e);
+    }
+
+    // Helper to safely render text (handles encoding)
+    const safeText = (text: string): string => {
+      if (!text) return '';
+      if (fontLoaded) return text; // With custom font, pass as-is
+      // Without custom font, transliterate Cyrillic and Polish characters
+      return transliterate(text);
     };
 
-    doc.setFontSize(11);
-    doc.text('ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE', pageWidth / 2, 20, { align: 'center' });
-    doc.setFontSize(16);
-    doc.text('Dowód wypłaty', pageWidth / 2, 32, { align: 'center' });
+    const drawCell = (x: number, y: number, width: number, height: number, text: string, fill = false, bold = false) => {
+      if (fill) {
+        doc.setFillColor(235, 235, 235);
+        doc.rect(x, y, width, height, 'F');
+      }
+      doc.setDrawColor(150, 150, 150);
+      doc.setLineWidth(0.3);
+      doc.rect(x, y, width, height, 'S');
+      doc.setFontSize(9);
+      if (bold && fontLoaded) {
+        try { doc.setFont('Roboto', 'bold'); } catch { /* noop */ }
+      }
+      const safeT = safeText(String(text || ''));
+      const lines = doc.splitTextToSize(safeT, width - cellPadding * 2);
+      doc.text(lines[0] || '', x + cellPadding, y + height / 2 + 3);
+      if (bold && fontLoaded) {
+        try { doc.setFont('Roboto', 'normal'); } catch { /* noop */ }
+      }
+    };
 
-    let yPos = 45;
-    const smallTableWidth = (tableWidth - 10) / 2;
-    const smallLabelWidth = 35;
-    const smallValueWidth = smallTableWidth - smallLabelWidth;
+    const drawMultilineCell = (x: number, y: number, width: number, height: number, text: string, fill = false) => {
+      if (fill) {
+        doc.setFillColor(235, 235, 235);
+        doc.rect(x, y, width, height, 'F');
+      }
+      doc.setDrawColor(150, 150, 150);
+      doc.setLineWidth(0.3);
+      doc.rect(x, y, width, height, 'S');
+      doc.setFontSize(9);
+      const safeT = safeText(String(text || ''));
+      if (safeT) {
+        const lines = doc.splitTextToSize(safeT, width - cellPadding * 2);
+        doc.text(lines, x + cellPadding, y + 6);
+      }
+    };
 
-    drawCell(leftMargin, yPos, smallLabelWidth, rowHeight, 'Data', true);
-    drawCell(leftMargin + smallLabelWidth, yPos, smallValueWidth, rowHeight, data.date);
+    // Header
+    doc.setFontSize(10);
+    const orgText = safeText(L.org);
+    doc.text(orgText, pageWidth / 2, 18, { align: 'center' });
 
-    const amountTableX = leftMargin + smallTableWidth + 10;
-    drawCell(amountTableX, yPos, smallLabelWidth + 10, rowHeight, `Kwota (${data.currency})`, true);
-    drawCell(amountTableX + smallLabelWidth + 10, yPos, smallValueWidth - 10, rowHeight, `${data.amount}`);
+    doc.setFontSize(15);
+    doc.text(safeText(L.title), pageWidth / 2, 28, { align: 'center' });
 
-    yPos += rowHeight + 8;
+    // Thin line under title
+    doc.setDrawColor(100, 100, 100);
+    doc.setLineWidth(0.5);
+    doc.line(leftMargin, 32, pageWidth - rightMargin, 32);
 
+    let yPos = 38;
+
+    // Date + Amount row side by side
+    const halfW = (tableWidth - 5) / 2;
+    const dateLabelW = 22;
+    const dateValueW = halfW - dateLabelW;
+    const amountLabelW = 38;
+    const amountValueW = halfW - amountLabelW;
+
+    drawCell(leftMargin, yPos, dateLabelW, rowHeight, safeText(L.date), true, true);
+    drawCell(leftMargin + dateLabelW, yPos, dateValueW, rowHeight, data.date);
+
+    const amtX = leftMargin + halfW + 5;
+    drawCell(amtX, yPos, amountLabelW, rowHeight, `${safeText(L.amount)} (${data.currency})`, true, true);
+    drawCell(amtX + amountLabelW, yPos, amountValueW, rowHeight, `${data.amount}`);
+
+    yPos += rowHeight + 4;
+
+    // Main rows
     const drawRow = (label: string, value: string) => {
-      drawCell(leftMargin, yPos, labelColWidth, rowHeight, label, true);
-      drawCell(leftMargin + labelColWidth, yPos, valueColWidth, rowHeight, value);
+      drawCell(leftMargin, yPos, labelColWidth, rowHeight, safeText(label), true, true);
+      drawCell(leftMargin + labelColWidth, yPos, valueColWidth, rowHeight, safeText(value));
       yPos += rowHeight;
     };
 
-    drawRow('Wydano (imię nazwisko)', data.issuedTo || '');
-    drawRow('Nazwa działu', data.departmentName || '');
+    drawRow(L.issuedTo, data.issuedTo || '');
+    drawRow(L.account, data.decisionNumber || '');
+    drawRow(L.department, data.departmentName || '');
 
-    const basisText = data.description || '';
+    // Basis (multiline)
+    const basisText = safeText(data.description || '');
     const basisLines = doc.splitTextToSize(basisText, valueColWidth - cellPadding * 2);
-    const basisHeight = Math.max(rowHeight * 2, basisLines.length * 6 + cellPadding * 2);
-    drawCell(leftMargin, yPos, labelColWidth, basisHeight, 'Na podstawie', true);
-    doc.rect(leftMargin + labelColWidth, yPos, valueColWidth, basisHeight, 'S');
-    doc.setFontSize(10);
-    if (basisLines.length > 0) doc.text(basisLines, leftMargin + labelColWidth + cellPadding, yPos + cellPadding + 6);
+    const basisHeight = Math.max(rowHeight * 2, Math.min(basisLines.length * 5.5 + cellPadding * 2 + 2, 40));
+    drawCell(leftMargin, yPos, labelColWidth, basisHeight, safeText(L.basis), true, true);
+    drawMultilineCell(leftMargin + labelColWidth, yPos, valueColWidth, basisHeight, data.description || '');
     yPos += basisHeight;
 
-    const wordsText = data.amountInWords || '';
+    // Amount in words (multiline)
+    const wordsText = safeText(data.amountInWords || '');
     const wordsLines = doc.splitTextToSize(wordsText, valueColWidth - cellPadding * 2);
-    const wordsHeight = Math.max(rowHeight * 2, wordsLines.length * 6 + cellPadding * 2);
-    drawCell(leftMargin, yPos, labelColWidth, wordsHeight, 'Kwota słownie', true);
-    doc.rect(leftMargin + labelColWidth, yPos, valueColWidth, wordsHeight, 'S');
-    doc.setFontSize(10);
-    if (wordsLines.length > 0) doc.text(wordsLines, leftMargin + labelColWidth + cellPadding, yPos + cellPadding + 6);
-    yPos += wordsHeight + 15;
+    const wordsHeight = Math.max(rowHeight * 2, Math.min(wordsLines.length * 5.5 + cellPadding * 2 + 2, 40));
+    drawCell(leftMargin, yPos, labelColWidth, wordsHeight, safeText(L.amountInWords), true, true);
+    drawMultilineCell(leftMargin + labelColWidth, yPos, valueColWidth, wordsHeight, data.amountInWords || '');
+    yPos += wordsHeight + 10;
 
-    doc.setFontSize(10);
-    doc.text('Kasjer: ________________________________', leftMargin, yPos);
-    doc.text('Podpis kasjera: ________________________________', pageWidth / 2, yPos);
-    yPos += 15;
+    // Signatures line
+    doc.setFontSize(9);
+    doc.setDrawColor(0, 0, 0);
+    doc.text(safeText(L.cashier) + ' _______________________________', leftMargin, yPos);
+    doc.text(safeText(L.cashierSig) + ' _______________________________', pageWidth / 2 + 5, yPos);
 
-    doc.setFontSize(11);
-    doc.text('Podpis odbiorcy:', leftMargin, yPos);
-    yPos += 5;
-    doc.setDrawColor(0);
+    yPos += 12;
+
+    // Recipient signature box
+    doc.setFontSize(10);
+    doc.text(safeText(L.recipientSig), leftMargin, yPos);
+    yPos += 4;
+    doc.setDrawColor(100, 100, 100);
     doc.setLineWidth(0.5);
-    doc.rect(leftMargin, yPos, 150, 40, 'S');
+    doc.rect(leftMargin, yPos, 155, 40, 'S');
 
-    // Try to embed signature — use tempSigPath (pre-uploaded before transaction) or permanent path
+    // Embed signature
     const sigDownloadPath = data.tempSigPath || `${ownerUserId}/${transactionId}/signature.png`;
     const { data: sigBlob } = await supabase.storage.from('documents').download(sigDownloadPath);
 
@@ -181,9 +335,9 @@ async function generateAndUploadPdf(
         let binary = '';
         for (let i = 0; i < sigBytes.length; i++) binary += String.fromCharCode(sigBytes[i]);
         const sigBase64 = btoa(binary);
-        doc.addImage(`data:image/png;base64,${sigBase64}`, 'PNG', leftMargin + 5, yPos + 2, 140, 36);
+        doc.addImage(`data:image/png;base64,${sigBase64}`, 'PNG', leftMargin + 5, yPos + 2, 145, 36);
 
-        // If we used tempSigPath, copy to permanent location and clean up temp
+        // Copy sig to permanent location and clean up temp
         if (data.tempSigPath) {
           const permanentPath = `${ownerUserId}/${transactionId}/signature.png`;
           await supabase.storage.from('documents').upload(permanentPath, sigBytes, {
@@ -199,8 +353,9 @@ async function generateAndUploadPdf(
 
     const pdfOutput = doc.output('arraybuffer');
     const pdfBytes = new Uint8Array(pdfOutput);
-    const issuedTo = (data.issuedTo || 'dokument').replace(/[^a-zA-Z0-9]/g, '_');
-    const fileName = `dowod_wyplaty_${data.date}_${issuedTo}.pdf`;
+
+    // Use simple predictable filename based on date + transaction ID (no Cyrillic in filename)
+    const fileName = `payout_${data.date}_${transactionId.slice(0, 8)}.pdf`;
     const storagePath = `${ownerUserId}/${transactionId}/${fileName}`;
 
     const { error: uploadError } = await supabase.storage
@@ -217,6 +372,26 @@ async function generateAndUploadPdf(
     console.error('Server-side PDF generation failed:', e);
     return null;
   }
+}
+
+// Transliteration fallback when custom font is not available
+function transliterate(text: string): string {
+  const map: Record<string, string> = {
+    'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'yo','ж':'zh','з':'z',
+    'и':'i','й':'y','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r',
+    'с':'s','т':'t','у':'u','ф':'f','х':'kh','ц':'ts','ч':'ch','ш':'sh','щ':'shch',
+    'ъ':"'",'ы':'y','ь':"'",'э':'e','ю':'yu','я':'ya',
+    'А':'A','Б':'B','В':'V','Г':'G','Д':'D','Е':'E','Ё':'Yo','Ж':'Zh','З':'Z',
+    'И':'I','Й':'Y','К':'K','Л':'L','М':'M','Н':'N','О':'O','П':'P','Р':'R',
+    'С':'S','Т':'T','У':'U','Ф':'F','Х':'Kh','Ц':'Ts','Ч':'Ch','Ш':'Sh','Щ':'Shch',
+    'Ъ':"'",'Ы':'Y','Ь':"'",'Э':'E','Ю':'Yu','Я':'Ya',
+    // Ukrainian
+    'і':'i','ї':'yi','є':'ye','ґ':'g','І':'I','Ї':'Yi','Є':'Ye','Ґ':'G',
+    // Polish
+    'ą':'a','ć':'c','ę':'e','ł':'l','ń':'n','ó':'o','ś':'s','ź':'z','ż':'z',
+    'Ą':'A','Ć':'C','Ę':'E','Ł':'L','Ń':'N','Ó':'O','Ś':'S','Ź':'Z','Ż':'Z',
+  };
+  return text.split('').map(c => map[c] || c).join('');
 }
 
 async function sendPdfToTelegram(
@@ -326,7 +501,7 @@ Deno.serve(async (req) => {
 
     let finalDescription = body.description?.slice(0, MAX_TEXT_LENGTH) || '';
     if (body.imagesSkipped && body.submitterName) {
-      const trackingNote = `[Bez załączników - ${body.submitterName}]`;
+      const trackingNote = `[Bez zalacznikow - ${body.submitterName}]`;
       finalDescription = finalDescription ? `${finalDescription} ${trackingNote}` : trackingNote;
     }
 
@@ -343,6 +518,7 @@ Deno.serve(async (req) => {
         issued_to: body.issuedTo?.slice(0, MAX_TEXT_LENGTH) || null,
         amount_in_words: body.amountInWords?.slice(0, MAX_TEXT_LENGTH) || null,
         cashier_name: body.departmentName?.slice(0, MAX_TEXT_LENGTH) || null,
+        decision_number: body.decisionNumber?.slice(0, MAX_TEXT_LENGTH) || null,
       })
       .select('id')
       .single();
@@ -366,7 +542,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Generate PDF on server (includes signature if tempSigPath was provided)
+    // Generate PDF on server
     const pdfPath = await generateAndUploadPdf(supabase, linkData.owner_user_id, txData.id, {
       date: body.date,
       amount: body.amount,
@@ -375,7 +551,9 @@ Deno.serve(async (req) => {
       departmentName: body.departmentName,
       description: finalDescription || body.description,
       amountInWords: body.amountInWords,
+      decisionNumber: body.decisionNumber,
       tempSigPath: body.tempSigPath,
+      language: body.language || 'pl',
     });
 
     // Create notification with pdf_path already set
@@ -405,8 +583,7 @@ Deno.serve(async (req) => {
 
     // Send PDF to Telegram (fire-and-forget)
     if (pdfPath) {
-      const issuedTo = (body.issuedTo || 'dokument').replace(/[^a-zA-Z0-9]/g, '_');
-      const fileName = `dowod_wyplaty_${body.date}_${issuedTo}.pdf`;
+      const fileName = `payout_${body.date}_${txData.id.slice(0, 8)}.pdf`;
       sendPdfToTelegram(supabase, linkData.owner_user_id, pdfPath, fileName)
         .catch(e => console.error('Telegram send error:', e));
     }
