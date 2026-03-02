@@ -1045,7 +1045,9 @@ const PublicPayout = () => {
           submitterName,
           imagesSkipped: imagesOptional,
           departmentName: formData.departmentName,
+          decisionNumber: formData.bankAccount,
           tempSigPath: tempSigPath || undefined,
+          language: language,
         }
       });
 
