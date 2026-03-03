@@ -10,7 +10,7 @@ import { useTranslation } from '@/contexts/LanguageContext';
 
 interface CategoryManagerProps {
   categories: Category[];
-  onAdd: (name: string, type: TransactionType) => void;
+  onAdd: (name: string, type: TransactionType) => void | Promise<void>;
   onDelete: (id: string) => void;
   onUpdate?: (id: string, name: string) => void;
   onReorder?: (type: TransactionType, fromIndex: number, toIndex: number) => void;
@@ -25,17 +25,22 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
 
   const filteredCategories = categories.filter(c => c.type === activeType);
 
-  const handleAdd = () => {
-    if (newCategoryName.trim()) {
-      onAdd(newCategoryName.trim(), activeType);
-      setNewCategoryName('');
+  const handleAdd = async () => {
+    const names = newCategoryName
+      .split(',')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+    if (names.length === 0) return;
+    for (const name of names) {
+      await onAdd(name, activeType);
     }
+    setNewCategoryName('');
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      handleAdd();
+      await handleAdd();
     }
   };
 
@@ -112,7 +117,7 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
         <Label>{t('addCategory')}</Label>
         <div className="flex gap-2">
           <Input
-            placeholder={t('categoryName')}
+            placeholder={t('categoryName') + ' (можно несколько через запятую)'}
             value={newCategoryName}
             onChange={(e) => setNewCategoryName(e.target.value)}
             onKeyDown={handleKeyDown}
