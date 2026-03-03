@@ -102,18 +102,20 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
     
     setIsSavingSettings(true);
     try {
+      const extractedId = extractSpreadsheetId(tempSpreadsheetId);
       const { error } = await supabase
         .from('profiles')
         .upsert({
           user_id: user.id,
-          spreadsheet_id: tempSpreadsheetId || null,
-          sheet_range: tempSheetRange || DEFAULT_SHEET_RANGE,
+          spreadsheet_id: extractedId || null,
+          sheet_range: DEFAULT_SHEET_RANGE,
         }, { onConflict: 'user_id' });
       
       if (error) throw error;
       
-      setSpreadsheetId(tempSpreadsheetId);
-      setSheetRange(tempSheetRange || DEFAULT_SHEET_RANGE);
+      setSpreadsheetId(extractedId);
+      setSheetRange(DEFAULT_SHEET_RANGE);
+      setTempSpreadsheetId(extractedId);
       setSettingsDialogOpen(false);
       
       toast({
@@ -563,25 +565,12 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
                   <Label htmlFor="spreadsheet-id">ID таблицы или ссылка</Label>
                   <Input
                     id="spreadsheet-id"
-                    placeholder="https://docs.google.com/spreadsheets/d/... или ID"
+                    placeholder="https://docs.google.com/spreadsheets/d/... или просто ID"
                     value={tempSpreadsheetId}
-                    onChange={(e) => setTempSpreadsheetId(extractSpreadsheetId(e.target.value))}
+                    onChange={(e) => setTempSpreadsheetId(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
                     Вставьте ссылку на таблицу или только ID
-                  </p>
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="sheet-range">Диапазон листа</Label>
-                  <Input
-                    id="sheet-range"
-                    placeholder="'Sheet1'!A:G"
-                    value={tempSheetRange}
-                    onChange={(e) => setTempSheetRange(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Название листа и диапазон колонок
                   </p>
                 </div>
                 
