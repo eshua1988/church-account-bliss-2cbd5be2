@@ -102,6 +102,12 @@ const translations: Record<Language, Record<string, string>> = {
     reviewTitle: 'Sprawdź dane przed wysłaniem',
     viewPdf: 'Otwórz PDF',
     editFields: 'Edytuj dane',
+    chooseAction: 'Wybierz akcję',
+    editExistingPdf: 'Dodaj zdjęcia do istniejącego PDF',
+    editExistingPdfDesc: 'Otwórz dokument bez zdjęć i dodaj brakujące załączniki',
+    createNewOrder: 'Utwórz nowy dowód wypłaty',
+    createNewOrderDesc: 'Wypełnij nowy formularz dowodu wypłaty od podstaw',
+    pendingCount: 'dokumentów oczekuje na zdjęcia',
   },
   ru: {
     title: 'Расходный ордер',
@@ -163,6 +169,12 @@ const translations: Record<Language, Record<string, string>> = {
     reviewTitle: 'Проверьте данные перед отправкой',
     viewPdf: 'Открыть PDF',
     editFields: 'Редактировать данные',
+    chooseAction: 'Выберите действие',
+    editExistingPdf: 'Добавить фото к существующему PDF',
+    editExistingPdfDesc: 'Открыть документ без фото и добавить вложения',
+    createNewOrder: 'Открыть новый ордер',
+    createNewOrderDesc: 'Заполнить новый расходный ордер с нуля',
+    pendingCount: 'документ(ов) ожидают фото',
   },
   en: {
     title: 'Payment Voucher',
@@ -224,6 +236,12 @@ const translations: Record<Language, Record<string, string>> = {
     reviewTitle: 'Review before sending',
     viewPdf: 'Open PDF',
     editFields: 'Edit fields',
+    chooseAction: 'Choose action',
+    editExistingPdf: 'Add photos to existing PDF',
+    editExistingPdfDesc: 'Open a document without photos and add missing attachments',
+    createNewOrder: 'Create new order',
+    createNewOrderDesc: 'Fill out a new payment voucher from scratch',
+    pendingCount: 'document(s) waiting for photos',
   },
   uk: {
     title: 'Видатковий ордер',
@@ -285,6 +303,12 @@ const translations: Record<Language, Record<string, string>> = {
     reviewTitle: 'Перевірте дані перед відправкою',
     viewPdf: 'Відкрити PDF',
     editFields: 'Редагувати дані',
+    chooseAction: 'Виберіть дію',
+    editExistingPdf: 'Додати фото до існуючого PDF',
+    editExistingPdfDesc: 'Відкрити документ без фото і додати вкладення',
+    createNewOrder: 'Відкрити новий ордер',
+    createNewOrderDesc: 'Заповнити новий видатковий ордер з нуля',
+    pendingCount: 'документ(ів) очікують фото',
   },
 };
 
@@ -493,8 +517,9 @@ const PublicPayout = () => {
   const [isAddingImages, setIsAddingImages] = useState(false);
   
   // Navigation history: tracks where user came from for proper back navigation
-  type NavigationScreen = 'login' | 'pending' | 'form' | 'continuing';
+  type NavigationScreen = 'login' | 'choice' | 'pending' | 'form' | 'continuing';
   const [navigationHistory, setNavigationHistory] = useState<NavigationScreen[]>(['login']);
+  const [showPendingChoice, setShowPendingChoice] = useState(false);
   
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1116,6 +1141,7 @@ const PublicPayout = () => {
     
     // Reset pending payout states
     setContinuingPayout(null);
+    setShowPendingChoice(false);
     setShowPendingSelection(false);
     setPendingPayouts([]);
     
@@ -1189,13 +1215,20 @@ const PublicPayout = () => {
     switch (prevScreen) {
       case 'login':
         setIsAuthenticated(false);
+        setShowPendingChoice(false);
+        setShowPendingSelection(false);
+        setContinuingPayout(null);
+        break;
+      case 'choice':
+        setIsAuthenticated(false);
+        setShowPendingChoice(true);
         setShowPendingSelection(false);
         setContinuingPayout(null);
         break;
       case 'pending':
-        // Go back to pending selection - need to set isAuthenticated false
-        // to show the pending selection screen (which is inside !isAuthenticated block)
+        // Go back to pending selection
         setIsAuthenticated(false);
+        setShowPendingChoice(false);
         setShowPendingSelection(true);
         setContinuingPayout(null);
         break;
@@ -1239,8 +1272,9 @@ const PublicPayout = () => {
         
         if (data?.pendingPayouts && data.pendingPayouts.length > 0) {
           setPendingPayouts(data.pendingPayouts);
-          setShowPendingSelection(true);
-          navigateTo('pending');
+          setShowPendingChoice(true);
+          setShowPendingSelection(false);
+          navigateTo('choice');
         } else {
           setIsAuthenticated(true);
           setFormData(prev => ({ ...prev, issuedTo: fullName }));
@@ -1255,6 +1289,12 @@ const PublicPayout = () => {
       } finally {
         setIsCheckingPending(false);
       }
+    };
+
+    const handleShowPendingList = () => {
+      setShowPendingChoice(false);
+      setShowPendingSelection(true);
+      navigateTo('pending');
     };
 
     const handleSelectPending = (payout: PendingPayout) => {
@@ -1283,6 +1323,7 @@ const PublicPayout = () => {
     };
 
     const handleCreateNew = () => {
+      setShowPendingChoice(false);
       setShowPendingSelection(false);
       setIsAuthenticated(true);
       navigateTo('form');
@@ -1295,6 +1336,100 @@ const PublicPayout = () => {
     const handleBackToLogin = () => {
       goBack();
     };
+    // Choice screen: edit existing PDF or create new order
+    if (showPendingChoice && pendingPayouts.length > 0) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background p-4">
+          <Toaster />
+          <Card className="max-w-lg w-full shadow-lg">
+            <CardHeader className="text-center border-b pb-4">
+              <div className="flex justify-end mb-2">
+                <Select value={language} onValueChange={(v) => setLanguage(v as Language)}>
+                  <SelectTrigger className="w-[140px] bg-card border-border">
+                    <Globe className="w-4 h-4 mr-2 text-muted-foreground" />
+                    <SelectValue>
+                      <span className="flex items-center gap-2">
+                        <span>{languageFlags[language]}</span>
+                        <span>{LANGUAGE_NAMES[language]}</span>
+                      </span>
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(['pl', 'ru', 'en', 'uk'] as Language[]).map((lang) => (
+                      <SelectItem key={lang} value={lang}>
+                        <span className="flex items-center gap-2">
+                          <span>{languageFlags[lang]}</span>
+                          <span>{LANGUAGE_NAMES[lang]}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <CardTitle className="text-xl sm:text-2xl font-bold text-primary">
+                {t.title}
+              </CardTitle>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                {t.subtitle}
+              </p>
+            </CardHeader>
+            <CardContent className="pt-6 space-y-4">
+              <div className="text-center mb-2">
+                <h3 className="text-lg font-semibold">{t.chooseAction}</h3>
+              </div>
+
+              {/* Option 1: Edit existing PDF */}
+              <button
+                onClick={handleShowPendingList}
+                className="w-full border-2 border-primary/30 rounded-xl p-5 text-left hover:border-primary hover:bg-primary/5 transition-all group"
+              >
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
+                    <ImagePlus className="w-6 h-6 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-base">{t.editExistingPdf}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{t.editExistingPdfDesc}</p>
+                    <span className="inline-block mt-2 text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                      {pendingPayouts.length} {t.pendingCount}
+                    </span>
+                  </div>
+                </div>
+              </button>
+
+              {/* Option 2: Create new order */}
+              <button
+                onClick={handleCreateNew}
+                className="w-full border-2 border-border rounded-xl p-5 text-left hover:border-muted-foreground hover:bg-accent/50 transition-all group"
+              >
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center shrink-0 group-hover:bg-muted/80 transition-colors">
+                    <ArrowRight className="w-6 h-6 text-muted-foreground" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-base">{t.createNewOrder}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{t.createNewOrderDesc}</p>
+                  </div>
+                </div>
+              </button>
+
+              <div className="border-t pt-3">
+                <Button
+                  onClick={handleBackToLogin}
+                  variant="ghost"
+                  className="w-full"
+                  size="lg"
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  {t.back}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
     if (showPendingSelection && pendingPayouts.length > 0) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
