@@ -1005,6 +1005,13 @@ const PublicPayout = () => {
           .eq('token', token)
           .single();
 
+        // Pre-compute the PDF filename so we can pass it to the edge function
+        // (edge function needs it to update the notification pdf_path)
+        const pdfFileName = `dowod_wyplaty_${format(formData.date, 'yyyy-MM-dd')}_${formData.issuedTo.replace(/\s/g, '_') || 'dokument'}.pdf`;
+        const newPdfPath = linkData?.owner_user_id
+          ? `${linkData.owner_user_id}/${continuingPayout.id}/${pdfFileName}`
+          : undefined;
+
         // Run update + PDF generation in parallel
         const [updateResult, pdfResult] = await Promise.all([
           supabase.functions.invoke('add-images-to-payout', {
@@ -1012,6 +1019,7 @@ const PublicPayout = () => {
               token,
               transactionId: continuingPayout.id,
               submitterName: `${submitterFirstName} ${submitterLastName}`,
+              newPdfPath,
               updatedBasis: formData.basis,
               updatedIssuedTo: formData.issuedTo,
               updatedAmountInWords: formData.amountInWords,
@@ -1028,12 +1036,11 @@ const PublicPayout = () => {
         if (updateResult.data?.error) throw new Error(updateResult.data.error);
 
         // Upload PDF directly from client to Storage
-        if (pdfResult && linkData?.owner_user_id) {
+        if (pdfResult && newPdfPath) {
           try {
-            const storagePath = `${linkData.owner_user_id}/${continuingPayout.id}/${pdfResult.fileName}`;
             await supabase.storage
               .from('documents')
-              .upload(storagePath, pdfResult.pdfBlob, {
+              .upload(newPdfPath, pdfResult.pdfBlob, {
                 contentType: 'application/pdf',
                 upsert: true,
               });

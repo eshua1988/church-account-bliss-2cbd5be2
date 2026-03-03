@@ -9,6 +9,7 @@ interface AddImagesRequest {
   token: string;
   transactionId: string;
   submitterName: string;
+  newPdfPath?: string; // Expected storage path of re-generated PDF (client uploads it)
   // Optional edited fields
   updatedBasis?: string;
   updatedIssuedTo?: string;
@@ -133,6 +134,31 @@ Deno.serve(async (req) => {
     }
 
     console.log(`Transaction ${body.transactionId} marked as completed with images`);
+
+    // Update the notification: flip images_skipped → false, update pdf_path
+    try {
+      const { data: notif } = await supabase
+        .from('notifications')
+        .select('id, metadata')
+        .eq('user_id', linkData.owner_user_id)
+        .filter('metadata->>transaction_id', 'eq', body.transactionId)
+        .maybeSingle();
+
+      if (notif) {
+        const updatedMeta = {
+          ...(notif.metadata as Record<string, unknown> || {}),
+          images_skipped: false,
+          ...(body.newPdfPath ? { pdf_path: body.newPdfPath } : {}),
+        };
+        await supabase
+          .from('notifications')
+          .update({ metadata: updatedMeta })
+          .eq('id', notif.id);
+        console.log(`Notification ${notif.id} updated: images_skipped=false`);
+      }
+    } catch (notifErr) {
+      console.warn('Failed to update notification (non-critical):', notifErr);
+    }
 
     return new Response(
       JSON.stringify({ success: true }),
