@@ -167,12 +167,19 @@ serve(async (req) => {
       .from('profiles')
       .select('spreadsheet_id, sheet_range')
       .eq('user_id', authResult.userId)
-      .single();
+      .maybeSingle();
 
     if (profileError) {
       console.error('Failed to load user profile for sheets settings:', profileError);
       return new Response(
-        JSON.stringify({ error: 'Bad request: Missing Google Sheets settings' }),
+        JSON.stringify({ error: 'Bad request: Could not load user settings' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!profile) {
+      return new Response(
+        JSON.stringify({ error: 'Bad request: Please configure your Google Sheets ID in settings first' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -335,7 +342,12 @@ serve(async (req) => {
         if (!response.ok) {
           const errorData = await response.json();
           console.error('Google Sheets values write error:', errorData);
-          throw new Error(errorData.error?.message || 'Google Sheets values write error');
+          const msg = errorData.error?.message || JSON.stringify(errorData.error) || 'Google Sheets write error';
+          const status = response.status === 403 ? 403 : response.status === 404 ? 404 : 500;
+          return new Response(
+            JSON.stringify({ error: msg }),
+            { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
         }
         
         // Then, add notes if provided
@@ -430,7 +442,12 @@ serve(async (req) => {
     
     if (!response.ok) {
       console.error('Google Sheets API error:', data);
-      throw new Error(data.error?.message || 'Google Sheets API error');
+      const msg = data.error?.message || JSON.stringify(data.error) || 'Google Sheets API error';
+      const status = response.status === 403 ? 403 : response.status === 404 ? 404 : 500;
+      return new Response(
+        JSON.stringify({ error: msg }),
+        { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     console.log(`Google Sheets ${action} successful`);
