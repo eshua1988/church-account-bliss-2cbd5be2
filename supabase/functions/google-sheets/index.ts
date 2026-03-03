@@ -94,11 +94,13 @@ async function getAccessToken(): Promise<string> {
     iat: now,
   };
 
-  // Base64url encode
+  // Base64url encode — use TextEncoder for safety (no deprecated unescape)
   const base64urlEncode = (obj: object) => {
     const json = JSON.stringify(obj);
-    const base64 = btoa(unescape(encodeURIComponent(json)));
-    return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const bytes = new TextEncoder().encode(json);
+    let binary = '';
+    for (const b of bytes) binary += String.fromCharCode(b);
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   };
 
   const headerEncoded = base64urlEncode(header);
