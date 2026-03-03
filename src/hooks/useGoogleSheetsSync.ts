@@ -93,28 +93,15 @@ export const useGoogleSheetsSync = ({
     }
 
     try {
-      // Use all expense categories from database, sorted by sortOrder (as in the DB)
+      // Expense categories sorted by sortOrder (DB order)
       const sortedCategories = expenseCategories
         .filter(cat => cat.type === 'expense')
         .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
         .map(cat => [cat.id, cat.name] as [string, string]);
 
-      // Also collect income categories sorted by sortOrder
-      const incomeCategories = expenseCategories
-        .filter(cat => cat.type === 'income')
-        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-        .map(cat => [cat.id, cat.name] as [string, string]);
-
-      // Headers: Date, [income categories...], [expense categories...]
-      const headers = [
-        'Date',
-        ...(incomeCategories.length > 0 ? incomeCategories.map(([, name]) => name) : ['Income']),
-        ...sortedCategories.map(([, name]) => name),
-      ];
-
-      // Column offset constants
-      const incomeCols = incomeCategories.length > 0 ? incomeCategories.length : 1; // "Income" fallback
-      // col 0 = Date, cols 1..incomeCols = income categories, cols incomeCols+1.. = expense categories
+      // Headers: Date | Income | [expense category columns...]
+      // col 0 = Date, col 1 = Income, col 2+ = expense categories
+      const headers = ['Date', 'Income', ...sortedCategories.map(([, name]) => name)];
 
       // Group transactions by date
       const dateMap = new Map<string, Transaction[]>();
@@ -139,32 +126,24 @@ export const useGoogleSheetsSync = ({
 
       sortedDates.forEach((dateKey) => {
         const dayTxs = dateMap.get(dateKey)!;
-        // Newest transactions first (top)
         dayTxs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
         dayTxs.forEach((tx, txIndex) => {
           let col: number;
           if (tx.type === 'income') {
-            if (incomeCategories.length > 0) {
-              const idx = incomeCategories.findIndex(([id]) => id === tx.category);
-              col = idx !== -1 ? 1 + idx : 1; // fallback to first income col
-            } else {
-              col = 1; // single "Income" column
-            }
+            col = 1;
           } else {
-            const categoryIndex = sortedCategories.findIndex(([id]) => id === tx.category);
-            col = categoryIndex !== -1 ? 1 + incomeCols + categoryIndex : -1;
+            const idx = sortedCategories.findIndex(([id]) => id === tx.category);
+            col = idx !== -1 ? 2 + idx : -1;
           }
 
           const rowIndex = rows.length;
           const row: string[] = new Array(headers.length).fill('');
-          // Date only in the first row of this date group
           row[0] = txIndex === 0 ? dateKey : '';
 
           if (col !== -1) {
             row[col] = `${tx.amount} ${tx.currency}`;
 
-            // Add note with description/issuedTo
             const noteParts: string[] = [];
             if (tx.description) noteParts.push(`Описание: ${tx.description}`);
             if (tx.type === 'expense' && tx.issuedTo) noteParts.push(`Кому: ${tx.issuedTo}`);
