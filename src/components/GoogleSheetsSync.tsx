@@ -50,6 +50,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
   const [spreadsheetId, setSpreadsheetId] = useState('');
   const [sheetRange, setSheetRange] = useState(DEFAULT_SHEET_RANGE);
   const [tempSpreadsheetId, setTempSpreadsheetId] = useState('');
+  const [tempSheetName, setTempSheetName] = useState('');
   const [tempSheetRange, setTempSheetRange] = useState(DEFAULT_SHEET_RANGE);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
@@ -79,7 +80,11 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
           setSpreadsheetId(data.spreadsheet_id || '');
           setSheetRange(data.sheet_range || DEFAULT_SHEET_RANGE);
           setTempSpreadsheetId(data.spreadsheet_id || '');
-          setTempSheetRange(data.sheet_range || DEFAULT_SHEET_RANGE);
+          // Parse saved sheet_range like "'Data app'!A:I" into name + range
+          const saved = data.sheet_range || DEFAULT_SHEET_RANGE;
+          const savedMatch = saved.match(/^'?([^'!]+)'?!(.+)$/);
+          setTempSheetName(savedMatch ? savedMatch[1] : '');
+          setTempSheetRange(savedMatch ? savedMatch[2] : saved);
         } else {
           // Profile doesn't exist yet — create it
           await supabase.from('profiles').upsert(
@@ -103,18 +108,22 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
     setIsSavingSettings(true);
     try {
       const extractedId = extractSpreadsheetId(tempSpreadsheetId);
+      // Combine sheet name + range into full range string
+      const fullRange = tempSheetName.trim()
+        ? `'${tempSheetName.trim()}'!${tempSheetRange.trim() || DEFAULT_SHEET_RANGE}`
+        : (tempSheetRange.trim() || DEFAULT_SHEET_RANGE);
       const { error } = await supabase
         .from('profiles')
         .upsert({
           user_id: user.id,
           spreadsheet_id: extractedId || null,
-          sheet_range: DEFAULT_SHEET_RANGE,
+          sheet_range: fullRange,
         }, { onConflict: 'user_id' });
       
       if (error) throw error;
       
       setSpreadsheetId(extractedId);
-      setSheetRange(DEFAULT_SHEET_RANGE);
+      setSheetRange(fullRange);
       setTempSpreadsheetId(extractedId);
       setSettingsDialogOpen(false);
       
@@ -571,6 +580,32 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
                   />
                   <p className="text-xs text-muted-foreground">
                     Вставьте ссылку на таблицу или только ID
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="sheet-name">Название листа</Label>
+                  <Input
+                    id="sheet-name"
+                    placeholder="Лист1 (оставьте пустым — будет выбран первый лист)"
+                    value={tempSheetName}
+                    onChange={(e) => setTempSheetName(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Название вкладки внизу таблицы, например: Data app, Sheet1
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="sheet-range">Диапазон листа</Label>
+                  <Input
+                    id="sheet-range"
+                    placeholder="A:I"
+                    value={tempSheetRange}
+                    onChange={(e) => setTempSheetRange(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Диапазон колонок, например: A:I или A1:Z1000
                   </p>
                 </div>
                 
