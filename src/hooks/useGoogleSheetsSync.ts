@@ -171,7 +171,16 @@ export const useGoogleSheetsSync = ({
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        let msg = error.message;
+        try {
+          if (error.context && typeof error.context.json === 'function') {
+            const body = await error.context.json();
+            if (body?.error) msg = body.error;
+          }
+        } catch (_) { /* ignore */ }
+        throw new Error(msg);
+      }
       return true;
     } catch (error) {
       console.error('Sync error:', error);
@@ -243,7 +252,16 @@ export const useGoogleSheetsSync = ({
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        let msg = error.message;
+        try {
+          if (error.context && typeof error.context.json === 'function') {
+            const body = await error.context.json();
+            if (body?.error) msg = body.error;
+          }
+        } catch (_) { /* ignore */ }
+        throw new Error(msg);
+      }
 
       const rows = data?.values || [];
       if (rows.length > 1 && onDeleteTransaction) {

@@ -497,8 +497,8 @@ serve(async (req) => {
     });
 
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('Error in google-sheets function:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error('Unhandled error in google-sheets function:', errorMessage, error);
     return new Response(
       JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

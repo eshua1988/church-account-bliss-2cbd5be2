@@ -201,7 +201,15 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
 
       if (error) {
         console.error('Sync error details:', error);
-        throw error;
+        // Extract real message from Edge Function response body
+        let msg = error.message;
+        try {
+          if (error.context && typeof error.context.json === 'function') {
+            const body = await error.context.json();
+            if (body?.error) msg = body.error;
+          }
+        } catch (_) { /* ignore */ }
+        throw new Error(msg);
       }
 
       setLastSyncTime(new Date());
