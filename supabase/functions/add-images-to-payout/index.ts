@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
     }
 
     // Verify the transaction belongs to the link owner and matches submitter
-    const searchPattern = `%[Bez załączników - ${body.submitterName.trim()}]%`;
+    const searchPattern = `%[Bez zalacznikow - ${body.submitterName.trim()}]%`;
     
     const { data: transaction, error: txError } = await supabase
       .from('transactions')

@@ -1367,7 +1367,7 @@ const PublicPayout = () => {
       
       // Pre-fill form with existing transaction data
       const category = categories.find(c => c.id === payout.category_id);
-      const cleanDescription = payout.description?.replace(/\s*\[Bez załączników - [^\]]+\]/g, '').trim() || '';
+      const cleanDescription = payout.description?.replace(/\s*\[Bez zalacznikow - [^\]]+\]/g, '').trim() || '';
       
       setFormData({
         date: new Date(payout.date),
@@ -1538,7 +1538,7 @@ const PublicPayout = () => {
               
               <div className="space-y-3 max-h-64 overflow-y-auto">
                 {pendingPayouts.map((payout) => {
-                  const cleanDesc = payout.description?.replace(/\s*\[Bez załączników - [^\]]+\]/g, '').trim() || '';
+                  const cleanDesc = payout.description?.replace(/\s*\[Bez zalacznikow - [^\]]+\]/g, '').trim() || '';
                   const currencySymbol = currencies.find(c => c.value === payout.currency)?.label || payout.currency;
                   
                   return (

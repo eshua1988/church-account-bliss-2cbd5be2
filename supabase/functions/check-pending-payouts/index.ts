@@ -75,19 +75,16 @@ Deno.serve(async (req) => {
     }
 
     // Search for transactions without images for this submitter
-    // Pattern: [Bez załączników - Name Surname] with flexible spacing
-    // Normalize the name: collapse multiple spaces and trim
+    // Pattern: [Bez zalacznikow - Name Surname] - stored WITHOUT Polish diacritics
     const normalizedName = body.submitterName.trim().replace(/\s+/g, ' ');
     const nameParts = normalizedName.split(' ');
     
     // Build a flexible search pattern that handles extra spaces
-    // Use % wildcards between name parts to match any spacing
     let searchPattern: string;
     if (nameParts.length >= 2) {
-      // For "First Last" search for pattern with flexible spacing
-      searchPattern = `%[Bez załączników - ${nameParts[0]}%${nameParts[nameParts.length - 1]}%]%`;
+      searchPattern = `%[Bez zalacznikow - ${nameParts[0]}%${nameParts[nameParts.length - 1]}%]%`;
     } else {
-      searchPattern = `%[Bez załączników - %${normalizedName}%]%`;
+      searchPattern = `%[Bez zalacznikow - %${normalizedName}%]%`;
     }
     
     console.log(`Searching with pattern: ${searchPattern}`);
