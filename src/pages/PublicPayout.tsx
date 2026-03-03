@@ -841,12 +841,12 @@ const PublicPayout = () => {
     
     // Header
     doc.setFontSize(11);
-    doc.text('СОБРАНИЕ ХРИСТИАН БАПТИСТОВ «БОЖЬЯ БЛАГОДАТЬ» В ВАРШАВЕ', pageWidth / 2, 20, { align: 'center' });
+    doc.text('ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE', pageWidth / 2, 20, { align: 'center' });
     
     // Title
     doc.setFontSize(16);
     doc.setFont('Roboto', 'normal');
-    doc.text('Расходный ордер', pageWidth / 2, 32, { align: 'center' });
+    doc.text('Dowód wypłaty', pageWidth / 2, 32, { align: 'center' });
     
     let yPos = 45;
     
@@ -856,13 +856,13 @@ const PublicPayout = () => {
     const smallValueWidth = smallTableWidth - smallLabelWidth;
     
     // Date table
-    drawCell(leftMargin, yPos, smallLabelWidth, rowHeight, 'Дата', { fill: true });
+    drawCell(leftMargin, yPos, smallLabelWidth, rowHeight, 'Data', { fill: true });
     drawCell(leftMargin + smallLabelWidth, yPos, smallValueWidth, rowHeight, format(formData.date, 'yyyy-MM-dd'));
     
     // Amount table  
     const currencySymbol = currencies.find(c => c.value === formData.currency)?.label || formData.currency;
     const amountTableX = leftMargin + smallTableWidth + 10;
-    drawCell(amountTableX, yPos, smallLabelWidth + 10, rowHeight, `Сумма (${formData.currency})`, { fill: true });
+    drawCell(amountTableX, yPos, smallLabelWidth + 10, rowHeight, `Kwota (${formData.currency})`, { fill: true });
     drawCell(amountTableX + smallLabelWidth + 10, yPos, smallValueWidth - 10, rowHeight, `${currencySymbol} ${formData.amount}`);
     
     yPos += rowHeight + 4;
@@ -870,7 +870,7 @@ const PublicPayout = () => {
     // Conversion info row (if currency was converted)
     if (conversionInfo) {
       const convLabelWidth = 50;
-      drawCell(leftMargin, yPos, convLabelWidth, rowHeight, 'Конвертация', { fill: true });
+      drawCell(leftMargin, yPos, convLabelWidth, rowHeight, 'Przeliczenie walut', { fill: true });
       drawCell(leftMargin + convLabelWidth, yPos, tableWidth - convLabelWidth, rowHeight, `${conversionInfo.fromAmount} ${conversionInfo.fromCurrency} → ${conversionInfo.toAmount} ${conversionInfo.toCurrency}  (1 ${conversionInfo.fromCurrency} = ${conversionInfo.rate} ${conversionInfo.toCurrency})`);
       yPos += rowHeight + 4;
     } else {
@@ -878,20 +878,20 @@ const PublicPayout = () => {
     }
     
     // Main table rows
-    drawTableRow(yPos, 'Выдано (имя фамилия)', formData.issuedTo);
+    drawTableRow(yPos, 'Wydano (imię i nazwisko)', formData.issuedTo);
     yPos += rowHeight;
     
-    drawTableRow(yPos, 'Счёт для перевода', formData.bankAccount);
+    drawTableRow(yPos, 'Konto do przelewu', formData.bankAccount);
     yPos += rowHeight;
     
-    drawTableRow(yPos, 'Название отдела', formData.departmentName);
+    drawTableRow(yPos, 'Nazwa działu', formData.departmentName);
     yPos += rowHeight;
 
     // Basis (multi-line)
     const basisLines = doc.splitTextToSize(formData.basis, valueColWidth - cellPadding * 2);
     const basisHeight = Math.max(rowHeight * 2, basisLines.length * 6 + cellPadding * 2);
     
-    drawCell(leftMargin, yPos, labelColWidth, basisHeight, 'Основание', { fill: true });
+    drawCell(leftMargin, yPos, labelColWidth, basisHeight, 'Na podstawie', { fill: true });
     doc.setDrawColor(0);
     doc.setLineWidth(0.3);
     doc.rect(leftMargin + labelColWidth, yPos, valueColWidth, basisHeight, 'S');
@@ -903,7 +903,7 @@ const PublicPayout = () => {
     const wordsLines = doc.splitTextToSize(formData.amountInWords, valueColWidth - cellPadding * 2);
     const wordsHeight = Math.max(rowHeight * 2, wordsLines.length * 6 + cellPadding * 2);
     
-    drawCell(leftMargin, yPos, labelColWidth, wordsHeight, 'Сумма прописью', { fill: true });
+    drawCell(leftMargin, yPos, labelColWidth, wordsHeight, 'Kwota słownie', { fill: true });
     doc.setDrawColor(0);
     doc.setLineWidth(0.3);
     doc.rect(leftMargin + labelColWidth, yPos, valueColWidth, wordsHeight, 'S');
@@ -913,13 +913,13 @@ const PublicPayout = () => {
     
     // Cashier line
     doc.setFontSize(10);
-    doc.text('Кассир: ________________________________', leftMargin, yPos);
-    doc.text('Подпись кассира: ________________________________', pageWidth / 2, yPos);
+    doc.text('Kasjer: ________________________________', leftMargin, yPos);
+    doc.text('Podpis kasjera: ________________________________', pageWidth / 2, yPos);
     yPos += 15;
     
     // Recipient signature
     doc.setFontSize(11);
-    doc.text('Подпись получателя:', leftMargin, yPos);
+    doc.text('Podpis odbiorcy:', leftMargin, yPos);
     yPos += 5;
     
     // Signature box

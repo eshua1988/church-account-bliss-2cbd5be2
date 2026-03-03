@@ -204,8 +204,8 @@ async function generateAndUploadPdf(
   }
 ): Promise<string | null> {
   try {
-    // Always use Russian labels regardless of submitted language
-    const L = pdfLabels['ru'];
+    // Always use Polish labels for PDF headers
+    const L = pdfLabels['pl'];
 
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageWidth = doc.internal.pageSize.getWidth();
