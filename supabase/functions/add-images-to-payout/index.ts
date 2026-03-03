@@ -9,6 +9,14 @@ interface AddImagesRequest {
   token: string;
   transactionId: string;
   submitterName: string;
+  // Optional edited fields
+  updatedBasis?: string;
+  updatedIssuedTo?: string;
+  updatedAmountInWords?: string;
+  updatedDate?: string;
+  updatedAmount?: number;
+  updatedCurrency?: string;
+  updatedDecisionNumber?: string;
 }
 
 Deno.serve(async (req) => {
@@ -94,17 +102,26 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Remove the "[Bez załączników - Name]" tag from description
-    const updatedDescription = transaction.description
+    // Remove the "[Bez załączników - Name]" tag from description, use edited basis if provided
+    const strippedDescription = transaction.description
       ?.replace(/\s*\[Bez załączników - [^\]]+\]/g, '')
       .trim() || '';
+    const finalDescription = body.updatedBasis !== undefined ? body.updatedBasis : strippedDescription;
+
+    const updateData: Record<string, unknown> = {
+      description: finalDescription || null,
+      updated_at: new Date().toISOString(),
+    };
+    if (body.updatedIssuedTo !== undefined) updateData['issued_to'] = body.updatedIssuedTo;
+    if (body.updatedAmountInWords !== undefined) updateData['amount_in_words'] = body.updatedAmountInWords;
+    if (body.updatedDate !== undefined) updateData['date'] = body.updatedDate;
+    if (body.updatedAmount !== undefined) updateData['amount'] = body.updatedAmount;
+    if (body.updatedCurrency !== undefined) updateData['currency'] = body.updatedCurrency;
+    if (body.updatedDecisionNumber !== undefined) updateData['decision_number'] = body.updatedDecisionNumber;
 
     const { error: updateError } = await supabase
       .from('transactions')
-      .update({ 
-        description: updatedDescription || null,
-        updated_at: new Date().toISOString()
-      })
+      .update(updateData)
       .eq('id', body.transactionId);
 
     if (updateError) {

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { openPdfUrl } from '@/lib/pdfDownload';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe, ArrowLeft, ArrowRight, Send } from 'lucide-react';
+import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe, ArrowLeft, ArrowRight, Send, ExternalLink } from 'lucide-react';
 import currencyConvertIcon from '@/assets/currency-convert-icon.png';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -100,6 +100,8 @@ const translations: Record<Language, Record<string, string>> = {
     stepReview: 'Podsumowanie',
     downloadPdf: 'Wyślij',
     reviewTitle: 'Sprawdź dane przed wysłaniem',
+    viewPdf: 'Otwórz PDF',
+    editFields: 'Edytuj dane',
   },
   ru: {
     title: 'Расходный ордер',
@@ -159,6 +161,8 @@ const translations: Record<Language, Record<string, string>> = {
     stepReview: 'Итоги',
     downloadPdf: 'Отправить',
     reviewTitle: 'Проверьте данные перед отправкой',
+    viewPdf: 'Открыть PDF',
+    editFields: 'Редактировать данные',
   },
   en: {
     title: 'Payment Voucher',
@@ -218,6 +222,8 @@ const translations: Record<Language, Record<string, string>> = {
     stepReview: 'Review',
     downloadPdf: 'Send',
     reviewTitle: 'Review before sending',
+    viewPdf: 'Open PDF',
+    editFields: 'Edit fields',
   },
   uk: {
     title: 'Видатковий ордер',
@@ -277,6 +283,8 @@ const translations: Record<Language, Record<string, string>> = {
     stepReview: 'Підсумок',
     downloadPdf: 'Надіслати',
     reviewTitle: 'Перевірте дані перед відправкою',
+    viewPdf: 'Відкрити PDF',
+    editFields: 'Редагувати дані',
   },
 };
 
@@ -477,6 +485,7 @@ const PublicPayout = () => {
     amount_in_words: string | null;
     category_id: string | null;
     created_at: string;
+    pdfUrl?: string | null;
   }
   const [pendingPayouts, setPendingPayouts] = useState<PendingPayout[]>([]);
   const [showPendingSelection, setShowPendingSelection] = useState(false);
@@ -949,7 +958,14 @@ const PublicPayout = () => {
               token,
               transactionId: continuingPayout.id,
               submitterName: `${submitterFirstName} ${submitterLastName}`,
-            }
+              updatedBasis: formData.basis,
+              updatedIssuedTo: formData.issuedTo,
+              updatedAmountInWords: formData.amountInWords,
+              updatedDate: format(formData.date, 'yyyy-MM-dd'),
+              updatedAmount: parseFloat(formData.amount),
+              updatedCurrency: formData.currency,
+              updatedDecisionNumber: formData.bankAccount,
+            },
           }),
           generatePDF(),
         ]);
@@ -1329,23 +1345,40 @@ const PublicPayout = () => {
                   const currencySymbol = currencies.find(c => c.value === payout.currency)?.label || payout.currency;
                   
                   return (
-                    <button
+                    <div
                       key={payout.id}
-                      onClick={() => handleSelectPending(payout)}
-                      className="w-full p-3 text-left border border-border rounded-lg hover:bg-accent/50 transition-colors"
+                      className="border border-border rounded-lg hover:bg-accent/50 transition-colors"
                     >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-medium">{cleanDesc || t.noDescription}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {format(new Date(payout.date), 'dd.MM.yyyy')}
-                          </p>
+                      <button
+                        onClick={() => handleSelectPending(payout)}
+                        className="w-full p-3 text-left"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-medium">{cleanDesc || t.noDescription}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {format(new Date(payout.date), 'dd.MM.yyyy')}
+                            </p>
+                          </div>
+                          <span className="font-semibold text-primary">
+                            {currencySymbol} {payout.amount.toFixed(2)}
+                          </span>
                         </div>
-                        <span className="font-semibold text-primary">
-                          {currencySymbol} {payout.amount.toFixed(2)}
-                        </span>
-                      </div>
-                    </button>
+                      </button>
+                      {payout.pdfUrl && (
+                        <div className="px-3 pb-3 pt-0">
+                          <a
+                            href={payout.pdfUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            {t.viewPdf}
+                          </a>
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -1577,31 +1610,69 @@ const PublicPayout = () => {
               </div>
             )}
             
-            {/* Continuing payout - simplified view */}
+            {/* Continuing payout - editable form + photos + signature */}
             {continuingPayout ? (
               <>
                 <div className="flex items-center justify-between mb-3">
-                  <Button
-                    onClick={goBack}
-                    variant="ghost"
-                    size="sm"
-                  >
+                  <Button onClick={goBack} variant="ghost" size="sm">
                     <ArrowLeft className="w-4 h-4 mr-2" />
                     {t.back}
                   </Button>
                 </div>
-                <div className="bg-muted/50 p-4 rounded-lg space-y-2">
-                  <p className="text-sm font-medium">{t.documentData}</p>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <span className="text-muted-foreground">{t.date}:</span>
-                    <span>{format(formData.date, 'dd.MM.yyyy')}</span>
-                    <span className="text-muted-foreground">{t.amount}:</span>
-                    <span>{currencies.find(c => c.value === formData.currency)?.label} {formData.amount}</span>
-                    <span className="text-muted-foreground">{t.recipient}</span>
-                    <span>{formData.issuedTo}</span>
-                    <span className="text-muted-foreground">{t.basisLabel}</span>
-                    <span>{formData.basis}</span>
+
+                {/* Editable document fields */}
+                <p className="text-sm font-medium text-muted-foreground">{t.editFields}</p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>{t.date} *</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="w-full justify-start text-left font-normal">
+                          <Calendar className="mr-2 h-4 w-4" />
+                          {format(formData.date, 'dd.MM.yyyy')}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <CalendarComponent mode="single" selected={formData.date} onSelect={(d) => d && handleInputChange('date', d)} initialFocus />
+                      </PopoverContent>
+                    </Popover>
                   </div>
+                  <div className="space-y-2">
+                    <Label>{t.amount} *</Label>
+                    <div className="flex gap-2">
+                      <Select value={formData.currency} onValueChange={(v) => handleInputChange('currency', v)}>
+                        <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
+                        <SelectContent>{currencies.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
+                      </Select>
+                      <Input type="number" step="0.01" placeholder="0.00" value={formData.amount} onChange={(e) => handleInputChange('amount', e.target.value)} className="flex-1" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t.issuedTo} *</Label>
+                    <Input value={formData.issuedTo} onChange={(e) => handleInputChange('issuedTo', e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>{t.bankAccount}</Label>
+                    <Input placeholder={t.bankAccountPlaceholder} value={formData.bankAccount} onChange={(e) => handleInputChange('bankAccount', e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t.department} *</Label>
+                    <Input value={formData.departmentName} onChange={(e) => handleInputChange('departmentName', e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>{t.basis} *</Label>
+                  <Textarea value={formData.basis} onChange={(e) => handleInputChange('basis', e.target.value)} rows={3} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>{t.amountInWords}</Label>
+                  <Input value={formData.amountInWords} onChange={(e) => setFormData(prev => ({ ...prev, amountInWords: e.target.value }))} />
                 </div>
                 
                 {/* Image Attachments - Required for continuation */}
@@ -1610,7 +1681,6 @@ const PublicPayout = () => {
                     <Label>{t.attachments} *</Label>
                     <span className="text-xs text-muted-foreground">{t.required}</span>
                   </div>
-                  
                   <div>
                     <input
                       ref={fileInputRef}

@@ -111,10 +111,29 @@ Deno.serve(async (req) => {
 
     console.log(`Found ${pendingTransactions?.length || 0} pending transactions for ${body.submitterName}`);
 
+    // Enrich with PDF URLs from storage
+    const enrichedPayouts = await Promise.all(
+      (pendingTransactions || []).map(async (tx) => {
+        try {
+          const { data: files } = await supabase.storage
+            .from('documents')
+            .list(`${linkData.owner_user_id}/${tx.id}`);
+          const pdfFile = files?.find((f: { name: string }) => f.name.endsWith('.pdf'));
+          if (pdfFile) {
+            const { data: signed } = await supabase.storage
+              .from('documents')
+              .createSignedUrl(`${linkData.owner_user_id}/${tx.id}/${pdfFile.name}`, 3600);
+            return { ...tx, pdfUrl: signed?.signedUrl || null };
+          }
+        } catch (_) { /* ignore */ }
+        return { ...tx, pdfUrl: null };
+      })
+    );
+
     return new Response(
       JSON.stringify({ 
         success: true, 
-        pendingPayouts: pendingTransactions || []
+        pendingPayouts: enrichedPayouts
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
