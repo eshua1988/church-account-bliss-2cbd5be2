@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { openPdfUrl } from '@/lib/pdfDownload';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe, ArrowLeft, ArrowRight, Send, ExternalLink } from 'lucide-react';
+import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe, ArrowLeft, ArrowRight, Send, ExternalLink, Copy, Link } from 'lucide-react';
 import currencyConvertIcon from '@/assets/currency-convert-icon.png';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -68,6 +68,13 @@ const translations: Record<Language, Record<string, string>> = {
     success: 'Wysłano!',
     successMessage: 'Dokument został zapisany. Możesz zamknąć tę stronę.',
     createAnother: 'Utwórz kolejny dokument',
+    saveLink: 'Zapisz link, aby dodać zdjęcia później',
+    saveLinkDesc: 'Twój dokument został zapisany bez zdjęć. Skopiuj poniższy link i wróć do tej strony, aby dodać zdjęcia.',
+    copyLink: 'Kopiuj link',
+    linkCopied: 'Skopiowano!',
+    noPhotosWarning: 'Dokument bez zdjęć',
+    savedWithoutPhotos: 'Dokument zapisany bez zdjęć. Możesz wrócić później.',
+    returnAndEnterName: 'Wróć na ten link i wpisz swoje imię i nazwisko, aby dodać zdjęcia.',
     loading: 'Ładowanie...',
     invalidLink: 'Nieprawidłowy link',
     linkInactive: 'Link jest nieaktywny lub nie istnieje',
@@ -135,6 +142,13 @@ const translations: Record<Language, Record<string, string>> = {
     success: 'Отправлено!',
     successMessage: 'Документ сохранён. Можете закрыть эту страницу.',
     createAnother: 'Создать ещё один документ',
+    saveLink: 'Сохраните ссылку, чтобы добавить фото позже',
+    saveLinkDesc: 'Документ сохранён без фото. Скопируйте ссылку и вернитесь на эту страницу, чтобы добавить фото.',
+    copyLink: 'Скопировать ссылку',
+    linkCopied: 'Скопировано!',
+    noPhotosWarning: 'Документ без фото',
+    savedWithoutPhotos: 'Документ сохранён без фото. Вы можете вернуться позже.',
+    returnAndEnterName: 'Вернитесь по этой ссылке и введите имя и фамилию, чтобы добавить фото.',
     loading: 'Загрузка...',
     invalidLink: 'Неверная ссылка',
     linkInactive: 'Ссылка неактивна или не существует',
@@ -202,6 +216,13 @@ const translations: Record<Language, Record<string, string>> = {
     success: 'Sent!',
     successMessage: 'Document sent. You can close this page.',
     createAnother: 'Create another document',
+    saveLink: 'Save link to add photos later',
+    saveLinkDesc: 'Document saved without photos. Copy the link below and return to this page to add photos.',
+    copyLink: 'Copy link',
+    linkCopied: 'Copied!',
+    noPhotosWarning: 'Document without photos',
+    savedWithoutPhotos: 'Document saved without photos. You can return later.',
+    returnAndEnterName: 'Return to this link and enter your name to add photos.',
     loading: 'Loading...',
     invalidLink: 'Invalid link',
     linkInactive: 'Link is inactive or does not exist',
@@ -269,6 +290,13 @@ const translations: Record<Language, Record<string, string>> = {
     success: 'Надіслано!',
     successMessage: 'Документ збережено. Можете закрити цю сторінку.',
     createAnother: 'Створити ще один документ',
+    saveLink: 'Збережіть посилання для додавання фото пізніше',
+    saveLinkDesc: 'Документ збережено без фото. Скопіюйте посилання і поверніться на цю сторінку, щоб додати фото.',
+    copyLink: 'Скопіювати посилання',
+    linkCopied: 'Скопійовано!',
+    noPhotosWarning: 'Документ без фото',
+    savedWithoutPhotos: 'Документ збережено без фото. Ви можете повернутись пізніше.',
+    returnAndEnterName: 'Поверніться за цим посиланням і введіть ім’я та прізвище, щоб додати фото.',
     loading: 'Завантаження...',
     invalidLink: 'Невірне посилання',
     linkInactive: 'Посилання неактивне або не існує',
@@ -492,6 +520,7 @@ const PublicPayout = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
   // Auth state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [submitterFirstName, setSubmitterFirstName] = useState('');
@@ -1172,6 +1201,13 @@ const PublicPayout = () => {
   };
 
   if (isSuccess) {
+    const currentUrl = window.location.href;
+    const handleCopyLink = () => {
+      navigator.clipboard.writeText(currentUrl).then(() => {
+        setIsCopied(true);
+        setTimeout(() => setIsCopied(false), 3000);
+      });
+    };
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <Toaster />
@@ -1180,8 +1216,34 @@ const PublicPayout = () => {
             <CheckCircle className="w-16 h-16 text-primary mx-auto" />
             <h2 className="text-xl font-bold">{t.success}</h2>
             <p className="text-muted-foreground">
-              {t.successMessage}
+              {imagesOptional ? t.savedWithoutPhotos : t.successMessage}
             </p>
+
+            {imagesOptional && (
+              <div className="mt-2 rounded-xl border-2 border-yellow-500/40 bg-yellow-500/5 p-4 text-left space-y-3">
+                <div className="flex items-center gap-2 text-yellow-500">
+                  <Link className="w-4 h-4 shrink-0" />
+                  <span className="font-semibold text-sm">{t.saveLink}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">{t.returnAndEnterName}</p>
+                <div className="flex items-center gap-2 bg-background rounded-lg border border-border p-2">
+                  <span className="flex-1 text-xs text-muted-foreground truncate" title={currentUrl}>
+                    {currentUrl}
+                  </span>
+                  <button
+                    onClick={handleCopyLink}
+                    className="shrink-0 flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors px-2 py-1 rounded-md hover:bg-primary/10"
+                  >
+                    {isCopied ? (
+                      <><CheckCircle className="w-3.5 h-3.5" />{t.linkCopied}</>
+                    ) : (
+                      <><Copy className="w-3.5 h-3.5" />{t.copyLink}</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
             <Button onClick={handleCreateAnother} variant="outline">
               {t.createAnother}
             </Button>
