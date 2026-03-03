@@ -18,7 +18,7 @@ interface NoteData {
 }
 
 interface SheetRequest {
-  action: 'read' | 'write' | 'append' | 'delete';
+  action: 'read' | 'write' | 'append' | 'delete' | 'diagnose';
   spreadsheetId: string;
   range: string;
   values?: string[][];
@@ -167,6 +167,33 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Public health/diagnose endpoint (no auth required)
+  const url = new URL(req.url);
+  if (url.pathname.endsWith('/health') || url.searchParams.get('action') === 'health') {
+    const rawCreds = Deno.env.get('GOOGLE_SHEETS_CREDENTIALS') || '';
+    const info: Record<string, unknown> = { creds_length: rawCreds.length };
+    try {
+      const parsed = JSON.parse(rawCreds);
+      info.type = parsed.type;
+      info.client_email = parsed.client_email;
+      info.has_private_key = !!parsed.private_key;
+      info.private_key_length = (parsed.private_key || '').length;
+      info.private_key_starts = (parsed.private_key || '').substring(0, 27);
+    } catch (e) {
+      info.parse_error = String(e);
+    }
+    try {
+      const tok = await getAccessToken();
+      info.token_ok = true;
+      info.token_prefix = tok.substring(0, 15);
+    } catch (e) {
+      info.token_error = String(e);
+    }
+    return new Response(JSON.stringify(info, null, 2), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   try {
     // Authenticate the request first
     const authResult = await authenticateRequest(req);
@@ -237,6 +264,38 @@ serve(async (req) => {
       );
     }
 
+    // ── DIAGNOSE: test credentials without touching the spreadsheet ──
+    if (action === 'diagnose') {
+      const rawCreds = Deno.env.get('GOOGLE_SHEETS_CREDENTIALS') || '';
+      const diagInfo: Record<string, unknown> = {
+        creds_length: rawCreds.length,
+        creds_first20: rawCreds.substring(0, 20),
+        spreadsheet_id: configuredSpreadsheetId,
+        sheet_range: configuredRange,
+      };
+      try {
+        const parsed = JSON.parse(rawCreds);
+        diagInfo.creds_type = parsed.type;
+        diagInfo.creds_email = parsed.client_email;
+        diagInfo.has_private_key = !!parsed.private_key;
+        diagInfo.private_key_length = parsed.private_key?.length ?? 0;
+        diagInfo.private_key_starts = parsed.private_key?.substring(0, 30);
+      } catch (e) {
+        diagInfo.parse_error = String(e);
+      }
+      // Try to get access token
+      try {
+        const tok = await getAccessToken();
+        diagInfo.token_ok = true;
+        diagInfo.token_prefix = tok.substring(0, 10);
+      } catch (e) {
+        diagInfo.token_error = String(e);
+      }
+      return new Response(JSON.stringify(diagInfo), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Validate spreadsheet ID format for security
     if (!isValidSpreadsheetId(spreadsheetId)) {
       console.error(`Invalid spreadsheet ID format: ${spreadsheetId}`);
@@ -253,7 +312,14 @@ serve(async (req) => {
       );
     }
 
-    const accessToken = await getAccessToken();
+    const accessToken = await (async () => {
+      try {
+        return await getAccessToken();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        throw new Error(`Ошибка получения токена Google: ${msg}`);
+      }
+    })();
     const baseUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`;
     const notes = body.notes as NoteData[] | undefined;
 
