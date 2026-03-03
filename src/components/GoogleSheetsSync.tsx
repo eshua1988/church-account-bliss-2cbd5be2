@@ -23,12 +23,13 @@ interface GoogleSheetsSyncProps {
   transactions: Transaction[];
   getCategoryName: (id: string) => string;
   onDeleteTransaction?: (id: string) => Promise<void>;
+  expenseCategories?: { id: string; name: string; type: string; sortOrder?: number }[];
 }
 
 const AUTO_SYNC_KEY = 'google_sheets_auto_sync';
 const AUTO_DELETE_CHECK_KEY = 'google_sheets_auto_delete_check';
 const DELETE_CHECK_INTERVAL = 60000; // 1 minute
-export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransaction }: GoogleSheetsSyncProps) => {
+export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransaction, expenseCategories = [] }: GoogleSheetsSyncProps) => {
   const { toast } = useToast();
   const { user } = useAuth();
   const [isExporting, setIsExporting] = useState(false);
@@ -166,27 +167,54 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
 
     setSyncStatus('syncing');
     try {
-      const headers = ['ID', 'Date', 'Type', 'Category', 'Amount', 'Currency', 'Description', 'Issued To', 'DELETE'];
-      
-      // Sort transactions: newest first (by date, then by createdAt)
-      const sortedTxs = [...txs].sort((a, b) => {
-        const dateA = new Date(a.date).getTime();
-        const dateB = new Date(b.date).getTime();
-        if (dateA !== dateB) return dateB - dateA;
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      // Compact format: Date | Income | [expense categories sorted by sortOrder]
+      const sortedExpense = expenseCategories
+        .filter(cat => cat.type === 'expense')
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
+      const headers = ['Date', 'Income', ...sortedExpense.map(c => c.name)];
+
+      // Group by date, sort dates descending
+      const dateMap = new Map<string, Transaction[]>();
+      for (const tx of txs) {
+        const dateKey = new Date(tx.date).toLocaleDateString('pl-PL');
+        if (!dateMap.has(dateKey)) dateMap.set(dateKey, []);
+        dateMap.get(dateKey)!.push(tx);
+      }
+      const sortedDates = Array.from(dateMap.keys()).sort((a, b) => {
+        const parse = (s: string) => { const [d, m, y] = s.split('.'); return new Date(+y, +m - 1, +d).getTime(); };
+        return parse(b) - parse(a);
       });
-      
-      const rows = sortedTxs.map(tx => [
-        tx.id,
-        new Date(tx.date).toLocaleDateString('pl-PL'),
-        tx.type,
-        getCategoryName(tx.category),
-        tx.amount.toString(),
-        tx.currency,
-        tx.description || '',
-        tx.type === 'expense' ? (tx.issuedTo || '') : '',
-        '', // Placeholder for delete action
-      ]);
+
+      const rows: string[][] = [];
+      const notes: { row: number; col: number; note: string }[] = [];
+
+      sortedDates.forEach(dateKey => {
+        const dayTxs = [...dateMap.get(dateKey)!]
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        dayTxs.forEach((tx, txIndex) => {
+          let col: number;
+          if (tx.type === 'income') {
+            col = 1;
+          } else {
+            const idx = sortedExpense.findIndex(c => c.id === tx.category);
+            col = idx !== -1 ? 2 + idx : -1;
+          }
+
+          const rowIndex = rows.length;
+          const row: string[] = new Array(headers.length).fill('');
+          row[0] = txIndex === 0 ? dateKey : '';
+          if (col !== -1) {
+            row[col] = `${tx.amount} ${tx.currency}`;
+            const noteParts: string[] = [];
+            if (tx.description) noteParts.push(`Описание: ${tx.description}`);
+            if (tx.type === 'expense' && tx.issuedTo) noteParts.push(`Кому: ${tx.issuedTo}`);
+            if (noteParts.length > 0) notes.push({ row: rowIndex + 1, col, note: noteParts.join('\n') });
+          }
+          rows.push(row);
+        });
+      });
 
       const values = [headers, ...rows];
 
@@ -196,6 +224,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
           spreadsheetId: spreadsheetId,
           range: sheetRange,
           values,
+          notes,
         },
       });
 

@@ -330,6 +330,7 @@ const Index = () => {
                   transactions={transactions} 
                   getCategoryName={getCategoryName} 
                   onDeleteTransaction={deleteTransaction}
+                  expenseCategories={expenseCategories}
                 />
               </div>
               <Separator />
