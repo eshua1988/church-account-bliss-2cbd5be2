@@ -15,6 +15,7 @@ import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
 import jsPDF from 'jspdf';
+import { ROBOTO_FONT_BASE64 } from '@/lib/robotoFont';
 import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { useToast } from '@/hooks/use-toast';
@@ -39,20 +40,7 @@ interface PayoutFormData {
   amountInWords: string;
 }
 
-// Helper function to load font as base64
-const loadFontAsBase64 = async (url: string): Promise<string> => {
-  const response = await fetch(url);
-  const blob = await response.blob();
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64 = (reader.result as string).split(',')[1];
-      resolve(base64);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-};
+
 
 // Number to words conversion for multiple languages
 const numberToWords = (num: number, currency: string, lang: string): string => {
@@ -198,8 +186,6 @@ export const PayoutGenerator = () => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [fontLoaded, setFontLoaded] = useState(false);
-  const [fontBase64, setFontBase64] = useState<string | null>(null);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   const [imagesOptional, setImagesOptional] = useState(false); // false = images required by default
   const [showConverter, setShowConverter] = useState(false);
@@ -227,21 +213,6 @@ export const PayoutGenerator = () => {
       setFormData(prev => ({ ...prev, amountInWords: '' }));
     }
   }, [formData.amount, formData.currency, language]);
-
-  // Load Roboto font for PDF
-  useEffect(() => {
-    const loadFont = async () => {
-      try {
-        const base64 = await loadFontAsBase64(`${import.meta.env.BASE_URL}fonts/Roboto-Regular.ttf`);
-        setFontBase64(base64);
-        setFontLoaded(true);
-      } catch (error) {
-        console.error('Failed to load font:', error);
-        setFontLoaded(true); // Continue without custom font
-      }
-    };
-    loadFont();
-  }, []);
 
   const currencies = [
     { value: 'PLN', label: 'zł' },
@@ -364,11 +335,9 @@ export const PayoutGenerator = () => {
     const pageHeight = doc.internal.pageSize.getHeight();
     
     // Add custom font for Cyrillic/Polish support
-    if (fontBase64) {
-      doc.addFileToVFS('Roboto-Regular.ttf', fontBase64);
-      doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
-      doc.setFont('Roboto');
-    }
+    doc.addFileToVFS('Roboto-Regular.ttf', ROBOTO_FONT_BASE64);
+    doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
+    doc.setFont('Roboto');
     
     const leftMargin = 20;
     const rightMargin = 20;
@@ -956,7 +925,7 @@ export const PayoutGenerator = () => {
           <div className="flex">
             <Button
               onClick={handleGenerateAndSave}
-              disabled={!isFormValid || !hasSignature || isSaving || !fontLoaded}
+              disabled={!isFormValid || !hasSignature || isSaving}
               className="w-full gradient-primary text-primary-foreground font-semibold shadow-glow hover:shadow-lg transition-all duration-200"
               size="lg"
             >

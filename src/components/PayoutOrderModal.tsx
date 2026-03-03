@@ -14,6 +14,7 @@ import { downloadPdfBlob } from '@/lib/pdfDownload';
 import { useToast } from '@/hooks/use-toast';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import jsPDF from 'jspdf';
+import { ROBOTO_FONT_BASE64 } from '@/lib/robotoFont';
 
 interface PayoutOrderData {
   id: string;
@@ -36,17 +37,6 @@ interface PayoutOrderModalProps {
   pdfPath?: string | null; // Storage path to attached PDF
 }
 
-const loadFontAsBase64 = async (url: string): Promise<string> => {
-  const response = await fetch(url);
-  const blob = await response.blob();
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-};
-
 export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLabel, pdfPath }: PayoutOrderModalProps) => {
   const [data, setData] = useState<PayoutOrderData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -56,7 +46,6 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
   const [isDownloading, setIsDownloading] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [fontBase64, setFontBase64] = useState<string | null>(null);
   const [pdfSignedUrl, setPdfSignedUrl] = useState<string | null>(null);
   const [attachedImageUrls, setAttachedImageUrls] = useState<string[]>([]);
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
@@ -65,13 +54,6 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
   const { toast } = useToast();
   const { getExpenseCategories } = useSupabaseCategories();
   const expenseCategories = getExpenseCategories();
-
-  // Load font
-  useEffect(() => {
-    loadFontAsBase64(`${import.meta.env.BASE_URL}fonts/Roboto-Regular.ttf`)
-      .then(setFontBase64)
-      .catch(console.error);
-  }, []);
 
   // Fetch transaction data + load files from Storage by transactionId
   useEffect(() => {
@@ -215,11 +197,9 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
 
-    if (fontBase64) {
-      doc.addFileToVFS('Roboto-Regular.ttf', fontBase64);
-      doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
-      doc.setFont('Roboto');
-    }
+    doc.addFileToVFS('Roboto-Regular.ttf', ROBOTO_FONT_BASE64);
+    doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
+    doc.setFont('Roboto');
 
     const leftMargin = 20;
     const tableWidth = pageWidth - 40;

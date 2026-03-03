@@ -16,6 +16,7 @@ import { Switch } from '@/components/ui/switch';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import jsPDF from 'jspdf';
+import { ROBOTO_FONT_BASE64 } from '@/lib/robotoFont';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
@@ -310,20 +311,6 @@ interface SharedLink {
 }
 
 // Helper function to load font as base64
-const loadFontAsBase64 = async (url: string): Promise<string> => {
-  const response = await fetch(url);
-  const blob = await response.blob();
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64 = (reader.result as string).split(',')[1];
-      resolve(base64);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-};
-
 // Number to words conversion
 const numberToWords = (num: number, currency: string, lang: string = 'pl'): string => {
   if (isNaN(num) || num === 0) return '';
@@ -473,9 +460,6 @@ const PublicPayout = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [fontLoaded, setFontLoaded] = useState(false);
-  const [fontBase64, setFontBase64] = useState<string | null>(null);
-  
   // Auth state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [submitterFirstName, setSubmitterFirstName] = useState('');
@@ -588,21 +572,6 @@ const PublicPayout = () => {
 
     loadData();
   }, [token]);
-
-  // Load font
-  useEffect(() => {
-    const loadFont = async () => {
-      try {
-        const base64 = await loadFontAsBase64(`${import.meta.env.BASE_URL}fonts/Roboto-Regular.ttf`);
-        setFontBase64(base64);
-        setFontLoaded(true);
-      } catch (error) {
-        console.error('Failed to load font:', error);
-        setFontLoaded(true);
-      }
-    };
-    loadFont();
-  }, []);
 
   // Auto-generate amount in words
   useEffect(() => {
@@ -742,11 +711,9 @@ const PublicPayout = () => {
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     
-    if (fontBase64) {
-      doc.addFileToVFS('Roboto-Regular.ttf', fontBase64);
-      doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
-      doc.setFont('Roboto');
-    }
+    doc.addFileToVFS('Roboto-Regular.ttf', ROBOTO_FONT_BASE64);
+    doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
+    doc.setFont('Roboto');
     
     const leftMargin = 20;
     const rightMargin = 20;
@@ -1594,7 +1561,7 @@ const PublicPayout = () => {
                   {currentStep === totalSteps && (
                     <Button
                       onClick={handleSubmit}
-                      disabled={!isFormValid || !hasSignature || isSaving || !fontLoaded}
+                      disabled={!isFormValid || !hasSignature || isSaving}
                       size="sm"
                       className="gap-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
                     >
@@ -1726,7 +1693,7 @@ const PublicPayout = () => {
                 <div className="flex">
                   <Button
                     onClick={handleSubmit}
-                    disabled={!isFormValid || !hasSignature || isSaving || !fontLoaded}
+                    disabled={!isFormValid || !hasSignature || isSaving}
                     className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
                     size="lg"
                   >
