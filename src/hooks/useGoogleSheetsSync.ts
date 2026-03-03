@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Transaction } from '@/types/transaction';
 import { useAuth } from '@/contexts/AuthContext';
 
-const DEFAULT_SHEET_RANGE = "'Data app'!A:Z"; // Wide range to accommodate dynamic category columns
+const DEFAULT_SHEET_RANGE = "A:Z"; // Wide range, sheet name auto-resolved by Edge Function
 const AUTO_SYNC_KEY = 'google_sheets_auto_sync';
 const AUTO_DELETE_CHECK_KEY = 'google_sheets_auto_delete_check';
 const DELETE_CHECK_INTERVAL = 60000;

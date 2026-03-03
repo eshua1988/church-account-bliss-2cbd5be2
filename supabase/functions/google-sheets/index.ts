@@ -236,11 +236,50 @@ serve(async (req) => {
     const baseUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`;
     const notes = body.notes as NoteData[] | undefined;
 
+    // Fetch spreadsheet metadata once — used for sheet name resolution and sheetId lookup
+    type SheetInfo = { properties: { title: string; sheetId: number } };
+    const metaResp = await fetch(`${baseUrl}?fields=sheets.properties`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+    });
+    if (!metaResp.ok) {
+      const metaErr = await metaResp.json().catch(() => ({}));
+      console.error('Failed to get spreadsheet metadata:', metaErr);
+      const errMsg = (metaErr as { error?: { message?: string } })?.error?.message || 'Cannot access spreadsheet';
+      const status = metaResp.status === 403 ? 403 : metaResp.status === 404 ? 404 : 500;
+      return new Response(
+        JSON.stringify({ error: `Google Sheets: ${errMsg}. Убедитесь что таблица открыта для сервисного аккаунта: church-accounting@church-accounting-of-finances.iam.gserviceaccount.com` }),
+        { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    const meta = await metaResp.json();
+    const sheetsInfo: SheetInfo[] = meta.sheets ?? [];
+    const firstSheetName = sheetsInfo[0]?.properties?.title ?? 'Sheet1';
+
+    // Resolve the actual range: if configured sheet name doesn't exist → use first sheet
+    let resolvedRange = range;
+    const sheetMatch = range.match(/^'?([^'!]+)'?!/);
+    if (sheetMatch) {
+      const requestedSheet = sheetMatch[1];
+      const exists = sheetsInfo.some(s => s.properties.title === requestedSheet);
+      if (!exists) {
+        console.log(`Sheet "${requestedSheet}" not found, falling back to first sheet "${firstSheetName}"`);
+        resolvedRange = range.replace(/^'?[^'!]+'?!/, `'${firstSheetName}'!`);
+      }
+    } else {
+      // No sheet prefix → prepend first sheet name
+      resolvedRange = `'${firstSheetName}'!${range}`;
+    }
+    console.log(`Resolved range: ${resolvedRange}`);
+
+    // Get sheetId for batchUpdate requests
+    const resolvedSheetName = (resolvedRange.match(/^'?([^'!]+)'?!/) || [])[1] ?? firstSheetName;
+    const sheetIdNum = sheetsInfo.find(s => s.properties.title === resolvedSheetName)?.properties?.sheetId ?? 0;
+
     let response;
 
     switch (action) {
       case 'read': {
-        response = await fetch(`${baseUrl}/values/${encodeURIComponent(range)}`, {
+        response = await fetch(`${baseUrl}/values/${encodeURIComponent(resolvedRange)}`, {
           headers: { 'Authorization': `Bearer ${accessToken}` },
         });
         break;
@@ -249,25 +288,7 @@ serve(async (req) => {
       case 'write': {
         if (!values) throw new Error('Values required for write action');
         
-        // Get sheet ID from range (parse sheet name)
-        const sheetName = range.split('!')[0].replace(/'/g, '');
-        
-        // Get spreadsheet metadata to find sheet ID
-        const metadataResponse = await fetch(`${baseUrl}?fields=sheets.properties`, {
-          headers: { 'Authorization': `Bearer ${accessToken}` },
-        });
-        
-        let sheetId = 0;
-        if (metadataResponse.ok) {
-          const metadata = await metadataResponse.json();
-          const sheet = metadata.sheets?.find((s: { properties: { title: string } }) => 
-            s.properties.title === sheetName
-          );
-          sheetId = sheet?.properties?.sheetId ?? 0;
-        }
-        
-        // First, clear the entire range including values AND notes
-        // Using batchUpdate to clear notes for the entire data area
+        const sheetId = sheetIdNum;
         const clearNotesRequest = {
           requests: [
             {
@@ -308,7 +329,7 @@ serve(async (req) => {
         
         // Then clear the values
         const clearResponse = await fetch(
-          `${baseUrl}/values/${encodeURIComponent(range)}:clear`,
+          `${baseUrl}/values/${encodeURIComponent(resolvedRange)}:clear`,
           {
             method: 'POST',
             headers: {
@@ -328,7 +349,7 @@ serve(async (req) => {
         
         // Then, write the new values
         response = await fetch(
-          `${baseUrl}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
+          `${baseUrl}/values/${encodeURIComponent(resolvedRange)}?valueInputOption=USER_ENTERED`,
           {
             method: 'PUT',
             headers: {
@@ -397,7 +418,7 @@ serve(async (req) => {
       case 'append': {
         if (!values) throw new Error('Values required for append action');
         response = await fetch(
-          `${baseUrl}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+          `${baseUrl}/values/${encodeURIComponent(resolvedRange)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
           {
             method: 'POST',
             headers: {

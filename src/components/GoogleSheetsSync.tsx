@@ -17,7 +17,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 
-const DEFAULT_SHEET_RANGE = "'Data app'!A:I";
+const DEFAULT_SHEET_RANGE = "A:I";
 
 interface GoogleSheetsSyncProps {
   transactions: Transaction[];
