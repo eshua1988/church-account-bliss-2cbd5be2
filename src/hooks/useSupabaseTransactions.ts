@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Transaction, Currency, TransactionType, TransactionCategory } from '@/types/transaction';
@@ -41,6 +41,7 @@ export const useSupabaseTransactions = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const initializedRef = useRef(false);
 
   // Fetch transactions
   const fetchTransactions = useCallback(async () => {
@@ -51,7 +52,8 @@ export const useSupabaseTransactions = () => {
     }
 
     try {
-      setLoading(true);
+      // Show loading spinner only on first load, background refreshes are silent
+      if (!initializedRef.current) setLoading(true);
       const { data, error } = await supabase
         .from('transactions')
         .select('*')
@@ -62,6 +64,7 @@ export const useSupabaseTransactions = () => {
 
       const mappedTransactions = (data as DbTransaction[]).map(mapDbToTransaction);
       setTransactions(mappedTransactions);
+      initializedRef.current = true;
     } catch (err) {
       console.error('Error fetching transactions:', err);
       setError(err instanceof Error ? err : new Error('Failed to fetch transactions'));

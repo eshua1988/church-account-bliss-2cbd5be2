@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { TransactionType } from '@/types/transaction';
@@ -46,6 +46,7 @@ export const useSupabaseCategories = () => {
   const { user } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const initializedRef = useRef(false);
 
   const fetchCategories = useCallback(async () => {
     if (!user) {
@@ -55,7 +56,8 @@ export const useSupabaseCategories = () => {
     }
 
     try {
-      setLoading(true);
+      // Show loading spinner only on first load, background refreshes are silent
+      if (!initializedRef.current) setLoading(true);
       const { data, error } = await supabase
         .from('categories')
         .select('*')
@@ -84,6 +86,7 @@ export const useSupabaseCategories = () => {
       } else {
         setCategories((data as DbCategory[]).map(mapDbToCategory));
       }
+      initializedRef.current = true;
     } catch (err) {
       console.error('Error fetching categories:', err);
     } finally {
