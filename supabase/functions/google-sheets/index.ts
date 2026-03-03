@@ -67,8 +67,19 @@ async function authenticateRequest(req: Request): Promise<{ userId: string; toke
 }
 
 async function getAccessToken(): Promise<string> {
-  const credentials = JSON.parse(Deno.env.get('GOOGLE_SHEETS_CREDENTIALS') || '{}');
+  const rawCreds = Deno.env.get('GOOGLE_SHEETS_CREDENTIALS') || '{}';
   
+  let credentials: { client_email?: string; private_key?: string };
+  try {
+    credentials = JSON.parse(rawCreds);
+  } catch (e) {
+    throw new Error(`Invalid GOOGLE_SHEETS_CREDENTIALS JSON: ${e}`);
+  }
+
+  if (!credentials.client_email || !credentials.private_key) {
+    throw new Error('GOOGLE_SHEETS_CREDENTIALS missing client_email or private_key');
+  }
+
   const header = {
     alg: 'RS256',
     typ: 'JWT',
@@ -86,7 +97,7 @@ async function getAccessToken(): Promise<string> {
   // Base64url encode
   const base64urlEncode = (obj: object) => {
     const json = JSON.stringify(obj);
-    const base64 = btoa(json);
+    const base64 = btoa(unescape(encodeURIComponent(json)));
     return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   };
 
@@ -94,14 +105,19 @@ async function getAccessToken(): Promise<string> {
   const claimEncoded = base64urlEncode(claim);
   const signatureInput = `${headerEncoded}.${claimEncoded}`;
 
-  // Import private key and sign
+  // Import private key and sign — strip ALL whitespace/CR/LF and PEM headers
   const pemContents = credentials.private_key
-    .replace(/-----BEGIN PRIVATE KEY-----/, '')
-    .replace(/-----END PRIVATE KEY-----/, '')
-    .replace(/\n/g, '');
-  
-  const binaryKey = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
-  
+    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
+    .replace(/-----END PRIVATE KEY-----/g, '')
+    .replace(/[\r\n\s]/g, '');  // handles both LF and CRLF (Windows)
+
+  let binaryKey: Uint8Array;
+  try {
+    binaryKey = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
+  } catch (e) {
+    throw new Error(`Failed to decode private key base64: ${e}`);
+  }
+
   const cryptoKey = await crypto.subtle.importKey(
     'pkcs8',
     binaryKey,
@@ -133,8 +149,11 @@ async function getAccessToken(): Promise<string> {
   const tokenData = await tokenResponse.json();
   
   if (!tokenData.access_token) {
-    console.error('Token response:', tokenData);
-    throw new Error('Failed to get access token');
+    console.error('Token exchange failed. Response:', JSON.stringify(tokenData));
+    const hint = tokenData.error === 'invalid_grant'
+      ? ' Возможно таблица не открыта для сервисного аккаунта.'
+      : '';
+    throw new Error(`Failed to get Google access token: ${tokenData.error_description || tokenData.error || 'unknown'}${hint}`);
   }
   
   return tokenData.access_token;
