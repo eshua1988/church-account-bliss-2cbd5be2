@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2 } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -145,9 +145,16 @@ export const NotificationsPage = () => {
     clearAllNotifications,
   } = useNotifications();
 
+  const [activeTab, setActiveTab] = useState<'all' | 'no_photos'>('all');
+
+  const withPhotos = notifications.filter(n => !n.metadata?.images_skipped);
+  const withoutPhotos = notifications.filter(n => n.metadata?.images_skipped);
+  const displayed = activeTab === 'all' ? withPhotos : withoutPhotos;
+  const noPhotosUnread = withoutPhotos.filter(n => !n.is_read).length;
+
   return (
     <div className="animate-fade-in">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <Mail className="h-6 w-6 text-primary" />
           <h3 className="text-lg font-semibold text-foreground">
@@ -161,11 +168,7 @@ export const NotificationsPage = () => {
         </div>
         <div className="flex items-center gap-2">
           {unreadCount > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={markAllAsRead}
-            >
+            <Button variant="outline" size="sm" onClick={markAllAsRead}>
               <CheckCheck className="h-4 w-4 mr-2" />
               Прочитать все
             </Button>
@@ -184,19 +187,71 @@ export const NotificationsPage = () => {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-1 mb-5 border-b border-border">
+        <button
+          onClick={() => setActiveTab('all')}
+          className={cn(
+            'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+            activeTab === 'all'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          )}
+        >
+          Все
+          {withPhotos.length > 0 && (
+            <span className="ml-2 text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5">
+              {withPhotos.length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('no_photos')}
+          className={cn(
+            'flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+            activeTab === 'no_photos'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <ImageOff className="h-3.5 w-3.5" />
+          Без вложений
+          {withoutPhotos.length > 0 && (
+            <span className={cn(
+              'ml-1 text-xs rounded-full px-1.5 py-0.5',
+              noPhotosUnread > 0
+                ? 'bg-yellow-500/20 text-yellow-500 font-semibold'
+                : 'bg-muted text-muted-foreground'
+            )}>
+              {withoutPhotos.length}
+            </span>
+          )}
+        </button>
+      </div>
+
       {isLoading ? (
         <div className="p-12 text-center text-muted-foreground">
           Загрузка...
         </div>
-      ) : notifications.length === 0 ? (
+      ) : displayed.length === 0 ? (
         <div className="p-12 text-center text-muted-foreground">
           <Mail className="h-16 w-16 mx-auto mb-4 opacity-30" />
-          <p className="text-lg">Нет уведомлений</p>
-          <p className="text-sm mt-1">Здесь будут отображаться уведомления о новых расходных ордерах</p>
+          {activeTab === 'all' ? (
+            <>
+              <p className="text-lg">Нет уведомлений</p>
+              <p className="text-sm mt-1">Здесь будут отображаться расходные ордера с фото</p>
+            </>
+          ) : (
+            <>
+              <ImageOff className="h-12 w-12 mx-auto mb-3 opacity-30" />
+              <p className="text-lg">Нет ордеров без вложений</p>
+              <p className="text-sm mt-1">Все ордера содержат фотовложения</p>
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-3">
-          {notifications.map((notification) => (
+          {displayed.map((notification) => (
             <NotificationCard
               key={notification.id}
               notification={notification}

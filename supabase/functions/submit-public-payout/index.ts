@@ -672,6 +672,7 @@ Deno.serve(async (req) => {
       currency: body.currency,
       submitter_name: submitterInfo,
       issued_to: body.issuedTo || null,
+      images_skipped: body.imagesSkipped || false,
     };
     if (pdfPath) notificationMetadata.pdf_path = pdfPath;
 
