@@ -232,7 +232,7 @@ export const PayoutGenerator = () => {
   useEffect(() => {
     const loadFont = async () => {
       try {
-        const base64 = await loadFontAsBase64(`${import.meta.env.BASE_URL}Roboto-Regular.ttf`);
+        const base64 = await loadFontAsBase64(`${import.meta.env.BASE_URL}fonts/Roboto-Regular.ttf`);
         setFontBase64(base64);
         setFontLoaded(true);
       } catch (error) {
