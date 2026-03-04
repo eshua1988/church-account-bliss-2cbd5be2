@@ -1,8 +1,7 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Header } from '@/components/Header';
 import { CurrencyBalanceCard } from '@/components/CurrencyBalanceCard';
 import { CategoryManager } from '@/components/CategoryManager';
-import { loadVisibleCurrencies, saveVisibleCurrencies, CurrencySettingsContent } from '@/components/CurrencySettingsDialog';
 import { CategoryPieChart } from '@/components/charts/CategoryPieChart';
 import { StatisticsTable } from '@/components/StatisticsTable';
 import { PayoutGenerator } from '@/components/PayoutGenerator';
@@ -23,12 +22,8 @@ import { useGoogleSheetsSync } from '@/hooks/useGoogleSheetsSync';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { useIsMobile } from '@/hooks/use-mobile';
 
-const currencies: Currency[] = ['RUB', 'USD', 'EUR', 'UAH', 'BYN', 'PLN'];
-
 const Index = () => {
   const { t, getDateLocale } = useTranslation();
-  const [selectedCurrency, setSelectedCurrency] = useState<Currency | null>(null);
-  const [visibleCurrencies, setVisibleCurrencies] = useState<Currency[]>(loadVisibleCurrencies);
   const [activeTab, setActiveTab] = useState<'balance' | 'statistics' | 'payout' | 'settings' | 'notifications'>('balance');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -105,11 +100,6 @@ const Index = () => {
       return () => clearTimeout(timerId);
     }
   }, [transactions.length, spreadsheetId, handleSync]);
-
-  const handleVisibleCurrenciesChange = useCallback((newCurrencies: Currency[]) => {
-    setVisibleCurrencies(newCurrencies);
-    saveVisibleCurrencies(newCurrencies);
-  }, []);
 
   const incomeByCategory = getTransactionsByCategory('income');
   const expenseByCategory = getTransactionsByCategory('expense');
@@ -231,37 +221,24 @@ const Index = () => {
             <div className="animate-fade-in">
               <h3 className="text-lg font-semibold text-foreground mb-4">{t('balanceByCurrency')}</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {visibleCurrencies
-                  .filter((currency) => {
-                    const currencyBalance = getBalanceByCurrency(currency);
-                    return currencyBalance.income > 0 || currencyBalance.expense > 0;
-                  })
+                {([...new Set(transactions.map(tx => tx.currency))] as Currency[])
                   .map((currency, index) => {
                     const currencyBalance = getBalanceByCurrency(currency);
-                    const isSelected = selectedCurrency === currency;
                     return (
-                      <div 
-                        key={currency} 
-                        onClick={() => setSelectedCurrency(isSelected ? null : currency)}
-                        className={`cursor-pointer transition-all ${isSelected ? 'ring-2 ring-primary rounded-lg' : ''}`}
-                      >
-                        <CurrencyBalanceCard 
-                          currency={currency} 
-                          income={currencyBalance.income} 
-                          expense={currencyBalance.expense} 
-                          balance={currencyBalance.balance} 
-                          delay={index * 100}
-                          transactions={transactions}
-                          getCategoryName={getCategoryName}
-                        />
-                      </div>
+                      <CurrencyBalanceCard
+                        key={currency}
+                        currency={currency}
+                        income={currencyBalance.income}
+                        expense={currencyBalance.expense}
+                        balance={currencyBalance.balance}
+                        delay={index * 100}
+                        transactions={transactions}
+                        getCategoryName={getCategoryName}
+                      />
                     );
                   })}
               </div>
-              {visibleCurrencies.filter((currency) => {
-                const currencyBalance = getBalanceByCurrency(currency);
-                return currencyBalance.income > 0 || currencyBalance.expense > 0;
-              }).length === 0 && (
+              {transactions.length === 0 && (
                 <p className="text-muted-foreground text-center py-8">{t('noTransactions')}</p>
               )}
             </div>
@@ -282,7 +259,6 @@ const Index = () => {
                         transactions={transactions} 
                         getCategoryName={getCategoryName} 
                         onDelete={handleDeleteTransaction}
-                        selectedCurrency={selectedCurrency}
                         categories={categories}
                       />
                     </div>
@@ -309,11 +285,6 @@ const Index = () => {
           {/* Settings Tab */}
           {activeTab === 'settings' && (
             <div className="animate-fade-in space-y-4 sm:space-y-6">
-              <div className="bg-card rounded-lg p-4 sm:p-6 shadow-card">
-                <h4 className="font-semibold text-base sm:text-lg mb-3 sm:mb-4">{t('currencySettings')}</h4>
-                <CurrencySettingsContent visibleCurrencies={visibleCurrencies} onVisibleCurrenciesChange={handleVisibleCurrenciesChange} />
-              </div>
-              <Separator />
               <div className="bg-card rounded-lg p-4 sm:p-6 shadow-card">
                 <h4 className="font-semibold text-base sm:text-lg mb-3 sm:mb-4">{t('categoryManagement')}</h4>
                 <CategoryManager 
