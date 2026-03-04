@@ -1024,13 +1024,19 @@ const PublicPayout = () => {
           ? `${linkData.owner_user_id}/${continuingPayout.id}/${pdfFileName}`
           : undefined;
 
+        // Extract the submitter name from the stored description tag to ensure exact match
+        const storedNameMatch = continuingPayout.description?.match(/\[Bez zalacznikow - ([^\]]+)\]/);
+        const exactSubmitterName = storedNameMatch
+          ? storedNameMatch[1]
+          : `${submitterFirstName.trim()} ${submitterLastName.trim()}`;
+
         // Run update + PDF generation in parallel
         const [updateResult, pdfResult] = await Promise.all([
           supabase.functions.invoke('add-images-to-payout', {
             body: {
               token,
               transactionId: continuingPayout.id,
-              submitterName: `${submitterFirstName} ${submitterLastName}`,
+              submitterName: exactSubmitterName,
               newPdfPath,
               updatedBasis: formData.basis,
               updatedIssuedTo: formData.issuedTo,
