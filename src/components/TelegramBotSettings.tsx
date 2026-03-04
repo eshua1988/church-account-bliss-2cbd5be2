@@ -406,5 +406,7 @@ export function TelegramBotSettings() {
           </div>
         )}
 
+      </CardContent>
+    </Card>
   );
 }
