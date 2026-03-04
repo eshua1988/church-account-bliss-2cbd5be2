@@ -571,6 +571,36 @@ const PublicPayout = () => {
   const [hasSignature, setHasSignature] = useState(false);
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [showFullSignature, setShowFullSignature] = useState(false);
+  const [signSid, setSignSid] = useState<string | null>(null);
+  const [waitingExternalSign, setWaitingExternalSign] = useState(false);
+
+  // Listen for signature result from external tab
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (!e.key || !e.key.startsWith('sig_result_')) return;
+      const sid = e.key.replace('sig_result_', '');
+      if (sid !== signSid) return;
+      const dataUrl = e.newValue;
+      if (!dataUrl) return;
+      setSignatureDataUrl(dataUrl);
+      setHasSignature(true);
+      setWaitingExternalSign(false);
+      setSignSid(null);
+      localStorage.removeItem(e.key);
+      // Draw into main canvas
+      const main = signatureCanvasRef.current;
+      if (main) {
+        const ctx = main.getContext('2d');
+        if (ctx) {
+          const img = new Image();
+          img.onload = () => ctx.drawImage(img, 0, 0, main.width, main.height);
+          img.src = dataUrl;
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [signSid]);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   const [language, setLanguage] = useState<Language>('ru');
   const [imagesOptional, setImagesOptional] = useState(false); // false = images required by default
@@ -778,6 +808,16 @@ const PublicPayout = () => {
     document.body.style.position = '';
     document.body.style.width = '';
     document.documentElement.style.overflow = '';
+  };
+
+  // Open signature in a real browser tab
+  const openExternalSignature = () => {
+    const sid = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    setSignSid(sid);
+    setWaitingExternalSign(true);
+    const base = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
+    const url = `${window.location.origin}${base}/sign?sid=${sid}`;
+    window.open(url, '_blank');
   };
 
   const confirmFullSignature = () => {
@@ -2231,9 +2271,9 @@ const PublicPayout = () => {
                   <div className="flex items-center justify-between">
                     <Label>{t.signature} *</Label>
                     <div className="flex gap-1">
-                      <Button type="button" variant="outline" size="sm" onClick={openFullSignature} className="text-primary border-primary/40">
-                        <Maximize2 className="w-4 h-4 mr-1" />
-                        На весь экран
+                      <Button type="button" variant="outline" size="sm" onClick={openExternalSignature} className="text-primary border-primary/40">
+                        <ExternalLink className="w-4 h-4 mr-1" />
+                        Подписать
                       </Button>
                       <Button type="button" variant="ghost" size="sm" onClick={clearSignature} className="text-muted-foreground hover:text-foreground">
                         <Eraser className="w-4 h-4 mr-1" />
@@ -2241,6 +2281,9 @@ const PublicPayout = () => {
                       </Button>
                     </div>
                   </div>
+                  {waitingExternalSign && (
+                    <p className="text-xs text-primary animate-pulse">⌨️ Ожидаем подпись из другой вкладки...</p>
+                  )}
                   <div className="border-2 border-dashed rounded-lg bg-white">
                     <canvas
                       ref={signatureCanvasRef}
@@ -2579,9 +2622,9 @@ const PublicPayout = () => {
                       <div className="flex items-center justify-between">
                         <Label>{t.signature} *</Label>
                         <div className="flex gap-1">
-                          <Button type="button" variant="outline" size="sm" onClick={openFullSignature} className="text-primary border-primary/40">
-                            <Maximize2 className="w-4 h-4 mr-1" />
-                            На весь экран
+                          <Button type="button" variant="outline" size="sm" onClick={openExternalSignature} className="text-primary border-primary/40">
+                            <ExternalLink className="w-4 h-4 mr-1" />
+                            Подписать
                           </Button>
                           <Button type="button" variant="ghost" size="sm" onClick={clearSignature} className="text-muted-foreground hover:text-foreground">
                             <Eraser className="w-4 h-4 mr-1" />
@@ -2589,7 +2632,10 @@ const PublicPayout = () => {
                           </Button>
                         </div>
                       </div>
-                      <p className="text-xs text-muted-foreground">Нарисуйте подпись пальцем или нажмите «На весь экран»</p>
+                      {waitingExternalSign && (
+                        <p className="text-xs text-primary animate-pulse">⌨️ Ожидаем подпись из другой вкладки...</p>
+                      )}
+                      <p className="text-xs text-muted-foreground">Нарисуйте подпись или нажмите «Подписать»</p>
                       <div className="border-2 border-dashed border-primary/40 rounded-xl bg-white overflow-hidden"
                         style={{ touchAction: 'none' }}
                       >

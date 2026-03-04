@@ -11,6 +11,7 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import PublicPayout from "./pages/PublicPayout";
+import SignaturePad from "./pages/SignaturePad";
 
 const queryClient = new QueryClient();
 
@@ -44,6 +45,7 @@ const App = () => (
             <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/payout/:token" element={<PublicPayout />} />
+              <Route path="/sign" element={<SignaturePad />} />
               <Route 
                 path="/" 
                 element={
