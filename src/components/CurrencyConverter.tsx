@@ -92,7 +92,7 @@ const staticRates: Record<string, number> = {
 interface CurrencyConverterProps {
   isOpen: boolean;
   onClose: () => void;
-  onApply: (amount: string, currency: string) => void;
+  onApply: (amount: string, currency: string, fromAmount: string, fromCurrency: string, rate: string) => void;
   currentAmount: string;
   currentCurrency: string;
   language: Language | string;
@@ -148,7 +148,7 @@ export const CurrencyConverter = ({
 
   const handleApply = () => {
     if (result) {
-      onApply(result, toCurrency);
+      onApply(result, toCurrency, amount, fromCurrency, getExchangeRate());
       onClose();
     }
   };

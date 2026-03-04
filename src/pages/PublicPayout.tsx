@@ -2200,14 +2200,10 @@ const PublicPayout = () => {
                     <CurrencyConverter
                       isOpen={showConverter}
                       onClose={() => setShowConverter(false)}
-                      onApply={(amount, currency) => {
-                        const fromAmt = formData.amount;
-                        const fromCurr = formData.currency;
-                        const staticRates: Record<string, number> = { USD: 1, EUR: 0.92, PLN: 4.0, UAH: 41.5, RUB: 96.0, BYN: 3.27 };
-                        const rate = ((staticRates[currency] || 1) / (staticRates[fromCurr] || 1)).toFixed(4);
-                        setConversionInfo({ fromAmount: fromAmt, fromCurrency: fromCurr, toAmount: amount, toCurrency: currency, rate });
-                        handleInputChange('amount', amount);
-                        handleInputChange('currency', currency);
+                      onApply={(toAmount, toCurrency, fromAmt, fromCurr, rate) => {
+                        setConversionInfo({ fromAmount: fromAmt, fromCurrency: fromCurr, toAmount: toAmount, toCurrency: toCurrency, rate });
+                        handleInputChange('amount', toAmount);
+                        handleInputChange('currency', toCurrency);
                       }}
                       currentAmount={formData.amount}
                       currentCurrency={formData.currency}
