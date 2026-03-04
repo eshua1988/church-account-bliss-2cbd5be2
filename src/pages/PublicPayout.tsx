@@ -574,60 +574,44 @@ const PublicPayout = () => {
   const [signSid, setSignSid] = useState<string | null>(null);
   const [waitingExternalSign, setWaitingExternalSign] = useState(false);
 
-  // Listen for signature result from external tab (Supabase Realtime + polling + localStorage fallback)
+  // Poll the sign-exchange Edge Function every 1.5s until signature arrives
   useEffect(() => {
     if (!signSid) return;
-    let done = false;
+    let active = true;
+    const EXCHANGE_URL = 'https://htepbcotdqrewbxmasbf.supabase.co/functions/v1/sign-exchange';
+    const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0ZXBiY290ZHFyZXdieG1hc2JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2MTUzNDMsImV4cCI6MjA4MDE5MTM0M30.kHkWLZgXSZ93njS2JpTsWvQ4VKHJZb4ptuWq3ob_FsI';
 
-    const onResult = (dataUrl: string) => {
-      if (done) return;
-      done = true;
-      applySignature(dataUrl);
-      supabase.from('temp_signatures').delete().eq('sid', signSid);
-      try { localStorage.removeItem(`sig_result_${signSid}`); } catch (_) {}
-    };
-
-    // Supabase Realtime subscription
-    const channel = supabase
-      .channel(`sig_${signSid}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'temp_signatures', filter: `sid=eq.${signSid}` },
-        (payload) => {
-          const dataUrl = (payload.new as { data_url: string }).data_url;
-          if (dataUrl) { onResult(dataUrl); supabase.removeChannel(channel); clearInterval(poll); }
-        }
-      )
-      .subscribe();
-
-    // Polling fallback every 2s (works when Realtime filter is delayed / not yet subscribed)
     const poll = setInterval(async () => {
-      if (done) { clearInterval(poll); return; }
-      const { data } = await supabase
-        .from('temp_signatures')
-        .select('data_url')
-        .eq('sid', signSid)
-        .maybeSingle();
-      if (data?.data_url) {
-        clearInterval(poll);
-        supabase.removeChannel(channel);
-        onResult(data.data_url);
-      }
-    }, 2000);
+      if (!active) return;
+      try {
+        const res = await fetch(`${EXCHANGE_URL}?sid=${signSid}`, {
+          headers: { 'apikey': ANON_KEY, 'Authorization': `Bearer ${ANON_KEY}` },
+        });
+        const json = await res.json();
+        if (json.data_url) {
+          clearInterval(poll);
+          applySignature(json.data_url);
+          // Delete from server
+          fetch(`${EXCHANGE_URL}?sid=${signSid}`, {
+            method: 'DELETE',
+            headers: { 'apikey': ANON_KEY, 'Authorization': `Bearer ${ANON_KEY}` },
+          });
+        }
+      } catch (_) {}
+    }, 1500);
 
-    // localStorage fallback for same-origin browsers (non-Telegram)
+    // localStorage fallback for same-origin non-Telegram
     const handleStorage = (e: StorageEvent) => {
       if (e.key !== `sig_result_${signSid}` || !e.newValue) return;
       clearInterval(poll);
-      supabase.removeChannel(channel);
-      onResult(e.newValue);
+      applySignature(e.newValue);
+      try { localStorage.removeItem(e.key); } catch (_) {}
     };
     window.addEventListener('storage', handleStorage);
 
     return () => {
-      done = true;
+      active = false;
       clearInterval(poll);
-      supabase.removeChannel(channel);
       window.removeEventListener('storage', handleStorage);
     };
   }, [signSid]);
@@ -856,20 +840,29 @@ const PublicPayout = () => {
     document.documentElement.style.overflow = '';
   };
 
-  // Open signature in a real browser tab
+  // Open signature in a real browser tab (Safari/Chrome)
   const openExternalSignature = () => {
     const sid = Math.random().toString(36).slice(2) + Date.now().toString(36);
     const base = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
     const url = `${window.location.origin}${base}/sign?sid=${sid}`;
-    // IMPORTANT: open the window FIRST (before any setState) to avoid iOS popup blocker
+
+    // For Telegram WebApp - openLink opens in the real system browser
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const twa = (window as any).Telegram?.WebApp;
     if (twa?.openLink) {
       twa.openLink(url);
     } else {
-      window.open(url, '_blank');
+      // Use <a target="_blank"> click — more reliable than window.open in WebViews
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     }
-    // setState AFTER window.open
+
+    // Set state AFTER opening (prevents iOS popup blocker)
     setSignSid(sid);
     setWaitingExternalSign(true);
   };
