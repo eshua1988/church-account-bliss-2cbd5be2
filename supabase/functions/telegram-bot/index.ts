@@ -10,7 +10,7 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 // Published app URL for public payout links
-const APP_URL = 'https://church-account-bliss.lovable.app';
+const APP_URL = 'https://eshua1988.github.io/church-account-bliss-2cbd5be2';
 
 // Session timeout: 1 hour in milliseconds
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000;
