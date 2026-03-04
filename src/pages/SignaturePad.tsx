@@ -30,10 +30,13 @@ export default function SignaturePad() {
     const resize = () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
+      const w = canvas.offsetWidth;
+      const h = canvas.offsetHeight;
+      if (w === 0 || h === 0) return; // layout not ready yet
       // Save current drawing
       const dataUrl = canvas.toDataURL();
-      canvas.width = canvas.offsetWidth;
-      canvas.height = canvas.offsetHeight;
+      canvas.width = w;
+      canvas.height = h;
       const ctx = canvas.getContext('2d');
       if (ctx && hasContent) {
         const img = new Image();
@@ -41,9 +44,15 @@ export default function SignaturePad() {
         img.src = dataUrl;
       }
     };
-    resize();
+    // Use rAF × 2 to ensure DOM layout is computed before reading offsetWidth/Height
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(resize);
+    });
     window.addEventListener('resize', resize);
-    return () => window.removeEventListener('resize', resize);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', resize);
+    };
   }, []);
 
   const getPos = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {

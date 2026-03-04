@@ -574,11 +574,20 @@ const PublicPayout = () => {
   const [signSid, setSignSid] = useState<string | null>(null);
   const [waitingExternalSign, setWaitingExternalSign] = useState(false);
 
-  // Listen for signature result from external tab (Supabase Realtime + localStorage fallback)
+  // Listen for signature result from external tab (Supabase Realtime + polling + localStorage fallback)
   useEffect(() => {
     if (!signSid) return;
+    let done = false;
 
-    // Supabase Realtime subscription – works even when browser tabs are in different processes
+    const onResult = (dataUrl: string) => {
+      if (done) return;
+      done = true;
+      applySignature(dataUrl);
+      supabase.from('temp_signatures').delete().eq('sid', signSid);
+      try { localStorage.removeItem(`sig_result_${signSid}`); } catch (_) {}
+    };
+
+    // Supabase Realtime subscription
     const channel = supabase
       .channel(`sig_${signSid}`)
       .on(
@@ -586,24 +595,38 @@ const PublicPayout = () => {
         { event: 'INSERT', schema: 'public', table: 'temp_signatures', filter: `sid=eq.${signSid}` },
         (payload) => {
           const dataUrl = (payload.new as { data_url: string }).data_url;
-          if (!dataUrl) return;
-          applySignature(dataUrl);
-          supabase.from('temp_signatures').delete().eq('sid', signSid);
-          supabase.removeChannel(channel);
+          if (dataUrl) { onResult(dataUrl); supabase.removeChannel(channel); clearInterval(poll); }
         }
       )
       .subscribe();
 
-    // localStorage fallback for same-browser (non-Telegram) scenario
+    // Polling fallback every 2s (works when Realtime filter is delayed / not yet subscribed)
+    const poll = setInterval(async () => {
+      if (done) { clearInterval(poll); return; }
+      const { data } = await supabase
+        .from('temp_signatures')
+        .select('data_url')
+        .eq('sid', signSid)
+        .maybeSingle();
+      if (data?.data_url) {
+        clearInterval(poll);
+        supabase.removeChannel(channel);
+        onResult(data.data_url);
+      }
+    }, 2000);
+
+    // localStorage fallback for same-origin browsers (non-Telegram)
     const handleStorage = (e: StorageEvent) => {
       if (e.key !== `sig_result_${signSid}` || !e.newValue) return;
-      applySignature(e.newValue);
-      localStorage.removeItem(e.key);
+      clearInterval(poll);
       supabase.removeChannel(channel);
+      onResult(e.newValue);
     };
     window.addEventListener('storage', handleStorage);
 
     return () => {
+      done = true;
+      clearInterval(poll);
       supabase.removeChannel(channel);
       window.removeEventListener('storage', handleStorage);
     };
@@ -836,11 +859,9 @@ const PublicPayout = () => {
   // Open signature in a real browser tab
   const openExternalSignature = () => {
     const sid = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    setSignSid(sid);
-    setWaitingExternalSign(true);
     const base = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
     const url = `${window.location.origin}${base}/sign?sid=${sid}`;
-    // Telegram WebApp: openLink forces the real system browser (Safari/Chrome)
+    // IMPORTANT: open the window FIRST (before any setState) to avoid iOS popup blocker
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const twa = (window as any).Telegram?.WebApp;
     if (twa?.openLink) {
@@ -848,6 +869,9 @@ const PublicPayout = () => {
     } else {
       window.open(url, '_blank');
     }
+    // setState AFTER window.open
+    setSignSid(sid);
+    setWaitingExternalSign(true);
   };
 
   const confirmFullSignature = () => {
