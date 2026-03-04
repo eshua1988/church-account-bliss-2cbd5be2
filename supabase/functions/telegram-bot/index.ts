@@ -571,12 +571,32 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
     
     setSession(chatId, { step: 'idle', lastActivity: Date.now(), data: { submitterName: fullName }, registeredName: fullName });
     
-    await sendMessage(
-      chatId,
-      `✅ Добро пожаловать, <b>${fullName}</b>!\n\nВы успешно зарегистрированы. Выберите действие:`,
-      getMainMenu(),
-      botToken
-    );
+    // Build welcome message with pending docs + links summary
+    let welcomeText = `✅ Добро пожаловать, <b>${fullName}</b>!\n`;
+
+    // Count pending docs without photos for this user
+    const { data: pendingDocs } = await supabase
+      .from('transactions')
+      .select('id')
+      .eq('user_id', foundUser.user_id)
+      .eq('type', 'expense')
+      .like('description', '%[Bez załączników%]%');
+    const pendingCount = (pendingDocs || []).length;
+    if (pendingCount > 0) {
+      welcomeText += `\n⚠️ <b>Документов без фото:</b> ${pendingCount} — используйте «Незаконченная сессия»`;
+    }
+
+    // Show available public links
+    const userLinks = await getSharedLinks(foundUser.user_id, supabase);
+    if (userLinks.length > 0) {
+      welcomeText += `\n\n🔗 <b>Ссылки для заполнения ордера:</b>`;
+      for (const link of userLinks) {
+        welcomeText += `\n• <a href="${APP_URL}/payout/${link.token}">${link.name || 'Форма'}</a>`;
+      }
+    }
+
+    welcomeText += `\n\nВыберите действие:`;
+    await sendMessage(chatId, welcomeText, getMainMenu(), botToken);
     return;
   }
   
@@ -683,10 +703,18 @@ async function handleCallbackQuery(query: CallbackQuery, supabase: ReturnType<ty
   
   // Select link for filling
   if (data === 'select_link') {
-    await editMessageText(chatId, query.message.message_id, '🔗 Выберите ссылку для заполнения:', {
+    const links = await getSharedLinks(linkedUser.user_id, supabase);
+    if (links.length === 0) {
+      await editMessageText(chatId, query.message.message_id,
+        '❌ Нет активных публичных ссылок.\n\nСоздайте ссылку в приложении через раздел «Публичные ссылки».',
+        { inline_keyboard: [[{ text: '◀️ Назад в меню', callback_data: 'back_to_menu' }]] },
+        botToken
+      );
+      return;
+    }
+    await editMessageText(chatId, query.message.message_id, '🔗 <b>Выберите форму для заполнения:</b>', {
       inline_keyboard: [
-        [{ text: '📄 Standard форма', url: `${APP_URL}/payout/iHEMNKO3cnuD5909l7wxM8b1qnAq7t2f` }],
-        [{ text: '📋 Stepwise форма', url: `${APP_URL}/payout/acfa2b276b11cb2dba1a17919831e2a582398b39832ea381f38834ba8d8cee50` }],
+        ...links.map(link => [{ text: `📄 ${link.name || 'Форма'}`, url: `${APP_URL}/payout/${link.token}` }]),
         [{ text: '◀️ Назад в меню', callback_data: 'back_to_menu' }],
       ],
     }, botToken);
