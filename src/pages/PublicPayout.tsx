@@ -549,6 +549,7 @@ const PublicPayout = () => {
     issued_to: string | null;
     amount_in_words: string | null;
     category_id: string | null;
+    cashier_name: string | null;
     created_at: string;
     pdfUrl?: string | null;
   }
@@ -1614,15 +1615,22 @@ const PublicPayout = () => {
                         className="w-full p-3 text-left"
                       >
                         <div className="flex justify-between items-start">
-                          <div>
-                            <p className="font-medium">{cleanDesc || t.noDescription}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {format(new Date(payout.date), 'dd.MM.yyyy')}
-                            </p>
+                          <div className="flex-1 min-w-0 pr-3">
+                            <p className="font-medium">{payout.cashier_name || t.department}</p>
+                            {cleanDesc && (
+                              <p className="text-sm text-muted-foreground mt-0.5">
+                                <span className="font-medium text-muted-foreground">{t.basis.split('(')[0].trim()}:</span> {cleanDesc}
+                              </p>
+                            )}
                           </div>
-                          <span className="font-semibold text-primary">
-                            {currencySymbol} {payout.amount.toFixed(2)}
-                          </span>
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <span className="font-semibold text-primary">
+                              {currencySymbol} {payout.amount.toFixed(2)}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {format(new Date(payout.date), 'dd.MM.yyyy')}
+                            </span>
+                          </div>
                         </div>
                       </button>
                       {payout.pdfUrl && (

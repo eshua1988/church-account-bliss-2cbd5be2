@@ -91,7 +91,7 @@ Deno.serve(async (req) => {
     
     const { data: pendingTransactions, error: txError } = await supabase
       .from('transactions')
-      .select('id, amount, currency, description, date, issued_to, amount_in_words, category_id, created_at')
+      .select('id, amount, currency, description, date, issued_to, amount_in_words, category_id, cashier_name, created_at')
       .eq('user_id', linkData.owner_user_id)
       .eq('type', 'expense')
       .like('description', searchPattern)
