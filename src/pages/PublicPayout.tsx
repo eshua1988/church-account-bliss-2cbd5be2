@@ -1103,7 +1103,17 @@ const PublicPayout = () => {
         }
       }
 
-      // 2. Submit transaction — server generates PDF (with signature + images)
+      // 2. Generate PDF client-side before submitting — ensures correct font rendering
+      //    (prevents Cyrillic transliteration that occurs when server font fails to load)
+      let clientPdfBase64: string | undefined;
+      try {
+        const pdfResult = await generatePDF();
+        clientPdfBase64 = pdfResult?.pdfBase64;
+      } catch (e) {
+        console.error('Client PDF generation failed, server will generate fallback:', e);
+      }
+
+      // 3. Submit transaction — server stores PDF (client-generated or server fallback)
       const submitResult = await supabase.functions.invoke('submit-public-payout', {
         body: {
           token,
@@ -1121,6 +1131,7 @@ const PublicPayout = () => {
           signatureBase64: signatureBase64 || undefined,
           imagesBase64: imagesBase64.length > 0 ? imagesBase64 : undefined,
           language: language,
+          clientPdfBase64,
         }
       });
 

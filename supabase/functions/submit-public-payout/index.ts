@@ -31,6 +31,8 @@ interface SubmitPayoutRequest {
   signatureBase64?: string;
   imagesBase64?: string[];
   language?: string;
+  // Client-generated PDF base64 (prevents Cyrillic transliteration from missing font)
+  clientPdfBase64?: string;
 }
 
 const rateLimitStore: Map<string, { count: number; resetTime: number }> = new Map();
@@ -648,21 +650,51 @@ Deno.serve(async (req) => {
       ? body.tempImgPaths.filter(p => typeof p === 'string' && p.length < 300).slice(0, 10)
       : [];
 
-    // Generate PDF on server
-    const pdfPath = await generateAndUploadPdf(supabase, linkData.owner_user_id, txData.id, {
-      date: body.date,
-      amount: body.amount,
-      currency: body.currency,
-      issuedTo: body.issuedTo,
-      departmentName: body.departmentName,
-      description: finalDescription || body.description,
-      amountInWords: body.amountInWords,
-      decisionNumber: body.decisionNumber,
-      tempSigPath: body.tempSigPath,
-      tempImgPaths,
-      signatureBase64: body.signatureBase64,
-      imagesBase64: body.imagesBase64,
-    });
+    // Generate / upload PDF
+    // If the client already generated the PDF (clientPdfBase64), upload it directly —
+    // this preserves Cyrillic/non-Latin text that would otherwise be transliterated
+    // when the server-side Roboto font fails to load.
+    let pdfPath: string | null = null;
+    if (body.clientPdfBase64) {
+      try {
+        const pdfBytes = Uint8Array.from(atob(body.clientPdfBase64), c => c.charCodeAt(0));
+        const pdfFileName = `dowod_wyplaty_${body.date}_${txData.id.slice(0, 8)}.pdf`;
+        const storagePath = `${linkData.owner_user_id}/${txData.id}/${pdfFileName}`;
+        const { error: uploadErr } = await supabase.storage
+          .from('documents')
+          .upload(storagePath, pdfBytes, { contentType: 'application/pdf', upsert: true });
+        if (uploadErr) {
+          console.error('Client PDF upload failed, falling back to server generation:', uploadErr);
+          pdfPath = await generateAndUploadPdf(supabase, linkData.owner_user_id, txData.id, {
+            date: body.date, amount: body.amount, currency: body.currency,
+            issuedTo: body.issuedTo, departmentName: body.departmentName,
+            description: finalDescription || body.description, amountInWords: body.amountInWords,
+            decisionNumber: body.decisionNumber, tempSigPath: body.tempSigPath, tempImgPaths,
+            signatureBase64: body.signatureBase64, imagesBase64: body.imagesBase64,
+          });
+        } else {
+          pdfPath = storagePath;
+          console.log('Client-generated PDF uploaded successfully:', storagePath);
+        }
+      } catch (e) {
+        console.error('Client PDF decode/upload error, falling back to server generation:', e);
+        pdfPath = await generateAndUploadPdf(supabase, linkData.owner_user_id, txData.id, {
+          date: body.date, amount: body.amount, currency: body.currency,
+          issuedTo: body.issuedTo, departmentName: body.departmentName,
+          description: finalDescription || body.description, amountInWords: body.amountInWords,
+          decisionNumber: body.decisionNumber, tempSigPath: body.tempSigPath, tempImgPaths,
+          signatureBase64: body.signatureBase64, imagesBase64: body.imagesBase64,
+        });
+      }
+    } else {
+      pdfPath = await generateAndUploadPdf(supabase, linkData.owner_user_id, txData.id, {
+        date: body.date, amount: body.amount, currency: body.currency,
+        issuedTo: body.issuedTo, departmentName: body.departmentName,
+        description: finalDescription || body.description, amountInWords: body.amountInWords,
+        decisionNumber: body.decisionNumber, tempSigPath: body.tempSigPath, tempImgPaths,
+        signatureBase64: body.signatureBase64, imagesBase64: body.imagesBase64,
+      });
+    }
 
     // Create notification with pdf_path already set
     const submitterInfo = body.submitterName || 'Аноним';
