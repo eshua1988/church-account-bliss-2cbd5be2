@@ -750,7 +750,13 @@ const PublicPayout = () => {
   // Fullscreen signature pad
   const openFullSignature = () => {
     setShowFullSignature(true);
+    // Block all scrolling
     document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.width = '100%';
+    document.documentElement.style.overflow = 'hidden';
+    // Expand Telegram WebApp if available
+    try { (window as any).Telegram?.WebApp?.expand(); } catch (_) {}
     // Pre-draw existing signature into fullscreen canvas after mount
     setTimeout(() => {
       const full = signatureFullCanvasRef.current;
@@ -769,6 +775,9 @@ const PublicPayout = () => {
   const closeFullSignature = () => {
     setShowFullSignature(false);
     document.body.style.overflow = '';
+    document.body.style.position = '';
+    document.body.style.width = '';
+    document.documentElement.style.overflow = '';
   };
 
   const confirmFullSignature = () => {
@@ -1873,39 +1882,61 @@ const PublicPayout = () => {
       {/* Fullscreen signature overlay */}
       {showFullSignature && (
         <div
-          className="fixed inset-0 z-[9999] flex flex-col bg-white"
-          style={{ touchAction: 'none' }}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100%',
+            height: '100dvh',
+            zIndex: 9999,
+            display: 'flex',
+            flexDirection: 'column',
+            backgroundColor: '#ffffff',
+            touchAction: 'none',
+            overscrollBehavior: 'none',
+            WebkitOverflowScrolling: 'touch',
+          } as React.CSSProperties}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b bg-white">
-            <button onClick={closeFullSignature} className="text-muted-foreground p-1">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid #e5e7eb', backgroundColor: '#ffffff', flexShrink: 0 }}>
+            <button onClick={closeFullSignature} style={{ padding: 8, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', fontSize: 24, lineHeight: 1 }}>
               <X className="w-6 h-6" />
             </button>
-            <span className="font-semibold text-base">{t.signature}</span>
-            <button onClick={clearFullSignature} className="text-muted-foreground flex items-center gap-1 text-sm p-1">
+            <span style={{ fontWeight: 600, fontSize: 16 }}>{t.signature}</span>
+            <button onClick={clearFullSignature} style={{ padding: 8, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
               <Eraser className="w-5 h-5" />
             </button>
           </div>
-          {/* Canvas */}
-          <div className="flex-1 flex items-center justify-center bg-gray-50 p-3">
+          {/* Canvas area */}
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f9fafb', padding: 12, overflow: 'hidden' }}>
             <canvas
               ref={signatureFullCanvasRef}
               width={900}
               height={500}
-              className="w-full max-h-full rounded-xl border-2 border-dashed border-primary/40 bg-white"
-              style={{ backgroundColor: 'white', touchAction: 'none', display: 'block', maxHeight: 'calc(100vh - 160px)' }}
+              style={{
+                width: '100%',
+                maxHeight: 'calc(100dvh - 180px)',
+                height: 'auto',
+                backgroundColor: 'white',
+                touchAction: 'none',
+                display: 'block',
+                borderRadius: 12,
+                border: '2px dashed #818cf8',
+              }}
               onMouseDown={startDrawingFull}
               onMouseMove={drawFull}
               onMouseUp={stopDrawingFull}
               onMouseLeave={stopDrawingFull}
-              onTouchStart={(e) => { e.preventDefault(); startDrawingFull(e); }}
-              onTouchMove={(e) => { e.preventDefault(); drawFull(e); }}
-              onTouchEnd={(e) => { e.preventDefault(); stopDrawingFull(); }}
+              onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); startDrawingFull(e); }}
+              onTouchMove={(e) => { e.stopPropagation(); e.preventDefault(); drawFull(e); }}
+              onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); stopDrawingFull(); }}
             />
           </div>
-          <p className="text-center text-xs text-muted-foreground pb-1">Нарисуйте подпись пальцем</p>
+          <p style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af', paddingBottom: 4, flexShrink: 0 }}>Нарисуйте подпись пальцем</p>
           {/* Confirm button */}
-          <div className="px-4 pb-6 pt-2">
+          <div style={{ padding: '8px 16px 32px', flexShrink: 0 }}>
             <Button onClick={confirmFullSignature} className="w-full" size="lg">
               <CheckCircle className="w-5 h-5 mr-2" />
               Подтвердить подпись
