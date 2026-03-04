@@ -18,6 +18,8 @@ interface AddImagesRequest {
   updatedAmount?: number;
   updatedCurrency?: string;
   updatedDecisionNumber?: string;
+  updatedDepartmentName?: string;
+  updatedCategoryId?: string | null;
 }
 
 Deno.serve(async (req) => {
@@ -119,6 +121,8 @@ Deno.serve(async (req) => {
     if (body.updatedAmount !== undefined) updateData['amount'] = body.updatedAmount;
     if (body.updatedCurrency !== undefined) updateData['currency'] = body.updatedCurrency;
     if (body.updatedDecisionNumber !== undefined) updateData['decision_number'] = body.updatedDecisionNumber;
+    if (body.updatedDepartmentName !== undefined) updateData['cashier_name'] = body.updatedDepartmentName;
+    if (body.updatedCategoryId !== undefined) updateData['category_id'] = body.updatedCategoryId;
 
     const { error: updateError } = await supabase
       .from('transactions')

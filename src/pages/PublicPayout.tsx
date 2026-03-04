@@ -1030,6 +1030,9 @@ const PublicPayout = () => {
           ? storedNameMatch[1]
           : `${submitterFirstName.trim()} ${submitterLastName.trim()}`;
 
+        // Find category id for the selected department
+        const selectedCategory = categories.find(c => c.name === formData.departmentName);
+
         // Run update + PDF generation in parallel
         const [updateResult, pdfResult] = await Promise.all([
           supabase.functions.invoke('add-images-to-payout', {
@@ -1045,6 +1048,8 @@ const PublicPayout = () => {
               updatedAmount: parseFloat(formData.amount),
               updatedCurrency: formData.currency,
               updatedDecisionNumber: formData.bankAccount,
+              updatedDepartmentName: formData.departmentName,
+              updatedCategoryId: selectedCategory?.id ?? null,
             },
           }),
           generatePDF(),
@@ -1894,7 +1899,64 @@ const PublicPayout = () => {
                   </div>
                   <div className="space-y-2">
                     <Label>{t.department} *</Label>
-                    <Input value={formData.departmentName} onChange={(e) => handleInputChange('departmentName', e.target.value)} />
+                    <Popover open={categorySearchOpen} onOpenChange={(open) => { setCategorySearchOpen(open); if (!open) setCategorySearchQuery(''); }}>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          className={cn(
+                            'flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+                            !formData.departmentName && 'text-muted-foreground'
+                          )}
+                        >
+                          <span className="truncate">{formData.departmentName || t.selectCategory}</span>
+                          <ChevronDown className="h-4 w-4 opacity-50 shrink-0 ml-2" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                        <div className="flex items-center border-b px-3">
+                          <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+                          <input
+                            className="flex h-10 w-full bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                            placeholder={t.selectCategory + '...'}
+                            value={categorySearchQuery}
+                            onChange={(e) => setCategorySearchQuery(e.target.value)}
+                            autoFocus
+                          />
+                          {categorySearchQuery && (
+                            <button type="button" onClick={() => setCategorySearchQuery('')} className="opacity-50 hover:opacity-100">
+                              <X className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                        <div className="max-h-60 overflow-y-auto p-1">
+                          {filteredCategories.length === 0 ? (
+                            <div className="py-6 text-center text-sm text-muted-foreground">
+                              {categorySearchQuery ? `Ничего не найдено` : 'Нет категорий'}
+                            </div>
+                          ) : (
+                            filteredCategories.map((category) => (
+                              <button
+                                key={category.id}
+                                type="button"
+                                className={cn(
+                                  'relative flex w-full cursor-default select-none items-center rounded-sm px-3 py-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground',
+                                  formData.departmentName === category.name && 'bg-accent font-medium'
+                                )}
+                                onClick={() => handleCategorySelect(category.name)}
+                              >
+                                {formData.departmentName === category.name && (
+                                  <Check className="mr-2 h-4 w-4 shrink-0" />
+                                )}
+                                {formData.departmentName !== category.name && (
+                                  <span className="mr-6" />
+                                )}
+                                {category.name}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 </div>
 
