@@ -120,7 +120,7 @@ export const useGoogleSheetsSync = ({
         return parse(b) - parse(a);
       });
 
-      // Build rows: one row per transaction, date shown only in first row of each date group
+      // Build rows: compact packing — reuse rows of the same date when the target column is free
       const rows: string[][] = [];
       const notes: { row: number; col: number; note: string }[] = [];
 
@@ -128,7 +128,9 @@ export const useGoogleSheetsSync = ({
         const dayTxs = dateMap.get(dateKey)!;
         dayTxs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-        dayTxs.forEach((tx, txIndex) => {
+        const startRow = rows.length;
+
+        dayTxs.forEach((tx) => {
           let col: number;
           if (tx.type === 'income') {
             col = 1;
@@ -137,22 +139,36 @@ export const useGoogleSheetsSync = ({
             col = idx !== -1 ? 2 + idx : -1;
           }
 
-          const rowIndex = rows.length;
-          const row: string[] = new Array(headers.length).fill('');
-          row[0] = txIndex === 0 ? dateKey : '';
+          // Try to find an existing row for this date where the target column is empty
+          let targetRowIndex = -1;
+          if (col !== -1) {
+            for (let r = startRow; r < rows.length; r++) {
+              if (!rows[r][col]) {
+                targetRowIndex = r;
+                break;
+              }
+            }
+          }
+
+          if (targetRowIndex === -1) {
+            // No suitable row found — create a new one
+            targetRowIndex = rows.length;
+            const row: string[] = new Array(headers.length).fill('');
+            // Date shown only in first row of each date group
+            row[0] = targetRowIndex === startRow ? dateKey : '';
+            rows.push(row);
+          }
 
           if (col !== -1) {
-            row[col] = `${tx.amount} ${tx.currency}`;
+            rows[targetRowIndex][col] = `${tx.amount} ${tx.currency}`;
 
             const noteParts: string[] = [];
             if (tx.description) noteParts.push(`Описание: ${tx.description}`);
             if (tx.type === 'expense' && tx.issuedTo) noteParts.push(`Кому: ${tx.issuedTo}`);
             if (noteParts.length > 0) {
-              notes.push({ row: rowIndex + 1, col, note: noteParts.join('\n') });
+              notes.push({ row: targetRowIndex + 1, col, note: noteParts.join('\n') });
             }
           }
-
-          rows.push(row);
         });
       });
 
