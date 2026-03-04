@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { openPdfUrl } from '@/lib/pdfDownload';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe, ArrowLeft, ArrowRight, Send, ExternalLink, Copy, Link, Search, ChevronDown, Check } from 'lucide-react';
+import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe, ArrowLeft, ArrowRight, Send, ExternalLink, Copy, Link, Search, ChevronDown, Check, Maximize2 } from 'lucide-react';
 import currencyConvertIcon from '@/assets/currency-convert-icon.png';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -564,10 +564,13 @@ const PublicPayout = () => {
   const [showPendingChoice, setShowPendingChoice] = useState(false);
   
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
+  const signatureFullCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [isDrawingFull, setIsDrawingFull] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
+  const [showFullSignature, setShowFullSignature] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   const [language, setLanguage] = useState<Language>('ru');
   const [imagesOptional, setImagesOptional] = useState(false); // false = images required by default
@@ -739,11 +742,108 @@ const PublicPayout = () => {
     const canvas = signatureCanvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!ctx || !canvas) return;
-    
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     setHasSignature(false);
     setSignatureDataUrl(null);
   };
+
+  // Fullscreen signature pad
+  const openFullSignature = () => {
+    setShowFullSignature(true);
+    document.body.style.overflow = 'hidden';
+    // Pre-draw existing signature into fullscreen canvas after mount
+    setTimeout(() => {
+      const full = signatureFullCanvasRef.current;
+      if (!full) return;
+      const ctx = full.getContext('2d');
+      if (!ctx) return;
+      ctx.clearRect(0, 0, full.width, full.height);
+      if (signatureDataUrl) {
+        const img = new Image();
+        img.onload = () => ctx.drawImage(img, 0, 0, full.width, full.height);
+        img.src = signatureDataUrl;
+      }
+    }, 50);
+  };
+
+  const closeFullSignature = () => {
+    setShowFullSignature(false);
+    document.body.style.overflow = '';
+  };
+
+  const confirmFullSignature = () => {
+    const full = signatureFullCanvasRef.current;
+    if (!full) { closeFullSignature(); return; }
+    const ctx = full.getContext('2d');
+    if (ctx) {
+      const imageData = ctx.getImageData(0, 0, full.width, full.height);
+      const hasContent = imageData.data.some((v, i) => i % 4 === 3 && v > 0);
+      if (hasContent) {
+        const dataUrl = full.toDataURL('image/png');
+        setSignatureDataUrl(dataUrl);
+        setHasSignature(true);
+        // Copy to main canvas
+        const main = signatureCanvasRef.current;
+        if (main) {
+          const mCtx = main.getContext('2d');
+          if (mCtx) {
+            mCtx.clearRect(0, 0, main.width, main.height);
+            const img = new Image();
+            img.onload = () => mCtx.drawImage(img, 0, 0, main.width, main.height);
+            img.src = dataUrl;
+          }
+        }
+      }
+    }
+    closeFullSignature();
+  };
+
+  const clearFullSignature = () => {
+    const full = signatureFullCanvasRef.current;
+    if (!full) return;
+    const ctx = full.getContext('2d');
+    ctx?.clearRect(0, 0, full.width, full.height);
+  };
+
+  const getCoordinatesFull = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = signatureFullCanvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    if ('touches' in e) {
+      return { x: (e.touches[0].clientX - rect.left) * scaleX, y: (e.touches[0].clientY - rect.top) * scaleY };
+    }
+    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+  };
+
+  const startDrawingFull = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const canvas = signatureFullCanvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!ctx) return;
+    setIsDrawingFull(true);
+    const { x, y } = getCoordinatesFull(e);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  };
+
+  const drawFull = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    if (!isDrawingFull) return;
+    const canvas = signatureFullCanvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!ctx) return;
+    const { x, y } = getCoordinatesFull(e);
+    ctx.lineTo(x, y);
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+  };
+
+  const stopDrawingFull = () => setIsDrawingFull(false);
 
   // Image attachment handlers
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1769,6 +1869,50 @@ const PublicPayout = () => {
   return (
     <div className="min-h-screen bg-background p-4">
       <Toaster />
+
+      {/* Fullscreen signature overlay */}
+      {showFullSignature && (
+        <div
+          className="fixed inset-0 z-[9999] flex flex-col bg-white"
+          style={{ touchAction: 'none' }}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b bg-white">
+            <button onClick={closeFullSignature} className="text-muted-foreground p-1">
+              <X className="w-6 h-6" />
+            </button>
+            <span className="font-semibold text-base">{t.signature}</span>
+            <button onClick={clearFullSignature} className="text-muted-foreground flex items-center gap-1 text-sm p-1">
+              <Eraser className="w-5 h-5" />
+            </button>
+          </div>
+          {/* Canvas */}
+          <div className="flex-1 flex items-center justify-center bg-gray-50 p-3">
+            <canvas
+              ref={signatureFullCanvasRef}
+              width={900}
+              height={500}
+              className="w-full max-h-full rounded-xl border-2 border-dashed border-primary/40 bg-white"
+              style={{ backgroundColor: 'white', touchAction: 'none', display: 'block', maxHeight: 'calc(100vh - 160px)' }}
+              onMouseDown={startDrawingFull}
+              onMouseMove={drawFull}
+              onMouseUp={stopDrawingFull}
+              onMouseLeave={stopDrawingFull}
+              onTouchStart={(e) => { e.preventDefault(); startDrawingFull(e); }}
+              onTouchMove={(e) => { e.preventDefault(); drawFull(e); }}
+              onTouchEnd={(e) => { e.preventDefault(); stopDrawingFull(); }}
+            />
+          </div>
+          <p className="text-center text-xs text-muted-foreground pb-1">Нарисуйте подпись пальцем</p>
+          {/* Confirm button */}
+          <div className="px-4 pb-6 pt-2">
+            <Button onClick={confirmFullSignature} className="w-full" size="lg">
+              <CheckCircle className="w-5 h-5 mr-2" />
+              Подтвердить подпись
+            </Button>
+          </div>
+        </div>
+      )}
       <div className="max-w-3xl mx-auto">
         <Card className="shadow-lg">
           <CardHeader className="border-b pb-4">
@@ -2055,16 +2199,16 @@ const PublicPayout = () => {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label>{t.signature} *</Label>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={clearSignature}
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      <Eraser className="w-4 h-4 mr-1" />
-                      {t.clear}
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button type="button" variant="outline" size="sm" onClick={openFullSignature} className="text-primary border-primary/40">
+                        <Maximize2 className="w-4 h-4 mr-1" />
+                        На весь экран
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" onClick={clearSignature} className="text-muted-foreground hover:text-foreground">
+                        <Eraser className="w-4 h-4 mr-1" />
+                        {t.clear}
+                      </Button>
+                    </div>
                   </div>
                   <div className="border-2 border-dashed rounded-lg bg-white">
                     <canvas
@@ -2403,18 +2547,18 @@ const PublicPayout = () => {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <Label>{t.signature} *</Label>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={clearSignature}
-                          className="text-muted-foreground hover:text-foreground"
-                        >
-                          <Eraser className="w-4 h-4 mr-1" />
-                          {t.clear}
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button type="button" variant="outline" size="sm" onClick={openFullSignature} className="text-primary border-primary/40">
+                            <Maximize2 className="w-4 h-4 mr-1" />
+                            На весь экран
+                          </Button>
+                          <Button type="button" variant="ghost" size="sm" onClick={clearSignature} className="text-muted-foreground hover:text-foreground">
+                            <Eraser className="w-4 h-4 mr-1" />
+                            {t.clear}
+                          </Button>
+                        </div>
                       </div>
-                      <p className="text-xs text-muted-foreground">Нарисуйте подпись пальцем в поле ниже</p>
+                      <p className="text-xs text-muted-foreground">Нарисуйте подпись пальцем или нажмите «На весь экран»</p>
                       <div className="border-2 border-dashed border-primary/40 rounded-xl bg-white overflow-hidden"
                         style={{ touchAction: 'none' }}
                       >
