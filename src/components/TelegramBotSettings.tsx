@@ -327,15 +327,7 @@ export function TelegramBotSettings() {
                   <p className="text-sm font-medium flex items-center gap-2">
                     <Hash className="w-4 h-4" /> Шаг 2: Chat ID
                   </p>
-                  <ol className="text-sm text-muted-foreground space-y-1.5">
-                    <li>1. Откройте своего бота {verifiedBotName && (
-                      <Button variant="link" className="h-auto p-0 text-sm" onClick={() => window.open(`https://t.me/${verifiedBotName.replace('@', '')}`, '_blank')}>
-                        {verifiedBotName} <ExternalLink className="w-3 h-3 ml-0.5 inline" />
-                      </Button>
-                    )} в Telegram</li>
-                    <li>2. Отправьте команду <code className="bg-muted px-1 rounded text-xs">/start</code></li>
-                    <li>3. Бот ответит вашим Chat ID — скопируйте его</li>
-                  </ol>
+                  <p className="text-sm text-muted-foreground">Откройте бот <Button variant="link" className="h-auto p-0 text-sm" onClick={() => window.open('https://t.me/userinfobot', '_blank')}>@userinfobot <ExternalLink className="w-3 h-3 ml-0.5 inline" /></Button> в Telegram, нажмите <b>Start</b> — он ответит вашим Chat ID. Скопируйте число и вставьте ниже.</p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="wizardChatId">Chat ID</Label>
