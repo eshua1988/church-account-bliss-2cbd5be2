@@ -1623,18 +1623,13 @@ const PublicPayout = () => {
                               </p>
                             )}
                           </div>
-                          <div className="flex flex-col items-end gap-1 shrink-0">
-                            <span className="font-semibold text-primary">
-                              {currencySymbol} {payout.amount.toFixed(2)}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {format(new Date(payout.date), 'dd.MM.yyyy')}
-                            </span>
-                          </div>
+                          <span className="font-semibold text-primary shrink-0">
+                            {currencySymbol} {payout.amount.toFixed(2)}
+                          </span>
                         </div>
                       </button>
-                      {payout.pdfUrl && (
-                        <div className="px-3 pb-3 pt-0">
+                      <div className="px-3 pb-3 pt-0 flex items-center justify-between">
+                        {payout.pdfUrl ? (
                           <a
                             href={payout.pdfUrl}
                             target="_blank"
@@ -1644,8 +1639,13 @@ const PublicPayout = () => {
                             <ExternalLink className="w-3 h-3" />
                             {t.viewPdf}
                           </a>
-                        </div>
-                      )}
+                        ) : (
+                          <span />
+                        )}
+                        <span className="text-xs text-muted-foreground">
+                          {format(new Date(payout.date), 'dd.MM.yyyy')}
+                        </span>
+                      </div>
                     </div>
                   );
                 })}
