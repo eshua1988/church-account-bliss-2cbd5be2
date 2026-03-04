@@ -1,12 +1,18 @@
 import { useRef, useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { CheckCircle, Eraser, X } from 'lucide-react';
+import { CheckCircle, Eraser, X, Loader2 } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+);
 
 /**
  * Standalone fullscreen signature page.
- * Opens in a real browser tab from PublicPayout.
- * On confirm - writes result to localStorage and closes itself.
- * PublicPayout listens via the 'storage' event.
+ * Opens in a real browser tab (even from Telegram via openLink).
+ * On confirm - saves dataUrl to Supabase temp_signatures table.
+ * PublicPayout listens via Supabase Realtime subscription.
  */
 export default function SignaturePad() {
   const [searchParams] = useSearchParams();
@@ -16,6 +22,8 @@ export default function SignaturePad() {
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasContent, setHasContent] = useState(false);
   const [done, setDone] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Resize canvas to fill screen
   useEffect(() => {
@@ -82,15 +90,27 @@ export default function SignaturePad() {
     setHasContent(false);
   };
 
-  const confirm = () => {
+  const confirm = async () => {
     const canvas = canvasRef.current;
     if (!canvas || !hasContent) return;
     const dataUrl = canvas.toDataURL('image/png');
-    // Write result so the parent tab can pick it up via storage event
-    localStorage.setItem(`sig_result_${sid}`, dataUrl);
-    setDone(true);
-    // Try to close this tab after a short delay
-    setTimeout(() => { try { window.close(); } catch (_) {} }, 1200);
+    setSaving(true);
+    setError(null);
+    try {
+      const { error: dbErr } = await supabase
+        .from('temp_signatures')
+        .upsert({ sid, data_url: dataUrl });
+      if (dbErr) throw dbErr;
+      // Also write to localStorage as fallback for same-browser scenarios
+      try { localStorage.setItem(`sig_result_${sid}`, dataUrl); } catch (_) {}
+      setDone(true);
+      setTimeout(() => { try { window.close(); } catch (_) {} }, 2000);
+    } catch (e: unknown) {
+      setError('Ошибка сохранения. Попробуйте снова.');
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!sid) {
@@ -172,19 +192,22 @@ export default function SignaturePad() {
 
       {/* Confirm button */}
       <div style={{ padding: '12px 16px 32px', flexShrink: 0, backgroundColor: '#fff' }}>
+        {error && (
+          <p style={{ color: '#ef4444', fontSize: 13, textAlign: 'center', marginBottom: 8 }}>{error}</p>
+        )}
         <button
           onClick={confirm}
-          disabled={!hasContent}
+          disabled={!hasContent || saving}
           style={{
             width: '100%',
             padding: '16px',
-            backgroundColor: hasContent ? '#6366f1' : '#d1d5db',
+            backgroundColor: hasContent && !saving ? '#6366f1' : '#d1d5db',
             color: '#fff',
             border: 'none',
             borderRadius: 12,
             fontSize: 17,
             fontWeight: 700,
-            cursor: hasContent ? 'pointer' : 'not-allowed',
+            cursor: hasContent && !saving ? 'pointer' : 'not-allowed',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -192,8 +215,10 @@ export default function SignaturePad() {
             transition: 'background-color 0.2s',
           }}
         >
-          <CheckCircle style={{ width: 22, height: 22 }} />
-          Подтвердить подпись
+          {saving
+            ? <><Loader2 style={{ width: 22, height: 22, animation: 'spin 1s linear infinite' }} />Сохранение...</>
+            : <><CheckCircle style={{ width: 22, height: 22 }} />Подтвердить подпись</>
+          }
         </button>
       </div>
     </div>

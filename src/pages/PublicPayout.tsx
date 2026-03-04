@@ -574,33 +574,56 @@ const PublicPayout = () => {
   const [signSid, setSignSid] = useState<string | null>(null);
   const [waitingExternalSign, setWaitingExternalSign] = useState(false);
 
-  // Listen for signature result from external tab
+  // Listen for signature result from external tab (Supabase Realtime + localStorage fallback)
   useEffect(() => {
-    const handleStorage = (e: StorageEvent) => {
-      if (!e.key || !e.key.startsWith('sig_result_')) return;
-      const sid = e.key.replace('sig_result_', '');
-      if (sid !== signSid) return;
-      const dataUrl = e.newValue;
-      if (!dataUrl) return;
-      setSignatureDataUrl(dataUrl);
-      setHasSignature(true);
-      setWaitingExternalSign(false);
-      setSignSid(null);
-      localStorage.removeItem(e.key);
-      // Draw into main canvas
-      const main = signatureCanvasRef.current;
-      if (main) {
-        const ctx = main.getContext('2d');
-        if (ctx) {
-          const img = new Image();
-          img.onload = () => ctx.drawImage(img, 0, 0, main.width, main.height);
-          img.src = dataUrl;
+    if (!signSid) return;
+
+    // Supabase Realtime subscription – works even when browser tabs are in different processes
+    const channel = supabase
+      .channel(`sig_${signSid}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'temp_signatures', filter: `sid=eq.${signSid}` },
+        (payload) => {
+          const dataUrl = (payload.new as { data_url: string }).data_url;
+          if (!dataUrl) return;
+          applySignature(dataUrl);
+          supabase.from('temp_signatures').delete().eq('sid', signSid);
+          supabase.removeChannel(channel);
         }
-      }
+      )
+      .subscribe();
+
+    // localStorage fallback for same-browser (non-Telegram) scenario
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key !== `sig_result_${signSid}` || !e.newValue) return;
+      applySignature(e.newValue);
+      localStorage.removeItem(e.key);
+      supabase.removeChannel(channel);
     };
     window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
+
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, [signSid]);
+
+  const applySignature = (dataUrl: string) => {
+    setSignatureDataUrl(dataUrl);
+    setHasSignature(true);
+    setWaitingExternalSign(false);
+    setSignSid(null);
+    const main = signatureCanvasRef.current;
+    if (main) {
+      const ctx = main.getContext('2d');
+      if (ctx) {
+        const img = new Image();
+        img.onload = () => ctx.drawImage(img, 0, 0, main.width, main.height);
+        img.src = dataUrl;
+      }
+    }
+  };
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   const [language, setLanguage] = useState<Language>('ru');
   const [imagesOptional, setImagesOptional] = useState(false); // false = images required by default
@@ -817,7 +840,14 @@ const PublicPayout = () => {
     setWaitingExternalSign(true);
     const base = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
     const url = `${window.location.origin}${base}/sign?sid=${sid}`;
-    window.open(url, '_blank');
+    // Telegram WebApp: openLink forces the real system browser (Safari/Chrome)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const twa = (window as any).Telegram?.WebApp;
+    if (twa?.openLink) {
+      twa.openLink(url);
+    } else {
+      window.open(url, '_blank');
+    }
   };
 
   const confirmFullSignature = () => {
