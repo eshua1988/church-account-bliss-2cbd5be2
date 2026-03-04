@@ -571,17 +571,31 @@ const PublicPayout = () => {
   const [hasSignature, setHasSignature] = useState(false);
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [showFullSignature, setShowFullSignature] = useState(false);
-  const [signSid, setSignSid] = useState<string | null>(null);
-  const [waitingExternalSign, setWaitingExternalSign] = useState(false);
+  // Restore signSid from sessionStorage in case iOS reloaded the page while Safari was open
+  const [signSid, setSignSidState] = useState<string | null>(() => {
+    try { return sessionStorage.getItem('sign_sid') || null; } catch { return null; }
+  });
+  const [waitingExternalSign, setWaitingExternalSign] = useState<boolean>(() => {
+    try { return !!sessionStorage.getItem('sign_sid'); } catch { return false; }
+  });
+
+  const setSignSid = (sid: string | null) => {
+    setSignSidState(sid);
+    try {
+      if (sid) sessionStorage.setItem('sign_sid', sid);
+      else sessionStorage.removeItem('sign_sid');
+    } catch (_) {}
+  };
+
+  const EXCHANGE_URL = 'https://htepbcotdqrewbxmasbf.supabase.co/functions/v1/sign-exchange';
+  const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0ZXBiY290ZHFyZXdieG1hc2JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2MTUzNDMsImV4cCI6MjA4MDE5MTM0M30.kHkWLZgXSZ93njS2JpTsWvQ4VKHJZb4ptuWq3ob_FsI';
 
   // Poll the sign-exchange Edge Function every 1.5s until signature arrives
   useEffect(() => {
     if (!signSid) return;
     let active = true;
-    const EXCHANGE_URL = 'https://htepbcotdqrewbxmasbf.supabase.co/functions/v1/sign-exchange';
-    const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0ZXBiY290ZHFyZXdieG1hc2JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2MTUzNDMsImV4cCI6MjA4MDE5MTM0M30.kHkWLZgXSZ93njS2JpTsWvQ4VKHJZb4ptuWq3ob_FsI';
 
-    const poll = setInterval(async () => {
+    const checkNow = async () => {
       if (!active) return;
       try {
         const res = await fetch(`${EXCHANGE_URL}?sid=${signSid}`, {
@@ -589,20 +603,28 @@ const PublicPayout = () => {
         });
         const json = await res.json();
         if (json.data_url) {
+          active = false;
           clearInterval(poll);
           applySignature(json.data_url);
-          // Delete from server
           fetch(`${EXCHANGE_URL}?sid=${signSid}`, {
             method: 'DELETE',
             headers: { 'apikey': ANON_KEY, 'Authorization': `Bearer ${ANON_KEY}` },
           });
         }
       } catch (_) {}
-    }, 1500);
+    };
+
+    const poll = setInterval(checkNow, 1500);
+
+    // Immediate poll when user returns to this tab (iOS suspends JS in background)
+    const onVisible = () => { if (document.visibilityState === 'visible') checkNow(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', checkNow);
 
     // localStorage fallback for same-origin non-Telegram
     const handleStorage = (e: StorageEvent) => {
       if (e.key !== `sig_result_${signSid}` || !e.newValue) return;
+      active = false;
       clearInterval(poll);
       applySignature(e.newValue);
       try { localStorage.removeItem(e.key); } catch (_) {}
@@ -612,6 +634,8 @@ const PublicPayout = () => {
     return () => {
       active = false;
       clearInterval(poll);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', checkNow);
       window.removeEventListener('storage', handleStorage);
     };
   }, [signSid]);
@@ -620,7 +644,7 @@ const PublicPayout = () => {
     setSignatureDataUrl(dataUrl);
     setHasSignature(true);
     setWaitingExternalSign(false);
-    setSignSid(null);
+    setSignSid(null); // also clears sessionStorage
     const main = signatureCanvasRef.current;
     if (main) {
       const ctx = main.getContext('2d');
@@ -846,13 +870,12 @@ const PublicPayout = () => {
     const base = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
     const url = `${window.location.origin}${base}/sign?sid=${sid}`;
 
-    // For Telegram WebApp - openLink opens in the real system browser
+    // For Telegram WebApp - openLink forces the real system browser (Safari/Chrome)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const twa = (window as any).Telegram?.WebApp;
     if (twa?.openLink) {
       twa.openLink(url);
     } else {
-      // Use <a target="_blank"> click — more reliable than window.open in WebViews
       const a = document.createElement('a');
       a.href = url;
       a.target = '_blank';
@@ -862,7 +885,7 @@ const PublicPayout = () => {
       document.body.removeChild(a);
     }
 
-    // Set state AFTER opening (prevents iOS popup blocker)
+    // Set state AFTER opening — saves to sessionStorage so iOS reload can recover it
     setSignSid(sid);
     setWaitingExternalSign(true);
   };
