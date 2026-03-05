@@ -83,13 +83,20 @@ const NotificationCard = ({
     >
       {/* Top row: name + unread dot | amount+currency + delete */}
       <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-start gap-2 min-w-0">
           {!notification.is_read && (
-            <div className="w-2.5 h-2.5 rounded-full bg-primary flex-shrink-0 mt-1" />
+            <div className="w-2.5 h-2.5 rounded-full bg-primary flex-shrink-0 mt-1.5" />
           )}
-          <p className="font-semibold text-foreground truncate">
-            {issuedTo || notification.title}
-          </p>
+          <div className="min-w-0">
+            <p className="font-semibold text-foreground truncate leading-snug">
+              {issuedTo || notification.title}
+            </p>
+            {departmentName && (
+              <p className="text-sm text-muted-foreground mt-0.5 truncate leading-snug">
+                {departmentName}
+              </p>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           {amount != null && currency && (
@@ -120,13 +127,6 @@ const NotificationCard = ({
         </div>
       </div>
 
-      {/* Department */}
-      {departmentName && (
-        <p className="text-sm text-muted-foreground mt-1 ml-4">
-          {departmentName}
-        </p>
-      )}
-
       {/* Bottom row: date | PDF button */}
       <div className="flex items-end justify-between mt-3">
         <p className="text-xs text-muted-foreground">
@@ -136,16 +136,16 @@ const NotificationCard = ({
           <Button
             variant="default"
             size="sm"
-            className="gap-2 h-8"
+            className="gap-1.5 h-7 px-2.5 text-xs"
             onClick={handleDownloadPdf}
             disabled={isDownloading}
           >
             {isDownloading ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
-              <Download className="h-3.5 w-3.5" />
+              <Download className="h-3 w-3" />
             )}
-            {isDownloading ? 'Загрузка...' : 'Скачать PDF'}
+            {isDownloading ? '...' : 'PDF'}
           </Button>
         )}
       </div>
