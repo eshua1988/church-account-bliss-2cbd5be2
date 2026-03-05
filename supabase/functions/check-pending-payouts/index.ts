@@ -8,6 +8,7 @@ const corsHeaders = {
 interface CheckPendingRequest {
   token: string;
   submitterName: string;
+  transactionId?: string; // Optional: fetch a specific transaction by ID directly
 }
 
 Deno.serve(async (req) => {
@@ -71,6 +72,41 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({ error: 'This link has expired' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // If transactionId is provided, fetch that specific transaction directly (skip name search)
+    if (body.transactionId) {
+      const { data: tx, error: txErr } = await supabase
+        .from('transactions')
+        .select('id, amount, currency, description, date, issued_to, amount_in_words, category_id, cashier_name, created_at')
+        .eq('id', body.transactionId)
+        .eq('user_id', linkData.owner_user_id)
+        .single();
+
+      if (txErr || !tx) {
+        return new Response(
+          JSON.stringify({ success: true, pendingPayouts: [] }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Enrich with PDF URL
+      let pdfUrl: string | null = null;
+      try {
+        const { data: files } = await supabase.storage.from('documents').list(`${linkData.owner_user_id}/${tx.id}`);
+        const pdfFile = files?.find((f: { name: string }) => f.name.endsWith('.pdf'));
+        if (pdfFile) {
+          const { data: signed } = await supabase.storage
+            .from('documents')
+            .createSignedUrl(`${linkData.owner_user_id}/${tx.id}/${pdfFile.name}`, 3600);
+          pdfUrl = signed?.signedUrl || null;
+        }
+      } catch (_) { /* ignore */ }
+
+      return new Response(
+        JSON.stringify({ success: true, pendingPayouts: [{ ...tx, pdfUrl }] }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 

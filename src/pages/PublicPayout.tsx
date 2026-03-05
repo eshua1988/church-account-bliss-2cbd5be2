@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { openPdfUrl } from '@/lib/pdfDownload';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe, ArrowLeft, ArrowRight, Send, ExternalLink, Copy, Link, Search, ChevronDown, Check, Maximize2 } from 'lucide-react';
 import currencyConvertIcon from '@/assets/currency-convert-icon.png';
@@ -511,6 +511,9 @@ const numberToWords = (num: number, currency: string, lang: string = 'pl'): stri
 
 const PublicPayout = () => {
   const { token } = useParams<{ token: string }>();
+  const [searchParams] = useSearchParams();
+  const autoTxId = searchParams.get('txid');
+  const autoName = searchParams.get('name') || '';
   const navigate = useNavigate();
   const { toast } = useToast();
   
@@ -735,6 +738,49 @@ const PublicPayout = () => {
 
     loadData();
   }, [token]);
+
+  // Auto-navigate: if txid param is present, skip login/choice and go directly to photo editor
+  useEffect(() => {
+    if (!autoTxId || !sharedLink || loading) return;
+    let cancelled = false;
+    const autoOpen = async () => {
+      try {
+        const { data } = await supabase.functions.invoke('check-pending-payouts', {
+          body: { token: sharedLink.token, submitterName: autoName || 'auto', transactionId: autoTxId },
+        });
+        if (cancelled) return;
+        if (data?.pendingPayouts?.length) {
+          const payout = data.pendingPayouts[0];
+          const nameParts = (autoName || payout.issued_to || 'Auto').trim().split(' ');
+          const firstName = nameParts[0] || '';
+          const lastName = nameParts.slice(1).join(' ') || '';
+          setSubmitterFirstName(firstName);
+          setSubmitterLastName(lastName);
+          setIsAuthenticated(true);
+          setPendingPayouts(data.pendingPayouts);
+          const cat = categories.find((c: { id: string }) => c.id === payout.category_id);
+          const cleanDesc = payout.description?.replace(/\s*\[Bez zalacznikow - [^\]]+\]/g, '').trim() || '';
+          setFormData({
+            date: new Date(payout.date),
+            currency: payout.currency,
+            amount: payout.amount.toString(),
+            issuedTo: payout.issued_to || autoName || `${firstName} ${lastName}`,
+            bankAccount: '',
+            departmentName: cat?.name || '',
+            basis: cleanDesc,
+            amountInWords: payout.amount_in_words || '',
+          });
+          setContinuingPayout(payout);
+          setImagesOptional(false);
+          setNavigationHistory(['login', 'continuing']);
+        }
+      } catch (e) {
+        console.error('Auto-open error:', e);
+      }
+    };
+    autoOpen();
+    return () => { cancelled = true; };
+  }, [autoTxId, sharedLink, loading]);
 
   // Auto-generate amount in words
   useEffect(() => {

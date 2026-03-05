@@ -76,7 +76,9 @@ const NotificationCard = ({
   const currency = notification.metadata?.currency as string | undefined;
   const imagesSkipped = notification.metadata?.images_skipped as boolean | undefined;
   const baseUrl = window.location.origin + import.meta.env.BASE_URL.replace(/\/$/, '');
-  const payoutUrl = payoutToken ? `${baseUrl}/payout/${payoutToken}` : undefined;
+  const payoutUrl = payoutToken
+    ? `${baseUrl}/payout/${payoutToken}?txid=${encodeURIComponent(transactionId || '')}&name=${encodeURIComponent(issuedTo || '')}`
+    : undefined;
 
   return (
     <div
