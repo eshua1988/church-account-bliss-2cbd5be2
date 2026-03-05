@@ -155,7 +155,18 @@ export function TelegramBotSettings() {
   const activateWebhook = async () => {
     setWebhookStatus('loading');
     try {
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/telegram-bot?setup=true`);
+      let response: Response;
+      if (wizardToken.trim()) {
+        // Custom bot — set webhook for this specific token
+        response = await fetch(`${SUPABASE_URL}/functions/v1/telegram-bot?setup_custom=true`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bot_token: wizardToken.trim() }),
+        });
+      } else {
+        // Shared bot
+        response = await fetch(`${SUPABASE_URL}/functions/v1/telegram-bot?setup=true`);
+      }
       const result = await response.json();
       if (result.ok) {
         setWebhookStatus('success');
@@ -167,6 +178,32 @@ export function TelegramBotSettings() {
     } catch {
       setWebhookStatus('error');
       toast({ title: 'Ошибка', description: 'Не удалось подключиться к серверу', variant: 'destructive' });
+    }
+  };
+
+  const reactivateWebhook = async (token: string | null) => {
+    setLoading(true);
+    try {
+      let response: Response;
+      if (token) {
+        response = await fetch(`${SUPABASE_URL}/functions/v1/telegram-bot?setup_custom=true`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bot_token: token }),
+        });
+      } else {
+        response = await fetch(`${SUPABASE_URL}/functions/v1/telegram-bot?setup=true`);
+      }
+      const result = await response.json();
+      if (result.ok) {
+        toast({ title: 'Webhook активирован', description: 'Бот готов к работе' });
+      } else {
+        toast({ title: 'Ошибка webhook', description: result.description || 'Не удалось активировать', variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Ошибка', description: 'Не удалось подключиться к серверу', variant: 'destructive' });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -210,15 +247,27 @@ export function TelegramBotSettings() {
                   </Badge>
                   <span className="text-sm text-muted-foreground">Chat ID: {bot.telegram_chat_id}</span>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDisconnect(bot.id)}
-                  disabled={loading}
-                  className="text-destructive hover:text-destructive"
-                >
-                  <Unlink className="w-4 h-4" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => reactivateWebhook(bot.bot_token)}
+                    disabled={loading}
+                    title="Переактивировать webhook"
+                    className="text-muted-foreground hover:text-primary"
+                  >
+                    <Zap className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDisconnect(bot.id)}
+                    disabled={loading}
+                    className="text-destructive hover:text-destructive"
+                  >
+                    <Unlink className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
