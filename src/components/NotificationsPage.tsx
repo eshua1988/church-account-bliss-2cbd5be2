@@ -65,6 +65,11 @@ const NotificationCard = ({
     }
   };
 
+  const issuedTo = notification.metadata?.issued_to as string | undefined;
+  const departmentName = notification.metadata?.department_name as string | undefined;
+  const amount = notification.metadata?.amount;
+  const currency = notification.metadata?.currency as string | undefined;
+
   return (
     <div
       className={cn(
@@ -74,61 +79,73 @@ const NotificationCard = ({
           : 'bg-card'
       )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            {!notification.is_read && (
-              <div className="w-2.5 h-2.5 rounded-full bg-primary flex-shrink-0" />
-            )}
-            <p className="font-semibold text-foreground">{notification.title}</p>
-          </div>
-          <p className="text-sm text-muted-foreground mt-1">
-            {notification.message}
-          </p>
-          <p className="text-xs text-muted-foreground mt-3">
-            {format(new Date(notification.created_at), 'dd.MM.yyyy HH:mm')}
-          </p>
-          {transactionId && (
-            <div className="mt-3">
-              <Button
-                variant="default"
-                size="sm"
-                className="gap-2 h-8"
-                onClick={handleDownloadPdf}
-                disabled={isDownloading}
-              >
-                {isDownloading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Download className="h-3.5 w-3.5" />
-                )}
-                {isDownloading ? 'Загрузка...' : 'Скачать PDF'}
-              </Button>
-            </div>
+      {/* Top row: name + unread dot | amount+currency + delete */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          {!notification.is_read && (
+            <div className="w-2.5 h-2.5 rounded-full bg-primary flex-shrink-0 mt-1" />
           )}
+          <p className="font-semibold text-foreground truncate">
+            {issuedTo || notification.title}
+          </p>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
+          {amount != null && currency && (
+            <span className="font-bold text-primary text-base whitespace-nowrap">
+              {amount} {currency}
+            </span>
+          )}
           {!notification.is_read && (
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8"
+              className="h-7 w-7"
               onClick={() => onMarkAsRead(notification.id)}
               title="Отметить как прочитанное"
             >
-              <Check className="h-4 w-4" />
+              <Check className="h-3.5 w-3.5" />
             </Button>
           )}
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-destructive hover:text-destructive"
+            className="h-7 w-7 text-destructive hover:text-destructive"
             onClick={() => onDelete(notification.id)}
             title="Удалить"
           >
-            <X className="h-4 w-4" />
+            <X className="h-3.5 w-3.5" />
           </Button>
         </div>
+      </div>
+
+      {/* Department */}
+      {departmentName && (
+        <p className="text-sm text-muted-foreground mt-1 ml-4">
+          {departmentName}
+        </p>
+      )}
+
+      {/* Bottom row: date | PDF button */}
+      <div className="flex items-end justify-between mt-3">
+        <p className="text-xs text-muted-foreground">
+          {format(new Date(notification.created_at), 'dd.MM.yyyy HH:mm')}
+        </p>
+        {transactionId && (
+          <Button
+            variant="default"
+            size="sm"
+            className="gap-2 h-8"
+            onClick={handleDownloadPdf}
+            disabled={isDownloading}
+          >
+            {isDownloading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Download className="h-3.5 w-3.5" />
+            )}
+            {isDownloading ? 'Загрузка...' : 'Скачать PDF'}
+          </Button>
+        )}
       </div>
     </div>
   );

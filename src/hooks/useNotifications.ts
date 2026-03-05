@@ -9,6 +9,7 @@ export interface NotificationMetadata {
   currency?: string;
   issued_to?: string;
   submitter_name?: string;
+  department_name?: string;
   images_skipped?: boolean;
   pdf_path?: string;
   [key: string]: unknown;
