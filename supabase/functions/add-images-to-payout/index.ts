@@ -86,15 +86,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Verify the transaction belongs to the link owner and matches submitter
-    const searchPattern = `%[Bez zalacznikow - ${body.submitterName.trim()}]%`;
-    
+    // Verify the transaction belongs to the link owner (no description pattern check - too fragile)
     const { data: transaction, error: txError } = await supabase
       .from('transactions')
       .select('id, description')
       .eq('id', body.transactionId)
       .eq('user_id', linkData.owner_user_id)
-      .like('description', searchPattern)
       .single();
 
     if (txError || !transaction) {
@@ -105,9 +102,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Remove the "[Bez załączników - Name]" tag from description, use edited basis if provided
+    // Remove the "[Bez zalacznikow/załączników - Name]" tag from description, use edited basis if provided
     const strippedDescription = transaction.description
-      ?.replace(/\s*\[Bez załączników - [^\]]+\]/g, '')
+      ?.replace(/\s*\[Bez za[łl]a[cć]znik[oó]w - [^\]]+\]/gi, '')
       .trim() || '';
     const finalDescription = body.updatedBasis !== undefined ? body.updatedBasis : strippedDescription;
 
