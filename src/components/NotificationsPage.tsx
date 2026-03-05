@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
+import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { format } from 'date-fns';
@@ -182,9 +183,25 @@ export const NotificationsPage = () => {
     clearAllNotifications,
   } = useNotifications();
 
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'all' | 'no_photos'>('all');
   // Map transactionId -> cashier_name for notifications without department_name in metadata
   const [deptMap, setDeptMap] = useState<Record<string, string>>({});
+  // Fallback payout token for old notifications that don't have link_token in metadata
+  const [fallbackToken, setFallbackToken] = useState<string | undefined>();
+
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('shared_payout_links')
+      .select('token')
+      .eq('owner_user_id', user.id)
+      .eq('is_active', true)
+      .limit(1)
+      .then(({ data }) => {
+        if (data && data.length > 0) setFallbackToken(data[0].token);
+      });
+  }, [user]);
 
   useEffect(() => {
     const ids = notifications
@@ -316,7 +333,7 @@ export const NotificationsPage = () => {
               onMarkAsRead={markAsRead}
               onDelete={deleteNotification}
               resolvedDepartment={deptMap[notification.metadata?.transaction_id as string] || undefined}
-              payoutToken={notification.metadata?.link_token || undefined}
+              payoutToken={notification.metadata?.link_token || fallbackToken}
             />
           ))}
           <p className="text-xs text-center text-muted-foreground pt-2">
