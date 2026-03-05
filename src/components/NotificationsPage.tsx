@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, ExternalLink } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -13,11 +13,13 @@ const NotificationCard = ({
   onMarkAsRead,
   onDelete,
   resolvedDepartment,
+  payoutToken,
 }: {
   notification: Notification;
   onMarkAsRead: (id: string) => void;
   onDelete: (id: string) => void;
   resolvedDepartment?: string;
+  payoutToken?: string;
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
   const { toast } = useToast();
@@ -71,6 +73,9 @@ const NotificationCard = ({
   const departmentName = (notification.metadata?.department_name as string | undefined) || resolvedDepartment;
   const amount = notification.metadata?.amount;
   const currency = notification.metadata?.currency as string | undefined;
+  const imagesSkipped = notification.metadata?.images_skipped as boolean | undefined;
+  const baseUrl = window.location.origin + import.meta.env.BASE_URL.replace(/\/$/, '');
+  const payoutUrl = payoutToken ? `${baseUrl}/payout/${payoutToken}` : undefined;
 
   return (
     <div
@@ -127,27 +132,40 @@ const NotificationCard = ({
         </div>
       </div>
 
-      {/* Bottom row: date | PDF button */}
-      <div className="flex items-end justify-between mt-3">
-        <p className="text-xs text-muted-foreground">
+      {/* Bottom row: date | action buttons */}
+      <div className="flex items-end justify-between mt-3 gap-2">
+        <p className="text-xs text-muted-foreground flex-shrink-0">
           {format(new Date(notification.created_at), 'dd.MM.yyyy HH:mm')}
         </p>
-        {transactionId && (
-          <Button
-            variant="default"
-            size="sm"
-            className="gap-1.5 h-7 px-2.5 text-xs"
-            onClick={handleDownloadPdf}
-            disabled={isDownloading}
-          >
-            {isDownloading ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <Download className="h-3 w-3" />
-            )}
-            {isDownloading ? '...' : 'PDF'}
-          </Button>
-        )}
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+          {imagesSkipped && payoutUrl && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1 h-7 px-2.5 text-xs border-yellow-500/50 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-500/10"
+              onClick={() => window.open(payoutUrl, '_blank')}
+            >
+              <ImagePlus className="h-3 w-3" />
+              Добавить фото
+            </Button>
+          )}
+          {transactionId && (
+            <Button
+              variant="default"
+              size="sm"
+              className="gap-1.5 h-7 px-2.5 text-xs"
+              onClick={handleDownloadPdf}
+              disabled={isDownloading}
+            >
+              {isDownloading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Download className="h-3 w-3" />
+              )}
+              {isDownloading ? '...' : 'PDF'}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -167,6 +185,8 @@ export const NotificationsPage = () => {
   const [activeTab, setActiveTab] = useState<'all' | 'no_photos'>('all');
   // Map transactionId -> cashier_name for notifications without department_name in metadata
   const [deptMap, setDeptMap] = useState<Record<string, string>>({});
+  // Map transactionId -> payout token for notifications with images_skipped
+  const [tokenMap, setTokenMap] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const ids = notifications
@@ -184,6 +204,25 @@ export const NotificationsPage = () => {
           if (tx.cashier_name) map[tx.id] = tx.cashier_name;
         });
         setDeptMap(map);
+      });
+  }, [notifications]);
+
+  useEffect(() => {
+    const ids = notifications
+      .filter(n => n.metadata?.images_skipped && n.metadata?.transaction_id)
+      .map(n => n.metadata!.transaction_id as string);
+    if (ids.length === 0) return;
+    supabase
+      .from('shared_payout_links')
+      .select('transaction_id, token')
+      .in('transaction_id', ids)
+      .then(({ data }) => {
+        if (!data) return;
+        const map: Record<string, string> = {};
+        data.forEach((row: { transaction_id: string | null; token: string }) => {
+          if (row.transaction_id) map[row.transaction_id] = row.token;
+        });
+        setTokenMap(map);
       });
   }, [notifications]);
 
@@ -298,6 +337,7 @@ export const NotificationsPage = () => {
               onMarkAsRead={markAsRead}
               onDelete={deleteNotification}
               resolvedDepartment={deptMap[notification.metadata?.transaction_id as string] || undefined}
+              payoutToken={tokenMap[notification.metadata?.transaction_id as string] || undefined}
             />
           ))}
           <p className="text-xs text-center text-muted-foreground pt-2">
