@@ -12,6 +12,7 @@ export interface NotificationMetadata {
   department_name?: string;
   images_skipped?: boolean;
   pdf_path?: string;
+  link_token?: string;
   [key: string]: unknown;
 }
 

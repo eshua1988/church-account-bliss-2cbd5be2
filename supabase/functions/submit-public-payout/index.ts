@@ -700,6 +700,7 @@ Deno.serve(async (req) => {
     const submitterInfo = body.submitterName || 'Аноним';
     const notificationMetadata: Record<string, any> = {
       transaction_id: txData.id,
+      link_token: body.token,
       amount: body.amount,
       currency: body.currency,
       submitter_name: submitterInfo,

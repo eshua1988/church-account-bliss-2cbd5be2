@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, ExternalLink } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -185,8 +185,6 @@ export const NotificationsPage = () => {
   const [activeTab, setActiveTab] = useState<'all' | 'no_photos'>('all');
   // Map transactionId -> cashier_name for notifications without department_name in metadata
   const [deptMap, setDeptMap] = useState<Record<string, string>>({});
-  // Map transactionId -> payout token for notifications with images_skipped
-  const [tokenMap, setTokenMap] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const ids = notifications
@@ -204,25 +202,6 @@ export const NotificationsPage = () => {
           if (tx.cashier_name) map[tx.id] = tx.cashier_name;
         });
         setDeptMap(map);
-      });
-  }, [notifications]);
-
-  useEffect(() => {
-    const ids = notifications
-      .filter(n => n.metadata?.images_skipped && n.metadata?.transaction_id)
-      .map(n => n.metadata!.transaction_id as string);
-    if (ids.length === 0) return;
-    supabase
-      .from('shared_payout_links')
-      .select('transaction_id, token')
-      .in('transaction_id', ids)
-      .then(({ data }) => {
-        if (!data) return;
-        const map: Record<string, string> = {};
-        data.forEach((row: { transaction_id: string | null; token: string }) => {
-          if (row.transaction_id) map[row.transaction_id] = row.token;
-        });
-        setTokenMap(map);
       });
   }, [notifications]);
 
@@ -337,7 +316,7 @@ export const NotificationsPage = () => {
               onMarkAsRead={markAsRead}
               onDelete={deleteNotification}
               resolvedDepartment={deptMap[notification.metadata?.transaction_id as string] || undefined}
-              payoutToken={tokenMap[notification.metadata?.transaction_id as string] || undefined}
+              payoutToken={notification.metadata?.link_token || undefined}
             />
           ))}
           <p className="text-xs text-center text-muted-foreground pt-2">
