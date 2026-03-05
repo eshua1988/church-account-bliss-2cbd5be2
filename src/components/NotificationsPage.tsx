@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
@@ -12,10 +12,12 @@ const NotificationCard = ({
   notification,
   onMarkAsRead,
   onDelete,
+  resolvedDepartment,
 }: {
   notification: Notification;
   onMarkAsRead: (id: string) => void;
   onDelete: (id: string) => void;
+  resolvedDepartment?: string;
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
   const { toast } = useToast();
@@ -66,7 +68,7 @@ const NotificationCard = ({
   };
 
   const issuedTo = notification.metadata?.issued_to as string | undefined;
-  const departmentName = notification.metadata?.department_name as string | undefined;
+  const departmentName = (notification.metadata?.department_name as string | undefined) || resolvedDepartment;
   const amount = notification.metadata?.amount;
   const currency = notification.metadata?.currency as string | undefined;
 
@@ -163,6 +165,27 @@ export const NotificationsPage = () => {
   } = useNotifications();
 
   const [activeTab, setActiveTab] = useState<'all' | 'no_photos'>('all');
+  // Map transactionId -> cashier_name for notifications without department_name in metadata
+  const [deptMap, setDeptMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const ids = notifications
+      .filter(n => !n.metadata?.department_name && n.metadata?.transaction_id)
+      .map(n => n.metadata!.transaction_id as string);
+    if (ids.length === 0) return;
+    supabase
+      .from('transactions')
+      .select('id, cashier_name')
+      .in('id', ids)
+      .then(({ data }) => {
+        if (!data) return;
+        const map: Record<string, string> = {};
+        data.forEach((tx: { id: string; cashier_name: string | null }) => {
+          if (tx.cashier_name) map[tx.id] = tx.cashier_name;
+        });
+        setDeptMap(map);
+      });
+  }, [notifications]);
 
   const withPhotos = notifications.filter(n => !n.metadata?.images_skipped);
   const withoutPhotos = notifications.filter(n => n.metadata?.images_skipped);
@@ -274,6 +297,7 @@ export const NotificationsPage = () => {
               notification={notification}
               onMarkAsRead={markAsRead}
               onDelete={deleteNotification}
+              resolvedDepartment={deptMap[notification.metadata?.transaction_id as string] || undefined}
             />
           ))}
           <p className="text-xs text-center text-muted-foreground pt-2">
