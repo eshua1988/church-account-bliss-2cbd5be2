@@ -182,6 +182,28 @@ export const useNotifications = () => {
       .on(
         'postgres_changes',
         {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`,
+        },
+        async (payload) => {
+          // Fetch fresh data because Realtime may not include JSONB fields in UPDATE payload
+          const { data: updatedNotif } = await supabase
+            .from('notifications')
+            .select('*')
+            .eq('id', payload.new.id)
+            .single();
+          if (updatedNotif) {
+            setNotifications(prev =>
+              prev.map(n => n.id === updatedNotif.id ? (updatedNotif as Notification) : n)
+            );
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
           event: 'DELETE',
           schema: 'public',
           table: 'notifications',

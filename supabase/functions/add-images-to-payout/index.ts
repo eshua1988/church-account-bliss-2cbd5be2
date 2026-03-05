@@ -153,7 +153,11 @@ Deno.serve(async (req) => {
         };
         await supabase
           .from('notifications')
-          .update({ metadata: updatedMeta })
+          .update({
+            metadata: updatedMeta,
+            created_at: new Date().toISOString(),
+            is_read: false,
+          })
           .eq('id', notif.id);
         console.log(`Notification ${notif.id} updated: images_skipped=false`);
       }
