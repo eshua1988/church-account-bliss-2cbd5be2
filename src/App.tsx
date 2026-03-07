@@ -12,6 +12,7 @@ import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import PublicPayout from "./pages/PublicPayout";
 import SignaturePad from "./pages/SignaturePad";
+import BankCallback from "./pages/BankCallback";
 
 const queryClient = new QueryClient();
 
@@ -54,6 +55,7 @@ const App = () => (
                   </ProtectedRoute>
                 } 
               />
+              <Route path="/bank-callback" element={<BankCallback />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
