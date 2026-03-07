@@ -310,10 +310,25 @@ export const BankingPage = () => {
         },
       });
 
-      if (error || !data?.url) {
-        const msg = data?.error || error?.message || 'Неизвестная ошибка';
+      // Extract human-readable error from FunctionsHttpError context
+      if (error) {
+        let msg = error.message || 'Неизвестная ошибка';
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const ctx = (error as any).context;
+          if (ctx) {
+            const body = typeof ctx.json === 'function' ? await ctx.json() : ctx;
+            msg = body?.error || body?.detail || msg;
+          }
+        } catch { /* ignore parse errors */ }
         setConnectionStatus('error');
         toast({ title: 'Ошибка подключения', description: msg, variant: 'destructive' });
+        return;
+      }
+
+      if (!data?.url) {
+        setConnectionStatus('error');
+        toast({ title: 'Ошибка подключения', description: 'Enable Banking не вернул URL', variant: 'destructive' });
         return;
       }
 
