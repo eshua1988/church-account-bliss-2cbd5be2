@@ -233,9 +233,14 @@ export const NotificationsPage = () => {
     setTxDescription(
       [meta?.issued_to, meta?.basis].filter(Boolean).join(' — ') || notification.message
     );
-    setTxDate(new Date().toISOString().split('T')[0]);
+    // Use date from metadata if available (set by public payout form)
+    setTxDate((meta?.date as string) || new Date().toISOString().split('T')[0]);
     const cats = getExpenseCategories();
-    setTxCategory(cats[0]?.id ?? '');
+    // Pre-select category from metadata if present
+    const preselectedCat = meta?.category_id
+      ? cats.find(c => c.id === (meta.category_id as string))
+      : undefined;
+    setTxCategory(preselectedCat?.id ?? cats[0]?.id ?? '');
     setAddTxNotif(notification);
   };
 
@@ -243,6 +248,7 @@ export const NotificationsPage = () => {
     if (!txAmount || !txCategory) return;
     setTxSaving(true);
     try {
+      const meta = addTxNotif?.metadata;
       const saved = await addTransaction({
         type: 'expense',
         amount: parseFloat(txAmount),
@@ -250,8 +256,11 @@ export const NotificationsPage = () => {
         category: txCategory as any,
         description: txDescription,
         date: new Date(txDate),
+        issuedTo: (meta?.issued_to as string) || undefined,
+        amountInWords: (meta?.amount_in_words as string) || undefined,
+        decisionNumber: (meta?.decision_number as string) || undefined,
       });
-      // Update notification metadata with transaction_id so the PDF button appears
+      // Update notification metadata with transaction_id
       if (saved?.id && addTxNotif) {
         await supabase
           .from('notifications')

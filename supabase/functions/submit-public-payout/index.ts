@@ -608,29 +608,8 @@ Deno.serve(async (req) => {
       finalDescription = finalDescription ? `${finalDescription} ${trackingNote}` : trackingNote;
     }
 
-    const { data: txData, error: txError } = await supabase
-      .from('transactions')
-      .insert({
-        user_id: linkData.owner_user_id,
-        type: 'expense',
-        amount: body.amount,
-        currency: body.currency,
-        category_id: body.categoryId || null,
-        description: finalDescription.slice(0, MAX_TEXT_LENGTH) || null,
-        date: body.date,
-        issued_to: body.issuedTo?.slice(0, MAX_TEXT_LENGTH) || null,
-        amount_in_words: body.amountInWords?.slice(0, MAX_TEXT_LENGTH) || null,
-        cashier_name: body.departmentName?.slice(0, MAX_TEXT_LENGTH) || null,
-        decision_number: body.decisionNumber?.slice(0, MAX_TEXT_LENGTH) || null,
-      })
-      .select('id')
-      .single();
-
-    if (txError) {
-      console.error('Failed to insert transaction:', txError);
-      return new Response(JSON.stringify({ error: 'Failed to save transaction' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
+    // Generate a unique folder key (no transaction created automatically)
+    const folderKey = crypto.randomUUID();
 
     // Enforce max 25 notifications per user
     const { data: existingNotifs } = await supabase
@@ -650,22 +629,19 @@ Deno.serve(async (req) => {
       ? body.tempImgPaths.filter(p => typeof p === 'string' && p.length < 300).slice(0, 10)
       : [];
 
-    // Generate / upload PDF
-    // If the client already generated the PDF (clientPdfBase64), upload it directly —
-    // this preserves Cyrillic/non-Latin text that would otherwise be transliterated
-    // when the server-side Roboto font fails to load.
+    // Generate / upload PDF using folderKey instead of transactionId
     let pdfPath: string | null = null;
     if (body.clientPdfBase64) {
       try {
         const pdfBytes = Uint8Array.from(atob(body.clientPdfBase64), c => c.charCodeAt(0));
-        const pdfFileName = `dowod_wyplaty_${body.date}_${txData.id.slice(0, 8)}.pdf`;
-        const storagePath = `${linkData.owner_user_id}/${txData.id}/${pdfFileName}`;
+        const pdfFileName = `dowod_wyplaty_${body.date}_${folderKey.slice(0, 8)}.pdf`;
+        const storagePath = `${linkData.owner_user_id}/${folderKey}/${pdfFileName}`;
         const { error: uploadErr } = await supabase.storage
           .from('documents')
           .upload(storagePath, pdfBytes, { contentType: 'application/pdf', upsert: true });
         if (uploadErr) {
           console.error('Client PDF upload failed, falling back to server generation:', uploadErr);
-          pdfPath = await generateAndUploadPdf(supabase, linkData.owner_user_id, txData.id, {
+          pdfPath = await generateAndUploadPdf(supabase, linkData.owner_user_id, folderKey, {
             date: body.date, amount: body.amount, currency: body.currency,
             issuedTo: body.issuedTo, departmentName: body.departmentName,
             description: finalDescription || body.description, amountInWords: body.amountInWords,
@@ -678,7 +654,7 @@ Deno.serve(async (req) => {
         }
       } catch (e) {
         console.error('Client PDF decode/upload error, falling back to server generation:', e);
-        pdfPath = await generateAndUploadPdf(supabase, linkData.owner_user_id, txData.id, {
+        pdfPath = await generateAndUploadPdf(supabase, linkData.owner_user_id, folderKey, {
           date: body.date, amount: body.amount, currency: body.currency,
           issuedTo: body.issuedTo, departmentName: body.departmentName,
           description: finalDescription || body.description, amountInWords: body.amountInWords,
@@ -687,7 +663,7 @@ Deno.serve(async (req) => {
         });
       }
     } else {
-      pdfPath = await generateAndUploadPdf(supabase, linkData.owner_user_id, txData.id, {
+      pdfPath = await generateAndUploadPdf(supabase, linkData.owner_user_id, folderKey, {
         date: body.date, amount: body.amount, currency: body.currency,
         issuedTo: body.issuedTo, departmentName: body.departmentName,
         description: finalDescription || body.description, amountInWords: body.amountInWords,
@@ -696,16 +672,21 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Create notification with pdf_path already set
+    // Create notification — all payout data stored in metadata for manual transaction creation
     const submitterInfo = body.submitterName || 'Аноним';
     const notificationMetadata: Record<string, any> = {
-      transaction_id: txData.id,
+      folder_key: folderKey,
       link_token: body.token,
       amount: body.amount,
       currency: body.currency,
       submitter_name: submitterInfo,
       issued_to: body.issuedTo || null,
       department_name: body.departmentName || null,
+      basis: finalDescription || body.description || null,
+      amount_in_words: body.amountInWords || null,
+      decision_number: body.decisionNumber || null,
+      date: body.date || null,
+      category_id: body.categoryId || null,
       images_skipped: body.imagesSkipped || false,
     };
     if (pdfPath) notificationMetadata.pdf_path = pdfPath;
@@ -722,17 +703,17 @@ Deno.serve(async (req) => {
 
     if (notifError) console.error('Failed to create notification:', notifError);
 
-    console.log('Transaction saved:', txData.id, 'pdfPath:', pdfPath);
+    console.log('Payout saved (no transaction), folderKey:', folderKey, 'pdfPath:', pdfPath);
 
     // Send PDF to Telegram (fire-and-forget)
     if (pdfPath) {
-      const fileName = `payout_${body.date}_${txData.id.slice(0, 8)}.pdf`;
+      const fileName = `payout_${body.date}_${folderKey.slice(0, 8)}.pdf`;
       sendPdfToTelegram(supabase, linkData.owner_user_id, pdfPath, fileName)
         .catch(e => console.error('Telegram send error:', e));
     }
 
     return new Response(
-      JSON.stringify({ success: true, transactionId: txData.id }),
+      JSON.stringify({ success: true, folderKey }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
