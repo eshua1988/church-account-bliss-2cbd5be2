@@ -2383,39 +2383,46 @@ const PublicPayout = () => {
                 </div>
                 
                 {/* Signature - Required for continuation */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>{t.signature} *</Label>
-                    <div className="flex gap-1">
-                      <Button type="button" variant="outline" size="sm" onClick={openExternalSignature} className="text-primary border-primary/40">
-                        <ExternalLink className="w-4 h-4 mr-1" />
-                        Подписать
-                      </Button>
-                      <Button type="button" variant="ghost" size="sm" onClick={clearSignature} className="text-muted-foreground hover:text-foreground">
-                        <Eraser className="w-4 h-4 mr-1" />
-                        {t.clear}
-                      </Button>
-                    </div>
+                <div className="space-y-3">
+                  <Label>{t.signature} *</Label>
+
+                  {/* Big sign button */}
+                  <button
+                    type="button"
+                    onClick={openFullSignature}
+                    className="w-full flex items-center justify-center gap-3 py-4 rounded-xl font-semibold text-lg bg-primary text-primary-foreground shadow-lg active:scale-95 transition-transform"
+                  >
+                    <ExternalLink className="w-6 h-6" />
+                    Подписать
+                  </button>
+
+                  {/* Small preview (read-only) */}
+                  <div className="relative border-2 border-dashed border-primary/30 rounded-xl bg-white overflow-hidden" style={{ height: 90 }}>
+                    {signatureDataUrl ? (
+                      <img src={signatureDataUrl} alt="Подпись" className="w-full h-full object-contain p-1" />
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-muted-foreground text-sm select-none">
+                        Подпись появится здесь
+                      </div>
+                    )}
+                    {signatureDataUrl && (
+                      <button
+                        type="button"
+                        onClick={clearSignature}
+                        className="absolute top-1 right-1 bg-destructive/80 text-white rounded-full p-1"
+                        title="Очистить"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
+
+                  {hasSignature && <p className="text-xs text-success">✓ Подпись добавлена</p>}
                   {waitingExternalSign && (
                     <p className="text-xs text-primary animate-pulse">⌨️ Ожидаем подпись из другой вкладки...</p>
                   )}
-                  <div className="border-2 border-dashed rounded-lg bg-white">
-                    <canvas
-                      ref={signatureCanvasRef}
-                      width={600}
-                      height={150}
-                      className="w-full h-32 cursor-crosshair touch-none rounded-lg"
-                      style={{ backgroundColor: 'white' }}
-                      onMouseDown={startDrawing}
-                      onMouseMove={draw}
-                      onMouseUp={stopDrawing}
-                      onMouseLeave={stopDrawing}
-                      onTouchStart={startDrawing}
-                      onTouchMove={draw}
-                      onTouchEnd={stopDrawing}
-                    />
-                  </div>
+                  {/* Hidden canvas for compatibility */}
+                  <canvas ref={signatureCanvasRef} width={600} height={150} className="hidden" />
                 </div>
                 
                 {/* Submit Button */}
@@ -2734,43 +2741,46 @@ const PublicPayout = () => {
                 {(linkType === 'standard' || currentStep === 4) && (
                   <>
                     {/* Signature */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label>{t.signature} *</Label>
-                        <div className="flex gap-1">
-                          <Button type="button" variant="outline" size="sm" onClick={openExternalSignature} className="text-primary border-primary/40">
-                            <ExternalLink className="w-4 h-4 mr-1" />
-                            Подписать
-                          </Button>
-                          <Button type="button" variant="ghost" size="sm" onClick={clearSignature} className="text-muted-foreground hover:text-foreground">
-                            <Eraser className="w-4 h-4 mr-1" />
-                            {t.clear}
-                          </Button>
-                        </div>
+                    <div className="space-y-3">
+                      <Label>{t.signature} *</Label>
+
+                      {/* Big sign button */}
+                      <button
+                        type="button"
+                        onClick={openFullSignature}
+                        className="w-full flex items-center justify-center gap-3 py-4 rounded-xl font-semibold text-lg bg-primary text-primary-foreground shadow-lg active:scale-95 transition-transform"
+                      >
+                        <ExternalLink className="w-6 h-6" />
+                        Подписать
+                      </button>
+
+                      {/* Small preview (read-only) */}
+                      <div className="relative border-2 border-dashed border-primary/30 rounded-xl bg-white overflow-hidden" style={{ height: 90 }}>
+                        {signatureDataUrl ? (
+                          <img src={signatureDataUrl} alt="Подпись" className="w-full h-full object-contain p-1" />
+                        ) : (
+                          <div className="flex items-center justify-center h-full text-muted-foreground text-sm select-none">
+                            Подпись появится здесь
+                          </div>
+                        )}
+                        {signatureDataUrl && (
+                          <button
+                            type="button"
+                            onClick={clearSignature}
+                            className="absolute top-1 right-1 bg-destructive/80 text-white rounded-full p-1"
+                            title="Очистить"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
                       </div>
+
+                      {hasSignature && <p className="text-xs text-success">✓ Подпись добавлена</p>}
                       {waitingExternalSign && (
                         <p className="text-xs text-primary animate-pulse">⌨️ Ожидаем подпись из другой вкладки...</p>
                       )}
-                      <p className="text-xs text-muted-foreground">Нарисуйте подпись или нажмите «Подписать»</p>
-                      <div className="border-2 border-dashed border-primary/40 rounded-xl bg-white overflow-hidden"
-                        style={{ touchAction: 'none' }}
-                      >
-                        <canvas
-                          ref={signatureCanvasRef}
-                          width={600}
-                          height={200}
-                          className="w-full h-40 cursor-crosshair rounded-xl"
-                          style={{ backgroundColor: 'white', touchAction: 'none', display: 'block' }}
-                          onMouseDown={startDrawing}
-                          onMouseMove={draw}
-                          onMouseUp={stopDrawing}
-                          onMouseLeave={stopDrawing}
-                          onTouchStart={(e) => { e.preventDefault(); startDrawing(e); }}
-                          onTouchMove={(e) => { e.preventDefault(); draw(e); }}
-                          onTouchEnd={(e) => { e.preventDefault(); stopDrawing(); }}
-                        />
-                      </div>
-                      {hasSignature && <p className="text-xs text-success">✓ Подпись добавлена</p>}
+                      {/* Hidden canvas for compatibility */}
+                      <canvas ref={signatureCanvasRef} width={600} height={200} className="hidden" />
                     </div>
                   </>
                 )}
