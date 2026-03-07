@@ -81,30 +81,55 @@ Deno.serve(async (req) => {
     for (const acc of accounts) {
       const uid = acc.uid
       if (!uid) continue
-      const txUrl = `https://api.enablebanking.com/accounts/${uid}/transactions?date_from=${dateFrom}&transaction_status=BOOK`
-      const txRes = await fetch(txUrl, { headers: ebHeaders })
-      const txText = await txRes.text()
-      let txData = {}
-      try { txData = JSON.parse(txText) } catch {}
-      txDebug.push({ uid, status: txRes.status, count: (txData.transactions||[]).length, error: txRes.ok ? null : txText.slice(0,300) })
-
-      if (!txRes.ok) continue
       const iban = acc.account_id?.iban || acc.iban || ''
-      for (const tx of (txData.transactions || [])) {
-        const amount = parseFloat(tx.transaction_amount?.amount || tx.amount || '0')
-        const debit = tx.credit_debit_indicator === 'DBIT' || amount < 0
-        allTx.push({
-          date: tx.booking_date || tx.value_date || dateFrom,
-          amount: Math.abs(amount),
-          description: Array.isArray(tx.remittance_information)
-            ? tx.remittance_information.join(' ')
-            : (tx.remittance_information || tx.debtor?.name || tx.creditor?.name || 'PKO BP'),
-          type: debit ? 'expense' : 'income',
-          source: 'pko_bp',
-          external_id: tx.entry_reference || tx.transaction_id || null,
-          iban,
-        })
-      }
+      let pageCount = 0
+      let continuationKey: string | null = null
+      let totalForAcc = 0
+
+      // Paginate through all pages using continuation_key
+      do {
+        const url = new URL(`https://api.enablebanking.com/accounts/${uid}/transactions`)
+        url.searchParams.set('date_from', dateFrom)
+        url.searchParams.set('transaction_status', 'BOOK')
+        if (continuationKey) url.searchParams.set('continuation_key', continuationKey)
+
+        const txRes = await fetch(url.toString(), { headers: ebHeaders })
+        const txText = await txRes.text()
+        let txData: any = {}
+        try { txData = JSON.parse(txText) } catch {}
+
+        if (!txRes.ok) {
+          txDebug.push({ uid, page: pageCount, status: txRes.status, error: txText.slice(0,300) })
+          break
+        }
+
+        const pageTxs = txData.transactions || []
+        totalForAcc += pageTxs.length
+
+        for (const tx of pageTxs) {
+          const amount = parseFloat(tx.transaction_amount?.amount || tx.amount || '0')
+          const debit = tx.credit_debit_indicator === 'DBIT' || amount < 0
+          allTx.push({
+            date: tx.booking_date || tx.value_date || dateFrom,
+            amount: Math.abs(amount),
+            description: Array.isArray(tx.remittance_information)
+              ? tx.remittance_information.join(' ')
+              : (tx.remittance_information || tx.debtor?.name || tx.creditor?.name || 'PKO BP'),
+            type: debit ? 'expense' : 'income',
+            source: 'pko_bp',
+            external_id: tx.entry_reference || tx.transaction_id || null,
+            iban,
+          })
+        }
+
+        continuationKey = txData.continuation_key || null
+        pageCount++
+
+        // Safety limit: max 100 pages (5000 transactions)
+        if (pageCount >= 100) break
+      } while (continuationKey)
+
+      txDebug.push({ uid, pages: pageCount, total: totalForAcc })
     }
 
     debug.tx_debug = txDebug
