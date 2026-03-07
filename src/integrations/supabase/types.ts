@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      bank_connections: {
+        Row: {
+          id: string
+          user_id: string
+          bank_name: string
+          session_id: string
+          accounts: Json
+          connected_at: string
+          last_sync_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          bank_name?: string
+          session_id: string
+          accounts?: Json
+          connected_at?: string
+          last_sync_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          bank_name?: string
+          session_id?: string
+          accounts?: Json
+          connected_at?: string
+          last_sync_at?: string
+        }
+        Relationships: []
+      }
       categories: {
         Row: {
           created_at: string

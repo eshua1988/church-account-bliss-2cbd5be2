@@ -196,16 +196,17 @@ export const BankingPage = () => {
       .select('session_id, last_sync_at, accounts')
       .eq('user_id', user.id)
       .eq('bank_name', 'PKO BP')
-      .single()
-      .then(({ data }) => {
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) console.error('[BankingPage] load connection:', error);
         if (data?.session_id) {
           setConnectionStatus('connected');
           setLastSyncAt(new Date(data.last_sync_at));
-          if (data.accounts) {
+          if (data.accounts && Array.isArray(data.accounts)) {
             setBankAccounts((data.accounts as any[]).map(a => ({
-              id: a.uid,
-              iban: a.iban || a.uid,
-              name: a.iban || a.uid,
+              id: a.uid || a.id || '',
+              iban: a.iban || a.uid || '',
+              name: a.iban || a.uid || 'PKO BP',
             })));
           }
         }
