@@ -303,37 +303,40 @@ export const BankingPage = () => {
     try {
       const redirectUri = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}/bank-callback`;
 
-      const { data, error } = await supabase.functions.invoke('banking-auth-start', {
-        body: {
+      // Use fetch directly so we always get the exact error body
+      const supabaseUrl = (supabase as any).supabaseUrl as string;
+      const supabaseKey = (supabase as any).supabaseKey as string;
+
+      const res = await fetch(`${supabaseUrl}/functions/v1/banking-auth-start`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
           redirect_uri: redirectUri,
           state: user?.id || crypto.randomUUID(),
-        },
+        }),
       });
 
-      // Extract human-readable error from FunctionsHttpError context
-      if (error) {
-        let msg = error.message || 'Неизвестная ошибка';
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const ctx = (error as any).context;
-          if (ctx) {
-            const body = typeof ctx.json === 'function' ? await ctx.json() : ctx;
-            msg = body?.error || body?.detail || msg;
-          }
-        } catch { /* ignore parse errors */ }
+      const json = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+
+      if (!res.ok) {
+        const msg = json?.error || json?.message || `HTTP ${res.status}`;
+        const detail = json?.detail ? `\n${json.detail}` : '';
         setConnectionStatus('error');
-        toast({ title: 'Ошибка подключения', description: msg, variant: 'destructive' });
+        toast({ title: 'Ошибка подключения', description: msg + detail, variant: 'destructive' });
         return;
       }
 
-      if (!data?.url) {
+      if (!json?.url) {
         setConnectionStatus('error');
-        toast({ title: 'Ошибка подключения', description: 'Enable Banking не вернул URL', variant: 'destructive' });
+        toast({ title: 'Ошибка', description: 'Enable Banking не вернул URL', variant: 'destructive' });
         return;
       }
 
-      // Redirect to Enable Banking authorization page
-      window.location.href = data.url;
+      window.location.href = json.url;
     } catch (e) {
       setConnectionStatus('error');
       toast({ title: 'Ошибка', description: String(e), variant: 'destructive' });
