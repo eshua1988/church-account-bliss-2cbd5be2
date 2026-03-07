@@ -73,8 +73,8 @@ Deno.serve(async (req) => {
       return respond(200, { imported: 0, total: 0, debug, note: 'Нет счетов в сессии' })
     }
 
-    // 2. Fetch transactions from each account (last 90 days)
-    const dateFrom = new Date(Date.now() - 90*24*60*60*1000).toISOString().split('T')[0]
+    // 2. Fetch transactions from each account (all history from 2020-01-01)
+    const dateFrom = '2020-01-01'
     const allTx = []
     const txDebug = []
 
