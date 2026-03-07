@@ -74,12 +74,25 @@ Deno.serve(async (req) => {
     try { jwt = await createJWT(privateKey, appId) }
     catch (e) { return respond(400, { error: 'Ошибка JWT (проверьте EB_PRIVATE_KEY): ' + String(e) }) }
 
+    // Get the exact ASPSP name from Enable Banking
+    const aspspListRes = await fetch('https://api.enablebanking.com/aspsps?country=PL', {
+      headers: { 'Authorization': 'Bearer ' + jwt },
+    })
+    let aspspName = 'PKO Bank Polski SA'
+    if (aspspListRes.ok) {
+      const aspspData = await aspspListRes.json()
+      const pko = (aspspData.aspsps || []).find((a: any) =>
+        a.name?.toLowerCase().includes('pko') || a.name?.toLowerCase().includes('powszechna')
+      )
+      if (pko) aspspName = pko.name
+    }
+
     const authResponse = await fetch('https://api.enablebanking.com/auth', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + jwt, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         access: { valid_until: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString() },
-        aspsp: { name: 'PKO BP', country: 'PL' },
+        aspsp: { name: aspspName, country: 'PL' },
         state: state || crypto.randomUUID(),
         redirect_url: redirect_uri,
         psu_type: 'personal',
