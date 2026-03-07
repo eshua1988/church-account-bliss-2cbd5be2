@@ -177,7 +177,7 @@ const NotificationCard = ({
               {isDownloading ? '...' : 'PDF'}
             </Button>
           )}
-          {!transactionId && onAddToTransaction && (
+          {onAddToTransaction && (
             <Button
               variant="outline"
               size="sm"
