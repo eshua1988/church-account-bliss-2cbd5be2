@@ -8,10 +8,6 @@ import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { openPdfUrl } from '@/lib/pdfDownload';
 import { useToast } from '@/hooks/use-toast';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { Currency } from '@/types/transaction';
@@ -23,6 +19,7 @@ const NotificationCard = ({
   resolvedDepartment,
   payoutToken,
   onAddToTransaction,
+  savingId,
 }: {
   notification: Notification;
   onMarkAsRead: (id: string) => void;
@@ -30,29 +27,27 @@ const NotificationCard = ({
   resolvedDepartment?: string;
   payoutToken?: string;
   onAddToTransaction?: (notification: Notification) => void;
+  savingId?: string | null;
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
   const { toast } = useToast();
   const transactionId = notification.metadata?.transaction_id as string | undefined;
   const pdfPath = notification.metadata?.pdf_path as string | undefined;
+  const isSaving = savingId === notification.id;
 
   const handleDownloadPdf = async () => {
-    if (!transactionId) return;
     setIsDownloading(true);
     try {
-      // Try pdf_path from metadata first, then fallback to listing storage folder
+      // Use pdf_path from metadata first (works even without transactionId)
       let filePath = pdfPath;
 
-      if (!filePath) {
+      if (!filePath && transactionId) {
         const userId = notification.user_id;
-        const { data: files, error: listError } = await supabase.storage
+        const { data: files } = await supabase.storage
           .from('documents')
           .list(`${userId}/${transactionId}`);
-        if (listError) console.error('Storage list error:', listError);
         const pdfFile = files?.find(f => f.name.endsWith('.pdf'));
-        if (pdfFile) {
-          filePath = `${userId}/${transactionId}/${pdfFile.name}`;
-        }
+        if (pdfFile) filePath = `${userId}/${transactionId}/${pdfFile.name}`;
       }
 
       if (!filePath) {
@@ -60,11 +55,9 @@ const NotificationCard = ({
         return;
       }
 
-      const { data: urlData, error: urlError } = await supabase.storage
+      const { data: urlData } = await supabase.storage
         .from('documents')
         .createSignedUrl(filePath, 60 * 60);
-
-      if (urlError) console.error('Signed URL error:', urlError);
 
       if (urlData?.signedUrl) {
         openPdfUrl(urlData.signedUrl);
@@ -161,7 +154,8 @@ const NotificationCard = ({
               Добавить фото
             </Button>
           )}
-          {transactionId && (
+          {/* PDF button: show whenever pdf_path exists OR transactionId exists */}
+          {(pdfPath || transactionId) && (
             <Button
               variant="default"
               size="sm"
@@ -177,15 +171,21 @@ const NotificationCard = ({
               {isDownloading ? '...' : 'PDF'}
             </Button>
           )}
-          {onAddToTransaction && (
+          {/* "В расход" button — saves immediately, no dialog */}
+          {onAddToTransaction && !transactionId && (
             <Button
               variant="outline"
               size="sm"
               className="gap-1.5 h-7 px-2.5 text-xs border-primary/40 text-primary hover:bg-primary/10"
               onClick={() => onAddToTransaction(notification)}
+              disabled={isSaving}
             >
-              <PlusCircle className="h-3 w-3" />
-              В расход
+              {isSaving ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <PlusCircle className="h-3 w-3" />
+              )}
+              {isSaving ? '...' : 'В расход'}
             </Button>
           )}
         </div>
@@ -209,73 +209,65 @@ export const NotificationsPage = () => {
   const { toast } = useToast();
   const { addTransaction } = useSupabaseTransactions();
   const { getExpenseCategories } = useSupabaseCategories();
-  const expenseCategories = getExpenseCategories();
 
   const [activeTab, setActiveTab] = useState<'all' | 'no_photos'>('all');
-  // Map transactionId -> cashier_name for notifications without department_name in metadata
   const [deptMap, setDeptMap] = useState<Record<string, string>>({});
-  // Fallback payout token for old notifications that don't have link_token in metadata
   const [fallbackToken, setFallbackToken] = useState<string | undefined>();
+  const [savingId, setSavingId] = useState<string | null>(null);
 
-  // Dialog state for adding a transaction from a notification
-  const [addTxNotif, setAddTxNotif] = useState<Notification | null>(null);
-  const [txAmount, setTxAmount] = useState('');
-  const [txCurrency, setTxCurrency] = useState<Currency>('PLN');
-  const [txCategory, setTxCategory] = useState('');
-  const [txDescription, setTxDescription] = useState('');
-  const [txDate, setTxDate] = useState(new Date().toISOString().split('T')[0]);
-  const [txSaving, setTxSaving] = useState(false);
-
-  const openAddTxDialog = (notification: Notification) => {
+  // Directly save transaction from notification metadata — no dialog
+  const handleAddToTransaction = async (notification: Notification) => {
     const meta = notification.metadata;
-    setTxAmount(String(meta?.amount ?? ''));
-    setTxCurrency((meta?.currency as Currency) ?? 'PLN');
-    setTxDescription(
-      [meta?.issued_to, meta?.basis].filter(Boolean).join(' — ') || notification.message
-    );
-    // Use date from metadata if available (set by public payout form)
-    setTxDate((meta?.date as string) || new Date().toISOString().split('T')[0]);
+    const amount = meta?.amount;
+    const currency = (meta?.currency as Currency) ?? 'PLN';
+    if (!amount) {
+      toast({ title: 'Нет суммы в уведомлении', variant: 'destructive' });
+      return;
+    }
+
     const cats = getExpenseCategories();
-    // Pre-select category from metadata if present
+    // Try to match category from metadata, otherwise pick first expense category
     const preselectedCat = meta?.category_id
       ? cats.find(c => c.id === (meta.category_id as string))
       : undefined;
-    setTxCategory(preselectedCat?.id ?? cats[0]?.id ?? '');
-    setAddTxNotif(notification);
-  };
+    const categoryId = preselectedCat?.id ?? cats[0]?.id;
+    if (!categoryId) {
+      toast({ title: 'Нет категорий расходов', description: 'Добавьте категорию в настройках', variant: 'destructive' });
+      return;
+    }
 
-  const handleAddTx = async () => {
-    if (!txAmount || !txCategory) return;
-    setTxSaving(true);
+    setSavingId(notification.id);
     try {
-      const meta = addTxNotif?.metadata;
+      const txDate = (meta?.date as string)
+        ? new Date(meta.date as string)
+        : new Date();
+
       const saved = await addTransaction({
         type: 'expense',
-        amount: parseFloat(txAmount),
-        currency: txCurrency,
-        category: txCategory as any,
-        description: txDescription,
-        date: new Date(txDate),
+        amount: parseFloat(String(amount)),
+        currency,
+        category: categoryId as any,
+        description: [meta?.issued_to, meta?.basis].filter(Boolean).join(' — ') || undefined,
+        date: txDate,
         issuedTo: (meta?.issued_to as string) || undefined,
         amountInWords: (meta?.amount_in_words as string) || undefined,
         decisionNumber: (meta?.decision_number as string) || undefined,
       });
-      // Update notification metadata with transaction_id
-      if (saved?.id && addTxNotif) {
+
+      // Write transaction_id back to notification metadata
+      if (saved?.id) {
         await supabase
           .from('notifications')
-          .update({
-            metadata: { ...(addTxNotif.metadata ?? {}), transaction_id: saved.id },
-          })
-          .eq('id', addTxNotif.id);
+          .update({ metadata: { ...(meta ?? {}), transaction_id: saved.id } })
+          .eq('id', notification.id);
       }
-      toast({ title: 'Расход добавлен', description: `${txAmount} ${txCurrency}` });
-      setAddTxNotif(null);
+
+      toast({ title: 'Расход записан', description: `${amount} ${currency}` });
     } catch (e) {
       console.error(e);
       toast({ title: 'Ошибка', description: 'Не удалось добавить транзакцию', variant: 'destructive' });
     } finally {
-      setTxSaving(false);
+      setSavingId(null);
     }
   };
 
@@ -423,7 +415,8 @@ export const NotificationsPage = () => {
               onDelete={deleteNotification}
               resolvedDepartment={deptMap[notification.metadata?.transaction_id as string] || undefined}
               payoutToken={notification.metadata?.link_token || fallbackToken}
-              onAddToTransaction={openAddTxDialog}
+              onAddToTransaction={handleAddToTransaction}
+              savingId={savingId}
             />
           ))}
           <p className="text-xs text-center text-muted-foreground pt-2">
@@ -431,75 +424,6 @@ export const NotificationsPage = () => {
           </p>
         </div>
       )}
-
-      {/* Dialog: add transaction from notification */}
-      <Dialog open={!!addTxNotif} onOpenChange={(open) => { if (!open) setAddTxNotif(null); }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Добавить расход</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Сумма</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={txAmount}
-                  onChange={e => setTxAmount(e.target.value)}
-                  placeholder="0.00"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Валюта</Label>
-                <Select value={txCurrency} onValueChange={v => setTxCurrency(v as Currency)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {['PLN','USD','EUR','UAH','BYN'].map(c => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Категория</Label>
-              <Select value={txCategory} onValueChange={setTxCategory}>
-                <SelectTrigger><SelectValue placeholder="Выберите категорию" /></SelectTrigger>
-                <SelectContent>
-                  {expenseCategories.map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Описание</Label>
-              <Input
-                value={txDescription}
-                onChange={e => setTxDescription(e.target.value)}
-                placeholder="Описание"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Дата</Label>
-              <Input
-                type="date"
-                value={txDate}
-                onChange={e => setTxDate(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setAddTxNotif(null)}>Отмена</Button>
-            <Button onClick={handleAddTx} disabled={txSaving || !txAmount || !txCategory}>
-              {txSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <PlusCircle className="h-4 w-4 mr-2" />}
-              Добавить
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };
