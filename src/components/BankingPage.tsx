@@ -298,31 +298,30 @@ export const BankingPage = () => {
   };
 
   const handleConnectBank = async () => {
-    if (!appId.trim()) {
-      toast({ title: 'Укажите Application ID', variant: 'destructive' });
-      return;
-    }
     setConnectionStatus('connecting');
 
     try {
-      // Build Enable Banking authorization URL for PKO BP
-      // Real flow: POST /auth to get session_id, then redirect
       const redirectUri = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}/bank-callback`;
-      const authUrl = `https://ob.enablebanking.com/auth?` +
-        `app_id=${encodeURIComponent(appId.trim())}` +
-        `&aspsp_name=PKO%20BP` +
-        `&aspsp_country=PL` +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&state=${encodeURIComponent(user?.id || '')}`;
 
-      window.open(authUrl, '_blank');
-      setConnectionStatus('idle');
-      toast({
-        title: 'Откроется страница PKO BP',
-        description: 'После авторизации вернитесь сюда и нажмите "Синхронизировать"',
+      const { data, error } = await supabase.functions.invoke('banking-auth-start', {
+        body: {
+          redirect_uri: redirectUri,
+          state: user?.id || crypto.randomUUID(),
+        },
       });
-    } catch {
+
+      if (error || !data?.url) {
+        const msg = data?.error || error?.message || 'Неизвестная ошибка';
+        setConnectionStatus('error');
+        toast({ title: 'Ошибка подключения', description: msg, variant: 'destructive' });
+        return;
+      }
+
+      // Redirect to Enable Banking authorization page
+      window.location.href = data.url;
+    } catch (e) {
       setConnectionStatus('error');
+      toast({ title: 'Ошибка', description: String(e), variant: 'destructive' });
     }
   };
 
@@ -619,40 +618,35 @@ export const BankingPage = () => {
             )}
           </div>
 
-          {/* App ID setting */}
+{/* Setup instructions */}
           <div className="bg-card border border-border rounded-xl p-5 space-y-4">
             <div className="flex items-center gap-2 mb-1">
               <Settings className="h-4 w-4 text-muted-foreground" />
-              <h4 className="font-semibold text-sm">Настройки Enable Banking</h4>
+              <h4 className="font-semibold text-sm">Настройка Enable Banking</h4>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="app-id">Application ID</Label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Input
-                    id="app-id"
-                    type={showAppId ? 'text' : 'password'}
-                    value={appId}
-                    onChange={e => setAppId(e.target.value)}
-                    placeholder="Вставьте Application ID из Enable Banking"
-                    className="pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowAppId(!showAppId)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showAppId ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-                <Button variant="outline" onClick={handleSaveAppId}>
-                  Сохранить
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                ID хранится в localStorage этого браузера
-              </p>
+            <p className="text-xs text-muted-foreground">
+              Для подключения PKO BP добавьте два секрета в{' '}
+              <a
+                href="https://supabase.com/dashboard/project/htepbcotdqrewbxmasbf/settings/vault"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline text-primary"
+              >
+                Supabase Vault → Secrets
+              </a>
+              :
+            </p>
+            <div className="bg-muted/50 rounded-lg p-3 font-mono text-xs space-y-1 leading-relaxed">
+              <p><span className="text-yellow-500">EB_APP_ID</span> = ваш Application ID из <a href="https://enablebanking.com/cp/applications" target="_blank" rel="noopener noreferrer" className="underline text-primary">enablebanking.com/cp</a></p>
+              <p><span className="text-yellow-500">EB_PRIVATE_KEY</span> = содержимое private.key (RSA)</p>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Если ещё нет аккаунта:{' '}
+              <a href="https://enablebanking.com/sign-in/" target="_blank" rel="noopener noreferrer" className="underline text-primary">
+                зарегистрируйтесь
+              </a>
+              , создайте application с типом <strong>SANDBOX</strong>, загрузите сертификат — и получите Application ID.
+            </p>
           </div>
 
           {/* Connect & status */}
@@ -698,7 +692,7 @@ export const BankingPage = () => {
             <div className="flex gap-2">
               <Button
                 onClick={handleConnectBank}
-                disabled={!appId.trim() || connectionStatus === 'connecting'}
+                disabled={connectionStatus === 'connecting'}
                 className="flex-1"
               >
                 {connectionStatus === 'connecting' ? (
