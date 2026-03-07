@@ -215,7 +215,7 @@ export const CurrencyBalanceCard = ({
                   <div className="flex items-center justify-between text-xs text-muted-foreground border-b border-border pb-1">
                     <span className="font-medium">{group.weekLabel}</span>
                     <span>
-                      {format(group.weekStart, 'd MMM', { locale: getLocale() })} - {format(group.weekEnd, 'd MMM', { locale: getLocale() })}
+                      {format(group.weekStart, 'd MMM', { locale: getLocale() })} - {format(group.weekEnd, 'd MMM yyyy', { locale: getLocale() })}
                     </span>
                   </div>
                   
@@ -238,7 +238,7 @@ export const CurrencyBalanceCard = ({
                           </div>
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <span className="text-xs text-muted-foreground">
-                              {format(new Date(transaction.date), 'd.MM', { locale: getLocale() })}
+                              {format(new Date(transaction.date), 'dd.MM.yyyy', { locale: getLocale() })}
                             </span>
                             <span className={cn(
                               'text-xs font-medium',
