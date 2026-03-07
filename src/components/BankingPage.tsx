@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   Building2, Upload, RefreshCw, CheckCircle2, AlertCircle, Link2,
   FileText, Trash2, ArrowDownCircle, Settings, ExternalLink, Info,
@@ -186,6 +186,31 @@ export const BankingPage = () => {
   const [bankAccounts, setBankAccounts] = useState<Array<{ id: string; iban: string; name: string }>>([]);
   const [isSyncingApi, setIsSyncingApi] = useState(false);
   const [apiInfoOpen, setApiInfoOpen] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
+
+  // Load saved connection status on mount
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('bank_connections')
+      .select('session_id, last_sync_at, accounts')
+      .eq('user_id', user.id)
+      .eq('bank_name', 'PKO BP')
+      .single()
+      .then(({ data }) => {
+        if (data?.session_id) {
+          setConnectionStatus('connected');
+          setLastSyncAt(new Date(data.last_sync_at));
+          if (data.accounts) {
+            setBankAccounts((data.accounts as any[]).map(a => ({
+              id: a.uid,
+              iban: a.iban || a.uid,
+              name: a.iban || a.uid,
+            })));
+          }
+        }
+      });
+  }, [user]);
 
   // ─── CSV Upload & Parse ────────────────────────────────────────────────────
 
@@ -344,10 +369,44 @@ export const BankingPage = () => {
   };
 
   const handleApiSync = async () => {
-    toast({
-      title: 'Enable Banking API',
-      description: 'После регистрации и получения Application ID кнопка заработает',
-    });
+    if (!user) return;
+    setIsSyncingApi(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const supabaseUrl = (supabase as any).supabaseUrl as string;
+      const supabaseKey = (supabase as any).supabaseKey as string;
+      const accessToken = session?.access_token || supabaseKey;
+
+      const res = await fetch(`${supabaseUrl}/functions/v1/banking-sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ user_id: user.id }),
+      });
+
+      const json = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+
+      if (!res.ok) {
+        toast({ title: 'Ошибка синхронизации', description: json?.error || `HTTP ${res.status}`, variant: 'destructive' });
+        return;
+      }
+
+      const now = new Date();
+      setLastSyncAt(now);
+      toast({
+        title: 'Синхронизация завершена',
+        description: json.imported > 0
+          ? `Добавлено ${json.imported} новых транзакций`
+          : 'Новых транзакций нет',
+      });
+    } catch (e) {
+      toast({ title: 'Ошибка синхронизации', description: String(e), variant: 'destructive' });
+    } finally {
+      setIsSyncingApi(false);
+    }
   };
 
   // ─── Render ────────────────────────────────────────────────────────────────
@@ -682,12 +741,19 @@ export const BankingPage = () => {
                 connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' :
                 'bg-muted-foreground'
               )} />
-              <span className="text-sm">
-                {connectionStatus === 'connected' ? 'Подключено' :
-                 connectionStatus === 'error' ? 'Ошибка подключения' :
-                 connectionStatus === 'connecting' ? 'Подключение...' :
-                 'Не подключено'}
-              </span>
+              <div className="flex-1 min-w-0">
+                <span className="text-sm">
+                  {connectionStatus === 'connected' ? 'Подключено' :
+                   connectionStatus === 'error' ? 'Ошибка подключения' :
+                   connectionStatus === 'connecting' ? 'Подключение...' :
+                   'Не подключено'}
+                </span>
+                {lastSyncAt && connectionStatus === 'connected' && (
+                  <p className="text-xs text-muted-foreground">
+                    Последняя синхронизация: {lastSyncAt.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                )}
+              </div>
             </div>
 
             {bankAccounts.length > 0 && (
@@ -712,19 +778,21 @@ export const BankingPage = () => {
                 onClick={handleConnectBank}
                 disabled={connectionStatus === 'connecting'}
                 className="flex-1"
+                variant={connectionStatus === 'connected' ? 'outline' : 'default'}
               >
                 {connectionStatus === 'connecting' ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
                   <Link2 className="h-4 w-4 mr-2" />
                 )}
-                Подключить PKO BP
+                {connectionStatus === 'connected' ? 'Переподключить PKO BP' : 'Подключить PKO BP'}
               </Button>
               {connectionStatus === 'connected' && (
                 <Button
-                  variant="outline"
+                  variant="default"
                   onClick={handleApiSync}
                   disabled={isSyncingApi}
+                  title="Синхронизировать новые транзакции"
                 >
                   {isSyncingApi
                     ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -734,8 +802,9 @@ export const BankingPage = () => {
             </div>
 
             <p className="text-xs text-muted-foreground text-center">
-              После нажатия кнопки откроется страница PKO BP для авторизации.
-              Транзакции за последние 90 дней будут добавлены автоматически.
+              {connectionStatus === 'connected'
+                ? 'Нажмите ↺ для синхронизации новых транзакций из банка.'
+                : 'После нажатия откроется страница PKO BP для авторизации. Вся история загрузится автоматически.'}
             </p>
           </div>
 
