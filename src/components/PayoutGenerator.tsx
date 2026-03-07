@@ -16,11 +16,11 @@ import { useTranslation } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
 import jsPDF from 'jspdf';
 import { ROBOTO_FONT_BASE64 } from '@/lib/robotoFont';
-import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
-import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
+
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
 import { CurrencyConverter } from '@/components/CurrencyConverter';
 
@@ -179,10 +179,9 @@ export const PayoutGenerator = () => {
   const { t, language } = useTranslation();
   const { toast } = useToast();
   const { user } = useAuth();
-  const { addTransaction } = useSupabaseTransactions();
-  const { getExpenseCategories } = useSupabaseCategories();
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { getExpenseCategories } = useSupabaseCategories();
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -536,41 +535,23 @@ export const PayoutGenerator = () => {
     setIsSaving(true);
     
     try {
-      // Get expense categories and find "other" or first available
-      const expenseCategories = getExpenseCategories();
-      const categoryId = expenseCategories.find(c => c.name.toLowerCase().includes('other') || c.name.toLowerCase().includes('inne') || c.name.toLowerCase().includes('другое'))?.id 
-        || expenseCategories[0]?.id 
-        || 'other';
-
-      // 1. Add transaction to database - get ID back
-      const savedTx = await addTransaction({
-        type: 'expense',
-        amount: parseFloat(formData.amount),
-        currency: formData.currency as Currency,
-        category: categoryId as any,
-        description: formData.basis,
-        date: formData.date,
-        issuedTo: formData.issuedTo,
-        amountInWords: formData.amountInWords,
-      });
-
-      // 2. Generate PDF
+      // 1. Generate PDF
       const pdfResult = await generatePDF();
 
-      // 3. Upload PDF to storage and create notification with pdf_path
+      // 2. Upload PDF to storage and create notification with pdf_path
       let pdfPath: string | null = null;
-      if (pdfResult && savedTx?.id) {
+      if (pdfResult) {
         try {
-          const storagePath = `${user.id}/${savedTx.id}/${pdfResult.fileName}`;
+          const folderKey = `payout_${Date.now()}`;
+          const storagePath = `${user.id}/${folderKey}/${pdfResult.fileName}`;
           const pdfBytes = new Uint8Array(await pdfResult.pdfBlob.arrayBuffer());
 
-          // Enforce max 25 files: list subfolders (transaction folders), delete oldest files
+          // Enforce max 25 files: list subfolders, delete oldest files
           const { data: folders } = await supabase.storage
             .from('documents')
             .list(user.id, { sortBy: { column: 'created_at', order: 'asc' } });
 
           if (folders && folders.length >= 25) {
-            // folders are transaction-id directories — collect all files inside oldest ones
             const foldersToDelete = folders.slice(0, folders.length - 24);
             for (const folder of foldersToDelete) {
               const { data: files } = await supabase.storage
@@ -597,41 +578,41 @@ export const PayoutGenerator = () => {
         }
       }
 
-      // 4. Create notification
-      if (savedTx?.id) {
-        try {
-          // Enforce max 25 notifications: delete oldest beyond limit
-          const { data: existingNotifs } = await supabase
-            .from('notifications')
-            .select('id, created_at')
-            .eq('user_id', user.id)
-            .order('created_at', { ascending: true });
+      // 3. Create notification (without transaction_id — добавить в транзакцию можно вручную через уведомление)
+      try {
+        // Enforce max 25 notifications: delete oldest beyond limit
+        const { data: existingNotifs } = await supabase
+          .from('notifications')
+          .select('id, created_at')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: true });
 
-          if (existingNotifs && existingNotifs.length >= 25) {
-            const toDeleteIds = existingNotifs.slice(0, existingNotifs.length - 24).map(n => n.id);
-            if (toDeleteIds.length > 0) {
-              await supabase.from('notifications').delete().in('id', toDeleteIds);
-            }
+        if (existingNotifs && existingNotifs.length >= 25) {
+          const toDeleteIds = existingNotifs.slice(0, existingNotifs.length - 24).map(n => n.id);
+          if (toDeleteIds.length > 0) {
+            await supabase.from('notifications').delete().in('id', toDeleteIds);
           }
-
-          const notifMeta: Record<string, any> = {
-            transaction_id: savedTx.id,
-            amount: parseFloat(formData.amount),
-            currency: formData.currency,
-            issued_to: formData.issuedTo,
-          };
-          if (pdfPath) notifMeta.pdf_path = pdfPath;
-
-          await supabase.from('notifications').insert({
-            user_id: user.id,
-            title: 'Новый расходный ордер',
-            message: `Расходный ордер на ${formData.amount} ${formData.currency} — ${formData.issuedTo}`,
-            type: 'payout',
-            metadata: notifMeta,
-          });
-        } catch (notifErr) {
-          console.error('Notification error:', notifErr);
         }
+
+        const notifMeta: Record<string, any> = {
+          amount: parseFloat(formData.amount),
+          currency: formData.currency,
+          issued_to: formData.issuedTo,
+          department_name: formData.departmentName,
+          basis: formData.basis,
+          amount_in_words: formData.amountInWords,
+        };
+        if (pdfPath) notifMeta.pdf_path = pdfPath;
+
+        await supabase.from('notifications').insert({
+          user_id: user.id,
+          title: 'Новый расходный ордер',
+          message: `Расходный ордер на ${formData.amount} ${formData.currency} — ${formData.issuedTo}`,
+          type: 'payout',
+          metadata: notifMeta,
+        });
+      } catch (notifErr) {
+        console.error('Notification error:', notifErr);
       }
 
       toast({
@@ -639,7 +620,7 @@ export const PayoutGenerator = () => {
         description: `${formData.amount} ${CURRENCY_SYMBOLS[formData.currency as Currency]} - ${formData.issuedTo}`,
       });
 
-      // 5. Download PDF on device
+      // 4. Download PDF on device
       if (pdfResult) {
         downloadPdfBlob(pdfResult.pdfBlob, pdfResult.fileName);
       }

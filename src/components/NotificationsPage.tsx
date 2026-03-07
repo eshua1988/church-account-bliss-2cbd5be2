@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -8,6 +8,13 @@ import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { openPdfUrl } from '@/lib/pdfDownload';
 import { useToast } from '@/hooks/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
+import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
+import { Currency } from '@/types/transaction';
 
 const NotificationCard = ({
   notification,
@@ -15,12 +22,14 @@ const NotificationCard = ({
   onDelete,
   resolvedDepartment,
   payoutToken,
+  onAddToTransaction,
 }: {
   notification: Notification;
   onMarkAsRead: (id: string) => void;
   onDelete: (id: string) => void;
   resolvedDepartment?: string;
   payoutToken?: string;
+  onAddToTransaction?: (notification: Notification) => void;
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
   const { toast } = useToast();
@@ -168,6 +177,17 @@ const NotificationCard = ({
               {isDownloading ? '...' : 'PDF'}
             </Button>
           )}
+          {!transactionId && onAddToTransaction && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 h-7 px-2.5 text-xs border-primary/40 text-primary hover:bg-primary/10"
+              onClick={() => onAddToTransaction(notification)}
+            >
+              <PlusCircle className="h-3 w-3" />
+              В расход
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -186,11 +206,69 @@ export const NotificationsPage = () => {
   } = useNotifications();
 
   const { user } = useAuth();
+  const { toast } = useToast();
+  const { addTransaction } = useSupabaseTransactions();
+  const { getExpenseCategories } = useSupabaseCategories();
+  const expenseCategories = getExpenseCategories();
+
   const [activeTab, setActiveTab] = useState<'all' | 'no_photos'>('all');
   // Map transactionId -> cashier_name for notifications without department_name in metadata
   const [deptMap, setDeptMap] = useState<Record<string, string>>({});
   // Fallback payout token for old notifications that don't have link_token in metadata
   const [fallbackToken, setFallbackToken] = useState<string | undefined>();
+
+  // Dialog state for adding a transaction from a notification
+  const [addTxNotif, setAddTxNotif] = useState<Notification | null>(null);
+  const [txAmount, setTxAmount] = useState('');
+  const [txCurrency, setTxCurrency] = useState<Currency>('PLN');
+  const [txCategory, setTxCategory] = useState('');
+  const [txDescription, setTxDescription] = useState('');
+  const [txDate, setTxDate] = useState(new Date().toISOString().split('T')[0]);
+  const [txSaving, setTxSaving] = useState(false);
+
+  const openAddTxDialog = (notification: Notification) => {
+    const meta = notification.metadata;
+    setTxAmount(String(meta?.amount ?? ''));
+    setTxCurrency((meta?.currency as Currency) ?? 'PLN');
+    setTxDescription(
+      [meta?.issued_to, meta?.basis].filter(Boolean).join(' — ') || notification.message
+    );
+    setTxDate(new Date().toISOString().split('T')[0]);
+    const cats = getExpenseCategories();
+    setTxCategory(cats[0]?.id ?? '');
+    setAddTxNotif(notification);
+  };
+
+  const handleAddTx = async () => {
+    if (!txAmount || !txCategory) return;
+    setTxSaving(true);
+    try {
+      const saved = await addTransaction({
+        type: 'expense',
+        amount: parseFloat(txAmount),
+        currency: txCurrency,
+        category: txCategory as any,
+        description: txDescription,
+        date: new Date(txDate),
+      });
+      // Update notification metadata with transaction_id so the PDF button appears
+      if (saved?.id && addTxNotif) {
+        await supabase
+          .from('notifications')
+          .update({
+            metadata: { ...(addTxNotif.metadata ?? {}), transaction_id: saved.id },
+          })
+          .eq('id', addTxNotif.id);
+      }
+      toast({ title: 'Расход добавлен', description: `${txAmount} ${txCurrency}` });
+      setAddTxNotif(null);
+    } catch (e) {
+      console.error(e);
+      toast({ title: 'Ошибка', description: 'Не удалось добавить транзакцию', variant: 'destructive' });
+    } finally {
+      setTxSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -336,6 +414,7 @@ export const NotificationsPage = () => {
               onDelete={deleteNotification}
               resolvedDepartment={deptMap[notification.metadata?.transaction_id as string] || undefined}
               payoutToken={notification.metadata?.link_token || fallbackToken}
+              onAddToTransaction={openAddTxDialog}
             />
           ))}
           <p className="text-xs text-center text-muted-foreground pt-2">
@@ -343,6 +422,75 @@ export const NotificationsPage = () => {
           </p>
         </div>
       )}
+
+      {/* Dialog: add transaction from notification */}
+      <Dialog open={!!addTxNotif} onOpenChange={(open) => { if (!open) setAddTxNotif(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Добавить расход</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Сумма</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={txAmount}
+                  onChange={e => setTxAmount(e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Валюта</Label>
+                <Select value={txCurrency} onValueChange={v => setTxCurrency(v as Currency)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {['PLN','USD','EUR','UAH','BYN'].map(c => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Категория</Label>
+              <Select value={txCategory} onValueChange={setTxCategory}>
+                <SelectTrigger><SelectValue placeholder="Выберите категорию" /></SelectTrigger>
+                <SelectContent>
+                  {expenseCategories.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Описание</Label>
+              <Input
+                value={txDescription}
+                onChange={e => setTxDescription(e.target.value)}
+                placeholder="Описание"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Дата</Label>
+              <Input
+                type="date"
+                value={txDate}
+                onChange={e => setTxDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setAddTxNotif(null)}>Отмена</Button>
+            <Button onClick={handleAddTx} disabled={txSaving || !txAmount || !txCategory}>
+              {txSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <PlusCircle className="h-4 w-4 mr-2" />}
+              Добавить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
