@@ -18,13 +18,14 @@ import { GoogleSheetsSync } from '@/components/GoogleSheetsSync';
 import { TelegramBotSettings } from '@/components/TelegramBotSettings';
 import { SharePayoutLink } from '@/components/SharePayoutLink';
 import { NotificationsPage } from '@/components/NotificationsPage';
+import { BankingPage } from '@/components/BankingPage';
 import { useGoogleSheetsSync } from '@/hooks/useGoogleSheetsSync';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 const Index = () => {
   const { t, getDateLocale } = useTranslation();
-  const [activeTab, setActiveTab] = useState<'balance' | 'statistics' | 'payout' | 'settings' | 'notifications'>('balance');
+  const [activeTab, setActiveTab] = useState<'balance' | 'statistics' | 'payout' | 'settings' | 'notifications' | 'banking'>('balance');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { toast } = useToast();
@@ -312,6 +313,11 @@ const Index = () => {
           {/* Notifications Tab */}
           {activeTab === 'notifications' && (
             <NotificationsPage />
+          )}
+
+          {/* Banking Tab */}
+          {activeTab === 'banking' && (
+            <BankingPage />
           )}
         </main>
         </div>

@@ -1,4 +1,4 @@
-import { BarChart3, Settings, FileText, Wallet, LogOut, RefreshCw, Key, Mail, ExternalLink } from 'lucide-react';
+import { BarChart3, Settings, FileText, Wallet, LogOut, RefreshCw, Key, Mail, ExternalLink, Building2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
@@ -34,7 +34,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useNotifications } from '@/hooks/useNotifications';
 
-type TabType = 'balance' | 'statistics' | 'payout' | 'settings' | 'notifications';
+type TabType = 'balance' | 'statistics' | 'payout' | 'settings' | 'notifications' | 'banking';
 
 interface AppSidebarProps {
   activeTab: TabType;
@@ -71,6 +71,7 @@ export const AppSidebar = ({
   const menuItems = [
     { id: 'balance' as const, icon: Wallet, label: t('balanceByCurrency') },
     { id: 'statistics' as const, icon: BarChart3, label: t('statistics') },
+    { id: 'banking' as const, icon: Building2, label: 'Банкинг' },
     { id: 'settings' as const, icon: Settings, label: t('settings') },
     { id: 'notifications' as const, icon: Mail, label: 'Уведомления' },
     { id: 'sync' as const, icon: RefreshCw, label: 'Синхронизация', isSync: true },
