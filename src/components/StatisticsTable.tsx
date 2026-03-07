@@ -245,6 +245,12 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
 
   const isAllSelected = filteredTransactions.length > 0 && selectedTransactions.size === filteredTransactions.length;
 
+  const handleDeleteSelected = () => {
+    if (!onDelete) return;
+    selectedTransactions.forEach(id => onDelete(id));
+    setSelectedTransactions(new Set());
+  };
+
   return (
     <Card>
       <CardHeader className="pb-4">
@@ -406,8 +412,21 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-background z-10 [&_tr]:border-b">
               <tr className="border-b">
-                <th className="h-12 w-10 px-2 text-left align-middle font-medium text-muted-foreground">
-                  <Checkbox checked={isAllSelected} onCheckedChange={toggleAllTransactions} aria-label="Select all" />
+                <th className="h-12 px-2 text-left align-middle font-medium text-muted-foreground">
+                  <div className="flex items-center gap-1.5">
+                    <Checkbox checked={isAllSelected} onCheckedChange={toggleAllTransactions} aria-label="Select all" />
+                    {selectedTransactions.size > 1 && onDelete && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-destructive hover:bg-destructive/10"
+                        onClick={handleDeleteSelected}
+                        title={`Удалить выбранные (${selectedTransactions.size})`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
                 </th>
                 <th className="h-12 px-3 text-left align-middle font-medium text-muted-foreground whitespace-nowrap">{t('date')}</th>
                 <th className="h-12 px-3 text-left align-middle font-medium text-muted-foreground">{t('category')}</th>
@@ -513,9 +532,20 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
         </div>
         
         {selectedTransactions.size > 0 && (
-          <p className="text-xs text-primary mt-2">
-            Выбрано: {selectedTransactions.size}
-          </p>
+          <div className="flex items-center gap-2 mt-2">
+            <p className="text-xs text-primary">Выбрано: {selectedTransactions.size}</p>
+            {selectedTransactions.size > 1 && onDelete && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-destructive hover:bg-destructive/10"
+                onClick={handleDeleteSelected}
+              >
+                <Trash2 className="h-3 w-3 mr-1" />
+                Удалить выбранные
+              </Button>
+            )}
+          </div>
         )}
         <p className="text-xs text-muted-foreground mt-1">
           {t('showingTransactions')}: {filteredTransactions.length}
