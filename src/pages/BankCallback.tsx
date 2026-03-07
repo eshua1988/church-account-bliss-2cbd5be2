@@ -37,14 +37,19 @@ export default function BankCallback() {
       const supabaseUrl = (supabase as any).supabaseUrl as string;
       const supabaseKey = (supabase as any).supabaseKey as string;
 
+      // Get user session to pass user_id and real access token
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token || supabaseKey;
+      const userId = session?.user?.id;
+
       const res = await fetch(`${supabaseUrl}/functions/v1/banking-auth-complete`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
+          'Authorization': `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code, user_id: userId }),
       });
 
       const json = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
@@ -57,8 +62,10 @@ export default function BankCallback() {
 
       setImported(json.imported || 0);
       setStatus('success');
-      setMessage(`Импортировано транзакций: ${json.imported || 0}`);
-      toast({ title: 'PKO BP подключён', description: `Импортировано ${json.imported || 0} транзакций` });
+      const detail = json.total != null ? ` (найдено в банке: ${json.total})` : '';
+      setMessage(`Импортировано транзакций: ${json.imported || 0}${detail}`);
+      if (json.debug) console.log('[BankCallback] debug:', json.debug);
+      toast({ title: 'PKO BP подключён', description: `Импортировано ${json.imported || 0} транзакций${detail}` });
     } catch (e) {
       setStatus('error');
       setMessage(String(e));

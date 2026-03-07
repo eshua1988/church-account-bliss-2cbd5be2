@@ -35,8 +35,10 @@ const respond = (status, body) => new Response(JSON.stringify(body), {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   try {
-    const { code } = await req.json()
+    const body = await req.json()
+    const { code, user_id } = body
     if (!code) return respond(400, { error: 'code обязателен' })
+    if (!user_id) return respond(400, { error: 'user_id не передан — пользователь не авторизован' })
 
     const privateKey = Deno.env.get('EB_PRIVATE_KEY')
     const appId = Deno.env.get('EB_APP_ID')
@@ -46,75 +48,109 @@ Deno.serve(async (req) => {
     if (!appId || !privateKey) return respond(400, { error: 'Секреты EB_APP_ID / EB_PRIVATE_KEY не настроены' })
 
     const jwt = await createJWT(privateKey, appId)
-    const headers = { 'Authorization': 'Bearer '+jwt, 'Content-Type': 'application/json' }
+    const ebHeaders = { 'Authorization': 'Bearer '+jwt, 'Content-Type': 'application/json' }
 
     // 1. Exchange code for session
     const sessRes = await fetch('https://api.enablebanking.com/sessions', {
-      method: 'POST', headers, body: JSON.stringify({ code })
+      method: 'POST', headers: ebHeaders, body: JSON.stringify({ code })
     })
+    const sessText = await sessRes.text()
     if (!sessRes.ok) {
-      const t = await sessRes.text()
-      return respond(400, { error: 'Ошибка создания сессии: '+sessRes.status, detail: t })
+      return respond(400, { error: 'Ошибка создания сессии: '+sessRes.status, detail: sessText })
     }
-    const sessData = await sessRes.json()
+    const sessData = JSON.parse(sessText)
     const sessionId = sessData.session_id
     const accounts = sessData.accounts || []
+
+    const debug = {
+      session_id: sessionId,
+      accounts_count: accounts.length,
+      accounts_uids: accounts.map(a => a.uid),
+      raw_accounts: accounts,
+    }
+
+    if (accounts.length === 0) {
+      return respond(200, { imported: 0, total: 0, debug, note: 'Нет счетов в сессии' })
+    }
 
     // 2. Fetch transactions from each account (last 90 days)
     const dateFrom = new Date(Date.now() - 90*24*60*60*1000).toISOString().split('T')[0]
     const allTx = []
+    const txDebug = []
 
     for (const acc of accounts) {
       const uid = acc.uid
       if (!uid) continue
-      const txRes = await fetch(
-        `https://api.enablebanking.com/accounts/${uid}/transactions?date_from=${dateFrom}&transaction_status=BOOK`,
-        { headers }
-      )
+      const txUrl = `https://api.enablebanking.com/accounts/${uid}/transactions?date_from=${dateFrom}&transaction_status=BOOK`
+      const txRes = await fetch(txUrl, { headers: ebHeaders })
+      const txText = await txRes.text()
+      let txData = {}
+      try { txData = JSON.parse(txText) } catch {}
+      txDebug.push({ uid, status: txRes.status, count: (txData.transactions||[]).length, error: txRes.ok ? null : txText.slice(0,300) })
+
       if (!txRes.ok) continue
-      const txData = await txRes.json()
-      const iban = acc.account_id?.iban || ''
+      const iban = acc.account_id?.iban || acc.iban || ''
       for (const tx of (txData.transactions || [])) {
-        const amount = parseFloat(tx.transaction_amount?.amount || '0')
-        const debit = tx.credit_debit_indicator === 'DBIT'
+        const amount = parseFloat(tx.transaction_amount?.amount || tx.amount || '0')
+        const debit = tx.credit_debit_indicator === 'DBIT' || amount < 0
         allTx.push({
           date: tx.booking_date || tx.value_date || dateFrom,
-          amount: debit ? -Math.abs(amount) : Math.abs(amount),
-          description: (tx.remittance_information || []).join(' ') || tx.debtor?.name || tx.creditor?.name || 'PKO BP',
+          amount: Math.abs(amount),
+          description: Array.isArray(tx.remittance_information)
+            ? tx.remittance_information.join(' ')
+            : (tx.remittance_information || tx.debtor?.name || tx.creditor?.name || 'PKO BP'),
           type: debit ? 'expense' : 'income',
           source: 'pko_bp',
-          external_id: tx.entry_reference || tx.transaction_id,
+          external_id: tx.entry_reference || tx.transaction_id || null,
           iban,
         })
       }
     }
 
+    debug.tx_debug = txDebug
+    debug.total_txs = allTx.length
+
     // 3. Insert into Supabase (skip duplicates by external_id)
     let imported = 0
+    let insertError = null
+
     if (supabaseUrl && supabaseKey && allTx.length > 0) {
       const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2')
       const db = createClient(supabaseUrl, supabaseKey)
-      // Get existing external_ids to skip duplicates
+
+      // Get existing external_ids for this user to skip duplicates
       const { data: existing } = await db.from('transactions')
-        .select('external_id').not('external_id','is',null)
-      const existingIds = new Set((existing||[]).map(r=>r.external_id))
+        .select('external_id')
+        .eq('user_id', user_id)
+        .not('external_id','is',null)
+      const existingIds = new Set((existing||[]).map(r => r.external_id))
+
       const newTx = allTx.filter(t => !t.external_id || !existingIds.has(t.external_id))
+
       if (newTx.length > 0) {
         const { error } = await db.from('transactions').insert(
           newTx.map(t => ({
+            user_id,
             date: t.date,
-            amount: Math.abs(t.amount),
+            amount: t.amount,
             description: t.description,
             type: t.type,
             source: 'pko_bp',
             external_id: t.external_id || null,
           }))
         )
+        insertError = error ? String(error.message) : null
         if (!error) imported = newTx.length
       }
     }
 
-    return respond(200, { session_id: sessionId, imported, total: allTx.length })
+    return respond(200, {
+      session_id: sessionId,
+      imported,
+      total: allTx.length,
+      debug,
+      insert_error: insertError,
+    })
   } catch(e) {
     return respond(500, { error: String(e) })
   }
