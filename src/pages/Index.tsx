@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import { Header } from '@/components/Header';
 import { CurrencyBalanceCard } from '@/components/CurrencyBalanceCard';
 import { CategoryManager } from '@/components/CategoryManager';
@@ -127,6 +128,25 @@ const Index = () => {
       await deleteTransaction(id);
       toast({ title: t('transactionDeleted'), variant: 'destructive' });
       // Auto-sync will be triggered by useEffect watching transactions.length
+
+      // Unlink transaction from notification if it still exists
+      try {
+        const { data: notif } = await supabase
+          .from('notifications')
+          .select('id, metadata')
+          .eq('metadata->>transaction_id', id)
+          .maybeSingle();
+        if (notif && notif.metadata) {
+          const newMeta = { ...(notif.metadata as Record<string, unknown>) };
+          delete newMeta.transaction_id;
+          await supabase
+            .from('notifications')
+            .update({ metadata: newMeta })
+            .eq('id', notif.id);
+        }
+      } catch {
+        // Notification unlink is best-effort, ignore errors
+      }
     } catch (error) {
       toast({
         title: 'Ошибка',

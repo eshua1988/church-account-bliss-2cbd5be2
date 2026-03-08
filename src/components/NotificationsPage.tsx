@@ -154,23 +154,6 @@ const NotificationCard = ({
               Добавить фото
             </Button>
           )}
-          {/* PDF button: show whenever pdf_path exists OR transactionId exists */}
-          {(pdfPath || transactionId) && (
-            <Button
-              variant="default"
-              size="sm"
-              className="gap-1.5 h-7 px-2.5 text-xs"
-              onClick={handleDownloadPdf}
-              disabled={isDownloading}
-            >
-              {isDownloading ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <Download className="h-3 w-3" />
-              )}
-              {isDownloading ? '...' : 'PDF'}
-            </Button>
-          )}
           {/* "В расход" button — saves immediately, no dialog */}
           {onAddToTransaction && !transactionId && (
             <Button
@@ -186,6 +169,23 @@ const NotificationCard = ({
                 <PlusCircle className="h-3 w-3" />
               )}
               {isSaving ? '...' : 'В расход'}
+            </Button>
+          )}
+          {/* PDF button: show whenever pdf_path exists OR transactionId exists */}
+          {(pdfPath || transactionId) && (
+            <Button
+              variant="default"
+              size="sm"
+              className="gap-1.5 h-7 px-2.5 text-xs"
+              onClick={handleDownloadPdf}
+              disabled={isDownloading}
+            >
+              {isDownloading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Download className="h-3 w-3" />
+              )}
+              {isDownloading ? '...' : 'PDF'}
             </Button>
           )}
         </div>
