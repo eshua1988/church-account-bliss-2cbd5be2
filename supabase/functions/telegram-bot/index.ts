@@ -377,52 +377,6 @@ async function createTransaction(ownerId: string, data: UserSession['data'], sup
   return txData;
 }
 
-// Try to redeem a link code (6-digit code from the app)
-async function tryRedeemLinkCode(chatId: number, code: string, username: string | undefined, supabase: ReturnType<typeof createClient>): Promise<{ redeemed: boolean; message?: string }> {
-  // Look up unused, non-expired code (using service role, bypasses RLS)
-  const { data: linkCode } = await supabase
-    .from('telegram_link_codes')
-    .select('id, user_id, bot_token, expires_at, used')
-    .eq('code', code.toUpperCase())
-    .eq('used', false)
-    .maybeSingle();
-  
-  if (!linkCode) return { redeemed: false };
-  
-  // Check expiry
-  if (new Date(linkCode.expires_at) < new Date()) {
-    await supabase.from('telegram_link_codes').update({ used: true }).eq('id', linkCode.id);
-    return { redeemed: true, message: '❌ Код истёк. Сгенерируйте новый в приложении.' };
-  }
-  
-  // Get user's display name from profile
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('display_name')
-    .eq('user_id', linkCode.user_id)
-    .maybeSingle();
-  
-  const displayName = profile?.display_name || 'Пользователь';
-  
-  // Link this chat to the user
-  const linkResult = await autoLinkTelegramUser(chatId, linkCode.user_id, displayName, username, supabase, linkCode.bot_token || undefined);
-  
-  if (!linkResult.success) {
-    if (linkResult.reason === 'limit') {
-      return { redeemed: true, message: '❌ Достигнут лимит подключений (максимум 3).' };
-    }
-    return { redeemed: true, message: '❌ Ошибка привязки. Попробуйте позже.' };
-  }
-  
-  // Mark code as used
-  await supabase.from('telegram_link_codes').update({ used: true }).eq('id', linkCode.id);
-  
-  // Set session
-  setSession(chatId, { step: 'idle', lastActivity: Date.now(), data: { submitterName: displayName }, registeredName: displayName });
-  
-  return { redeemed: true, message: `✅ Аккаунт привязан! Добро пожаловать, <b>${displayName}</b>!` };
-}
-
 function getMainMenu() {
   return {
     inline_keyboard: [
@@ -460,20 +414,6 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
   
   console.log(`Message from ${chatId}: ${text}, session step: ${session?.step}`);
   
-  // Check if text looks like a 6-digit link code (before other handlers)
-  if (/^[A-Z0-9]{6}$/i.test(text) && !session?.step?.startsWith('filling_')) {
-    const result = await tryRedeemLinkCode(chatId, text, message.from.username, supabase);
-    if (result.redeemed) {
-      if (result.message?.startsWith('✅')) {
-        await sendMessage(chatId, result.message, getMainMenu(), botToken);
-      } else {
-        await sendMessage(chatId, result.message || '❌ Ошибка', undefined, botToken);
-      }
-      return;
-    }
-    // If not a valid code, fall through to other handlers
-  }
-  
   // Handle /start
   if (text === '/start') {
     const linkedUser = await getLinkedUser(chatId, supabase);
@@ -490,8 +430,8 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
       setSession(chatId, { step: 'idle', lastActivity: Date.now(), data: {} });
       await sendMessage(
         chatId,
-        '👋 Добро пожаловать!\n\nДля начала работы введите <b>6-значный код</b> из приложения (раздел «Настройки → Telegram»).',
-        undefined,
+        '👋 Добро пожаловать! Выберите действие:',
+        getMainMenu(),
         botToken
       );
     }
@@ -502,7 +442,8 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
   if (text === '/menu') {
     const linkedUser = await getLinkedUser(chatId, supabase);
     if (!linkedUser) {
-      await sendMessage(chatId, '❌ Аккаунт не привязан. Отправьте /start и введите 6-значный код из приложения (раздел «Настройки → Telegram»).', undefined, botToken);
+      setSession(chatId, { step: 'idle', lastActivity: Date.now(), data: {} });
+      await sendMessage(chatId, '👋 Выберите действие:', getMainMenu(), botToken);
       return;
     }
     const name = await getRegisteredName(chatId, supabase) || '';
@@ -572,7 +513,8 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
   if (linkedUser) {
     await sendMessage(chatId, 'Используйте /menu для вызова главного меню', getMainMenu(), botToken);
   } else {
-    await sendMessage(chatId, 'Используйте /start для регистрации или введите 6-значный код из приложения', undefined, botToken);
+    setSession(chatId, { step: 'idle', lastActivity: Date.now(), data: {} });
+    await sendMessage(chatId, '👋 Выберите действие:', getMainMenu(), botToken);
   }
 }
 
