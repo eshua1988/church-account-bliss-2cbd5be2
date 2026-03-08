@@ -79,7 +79,7 @@ const currencies = [
   { value: 'BYN', label: 'Br', name: 'BYN' },
 ];
 
-// Static exchange rates (approximate, relative to USD)
+// Fallback static rates (relative to USD) — used when API is unavailable
 const staticRates: Record<string, number> = {
   USD: 1,
   EUR: 0.92,
@@ -88,6 +88,42 @@ const staticRates: Record<string, number> = {
   RUB: 96.0,
   BYN: 3.27,
 };
+
+const CACHE_KEY = 'currency_rates_cache';
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+async function fetchLiveRates(): Promise<Record<string, number>> {
+  try {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (cached) {
+      const { ts, rates } = JSON.parse(cached) as { ts: number; rates: Record<string, number> };
+      if (Date.now() - ts < CACHE_TTL_MS) return rates;
+    }
+  } catch {
+    /* ignore parse errors */
+  }
+
+  // Free CDN API — no key required, updated daily
+  const url =
+    'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json';
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('Network response not ok');
+  const json = await resp.json() as { usd: Record<string, number> };
+
+  const needed = ['eur', 'pln', 'uah', 'rub', 'byn'];
+  const rates: Record<string, number> = { USD: 1 };
+  for (const code of needed) {
+    if (json.usd[code]) rates[code.toUpperCase()] = json.usd[code];
+  }
+
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), rates }));
+  } catch {
+    /* ignore storage errors */
+  }
+
+  return rates;
+}
 
 interface CurrencyConverterProps {
   isOpen: boolean;
@@ -114,16 +150,27 @@ export const CurrencyConverter = ({
   const [amount, setAmount] = useState(currentAmount || '');
   const [result, setResult] = useState('');
   const [loading, setLoading] = useState(false);
+  const [ratesError, setRatesError] = useState(false);
   const [rates, setRates] = useState<Record<string, number>>(staticRates);
 
-  // Initialize with opposite currencies
+  // Initialize with opposite currencies + fetch live rates
   useEffect(() => {
-    if (isOpen) {
-      setToCurrency(currentCurrency);
-      setFromCurrency(currentCurrency === 'PLN' ? 'EUR' : (currentCurrency === 'EUR' ? 'USD' : 'EUR'));
-      setAmount('');
-      setResult('');
-    }
+    if (!isOpen) return;
+    setToCurrency(currentCurrency);
+    setFromCurrency(currentCurrency === 'PLN' ? 'EUR' : (currentCurrency === 'EUR' ? 'USD' : 'EUR'));
+    setAmount('');
+    setResult('');
+    setRatesError(false);
+    setLoading(true);
+    fetchLiveRates()
+      .then((liveRates) => {
+        setRates({ ...staticRates, ...liveRates });
+      })
+      .catch(() => {
+        setRatesError(true);
+        setRates(staticRates);
+      })
+      .finally(() => setLoading(false));
   }, [isOpen, currentCurrency]);
 
   // Calculate result when inputs change
@@ -245,8 +292,13 @@ export const CurrencyConverter = ({
 
               {/* Exchange Rate Display */}
               {amount && result && (
-                <div className="text-sm text-muted-foreground text-center py-2 border-t">
-                  {t.rate}: 1 {fromCurrency} = {getExchangeRate()} {toCurrency}
+                <div className="text-sm text-muted-foreground text-center py-2 border-t space-y-0.5">
+                  <div>{t.rate}: 1 {fromCurrency} = {getExchangeRate()} {toCurrency}</div>
+                  {ratesError ? (
+                    <div className="text-xs text-yellow-500">{t.error} — {t.rate.toLowerCase()} приблизительный</div>
+                  ) : (
+                    <div className="text-xs opacity-60">Курс на сегодня · cdn.jsdelivr.net</div>
+                  )}
                 </div>
               )}
 
