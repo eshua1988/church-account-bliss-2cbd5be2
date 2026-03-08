@@ -48,7 +48,7 @@ interface CallbackQuery {
 }
 
 interface UserSession {
-  step: 'awaiting_name' | 'idle' | 'filling_amount' | 'filling_currency' | 'filling_category' | 'filling_issued_to' | 'filling_description' | 'confirm';
+  step: 'idle' | 'filling_amount' | 'filling_currency' | 'filling_category' | 'filling_issued_to' | 'filling_description' | 'confirm';
   linkId?: string;
   linkName?: string;
   ownerId?: string;
@@ -121,24 +121,6 @@ async function setRegisteredName(chatId: number, name: string, supabase: ReturnT
     .select();
   
   return data && data.length > 0;
-}
-
-async function findUserByName(name: string, supabase: ReturnType<typeof createClient>) {
-  const nameLower = name.toLowerCase().trim();
-  
-  const { data: profiles } = await supabase
-    .from('profiles')
-    .select('user_id, display_name')
-    .ilike('display_name', `%${nameLower}%`);
-  
-  if (!profiles || profiles.length === 0) return null;
-  
-  const exact = profiles.find(p => p.display_name?.toLowerCase().trim() === nameLower);
-  if (exact) return exact;
-  
-  if (profiles.length === 1) return profiles[0];
-  
-  return null;
 }
 
 async function autoLinkTelegramUser(chatId: number, userId: string, name: string, username: string | undefined, supabase: ReturnType<typeof createClient>, botToken?: string) {
@@ -494,13 +476,25 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
   
   // Handle /start
   if (text === '/start') {
-    setSession(chatId, { step: 'awaiting_name', lastActivity: Date.now(), data: {} });
-    await sendMessage(
-      chatId,
-      '👋 Добро пожаловать!\n\nВы можете:\n1️⃣ Ввести <b>Имя и Фамилию</b> для регистрации\n2️⃣ Ввести <b>6-значный код</b> из приложения для быстрой привязки',
-      undefined,
-      botToken
-    );
+    const linkedUser = await getLinkedUser(chatId, supabase);
+    if (linkedUser) {
+      const name = await getRegisteredName(chatId, supabase) || '';
+      setSession(chatId, { step: 'idle', lastActivity: Date.now(), data: { submitterName: name } });
+      await sendMessage(
+        chatId,
+        `👋 ${name ? name + ', в' : 'В'}ыберите действие:`,
+        getMainMenu(),
+        botToken
+      );
+    } else {
+      setSession(chatId, { step: 'idle', lastActivity: Date.now(), data: {} });
+      await sendMessage(
+        chatId,
+        '👋 Добро пожаловать!\n\nДля начала работы введите <b>6-значный код</b> из приложения (раздел «Настройки → Telegram»).',
+        undefined,
+        botToken
+      );
+    }
     return;
   }
   
@@ -508,7 +502,7 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
   if (text === '/menu') {
     const linkedUser = await getLinkedUser(chatId, supabase);
     if (!linkedUser) {
-      await sendMessage(chatId, '❌ Вы не зарегистрированы. Отправьте /start и введите Имя и Фамилию, или 6-значный код из приложения.', undefined, botToken);
+      await sendMessage(chatId, '❌ Аккаунт не привязан. Отправьте /start и введите 6-значный код из приложения (раздел «Настройки → Telegram»).', undefined, botToken);
       return;
     }
     const name = await getRegisteredName(chatId, supabase) || '';
@@ -521,84 +515,7 @@ async function handleMessage(message: TelegramMessage, supabase: ReturnType<type
     return;
   }
   
-  // Handle name registration step
-  const isAwaitingName = session?.step === 'awaiting_name';
-  
-  if (isAwaitingName) {
-    // Check if it's a link code
-    if (/^[A-Z0-9]{6}$/i.test(text)) {
-      const result = await tryRedeemLinkCode(chatId, text, message.from.username, supabase);
-      if (result.redeemed) {
-        if (result.message?.startsWith('✅')) {
-          await sendMessage(chatId, result.message, getMainMenu(), botToken);
-        } else {
-          await sendMessage(chatId, result.message || '❌ Ошибка', undefined, botToken);
-        }
-        return;
-      }
-    }
-    
-    const nameParts = text.split(/\s+/).filter(Boolean);
-    if (nameParts.length < 2) {
-      await sendMessage(chatId, '❌ Пожалуйста, введите <b>Имя и Фамилию</b> через пробел, или <b>6-значный код</b> из приложения:', undefined, botToken);
-      return;
-    }
-    
-    const fullName = nameParts.join(' ');
-    
-    const foundUser = await findUserByName(fullName, supabase);
-    
-    if (!foundUser) {
-      await sendMessage(
-        chatId,
-        `❌ Пользователь с именем <b>${fullName}</b> не найден в системе.\n\nПроверьте правильность написания и попробуйте снова.\nИмя должно совпадать с именем в приложении.`,
-        undefined,
-        botToken
-      );
-      return;
-    }
-    
-    const linkResult = await autoLinkTelegramUser(chatId, foundUser.user_id, fullName, message.from.username, supabase);
-    
-    if (!linkResult.success) {
-      if (linkResult.reason === 'limit') {
-        await sendMessage(chatId, '❌ Достигнут лимит подключений (максимум 3 Telegram-аккаунта на пользователя).', undefined, botToken);
-      } else {
-        await sendMessage(chatId, '❌ Ошибка при регистрации. Попробуйте позже.', undefined, botToken);
-      }
-      return;
-    }
-    
-    setSession(chatId, { step: 'idle', lastActivity: Date.now(), data: { submitterName: fullName }, registeredName: fullName });
-    
-    // Build welcome message with pending docs + links summary
-    let welcomeText = `✅ Добро пожаловать, <b>${fullName}</b>!\n`;
 
-    // Count pending docs without photos for this user
-    const { data: pendingDocs } = await supabase
-      .from('transactions')
-      .select('id')
-      .eq('user_id', foundUser.user_id)
-      .eq('type', 'expense')
-      .like('description', '%[Bez załączników%]%');
-    const pendingCount = (pendingDocs || []).length;
-    if (pendingCount > 0) {
-      welcomeText += `\n⚠️ <b>Документов без фото:</b> ${pendingCount} — используйте «Незаконченная сессия»`;
-    }
-
-    // Show available public links
-    const userLinks = await getSharedLinks(foundUser.user_id, supabase);
-    if (userLinks.length > 0) {
-      welcomeText += `\n\n🔗 <b>Ссылки для заполнения ордера:</b>`;
-      for (const link of userLinks) {
-        welcomeText += `\n• <a href="${APP_URL}/payout/${link.token}">${link.name || 'Форма'}</a>`;
-      }
-    }
-
-    welcomeText += `\n\nВыберите действие:`;
-    await sendMessage(chatId, welcomeText, getMainMenu(), botToken);
-    return;
-  }
   
   // Handle session-based input for document filling
   if (session) {
