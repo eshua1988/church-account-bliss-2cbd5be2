@@ -1692,29 +1692,32 @@ const PublicPayout = () => {
         
         if (error) {
           console.error('Error checking pending payouts:', error);
-          // Continue anyway if check fails
+          // On error — still show selection screen
+          setPendingPayouts([]);
+          setShowPendingChoice(false);
+          setShowPendingSelection(true);
           setIsAuthenticated(true);
           setFormData(prev => ({ ...prev, issuedTo: fullName }));
-          navigateTo('form');
+          navigateTo('pending');
           return;
         }
         
-        if (data?.pendingPayouts && data.pendingPayouts.length > 0) {
-          setPendingPayouts(data.pendingPayouts);
-          setShowPendingChoice(true);
-          setShowPendingSelection(false);
-          navigateTo('choice');
-        } else {
-          setIsAuthenticated(true);
-          setFormData(prev => ({ ...prev, issuedTo: fullName }));
-          navigateTo('form');
-        }
-      } catch (err) {
-        console.error('Error checking pending:', err);
-        // Continue anyway
+        // Always go to the selection screen — either with pending list or empty (user clicks "Create new")
+        setPendingPayouts(data?.pendingPayouts || []);
+        setShowPendingChoice(false);
+        setShowPendingSelection(true);
         setIsAuthenticated(true);
         setFormData(prev => ({ ...prev, issuedTo: fullName }));
-        navigateTo('form');
+        navigateTo('pending');
+      } catch (err) {
+        console.error('Error checking pending:', err);
+        // On exception — still show selection screen
+        setPendingPayouts([]);
+        setShowPendingChoice(false);
+        setShowPendingSelection(true);
+        setIsAuthenticated(true);
+        setFormData(prev => ({ ...prev, issuedTo: fullName }));
+        navigateTo('pending');
       } finally {
         setIsCheckingPending(false);
       }
