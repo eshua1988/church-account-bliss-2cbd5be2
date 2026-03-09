@@ -782,6 +782,44 @@ const PublicPayout = () => {
     return () => { cancelled = true; };
   }, [autoTxId, sharedLink, loading]);
 
+  // Auto-auth from ?name= param (from "Добавить фото" notification button, no specific txid)
+  // Skips the login screen and opens the pending documents list directly
+  useEffect(() => {
+    if (!autoName || autoTxId || !sharedLink || loading) return;
+    let cancelled = false;
+    const autoAuth = async () => {
+      try {
+        const nameParts = autoName.trim().split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+        setSubmitterFirstName(firstName);
+        setSubmitterLastName(lastName);
+
+        const { data } = await supabase.functions.invoke('check-pending-payouts', {
+          body: { token: sharedLink.token, submitterName: autoName.trim() },
+        });
+        if (cancelled) return;
+
+        if (data?.pendingPayouts && data.pendingPayouts.length > 0) {
+          setPendingPayouts(data.pendingPayouts);
+          setShowPendingChoice(false);
+          setShowPendingSelection(true);
+          setIsAuthenticated(true);
+          setNavigationHistory(['login', 'pending']);
+        } else {
+          // No pending docs — go straight to new form
+          setIsAuthenticated(true);
+          setFormData(prev => ({ ...prev, issuedTo: autoName.trim() }));
+          setNavigationHistory(['login', 'form']);
+        }
+      } catch (e) {
+        console.error('Auto-auth error:', e);
+      }
+    };
+    autoAuth();
+    return () => { cancelled = true; };
+  }, [autoName, autoTxId, sharedLink, loading]);
+
   // Auto-generate amount in words
   useEffect(() => {
     if (formData.amount) {
