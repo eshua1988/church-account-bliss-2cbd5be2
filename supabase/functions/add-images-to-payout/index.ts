@@ -95,10 +95,92 @@ Deno.serve(async (req) => {
       .single();
 
     if (txError || !transaction) {
-      console.log('Transaction not found or access denied');
+      // Try treating transactionId as a folder_key from a notification (imagesSkipped payout)
+      const { data: notif, error: notifErr } = await supabase
+        .from('notifications')
+        .select('id, metadata')
+        .eq('user_id', linkData.owner_user_id)
+        .eq('type', 'payout')
+        .filter('metadata->>folder_key', 'eq', body.transactionId)
+        .maybeSingle();
+
+      if (notifErr || !notif) {
+        console.log('Transaction not found or access denied');
+        return new Response(
+          JSON.stringify({ error: 'Transaction not found or access denied' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Create a transaction from notification metadata
+      const meta = notif.metadata as Record<string, unknown>;
+      const finalDesc = body.updatedBasis !== undefined
+        ? body.updatedBasis
+        : ((meta.basis as string) || null);
+
+      const { data: newTx, error: newTxErr } = await supabase
+        .from('transactions')
+        .insert({
+          user_id: linkData.owner_user_id,
+          type: 'expense',
+          amount: body.updatedAmount ?? (meta.amount as number),
+          currency: body.updatedCurrency ?? (meta.currency as string),
+          category_id: body.updatedCategoryId !== undefined ? body.updatedCategoryId : (meta.category_id as string | null) || null,
+          description: finalDesc,
+          date: body.updatedDate ?? (meta.date as string) ?? new Date().toISOString().split('T')[0],
+          issued_to: body.updatedIssuedTo ?? (meta.issued_to as string) ?? (meta.submitter_name as string) ?? null,
+          amount_in_words: body.updatedAmountInWords ?? (meta.amount_in_words as string) ?? null,
+          decision_number: body.updatedDecisionNumber ?? (meta.decision_number as string) ?? null,
+          cashier_name: body.updatedDepartmentName ?? (meta.department_name as string) ?? null,
+        })
+        .select('id')
+        .single();
+
+      if (newTxErr || !newTx) {
+        console.error('Failed to create transaction from notification:', newTxErr);
+        return new Response(
+          JSON.stringify({ error: 'Failed to create transaction' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Move storage files from folderKey path to new transactionId path
+      try {
+        const { data: files } = await supabase.storage
+          .from('documents')
+          .list(`${linkData.owner_user_id}/${body.transactionId}`);
+        if (files && files.length > 0) {
+          for (const file of files) {
+            const oldPath = `${linkData.owner_user_id}/${body.transactionId}/${file.name}`;
+            const newPath = `${linkData.owner_user_id}/${newTx.id}/${file.name}`;
+            await supabase.storage.from('documents').move(oldPath, newPath);
+          }
+        }
+      } catch (moveErr) {
+        console.warn('Failed to move files (non-critical):', moveErr);
+      }
+
+      // Update notification: flip images_skipped=false, set transaction_id
+      // Fix PDF path: after moving files, path changes from folderKey to newTx.id
+      const correctedPdfPath = body.newPdfPath
+        ? body.newPdfPath.replace(`/${body.transactionId}/`, `/${newTx.id}/`)
+        : (meta.pdf_path as string | null);
+      const updatedMeta = {
+        ...(meta as Record<string, unknown>),
+        images_skipped: false,
+        transaction_id: newTx.id,
+        ...(correctedPdfPath ? { pdf_path: correctedPdfPath } : {}),
+      };
+      await supabase.from('notifications').update({
+        metadata: updatedMeta,
+        is_read: false,
+        created_at: new Date().toISOString(),
+      }).eq('id', notif.id);
+
+      console.log(`Created transaction ${newTx.id} from notification folder_key ${body.transactionId}`);
       return new Response(
-        JSON.stringify({ error: 'Transaction not found or access denied' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: true, transactionId: newTx.id }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 

@@ -159,6 +159,60 @@ Deno.serve(async (req) => {
 
     console.log(`Found ${pendingTransactions?.length || 0} pending transactions for ${body.submitterName}`);
 
+    // Also search notifications with images_skipped=true and no transaction_id (payout without photo)
+    const { data: pendingNotifs } = await supabase
+      .from('notifications')
+      .select('id, metadata, created_at')
+      .eq('user_id', linkData.owner_user_id)
+      .eq('type', 'payout')
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    // Filter: images_skipped=true, no transaction_id, name matches
+    const notifPayouts = (pendingNotifs || [])
+      .filter(n => {
+        const meta = n.metadata as Record<string, unknown>;
+        if (!meta?.images_skipped) return false;
+        if (meta?.transaction_id) return false; // already added to transactions
+        const submitterLower = ((meta?.submitter_name as string) || (meta?.issued_to as string) || '').toLowerCase();
+        const nameLower = normalizedName.toLowerCase();
+        const nameMatch = nameParts.length >= 2
+          ? submitterLower.includes(firstNameLower) && submitterLower.includes(lastNameLower)
+          : submitterLower.includes(nameLower);
+        return nameMatch;
+      })
+      .map(n => {
+        const meta = n.metadata as Record<string, unknown>;
+        return {
+          id: meta.folder_key as string,          // folder_key used as id
+          amount: meta.amount as number,
+          currency: meta.currency as string,
+          description: (meta.basis as string) || null,
+          date: (meta.date as string) || n.created_at.split('T')[0],
+          issued_to: (meta.issued_to as string) || (meta.submitter_name as string) || null,
+          amount_in_words: (meta.amount_in_words as string) || null,
+          category_id: (meta.category_id as string) || null,
+          cashier_name: (meta.department_name as string) || null,
+          created_at: n.created_at,
+          pdfUrl: null as string | null,
+          source: 'notification',  // marker to distinguish from transaction-based
+        };
+      });
+
+    // Get signed PDF URLs for notification-based payouts
+    await Promise.all(notifPayouts.map(async (p) => {
+      try {
+        const meta = (pendingNotifs?.find(n => (n.metadata as Record<string, unknown>).folder_key === p.id)?.metadata) as Record<string, unknown> | undefined;
+        const pdfPath = meta?.pdf_path as string | undefined;
+        if (pdfPath) {
+          const { data: signed } = await supabase.storage
+            .from('documents')
+            .createSignedUrl(pdfPath, 3600);
+          p.pdfUrl = signed?.signedUrl || null;
+        }
+      } catch (_) { /* ignore */ }
+    }));
+
     // Enrich with PDF URLs from storage
     const enrichedPayouts = await Promise.all(
       (pendingTransactions || []).map(async (tx) => {
@@ -181,7 +235,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true, 
-        pendingPayouts: enrichedPayouts
+        pendingPayouts: [...enrichedPayouts, ...notifPayouts]
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
