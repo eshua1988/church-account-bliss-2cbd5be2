@@ -804,13 +804,15 @@ const PublicPayout = () => {
           setPendingPayouts(data.pendingPayouts);
           setShowPendingChoice(false);
           setShowPendingSelection(true);
-          setIsAuthenticated(true);
+          setFormData(prev => ({ ...prev, issuedTo: autoName.trim() }));
           setNavigationHistory(['login', 'pending']);
         } else {
-          // No pending docs — go straight to new form
-          setIsAuthenticated(true);
+          // No pending docs — show selection screen (empty), user can click "Create new"
+          setPendingPayouts([]);
+          setShowPendingChoice(false);
+          setShowPendingSelection(true);
           setFormData(prev => ({ ...prev, issuedTo: autoName.trim() }));
-          setNavigationHistory(['login', 'form']);
+          setNavigationHistory(['login', 'pending']);
         }
       } catch (e) {
         console.error('Auto-auth error:', e);
@@ -1696,7 +1698,6 @@ const PublicPayout = () => {
           setPendingPayouts([]);
           setShowPendingChoice(false);
           setShowPendingSelection(true);
-          setIsAuthenticated(true);
           setFormData(prev => ({ ...prev, issuedTo: fullName }));
           navigateTo('pending');
           return;
@@ -1706,7 +1707,6 @@ const PublicPayout = () => {
         setPendingPayouts(data?.pendingPayouts || []);
         setShowPendingChoice(false);
         setShowPendingSelection(true);
-        setIsAuthenticated(true);
         setFormData(prev => ({ ...prev, issuedTo: fullName }));
         navigateTo('pending');
       } catch (err) {
@@ -1715,7 +1715,6 @@ const PublicPayout = () => {
         setPendingPayouts([]);
         setShowPendingChoice(false);
         setShowPendingSelection(true);
-        setIsAuthenticated(true);
         setFormData(prev => ({ ...prev, issuedTo: fullName }));
         navigateTo('pending');
       } finally {
