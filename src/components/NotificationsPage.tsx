@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, QrCode, Copy, Banknote } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -11,6 +11,30 @@ import { useToast } from '@/hooks/use-toast';
 import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { Currency } from '@/types/transaction';
+import { QRCodeSVG } from 'qrcode.react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+
+// Detect account type and build QR string
+function buildPaymentQr(account: string, amount: number, currency: string, recipientName: string, title: string): { qrValue: string; type: 'blik' | 'iban' | 'phone' } {
+  const clean = account.replace(/\s/g, '');
+  // IBAN: starts with 2 letters + digits, length 15-34
+  const isIban = /^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/i.test(clean);
+  if (isIban) {
+    // Polish bank QR standard: 2|1|IBAN|Name|AmountGrosze|Title||
+    const amountGrosze = currency === 'PLN' ? Math.round(amount * 100) : Math.round(amount * 100);
+    const qrValue = `2|1|${clean.toUpperCase()}|${recipientName}|${amountGrosze}|${title}||`;
+    return { qrValue, type: 'iban' };
+  }
+  // Phone: 9 digits or +48xxxxxxxxx
+  const isPhone = /^(\+?48)?[0-9]{9}$/.test(clean);
+  if (isPhone) {
+    const normalized = clean.startsWith('+') ? clean : clean.length === 9 ? `+48${clean}` : `+${clean}`;
+    return { qrValue: normalized, type: 'blik' };
+  }
+  return { qrValue: account, type: 'phone' };
+}
 
 const NotificationCard = ({
   notification,
@@ -30,6 +54,7 @@ const NotificationCard = ({
   savingId?: string | null;
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
+  const [showQr, setShowQr] = useState(false);
   const { toast } = useToast();
   const transactionId = notification.metadata?.transaction_id as string | undefined;
   const pdfPath = notification.metadata?.pdf_path as string | undefined;
@@ -74,13 +99,18 @@ const NotificationCard = ({
 
   const issuedTo = notification.metadata?.issued_to as string | undefined;
   const departmentName = (notification.metadata?.department_name as string | undefined) || resolvedDepartment;
-  const amount = notification.metadata?.amount;
+  const amount = notification.metadata?.amount as number | undefined;
   const currency = notification.metadata?.currency as string | undefined;
   const imagesSkipped = notification.metadata?.images_skipped as boolean | undefined;
+  const bankAccount = notification.metadata?.bank_account as string | undefined;
   const baseUrl = window.location.origin + import.meta.env.BASE_URL.replace(/\/$/, '');
   const payoutUrl = payoutToken
     ? `${baseUrl}/payout/${payoutToken}?name=${encodeURIComponent(issuedTo || '')}`
     : undefined;
+
+  const paymentQr = bankAccount && amount
+    ? buildPaymentQr(bankAccount, amount, currency || 'PLN', issuedTo || '', departmentName || 'Расходный ордер')
+    : null;
 
   return (
     <div
@@ -188,9 +218,91 @@ const NotificationCard = ({
               {isDownloading ? '...' : 'PDF'}
             </Button>
           )}
+          {/* Payment QR button */}
+          {paymentQr && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1 h-7 px-2.5 text-xs border-green-500/50 text-green-600 hover:text-green-700 hover:bg-green-500/10"
+              onClick={() => setShowQr(true)}
+            >
+              <QrCode className="h-3 w-3" />
+              Оплатить
+            </Button>
+          )}
         </div>
       </div>
     </div>
+
+    {/* Payment QR Dialog */}
+    {paymentQr && (
+      <Dialog open={showQr} onOpenChange={setShowQr}>
+        <DialogContent className="max-w-xs w-full">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {paymentQr.type === 'blik' ? (
+                <><Banknote className="h-4 w-4 text-primary" /> BLIK — перевод по номеру</>
+              ) : (
+                <><Banknote className="h-4 w-4 text-primary" /> Банковский перевод</>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-4 pt-2">
+            <div className="bg-white p-3 rounded-xl border">
+              <QRCodeSVG value={paymentQr.qrValue} size={200} />
+            </div>
+            <div className="w-full space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-2 bg-muted rounded-lg px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground mb-0.5">
+                    {paymentQr.type === 'blik' ? 'Номер телефона (BLIK)' : 'Счёт IBAN'}
+                  </p>
+                  <p className="font-mono text-sm font-medium truncate">{bankAccount}</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 shrink-0"
+                  onClick={() => { navigator.clipboard.writeText(bankAccount || ''); toast({ title: 'Скопировано' }); }}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div className="flex items-center justify-between gap-2 bg-muted rounded-lg px-3 py-2">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-0.5">Получатель</p>
+                  <p className="font-medium">{issuedTo || '—'}</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-2 bg-muted rounded-lg px-3 py-2">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-0.5">Сумма</p>
+                  <p className="font-bold text-primary">{amount} {currency}</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 shrink-0"
+                  onClick={() => { navigator.clipboard.writeText(`${amount}`); toast({ title: 'Скопировано' }); }}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+            {paymentQr.type === 'blik' && (
+              <p className="text-xs text-muted-foreground text-center">
+                Отсканируйте QR в приложении банка или введите номер телефона для перевода BLIK
+              </p>
+            )}
+            {paymentQr.type === 'iban' && (
+              <p className="text-xs text-muted-foreground text-center">
+                Отсканируйте QR в приложении банка для автоматического заполнения реквизитов
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    )}
   );
 };
 

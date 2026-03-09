@@ -1467,6 +1467,7 @@ const PublicPayout = () => {
           imagesSkipped: imagesOptional,
           departmentName: formData.departmentName,
           decisionNumber: formData.bankAccount,
+          bankAccount: formData.bankAccount,
           signatureBase64: signatureBase64 || undefined,
           imagesBase64: imagesBase64.length > 0 ? imagesBase64 : undefined,
           language: language,
