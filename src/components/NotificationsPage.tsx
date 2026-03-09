@@ -14,8 +14,6 @@ import { Currency } from '@/types/transaction';
 import { QRCodeSVG } from 'qrcode.react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-
 // Detect account type and build QR string
 function buildPaymentQr(account: string, amount: number, currency: string, recipientName: string, title: string): { qrValue: string; type: 'blik' | 'iban' | 'phone' } {
   const clean = account.replace(/\s/g, '');
@@ -113,6 +111,7 @@ const NotificationCard = ({
     : null;
 
   return (
+    <>
     <div
       className={cn(
         'p-4 sm:p-5 rounded-xl border border-border transition-all duration-200 hover:shadow-md',
@@ -303,6 +302,7 @@ const NotificationCard = ({
         </DialogContent>
       </Dialog>
     )}
+    </>
   );
 };
 
