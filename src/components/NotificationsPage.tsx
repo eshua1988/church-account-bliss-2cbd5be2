@@ -143,17 +143,6 @@ const NotificationCard = ({
           {format(new Date(notification.created_at), 'dd.MM.yyyy HH:mm')}
         </p>
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
-          {imagesSkipped && payoutUrl && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1 h-7 px-2.5 text-xs border-yellow-500/50 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-500/10"
-              onClick={() => window.open(payoutUrl, '_blank')}
-            >
-              <ImagePlus className="h-3 w-3" />
-              Добавить фото
-            </Button>
-          )}
           {/* "В расход" button — saves immediately, no dialog */}
           {onAddToTransaction && !transactionId && (
             <Button
@@ -169,6 +158,17 @@ const NotificationCard = ({
                 <PlusCircle className="h-3 w-3" />
               )}
               {isSaving ? '...' : 'В расход'}
+            </Button>
+          )}
+          {imagesSkipped && payoutUrl && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1 h-7 px-2.5 text-xs border-yellow-500/50 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-500/10"
+              onClick={() => window.open(payoutUrl, '_blank')}
+            >
+              <ImagePlus className="h-3 w-3" />
+              Добавить
             </Button>
           )}
           {/* PDF button: show whenever pdf_path exists OR transactionId exists */}
