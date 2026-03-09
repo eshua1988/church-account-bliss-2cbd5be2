@@ -1862,7 +1862,7 @@ const PublicPayout = () => {
       );
     }
 
-    if (showPendingSelection && pendingPayouts.length > 0) {
+    if (showPendingSelection) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
           <Toaster />
@@ -1900,9 +1900,11 @@ const PublicPayout = () => {
             </CardHeader>
             <CardContent className="pt-6 space-y-4">
               <div className="text-center mb-4">
-                <h3 className="text-lg font-semibold">{t.foundDocuments}</h3>
+                <h3 className="text-lg font-semibold">
+                  {pendingPayouts.length > 0 ? t.foundDocuments : t.createNew}
+                </h3>
                 <p className="text-sm text-muted-foreground">
-                  {t.selectDocument}
+                  {pendingPayouts.length > 0 ? t.selectDocument : ''}
                 </p>
               </div>
               
