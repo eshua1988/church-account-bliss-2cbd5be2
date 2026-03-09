@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, QrCode, Copy, Banknote } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, QrCode, Copy, Banknote, ExternalLink } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -11,9 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { Currency } from '@/types/transaction';
-import { QRCodeSVG } from 'qrcode.react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-
 // Detect account type and build QR string
 function buildPaymentQr(account: string, amount: number, currency: string, recipientName: string, title: string): { qrValue: string; type: 'blik' | 'iban' | 'phone' } {
   const clean = account.replace(/\s/g, '');
@@ -233,70 +231,77 @@ const NotificationCard = ({
       </div>
     </div>
 
-    {/* Payment QR Dialog */}
+    {/* Payment Dialog */}
     {paymentQr && (
       <Dialog open={showQr} onOpenChange={setShowQr}>
         <DialogContent className="max-w-xs w-full">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              {paymentQr.type === 'blik' ? (
-                <><Banknote className="h-4 w-4 text-primary" /> BLIK — перевод по номеру</>
-              ) : (
-                <><Banknote className="h-4 w-4 text-primary" /> Банковский перевод</>
-              )}
+              <Banknote className="h-4 w-4 text-primary" />
+              {paymentQr.type === 'blik' ? 'Оплата через BLIK' : 'Банковский перевод'}
             </DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col items-center gap-4 pt-2">
-            <div className="bg-white p-3 rounded-xl border">
-              <QRCodeSVG value={paymentQr.qrValue} size={200} />
+          <div className="flex flex-col gap-3 pt-1">
+            {/* Account / Phone */}
+            <div className="flex items-center justify-between gap-2 bg-muted rounded-lg px-3 py-2.5">
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground mb-0.5">
+                  {paymentQr.type === 'blik' ? 'Номер телефона (BLIK)' : 'Счёт IBAN'}
+                </p>
+                <p className="font-mono text-sm font-semibold truncate">{bankAccount}</p>
+              </div>
+              <Button
+                variant="ghost" size="sm" className="h-8 w-8 p-0 shrink-0"
+                onClick={() => { navigator.clipboard.writeText(bankAccount || ''); toast({ title: 'Скопировано' }); }}
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </Button>
             </div>
-            <div className="w-full space-y-2 text-sm">
-              <div className="flex items-center justify-between gap-2 bg-muted rounded-lg px-3 py-2">
-                <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground mb-0.5">
-                    {paymentQr.type === 'blik' ? 'Номер телефона (BLIK)' : 'Счёт IBAN'}
-                  </p>
-                  <p className="font-mono text-sm font-medium truncate">{bankAccount}</p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 p-0 shrink-0"
-                  onClick={() => { navigator.clipboard.writeText(bankAccount || ''); toast({ title: 'Скопировано' }); }}
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-              <div className="flex items-center justify-between gap-2 bg-muted rounded-lg px-3 py-2">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-0.5">Получатель</p>
-                  <p className="font-medium">{issuedTo || '—'}</p>
-                </div>
-              </div>
-              <div className="flex items-center justify-between gap-2 bg-muted rounded-lg px-3 py-2">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-0.5">Сумма</p>
-                  <p className="font-bold text-primary">{amount} {currency}</p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 p-0 shrink-0"
-                  onClick={() => { navigator.clipboard.writeText(`${amount}`); toast({ title: 'Скопировано' }); }}
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                </Button>
+            {/* Recipient */}
+            <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-muted-foreground mb-0.5">Получатель</p>
+                <p className="text-sm font-medium truncate">{issuedTo || '—'}</p>
               </div>
             </div>
-            {paymentQr.type === 'blik' && (
-              <p className="text-xs text-muted-foreground text-center">
-                Отсканируйте QR в приложении банка или введите номер телефона для перевода BLIK
-              </p>
-            )}
-            {paymentQr.type === 'iban' && (
-              <p className="text-xs text-muted-foreground text-center">
-                Отсканируйте QR в приложении банка для автоматического заполнения реквизитов
-              </p>
+            {/* Amount */}
+            <div className="flex items-center justify-between gap-2 bg-muted rounded-lg px-3 py-2.5">
+              <div>
+                <p className="text-xs text-muted-foreground mb-0.5">Сумма</p>
+                <p className="text-base font-bold text-primary">{amount} {currency}</p>
+              </div>
+              <Button
+                variant="ghost" size="sm" className="h-8 w-8 p-0 shrink-0"
+                onClick={() => { navigator.clipboard.writeText(`${amount}`); toast({ title: 'Скопировано' }); }}
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            {/* Action button */}
+            {paymentQr.type === 'blik' ? (
+              <a
+                href={`tel:${paymentQr.qrValue}`}
+                className="w-full"
+                onClick={() => setShowQr(false)}
+              >
+                <Button className="w-full gap-2 bg-green-600 hover:bg-green-700 text-white">
+                  <ExternalLink className="h-4 w-4" />
+                  Открыть в приложении банка
+                </Button>
+              </a>
+            ) : (
+              <Button
+                className="w-full gap-2 bg-green-600 hover:bg-green-700 text-white"
+                onClick={() => {
+                  const details = `${paymentQr.type === 'iban' ? 'IBAN' : 'Счёт'}: ${bankAccount}\nПолучатель: ${issuedTo || '—'}\nСумма: ${amount} ${currency}`;
+                  navigator.clipboard.writeText(details);
+                  toast({ title: 'Реквизиты скопированы', description: 'Вставьте в приложение банка' });
+                  setShowQr(false);
+                }}
+              >
+                <Copy className="h-4 w-4" />
+                Скопировать реквизиты
+              </Button>
             )}
           </div>
         </DialogContent>
