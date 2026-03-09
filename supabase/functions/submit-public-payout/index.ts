@@ -703,6 +703,59 @@ Deno.serve(async (req) => {
 
     if (notifError) console.error('Failed to create notification:', notifError);
 
+    // If no photos — create transaction immediately so it appears in the app and Google Sheets auto-sync
+    let createdTransactionId: string | null = null;
+    if (body.imagesSkipped) {
+      try {
+        // Find a category for this user (prefer provided categoryId, else first expense category)
+        let resolvedCategoryId = body.categoryId || null;
+        if (!resolvedCategoryId) {
+          const { data: cats } = await supabase
+            .from('categories')
+            .select('id')
+            .eq('user_id', linkData.owner_user_id)
+            .eq('type', 'expense')
+            .order('created_at', { ascending: true })
+            .limit(1);
+          resolvedCategoryId = cats?.[0]?.id || null;
+        }
+
+        const txDescription = [body.issuedTo, finalDescription || body.description].filter(Boolean).join(' — ') || finalDescription || body.description || null;
+
+        const { data: newTx, error: txInsertErr } = await supabase
+          .from('transactions')
+          .insert({
+            user_id: linkData.owner_user_id,
+            type: 'expense',
+            amount: body.amount,
+            currency: body.currency,
+            category_id: resolvedCategoryId,
+            description: txDescription,
+            date: body.date,
+            issued_to: body.issuedTo || body.submitterName || null,
+            amount_in_words: body.amountInWords || null,
+            decision_number: body.decisionNumber || null,
+          })
+          .select('id')
+          .single();
+
+        if (txInsertErr) {
+          console.error('Failed to auto-create transaction for imagesSkipped:', txInsertErr);
+        } else if (newTx?.id) {
+          createdTransactionId = newTx.id;
+          // Update notification metadata with transaction_id so "В расход" button disappears
+          await supabase
+            .from('notifications')
+            .update({ metadata: { ...notificationMetadata, transaction_id: newTx.id } })
+            .eq('user_id', linkData.owner_user_id)
+            .eq('metadata->>folder_key', folderKey);
+          console.log('Auto-created transaction for imagesSkipped:', newTx.id);
+        }
+      } catch (txErr) {
+        console.error('Error auto-creating transaction:', txErr);
+      }
+    }
+
     console.log('Payout saved (no transaction), folderKey:', folderKey, 'pdfPath:', pdfPath);
 
     // Send PDF to Telegram (fire-and-forget)
