@@ -553,6 +553,7 @@ const PublicPayout = () => {
     amount_in_words: string | null;
     category_id: string | null;
     cashier_name: string | null;
+    bank_account?: string | null;
     created_at: string;
     pdfUrl?: string | null;
   }
@@ -765,7 +766,7 @@ const PublicPayout = () => {
             currency: payout.currency,
             amount: payout.amount.toString(),
             issuedTo: payout.issued_to || autoName || `${firstName} ${lastName}`,
-            bankAccount: '',
+            bankAccount: payout.bank_account || '',
             departmentName: cat?.name || '',
             basis: cleanDesc,
             amountInWords: payout.amount_in_words || '',
@@ -1744,7 +1745,7 @@ const PublicPayout = () => {
         currency: payout.currency,
         amount: payout.amount.toString(),
         issuedTo: payout.issued_to || `${submitterFirstName.trim()} ${submitterLastName.trim()}`,
-        bankAccount: '',
+        bankAccount: payout.bank_account || '',
         departmentName: category?.name || '',
         basis: cleanDescription,
         amountInWords: payout.amount_in_words || '',

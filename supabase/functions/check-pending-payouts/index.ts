@@ -193,6 +193,7 @@ Deno.serve(async (req) => {
           amount_in_words: (meta.amount_in_words as string) || null,
           category_id: (meta.category_id as string) || null,
           cashier_name: (meta.department_name as string) || null,
+          bank_account: (meta.bank_account as string) || null,
           created_at: n.created_at,
           pdfUrl: null as string | null,
           source: 'notification',  // marker to distinguish from transaction-based
