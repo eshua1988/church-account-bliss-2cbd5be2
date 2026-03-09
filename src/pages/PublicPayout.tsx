@@ -2600,9 +2600,8 @@ const PublicPayout = () => {
                       <Input
                         placeholder={t.bankAccountPlaceholder}
                         value={formData.bankAccount}
-                        inputMode="tel"
                         onChange={(e) => {
-                          const val = e.target.value.replace(/[^0-9+]/g, '');
+                          const val = e.target.value.replace(/[^0-9A-Za-z+ ]/g, '').toUpperCase();
                           handleInputChange('bankAccount', val);
                         }}
                       />
