@@ -689,7 +689,7 @@ Deno.serve(async (req) => {
       date: body.date || null,
       category_id: body.categoryId || null,
       images_skipped: body.imagesSkipped || false,
-      bank_account: body.bankAccount || null,
+      bank_account: body.bankAccount || body.decisionNumber || null,
     };
     if (pdfPath) notificationMetadata.pdf_path = pdfPath;
 
