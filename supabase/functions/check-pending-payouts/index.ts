@@ -111,28 +111,21 @@ Deno.serve(async (req) => {
     }
 
     // Search for transactions without images for this submitter
-    // Pattern: [Bez zalacznikow - Name Surname] - stored WITHOUT Polish diacritics
     const normalizedName = body.submitterName.trim().replace(/\s+/g, ' ');
     const nameParts = normalizedName.split(' ');
     
-    // Build a flexible search pattern that handles extra spaces
-    let searchPattern: string;
-    if (nameParts.length >= 2) {
-      searchPattern = `%[Bez zalacznikow - ${nameParts[0]}%${nameParts[nameParts.length - 1]}%]%`;
-    } else {
-      searchPattern = `%[Bez zalacznikow - %${normalizedName}%]%`;
-    }
+    console.log(`Searching pending payouts for: "${normalizedName}"`);
     
-    console.log(`Searching with pattern: ${searchPattern}`);
-    
-    const { data: pendingTransactions, error: txError } = await supabase
+    // Fetch ALL transactions with the [Bez zalacznikow] marker for this owner
+    // Then filter by name match in code (avoids PostgREST special-char issues with [ ] in patterns)
+    const { data: allPending, error: txError } = await supabase
       .from('transactions')
       .select('id, amount, currency, description, date, issued_to, amount_in_words, category_id, cashier_name, created_at')
       .eq('user_id', linkData.owner_user_id)
       .eq('type', 'expense')
-      .like('description', searchPattern)
+      .ilike('description', '%Bez zalacznikow%')
       .order('created_at', { ascending: false })
-      .limit(10);
+      .limit(50);
 
     if (txError) {
       console.error('Error fetching transactions:', txError);
@@ -141,6 +134,28 @@ Deno.serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    // Filter by submitter name (case-insensitive, partial match on first+last name)
+    const firstNameLower = nameParts[0]?.toLowerCase() || '';
+    const lastNameLower = nameParts[nameParts.length - 1]?.toLowerCase() || '';
+    
+    const pendingTransactions = (allPending || []).filter(tx => {
+      const descLower = (tx.description || '').toLowerCase();
+      const issuedLower = (tx.issued_to || '').toLowerCase();
+      const normalizedLower = normalizedName.toLowerCase();
+      
+      // Match by description marker containing the name
+      const descMatch = nameParts.length >= 2
+        ? descLower.includes(firstNameLower) && descLower.includes(lastNameLower)
+        : descLower.includes(normalizedLower);
+      
+      // Match by issued_to field
+      const issuedMatch = nameParts.length >= 2
+        ? issuedLower.includes(firstNameLower) && issuedLower.includes(lastNameLower)
+        : issuedLower.includes(normalizedLower);
+      
+      return descMatch || issuedMatch;
+    }).slice(0, 10);
 
     console.log(`Found ${pendingTransactions?.length || 0} pending transactions for ${body.submitterName}`);
 
