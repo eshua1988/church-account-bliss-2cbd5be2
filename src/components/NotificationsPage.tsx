@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, QrCode, Copy, Banknote, ExternalLink } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { useAuth } from '@/contexts/AuthContext';
@@ -51,6 +51,41 @@ const NotificationCard = ({
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [showQr, setShowQr] = useState(false);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [isSwiped, setIsSwiped] = useState(false);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const isDragging = useRef(false);
+  const SWIPE_MAX = 224;
+  const SWIPE_THRESHOLD = 60;
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    isDragging.current = true;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging.current) return;
+    const dx = touchStartX.current - e.touches[0].clientX;
+    const dy = Math.abs(e.touches[0].clientY - touchStartY.current);
+    if (dy > 15 && dy > Math.abs(dx)) { isDragging.current = false; return; }
+    const base = isSwiped ? SWIPE_MAX : 0;
+    const next = Math.max(0, Math.min(base + dx, SWIPE_MAX));
+    setSwipeOffset(next);
+  };
+
+  const handleTouchEnd = () => {
+    isDragging.current = false;
+    if (swipeOffset > SWIPE_THRESHOLD) {
+      setIsSwiped(true);
+      setSwipeOffset(SWIPE_MAX);
+    } else {
+      setIsSwiped(false);
+      setSwipeOffset(0);
+    }
+  };
+
   const { toast } = useToast();
   const transactionId = notification.metadata?.transaction_id as string | undefined;
   const pdfPath = notification.metadata?.pdf_path as string | undefined;
@@ -108,125 +143,138 @@ const NotificationCard = ({
     ? buildPaymentQr(bankAccount, amount, currency || 'PLN', issuedTo || '', departmentName || 'Расходный ордер')
     : null;
 
+  // Action buttons — shared between desktop bottom row and mobile swipe tray
+  const actionButtons = (
+    <>
+      {onAddToTransaction && !transactionId && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5 h-8 px-2.5 text-xs border-primary/40 text-primary hover:bg-primary/10"
+          onClick={() => { onAddToTransaction(notification); setIsSwiped(false); setSwipeOffset(0); }}
+          disabled={isSaving}
+        >
+          {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlusCircle className="h-3 w-3" />}
+          {isSaving ? '...' : 'В расход'}
+        </Button>
+      )}
+      {imagesSkipped && payoutUrl && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1 h-8 px-2.5 text-xs border-yellow-500/50 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-500/10"
+          onClick={() => { window.open(payoutUrl, '_blank'); setIsSwiped(false); setSwipeOffset(0); }}
+        >
+          <ImagePlus className="h-3 w-3" />
+          Добавить
+        </Button>
+      )}
+      {(pdfPath || transactionId) && (
+        <Button
+          variant="default"
+          size="sm"
+          className="gap-1.5 h-8 px-2.5 text-xs"
+          onClick={() => { handleDownloadPdf(); setIsSwiped(false); setSwipeOffset(0); }}
+          disabled={isDownloading}
+        >
+          {isDownloading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+          {isDownloading ? '...' : 'PDF'}
+        </Button>
+      )}
+      {paymentQr && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1 h-8 px-2.5 text-xs border-green-500/50 text-green-600 hover:text-green-700 hover:bg-green-500/10"
+          onClick={() => { setShowQr(true); setIsSwiped(false); setSwipeOffset(0); }}
+        >
+          <QrCode className="h-3 w-3" />
+          Оплатить
+        </Button>
+      )}
+    </>
+  );
+
   return (
     <>
+    {/* Mobile swipe wrapper */}
     <div
-      className={cn(
-        'p-4 sm:p-5 rounded-xl border border-border transition-all duration-200 hover:shadow-md',
-        !notification.is_read
-          ? 'bg-primary/5 border-primary/20'
-          : 'bg-card'
-      )}
+      className="relative overflow-hidden rounded-xl"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
     >
-      {/* Top row: name + unread dot | amount+currency + delete */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-start gap-2 min-w-0">
-          {!notification.is_read && (
-            <div className="w-2.5 h-2.5 rounded-full bg-primary flex-shrink-0 mt-1.5" />
-          )}
-          <div className="min-w-0">
-            <p className="font-semibold text-foreground truncate leading-snug">
-              {issuedTo || notification.title}
-            </p>
-            {departmentName && (
-              <p className="text-sm text-muted-foreground mt-0.5 truncate leading-snug">
-                {departmentName}
-              </p>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          {amount != null && currency && (
-            <span className="font-bold text-primary text-base whitespace-nowrap">
-              {amount} {currency}
-            </span>
-          )}
-          {!notification.is_read && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => onMarkAsRead(notification.id)}
-              title="Отметить как прочитанное"
-            >
-              <Check className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-destructive hover:text-destructive"
-            onClick={() => onDelete(notification.id)}
-            title="Удалить"
-          >
-            <X className="h-3.5 w-3.5" />
-          </Button>
-        </div>
+      {/* Action tray (mobile only — revealed by swipe, hidden on sm+) */}
+      <div
+        className="sm:hidden absolute right-0 top-0 bottom-0 flex items-center gap-1.5 px-2 bg-muted border border-border rounded-r-xl"
+        style={{ width: `${SWIPE_MAX}px` }}
+      >
+        {actionButtons}
       </div>
 
-      {/* Bottom row: date | action buttons */}
-      <div className="flex items-end justify-between mt-3 gap-2">
-        <p className="text-xs text-muted-foreground flex-shrink-0">
-          {format(new Date(notification.created_at), 'dd.MM.yyyy HH:mm')}
-        </p>
-        <div className="flex items-center gap-1.5 flex-wrap justify-end">
-          {/* "В расход" button — saves immediately, no dialog */}
-          {onAddToTransaction && !transactionId && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 h-7 px-2.5 text-xs border-primary/40 text-primary hover:bg-primary/10"
-              onClick={() => onAddToTransaction(notification)}
-              disabled={isSaving}
-            >
-              {isSaving ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <PlusCircle className="h-3 w-3" />
+      {/* Main card — slides left on swipe */}
+      <div
+        className={cn(
+          'p-4 rounded-xl border border-border transition-colors duration-200 hover:shadow-md',
+          !notification.is_read ? 'bg-primary/5 border-primary/20' : 'bg-card'
+        )}
+        style={{
+          transform: `translateX(-${swipeOffset}px)`,
+          transition: isDragging.current ? 'none' : 'transform 0.2s ease',
+        }}
+      >
+        {/* Top row: name + unread dot | amount+currency + delete */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-start gap-2 min-w-0">
+            {!notification.is_read && (
+              <div className="w-2.5 h-2.5 rounded-full bg-primary flex-shrink-0 mt-1.5" />
+            )}
+            <div className="min-w-0">
+              <p className="font-semibold text-foreground truncate leading-snug">
+                {issuedTo || notification.title}
+              </p>
+              {departmentName && (
+                <p className="text-sm text-muted-foreground mt-0.5 truncate leading-snug">
+                  {departmentName}
+                </p>
               )}
-              {isSaving ? '...' : 'В расход'}
+            </div>
+          </div>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {amount != null && currency && (
+              <span className="font-bold text-primary text-base whitespace-nowrap">
+                {amount} {currency}
+              </span>
+            )}
+            {!notification.is_read && (
+              <Button variant="ghost" size="icon" className="h-7 w-7"
+                onClick={() => onMarkAsRead(notification.id)} title="Отметить как прочитанное">
+                <Check className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            <Button variant="ghost" size="icon"
+              className="h-7 w-7 text-destructive hover:text-destructive"
+              onClick={() => onDelete(notification.id)} title="Удалить">
+              <X className="h-3.5 w-3.5" />
             </Button>
-          )}
-          {imagesSkipped && payoutUrl && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1 h-7 px-2.5 text-xs border-yellow-500/50 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-500/10"
-              onClick={() => window.open(payoutUrl, '_blank')}
-            >
-              <ImagePlus className="h-3 w-3" />
-              Добавить
-            </Button>
-          )}
-          {/* PDF button: show whenever pdf_path exists OR transactionId exists */}
-          {(pdfPath || transactionId) && (
-            <Button
-              variant="default"
-              size="sm"
-              className="gap-1.5 h-7 px-2.5 text-xs"
-              onClick={handleDownloadPdf}
-              disabled={isDownloading}
-            >
-              {isDownloading ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <Download className="h-3 w-3" />
-              )}
-              {isDownloading ? '...' : 'PDF'}
-            </Button>
-          )}
-          {/* Payment QR button */}
-          {paymentQr && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1 h-7 px-2.5 text-xs border-green-500/50 text-green-600 hover:text-green-700 hover:bg-green-500/10"
-              onClick={() => setShowQr(true)}
-            >
-              <QrCode className="h-3 w-3" />
-              Оплатить
-            </Button>
-          )}
+          </div>
+        </div>
+
+        {/* Bottom row: date | action buttons (desktop only) */}
+        <div className="flex items-end justify-between mt-3 gap-2">
+          <p className="text-xs text-muted-foreground flex-shrink-0">
+            {format(new Date(notification.created_at), 'dd.MM.yyyy HH:mm')}
+          </p>
+          {/* Desktop buttons — hidden on mobile (use swipe instead) */}
+          <div className="hidden sm:flex items-center gap-1.5 flex-wrap justify-end">
+            {actionButtons}
+          </div>
+          {/* Mobile: swipe hint when no swipe yet and there are actions */}
+          <div className="flex sm:hidden items-center gap-1 text-xs text-muted-foreground">
+            {(onAddToTransaction || imagesSkipped || pdfPath || transactionId || paymentQr) && !isSwiped && (
+              <span className="flex items-center gap-0.5 opacity-50">← действия</span>
+            )}
+          </div>
         </div>
       </div>
     </div>
