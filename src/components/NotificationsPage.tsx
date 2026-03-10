@@ -56,8 +56,14 @@ const NotificationCard = ({
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const isDragging = useRef(false);
-  const SWIPE_MAX = 224;
-  const SWIPE_THRESHOLD = 60;
+  const BTN_W = 68; // px per button
+  const mobileButtonCount =
+    (onAddToTransaction && !transactionId ? 1 : 0) +
+    (imagesSkipped && payoutUrl ? 1 : 0) +
+    (pdfPath || transactionId ? 1 : 0) +
+    (paymentQr ? 1 : 0);
+  const SWIPE_MAX = mobileButtonCount * BTN_W;
+  const SWIPE_THRESHOLD = 50;
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
@@ -204,12 +210,53 @@ const NotificationCard = ({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Action tray (mobile only — revealed by swipe, hidden on sm+) */}
+      {/* Action tray — Telegram-style (mobile only) */}
       <div
-        className="sm:hidden absolute right-0 top-0 bottom-0 flex items-center gap-1.5 px-2 bg-muted border border-border rounded-r-xl"
+        className="sm:hidden absolute right-0 top-0 bottom-0 flex rounded-r-xl overflow-hidden"
         style={{ width: `${SWIPE_MAX}px` }}
       >
-        {actionButtons}
+        {onAddToTransaction && !transactionId && (
+          <button
+            className="flex flex-col items-center justify-center gap-1 text-white bg-blue-600 active:bg-blue-700"
+            style={{ width: `${BTN_W}px` }}
+            onClick={() => { onAddToTransaction(notification); setIsSwiped(false); setSwipeOffset(0); }}
+            disabled={isSaving}
+          >
+            {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <PlusCircle className="h-5 w-5" />}
+            <span className="text-[11px] font-medium leading-none">В расход</span>
+          </button>
+        )}
+        {imagesSkipped && payoutUrl && (
+          <button
+            className="flex flex-col items-center justify-center gap-1 text-white bg-amber-500 active:bg-amber-600"
+            style={{ width: `${BTN_W}px` }}
+            onClick={() => { window.open(payoutUrl, '_blank'); setIsSwiped(false); setSwipeOffset(0); }}
+          >
+            <ImagePlus className="h-5 w-5" />
+            <span className="text-[11px] font-medium leading-none">Добавить</span>
+          </button>
+        )}
+        {(pdfPath || transactionId) && (
+          <button
+            className="flex flex-col items-center justify-center gap-1 text-white bg-slate-600 active:bg-slate-700"
+            style={{ width: `${BTN_W}px` }}
+            onClick={() => { handleDownloadPdf(); setIsSwiped(false); setSwipeOffset(0); }}
+            disabled={isDownloading}
+          >
+            {isDownloading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
+            <span className="text-[11px] font-medium leading-none">PDF</span>
+          </button>
+        )}
+        {paymentQr && (
+          <button
+            className="flex flex-col items-center justify-center gap-1 text-white bg-green-600 active:bg-green-700"
+            style={{ width: `${BTN_W}px` }}
+            onClick={() => { setShowQr(true); setIsSwiped(false); setSwipeOffset(0); }}
+          >
+            <QrCode className="h-5 w-5" />
+            <span className="text-[11px] font-medium leading-none">Оплатить</span>
+          </button>
+        )}
       </div>
 
       {/* Main card — slides left on swipe */}
