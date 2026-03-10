@@ -40,6 +40,8 @@ const NotificationCard = ({
   payoutToken,
   onAddToTransaction,
   savingId,
+  swipedId,
+  onSwipe,
 }: {
   notification: Notification;
   onMarkAsRead: (id: string) => void;
@@ -48,11 +50,25 @@ const NotificationCard = ({
   payoutToken?: string;
   onAddToTransaction?: (notification: Notification) => void;
   savingId?: string | null;
+  swipedId?: string | null;
+  onSwipe?: (id: string | null) => void;
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [showQr, setShowQr] = useState(false);
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [isSwiped, setIsSwiped] = useState(false);
+
+  // Close this card if another was swiped open
+  const isThisSwiped = swipedId === notification.id;
+  useEffect(() => {
+    if (!isThisSwiped && isSwiped) {
+      setIsSwiped(false);
+      setSwipeOffset(0);
+    }
+  }, [isThisSwiped]);
+
+  const doClose = () => { setIsSwiped(false); setSwipeOffset(0); onSwipe?.(null); };
+  const doOpen = () => { setIsSwiped(true); setSwipeOffset(SWIPE_MAX); onSwipe?.(notification.id); };
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const isDragging = useRef(false);
@@ -76,11 +92,9 @@ const NotificationCard = ({
   const handleTouchEnd = () => {
     isDragging.current = false;
     if (swipeOffset > SWIPE_THRESHOLD) {
-      setIsSwiped(true);
-      setSwipeOffset(SWIPE_MAX);
+      doOpen();
     } else {
-      setIsSwiped(false);
-      setSwipeOffset(0);
+      doClose();
     }
   };
 
@@ -158,7 +172,7 @@ const NotificationCard = ({
           variant="outline"
           size="sm"
           className="gap-1.5 h-8 px-2.5 text-xs border-primary/40 text-primary hover:bg-primary/10"
-          onClick={() => { onAddToTransaction(notification); setIsSwiped(false); setSwipeOffset(0); }}
+          onClick={() => { onAddToTransaction(notification); doClose(); }}
           disabled={isSaving}
         >
           {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlusCircle className="h-3 w-3" />}
@@ -170,7 +184,7 @@ const NotificationCard = ({
           variant="outline"
           size="sm"
           className="gap-1 h-8 px-2.5 text-xs border-yellow-500/50 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-500/10"
-          onClick={() => { window.open(payoutUrl, '_blank'); setIsSwiped(false); setSwipeOffset(0); }}
+          onClick={() => { window.open(payoutUrl, '_blank'); doClose(); }}
         >
           <ImagePlus className="h-3 w-3" />
           Добавить
@@ -181,7 +195,7 @@ const NotificationCard = ({
           variant="default"
           size="sm"
           className="gap-1.5 h-8 px-2.5 text-xs"
-          onClick={() => { handleDownloadPdf(); setIsSwiped(false); setSwipeOffset(0); }}
+          onClick={() => { handleDownloadPdf(); doClose(); }}
           disabled={isDownloading}
         >
           {isDownloading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
@@ -193,7 +207,7 @@ const NotificationCard = ({
           variant="outline"
           size="sm"
           className="gap-1 h-8 px-2.5 text-xs border-green-500/50 text-green-600 hover:text-green-700 hover:bg-green-500/10"
-          onClick={() => { setShowQr(true); setIsSwiped(false); setSwipeOffset(0); }}
+          onClick={() => { setShowQr(true); doClose(); }}
         >
           <QrCode className="h-3 w-3" />
           Оплатить
@@ -220,7 +234,7 @@ const NotificationCard = ({
           <button
             className="flex flex-col items-center justify-center gap-1 text-white bg-blue-600 active:bg-blue-700"
             style={{ width: `${BTN_W}px` }}
-            onClick={() => { onAddToTransaction(notification); setIsSwiped(false); setSwipeOffset(0); }}
+            onClick={() => { onAddToTransaction(notification); doClose(); }}
             disabled={isSaving}
           >
             {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <PlusCircle className="h-5 w-5" />}
@@ -231,7 +245,7 @@ const NotificationCard = ({
           <button
             className="flex flex-col items-center justify-center gap-1 text-white bg-amber-500 active:bg-amber-600"
             style={{ width: `${BTN_W}px` }}
-            onClick={() => { window.open(payoutUrl, '_blank'); setIsSwiped(false); setSwipeOffset(0); }}
+            onClick={() => { window.open(payoutUrl, '_blank'); doClose(); }}
           >
             <ImagePlus className="h-5 w-5" />
             <span className="text-[11px] font-medium leading-none">Добавить</span>
@@ -241,7 +255,7 @@ const NotificationCard = ({
           <button
             className="flex flex-col items-center justify-center gap-1 text-white bg-slate-600 active:bg-slate-700"
             style={{ width: `${BTN_W}px` }}
-            onClick={() => { handleDownloadPdf(); setIsSwiped(false); setSwipeOffset(0); }}
+            onClick={() => { handleDownloadPdf(); doClose(); }}
             disabled={isDownloading}
           >
             {isDownloading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
@@ -252,7 +266,7 @@ const NotificationCard = ({
           <button
             className="flex flex-col items-center justify-center gap-1 text-white bg-green-600 active:bg-green-700"
             style={{ width: `${BTN_W}px` }}
-            onClick={() => { setShowQr(true); setIsSwiped(false); setSwipeOffset(0); }}
+            onClick={() => { setShowQr(true); doClose(); }}
           >
             <QrCode className="h-5 w-5" />
             <span className="text-[11px] font-medium leading-none">Оплатить</span>
@@ -427,6 +441,7 @@ export const NotificationsPage = () => {
   const [deptMap, setDeptMap] = useState<Record<string, string>>({});
   const [fallbackToken, setFallbackToken] = useState<string | undefined>();
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [swipedId, setSwipedId] = useState<string | null>(null);
 
   // Directly save transaction from notification metadata — no dialog
   const handleAddToTransaction = async (notification: Notification) => {
@@ -630,6 +645,8 @@ export const NotificationsPage = () => {
               payoutToken={notification.metadata?.link_token || fallbackToken}
               onAddToTransaction={handleAddToTransaction}
               savingId={savingId}
+              swipedId={swipedId}
+              onSwipe={setSwipedId}
             />
           ))}
           <p className="text-xs text-center text-muted-foreground pt-2">
