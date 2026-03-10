@@ -84,17 +84,20 @@ async function handleGetLinks(chatId: number, supabase: ReturnType<typeof create
   }
 
   let text = "🔗 <b>Ссылки для ордеров расходов:</b>\n\n";
-  const buttons: Array<Array<{ text: string; url: string }>> = [];
+  const buttons: Array<Array<{ text: string; copy_text?: { text: string }; url?: string }>> = [];
 
   for (const link of links as Array<{ id: string; token: string; name: string | null; link_type: string }>) {
     const url = `${APP_URL}/payout/${link.token}`;
     const typeLabel = link.link_type === "stepwise" ? "📋 Пошаговый" : "📄 Стандартный";
     const name = link.name || "Без названия";
-    text += `<b>${name}</b> (${typeLabel})\n<code>${url}</code>\n\n`;
-    buttons.push([{ text: `🌐 Открыть: ${name}`, url }]);
+    text += `<b>${name}</b> (${typeLabel})\n`;
+    // Two buttons per link: copy + open
+    buttons.push([
+      { text: `📋 Скопировать: ${name}`, copy_text: { text: url } },
+      { text: `🌐 Открыть`, url },
+    ]);
   }
 
-  text += "💡 <i>Нажмите и удержите ссылку для копирования</i>";
   await sendMessage(chatId, text, { inline_keyboard: buttons }, botToken);
 }
 
