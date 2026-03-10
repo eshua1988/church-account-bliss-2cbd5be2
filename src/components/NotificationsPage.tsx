@@ -56,14 +56,6 @@ const NotificationCard = ({
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const isDragging = useRef(false);
-  const BTN_W = 68; // px per button
-  const mobileButtonCount =
-    (onAddToTransaction && !transactionId ? 1 : 0) +
-    (imagesSkipped && payoutUrl ? 1 : 0) +
-    (pdfPath || transactionId ? 1 : 0) +
-    (paymentQr ? 1 : 0);
-  const SWIPE_MAX = mobileButtonCount * BTN_W;
-  const SWIPE_THRESHOLD = 50;
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
@@ -148,6 +140,15 @@ const NotificationCard = ({
   const paymentQr = bankAccount && amount
     ? buildPaymentQr(bankAccount, amount, currency || 'PLN', issuedTo || '', departmentName || 'Расходный ордер')
     : null;
+
+  const BTN_W = 68;
+  const mobileButtonCount =
+    (onAddToTransaction && !transactionId ? 1 : 0) +
+    (imagesSkipped && payoutUrl ? 1 : 0) +
+    ((pdfPath || transactionId) ? 1 : 0) +
+    (paymentQr ? 1 : 0);
+  const SWIPE_MAX = mobileButtonCount * BTN_W;
+  const SWIPE_THRESHOLD = 50;
 
   // Action buttons — shared between desktop bottom row and mobile swipe tray
   const actionButtons = (
