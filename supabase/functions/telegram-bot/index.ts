@@ -10,17 +10,29 @@ const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const APP_URL = "https://eshua1988.github.io/church-account-bliss-2cbd5be2";
+const HISTORY_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 // ----- Telegram helpers -----
 
-async function sendMessage(chatId: number, text: string, replyMarkup?: object, token?: string) {
+// Returns message_id of the sent message (for history tracking), or null on error.
+async function sendMessage(chatId: number, text: string, replyMarkup?: object, token?: string): Promise<number | null> {
   const botToken = token || TELEGRAM_BOT_TOKEN;
   const body: Record<string, unknown> = { chat_id: chatId, text, parse_mode: "HTML" };
   if (replyMarkup) body.reply_markup = replyMarkup;
-  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  });
+  const result = await res.json();
+  return (result.ok && result.result?.message_id) ? (result.result.message_id as number) : null;
+}
+
+async function deleteMessage(chatId: number, messageId: number, token: string): Promise<void> {
+  await fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
   });
 }
 
@@ -44,8 +56,69 @@ async function getBotToken(chatId: number, supabase: ReturnType<typeof createCli
   return (data as { bot_token: string | null } | null)?.bot_token || TELEGRAM_BOT_TOKEN;
 }
 
+// ----- History management -----
+
+// Checks if user was inactive for 6+ hours. If so, deletes all old bot messages
+// and clears DB. Returns the current stored IDs (empty if cleared).
+async function clearStaleHistory(
+  chatId: number,
+  supabase: ReturnType<typeof createClient>,
+  botToken: string,
+): Promise<number[]> {
+  try {
+    const { data } = await supabase
+      .from("telegram_users")
+      .select("last_active_at, bot_message_ids")
+      .eq("telegram_chat_id", chatId)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    const row = data as { last_active_at: string | null; bot_message_ids: number[] | null } | null;
+    if (!row) return [];
+
+    const lastActive = row.last_active_at ? new Date(row.last_active_at).getTime() : 0;
+    const storedIds: number[] = row.bot_message_ids || [];
+    const isStale = Date.now() - lastActive > HISTORY_TTL_MS;
+
+    if (isStale && storedIds.length > 0) {
+      // Delete all tracked bot messages (ignore errors for already-deleted ones)
+      await Promise.allSettled(storedIds.map(id => deleteMessage(chatId, id, botToken)));
+      await supabase
+        .from("telegram_users")
+        .update({ bot_message_ids: [] })
+        .eq("telegram_chat_id", chatId);
+      return [];
+    }
+
+    return storedIds;
+  } catch {
+    return []; // columns may not exist yet after migration — proceed silently
+  }
+}
+
+// Appends new message IDs and updates last_active_at in DB.
+async function saveTrackedIds(
+  chatId: number,
+  existingIds: number[],
+  newIds: number[],
+  supabase: ReturnType<typeof createClient>,
+): Promise<void> {
+  if (newIds.length === 0) return;
+  try {
+    await supabase
+      .from("telegram_users")
+      .update({
+        last_active_at: new Date().toISOString(),
+        bot_message_ids: [...existingIds, ...newIds],
+      })
+      .eq("telegram_chat_id", chatId);
+  } catch {
+    // silently ignore if columns not yet migrated
+  }
+}
+
 // ----- Dynamic main menu -----
-// Builds menu with copy_text buttons directly — no second step needed.
+
 async function buildMainMenu(chatId: number, supabase: ReturnType<typeof createClient>) {
   const { data: telegramUser } = await supabase
     .from("telegram_users")
@@ -56,7 +129,6 @@ async function buildMainMenu(chatId: number, supabase: ReturnType<typeof createC
 
   const userId = (telegramUser as { user_id: string } | null)?.user_id;
   if (!userId) {
-    // Not linked — keep callback so we can respond with an error
     return { inline_keyboard: [[{ text: "🔗 Ссылка ордера расходов", callback_data: "get_links" }]] };
   }
 
@@ -73,16 +145,19 @@ async function buildMainMenu(chatId: number, supabase: ReturnType<typeof createC
 
   const buttons = (links as Array<{ token: string; name: string | null; link_type: string }>).map(link => {
     const url = `${APP_URL}/payout/${link.token}`;
-    const name = link.name || "Без названия";
-    return [{ text: `� Ссылка Ордера расходов - Скопировать`, copy_text: { text: url } }];
+    return [{ text: `🔗 Ссылка Ордера расходов - Скопировать`, copy_text: { text: url } }];
   });
 
   return { inline_keyboard: buttons };
 }
 
-// ----- Business logic (fallback for old messages with callback buttons) -----
+// ----- Business logic (fallback for old callback buttons) -----
 
-async function handleGetLinks(chatId: number, supabase: ReturnType<typeof createClient>, botToken: string) {
+async function handleGetLinks(
+  chatId: number,
+  supabase: ReturnType<typeof createClient>,
+  botToken: string,
+): Promise<number | null> {
   const { data: telegramUser } = await supabase
     .from("telegram_users")
     .select("user_id")
@@ -91,11 +166,10 @@ async function handleGetLinks(chatId: number, supabase: ReturnType<typeof create
     .maybeSingle();
 
   if (!(telegramUser as { user_id: string } | null)?.user_id) {
-    await sendMessage(chatId, "❌ Ваш аккаунт не привязан к приложению.\n\nОбратитесь к администратору для привязки.", await buildMainMenu(chatId, supabase), botToken);
-    return;
+    return sendMessage(chatId, "❌ Ваш аккаунт не привязан к приложению.\n\nОбратитесь к администратору для привязки.", await buildMainMenu(chatId, supabase), botToken);
   }
 
-  await sendMessage(chatId, "👋 Выберите действие:", await buildMainMenu(chatId, supabase), botToken);
+  return sendMessage(chatId, "👋 Выберите действие:", await buildMainMenu(chatId, supabase), botToken);
 }
 
 // ----- Webhook setup helper -----
@@ -170,24 +244,39 @@ serve(async (req) => {
       const update = await req.json();
       const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-      // Regular message
+      // Determine chat ID from any update type
+      let chatId: number | null = null;
       if (update.message?.chat?.type === "private") {
-        const chatId = update.message.chat.id as number;
-        const botToken = await getBotToken(chatId, supabase);
-        const menu = await buildMainMenu(chatId, supabase);
-        await sendMessage(chatId, "👋 Выберите действие:", menu, botToken);
+        chatId = update.message.chat.id as number;
+      } else if (update.callback_query) {
+        chatId = update.callback_query.message.chat.id as number;
       }
 
-      // Inline button press
-      if (update.callback_query) {
-        const query = update.callback_query;
-        const chatId = query.message.chat.id as number;
+      if (chatId) {
         const botToken = await getBotToken(chatId, supabase);
-        await answerCallbackQuery(query.id, botToken);
 
-        if (query.data === "get_links") {
-          await handleGetLinks(chatId, supabase, botToken);
+        // Clear history if user was inactive for 6+ hours
+        const existingIds = await clearStaleHistory(chatId, supabase, botToken);
+        const newIds: number[] = [];
+
+        // Regular message → send menu
+        if (update.message?.chat?.type === "private") {
+          const menu = await buildMainMenu(chatId, supabase);
+          const msgId = await sendMessage(chatId, "👋 Выберите действие:", menu, botToken);
+          if (msgId) newIds.push(msgId);
         }
+
+        // Inline button press
+        if (update.callback_query) {
+          await answerCallbackQuery(update.callback_query.id, botToken);
+          if (update.callback_query.data === "get_links") {
+            const msgId = await handleGetLinks(chatId, supabase, botToken);
+            if (msgId) newIds.push(msgId);
+          }
+        }
+
+        // Persist new message IDs and update last_active_at
+        await saveTrackedIds(chatId, existingIds, newIds, supabase);
       }
     } catch (e) {
       console.error("Error:", e);
@@ -197,3 +286,4 @@ serve(async (req) => {
 
   return new Response("Telegram Bot Webhook", { headers: corsHeaders });
 });
+
