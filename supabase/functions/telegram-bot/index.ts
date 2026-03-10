@@ -44,17 +44,43 @@ async function getBotToken(chatId: number, supabase: ReturnType<typeof createCli
   return (data as { bot_token: string | null } | null)?.bot_token || TELEGRAM_BOT_TOKEN;
 }
 
-// ----- Main menu -----
+// ----- Dynamic main menu -----
+// Builds menu with copy_text buttons directly — no second step needed.
+async function buildMainMenu(chatId: number, supabase: ReturnType<typeof createClient>) {
+  const { data: telegramUser } = await supabase
+    .from("telegram_users")
+    .select("user_id")
+    .eq("telegram_chat_id", chatId)
+    .eq("is_active", true)
+    .maybeSingle();
 
-function getMainMenu() {
-  return {
-    inline_keyboard: [
-      [{ text: "🔗 Ссылка ордера расходов", callback_data: "get_links" }],
-    ],
-  };
+  const userId = (telegramUser as { user_id: string } | null)?.user_id;
+  if (!userId) {
+    // Not linked — keep callback so we can respond with an error
+    return { inline_keyboard: [[{ text: "🔗 Ссылка ордера расходов", callback_data: "get_links" }]] };
+  }
+
+  const { data: links } = await supabase
+    .from("shared_payout_links")
+    .select("token, name, link_type")
+    .eq("owner_user_id", userId)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false });
+
+  if (!links || links.length === 0) {
+    return { inline_keyboard: [[{ text: "🔗 Ссылка ордера расходов", callback_data: "get_links" }]] };
+  }
+
+  const buttons = (links as Array<{ token: string; name: string | null; link_type: string }>).map(link => {
+    const url = `${APP_URL}/payout/${link.token}`;
+    const name = link.name || "Без названия";
+    return [{ text: `📋 ${name} — скопировать ссылку`, copy_text: { text: url } }];
+  });
+
+  return { inline_keyboard: buttons };
 }
 
-// ----- Business logic -----
+// ----- Business logic (fallback for old messages with callback buttons) -----
 
 async function handleGetLinks(chatId: number, supabase: ReturnType<typeof createClient>, botToken: string) {
   const { data: telegramUser } = await supabase
@@ -65,40 +91,11 @@ async function handleGetLinks(chatId: number, supabase: ReturnType<typeof create
     .maybeSingle();
 
   if (!(telegramUser as { user_id: string } | null)?.user_id) {
-    await sendMessage(chatId, "❌ Ваш аккаунт не привязан к приложению.\n\nОбратитесь к администратору для привязки.", getMainMenu(), botToken);
+    await sendMessage(chatId, "❌ Ваш аккаунт не привязан к приложению.\n\nОбратитесь к администратору для привязки.", await buildMainMenu(chatId, supabase), botToken);
     return;
   }
 
-  const userId = (telegramUser as { user_id: string }).user_id;
-
-  const { data: links } = await supabase
-    .from("shared_payout_links")
-    .select("id, token, name, link_type")
-    .eq("owner_user_id", userId)
-    .eq("is_active", true)
-    .order("created_at", { ascending: false });
-
-  if (!links || links.length === 0) {
-    await sendMessage(chatId, "❌ У вас нет активных ссылок для ордеров расходов.\n\nСоздайте ссылку в приложении в разделе «Расходы».", getMainMenu(), botToken);
-    return;
-  }
-
-  let text = "🔗 <b>Ссылки для ордеров расходов:</b>\n\n";
-  const buttons: Array<Array<{ text: string; copy_text?: { text: string }; url?: string }>> = [];
-
-  for (const link of links as Array<{ id: string; token: string; name: string | null; link_type: string }>) {
-    const url = `${APP_URL}/payout/${link.token}`;
-    const typeLabel = link.link_type === "stepwise" ? "📋 Пошаговый" : "📄 Стандартный";
-    const name = link.name || "Без названия";
-    text += `<b>${name}</b> (${typeLabel})\n`;
-    // Two buttons per link: copy + open
-    buttons.push([
-      { text: `📋 Скопировать: ${name}`, copy_text: { text: url } },
-      { text: `🌐 Открыть`, url },
-    ]);
-  }
-
-  await sendMessage(chatId, text, { inline_keyboard: buttons }, botToken);
+  await sendMessage(chatId, "👋 Выберите действие:", await buildMainMenu(chatId, supabase), botToken);
 }
 
 // ----- Webhook setup helper -----
@@ -177,7 +174,8 @@ serve(async (req) => {
       if (update.message?.chat?.type === "private") {
         const chatId = update.message.chat.id as number;
         const botToken = await getBotToken(chatId, supabase);
-        await sendMessage(chatId, "👋 Выберите действие:", getMainMenu(), botToken);
+        const menu = await buildMainMenu(chatId, supabase);
+        await sendMessage(chatId, "👋 Выберите действие:", menu, botToken);
       }
 
       // Inline button press
