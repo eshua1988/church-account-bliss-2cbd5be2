@@ -74,7 +74,7 @@ async function buildMainMenu(chatId: number, supabase: ReturnType<typeof createC
   const buttons = (links as Array<{ token: string; name: string | null; link_type: string }>).map(link => {
     const url = `${APP_URL}/payout/${link.token}`;
     const name = link.name || "Без названия";
-    return [{ text: `📋 ${name} — скопировать ссылку`, copy_text: { text: url } }];
+    return [{ text: `� Ссылка Ордера расходов - Скопировать`, copy_text: { text: url } }];
   });
 
   return { inline_keyboard: buttons };
