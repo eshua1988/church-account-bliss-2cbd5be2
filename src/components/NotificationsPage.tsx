@@ -155,8 +155,10 @@ const NotificationCard = ({
     ? buildPaymentQr(bankAccount, amount, currency || 'PLN', issuedTo || '', departmentName || 'Расходный ордер')
     : null;
 
-  const BTN_W = 68;
+  const BTN_W = 64;
   const mobileButtonCount =
+    1 + // delete — always
+    (!notification.is_read ? 1 : 0) + // mark as read
     (onAddToTransaction && !transactionId ? 1 : 0) +
     (imagesSkipped && payoutUrl ? 1 : 0) +
     ((pdfPath || transactionId) ? 1 : 0) +
@@ -272,6 +274,24 @@ const NotificationCard = ({
             <span className="text-[11px] font-medium leading-none">Оплатить</span>
           </button>
         )}
+        {!notification.is_read && (
+          <button
+            className="flex flex-col items-center justify-center gap-1 text-white bg-indigo-500 active:bg-indigo-600"
+            style={{ width: `${BTN_W}px` }}
+            onClick={() => { onMarkAsRead(notification.id); doClose(); }}
+          >
+            <Check className="h-5 w-5" />
+            <span className="text-[11px] font-medium leading-none">Прочит.</span>
+          </button>
+        )}
+        <button
+          className="flex flex-col items-center justify-center gap-1 text-white bg-red-600 active:bg-red-700"
+          style={{ width: `${BTN_W}px` }}
+          onClick={() => { onDelete(notification.id); doClose(); }}
+        >
+          <Trash2 className="h-5 w-5" />
+          <span className="text-[11px] font-medium leading-none">Удалить</span>
+        </button>
       </div>
 
       {/* Main card — slides left on swipe */}
@@ -309,13 +329,13 @@ const NotificationCard = ({
               </span>
             )}
             {!notification.is_read && (
-              <Button variant="ghost" size="icon" className="h-7 w-7"
+              <Button variant="ghost" size="icon" className="hidden sm:inline-flex h-7 w-7"
                 onClick={() => onMarkAsRead(notification.id)} title="Отметить как прочитанное">
                 <Check className="h-3.5 w-3.5" />
               </Button>
             )}
             <Button variant="ghost" size="icon"
-              className="h-7 w-7 text-destructive hover:text-destructive"
+              className="hidden sm:inline-flex h-7 w-7 text-destructive hover:text-destructive"
               onClick={() => onDelete(notification.id)} title="Удалить">
               <X className="h-3.5 w-3.5" />
             </Button>
