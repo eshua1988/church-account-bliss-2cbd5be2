@@ -123,12 +123,19 @@ const NotificationCard = ({
         return;
       }
 
-      const { data: urlData } = await supabase.storage
-        .from('documents')
-        .createSignedUrl(filePath, 60 * 60);
+      // Use Edge Function (service_role) to create signed URL — avoids client auth token issues
+      const supabaseUrl = (supabase as any).supabaseUrl as string;
+      const supabaseKey = (supabase as any).supabaseKey as string;
+      const userId = notification.user_id;
+      const params = new URLSearchParams({ action: 'sign', filePath, userId });
+      const res = await fetch(
+        `${supabaseUrl}/functions/v1/upload-payout-pdf?${params}`,
+        { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
+      );
+      const json = await res.json();
 
-      if (urlData?.signedUrl) {
-        openPdfUrl(urlData.signedUrl);
+      if (json.signedUrl) {
+        openPdfUrl(json.signedUrl);
       } else {
         toast({ title: 'Ошибка', description: 'Не удалось получить ссылку на PDF', variant: 'destructive' });
       }

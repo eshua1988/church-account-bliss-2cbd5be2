@@ -59,6 +59,50 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // GET ?action=sign&filePath=...&userId=... — returns a signed URL via service_role
+    if (req.method === 'GET') {
+      const url = new URL(req.url);
+      if (url.searchParams.get('action') === 'sign') {
+        const filePath = url.searchParams.get('filePath');
+        const userId = url.searchParams.get('userId');
+
+        if (!filePath || !userId) {
+          return new Response(JSON.stringify({ error: 'Missing filePath or userId' }), {
+            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Validate that the filePath belongs to the requesting user (path starts with userId)
+        if (!filePath.startsWith(userId + '/') && !filePath.startsWith(userId + '%2F')) {
+          return new Response(JSON.stringify({ error: 'Forbidden' }), {
+            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+        const { data, error } = await supabase.storage
+          .from('documents')
+          .createSignedUrl(filePath, 3600);
+
+        if (error || !data?.signedUrl) {
+          return new Response(JSON.stringify({ error: error?.message || 'Failed to create signed URL' }), {
+            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        return new Response(JSON.stringify({ signedUrl: data.signedUrl }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify({ error: 'Unknown action' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (req.method !== 'POST') {
       return new Response(
         JSON.stringify({ error: 'Method not allowed' }),
