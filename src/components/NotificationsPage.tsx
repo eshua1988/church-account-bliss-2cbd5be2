@@ -67,11 +67,6 @@ const NotificationCard = ({
     }
   }, [isThisSwiped]);
 
-  // Resync offset when button count changes (e.g. is_read updated → tray width changes)
-  useEffect(() => {
-    if (isSwiped) setSwipeOffset(SWIPE_MAX);
-  }, [SWIPE_MAX]);
-
   const doClose = () => { setIsSwiped(false); setSwipeOffset(0); onSwipe?.(null); };
   const doOpen = () => { setIsSwiped(true); setSwipeOffset(SWIPE_MAX); onSwipe?.(notification.id); };
   const touchStartX = useRef(0);
@@ -177,6 +172,12 @@ const NotificationCard = ({
     (paymentQr ? 1 : 0);
   const SWIPE_MAX = mobileButtonCount * BTN_W;
   const SWIPE_THRESHOLD = 50;
+
+  // Resync swipe offset when button count changes (e.g. is_read updated → tray shrinks/grows)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (isSwiped) setSwipeOffset(SWIPE_MAX);
+  }, [SWIPE_MAX]);
 
   // Action buttons — shared between desktop bottom row and mobile swipe tray
   const actionButtons = (
