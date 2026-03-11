@@ -67,6 +67,11 @@ const NotificationCard = ({
     }
   }, [isThisSwiped]);
 
+  // Resync offset when button count changes (e.g. is_read updated → tray width changes)
+  useEffect(() => {
+    if (isSwiped) setSwipeOffset(SWIPE_MAX);
+  }, [SWIPE_MAX]);
+
   const doClose = () => { setIsSwiped(false); setSwipeOffset(0); onSwipe?.(null); };
   const doOpen = () => { setIsSwiped(true); setSwipeOffset(SWIPE_MAX); onSwipe?.(notification.id); };
   const touchStartX = useRef(0);
