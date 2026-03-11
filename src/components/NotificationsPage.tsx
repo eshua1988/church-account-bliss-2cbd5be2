@@ -58,46 +58,6 @@ const NotificationCard = ({
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [isSwiped, setIsSwiped] = useState(false);
 
-  // Close this card if another was swiped open
-  const isThisSwiped = swipedId === notification.id;
-  useEffect(() => {
-    if (!isThisSwiped && isSwiped) {
-      setIsSwiped(false);
-      setSwipeOffset(0);
-    }
-  }, [isThisSwiped]);
-
-  const doClose = () => { setIsSwiped(false); setSwipeOffset(0); onSwipe?.(null); };
-  const doOpen = () => { setIsSwiped(true); setSwipeOffset(SWIPE_MAX); onSwipe?.(notification.id); };
-  const touchStartX = useRef(0);
-  const touchStartY = useRef(0);
-  const isDragging = useRef(false);
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
-    isDragging.current = true;
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDragging.current) return;
-    const dx = touchStartX.current - e.touches[0].clientX;
-    const dy = Math.abs(e.touches[0].clientY - touchStartY.current);
-    if (dy > 15 && dy > Math.abs(dx)) { isDragging.current = false; return; }
-    const base = isSwiped ? SWIPE_MAX : 0;
-    const next = Math.max(0, Math.min(base + dx, SWIPE_MAX));
-    setSwipeOffset(next);
-  };
-
-  const handleTouchEnd = () => {
-    isDragging.current = false;
-    if (swipeOffset > SWIPE_THRESHOLD) {
-      doOpen();
-    } else {
-      doClose();
-    }
-  };
-
   const { toast } = useToast();
   const transactionId = notification.metadata?.transaction_id as string | undefined;
   const pdfPath = notification.metadata?.pdf_path as string | undefined;
@@ -173,11 +133,51 @@ const NotificationCard = ({
   const SWIPE_MAX = mobileButtonCount * BTN_W;
   const SWIPE_THRESHOLD = 50;
 
+  // Close this card if another was swiped open
+  const isThisSwiped = swipedId === notification.id;
+  useEffect(() => {
+    if (!isThisSwiped && isSwiped) {
+      setIsSwiped(false);
+      setSwipeOffset(0);
+    }
+  }, [isThisSwiped]);
+
   // Resync swipe offset when button count changes (e.g. is_read updated → tray shrinks/grows)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (isSwiped) setSwipeOffset(SWIPE_MAX);
   }, [SWIPE_MAX]);
+
+  const doClose = () => { setIsSwiped(false); setSwipeOffset(0); onSwipe?.(null); };
+  const doOpen = () => { setIsSwiped(true); setSwipeOffset(SWIPE_MAX); onSwipe?.(notification.id); };
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const isDragging = useRef(false);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    isDragging.current = true;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging.current) return;
+    const dx = touchStartX.current - e.touches[0].clientX;
+    const dy = Math.abs(e.touches[0].clientY - touchStartY.current);
+    if (dy > 15 && dy > Math.abs(dx)) { isDragging.current = false; return; }
+    const base = isSwiped ? SWIPE_MAX : 0;
+    const next = Math.max(0, Math.min(base + dx, SWIPE_MAX));
+    setSwipeOffset(next);
+  };
+
+  const handleTouchEnd = () => {
+    isDragging.current = false;
+    if (swipeOffset > SWIPE_THRESHOLD) {
+      doOpen();
+    } else {
+      doClose();
+    }
+  };
 
   // Action buttons — shared between desktop bottom row and mobile swipe tray
   const actionButtons = (
