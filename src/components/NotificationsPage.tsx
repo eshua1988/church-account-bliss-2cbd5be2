@@ -341,12 +341,6 @@ const NotificationCard = ({
                 {amount} {currency}
               </span>
             )}
-            {!notification.is_read && (
-              <Button variant="ghost" size="icon" className="hidden sm:inline-flex h-7 w-7"
-                onClick={() => onMarkAsRead(notification.id)} title="Отметить как прочитанное">
-                <Check className="h-3.5 w-3.5" />
-              </Button>
-            )}
             <Button variant="ghost" size="icon"
               className="hidden sm:inline-flex h-7 w-7 text-destructive hover:text-destructive"
               onClick={() => onDelete(notification.id)} title="Удалить">
