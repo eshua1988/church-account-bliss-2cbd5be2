@@ -9,7 +9,8 @@ interface AddImagesRequest {
   token: string;
   transactionId: string;
   submitterName: string;
-  newPdfPath?: string; // Expected storage path of re-generated PDF (client uploads it)
+  newPdfPath?: string; // Expected storage path of re-generated PDF
+  pdfBase64?: string;  // Base64-encoded PDF bytes — uploaded server-side via service_role
   // Optional edited fields
   updatedBasis?: string;
   updatedIssuedTo?: string;
@@ -177,6 +178,20 @@ Deno.serve(async (req) => {
         created_at: new Date().toISOString(),
       }).eq('id', notif.id);
 
+      // Upload PDF server-side if provided as base64
+      if (body.pdfBase64 && correctedPdfPath) {
+        try {
+          const pdfBytes = Uint8Array.from(atob(body.pdfBase64), c => c.charCodeAt(0));
+          await supabase.storage.from('documents').upload(correctedPdfPath, pdfBytes, {
+            contentType: 'application/pdf',
+            upsert: true,
+          });
+          console.log('PDF uploaded server-side to', correctedPdfPath);
+        } catch (pdfErr) {
+          console.error('Server-side PDF upload failed:', pdfErr);
+        }
+      }
+
       console.log(`Created transaction ${newTx.id} from notification folder_key ${body.transactionId}`);
       return new Response(
         JSON.stringify({ success: true, transactionId: newTx.id }),
@@ -245,6 +260,20 @@ Deno.serve(async (req) => {
       }
     } catch (notifErr) {
       console.warn('Failed to update notification (non-critical):', notifErr);
+    }
+
+    // Upload PDF server-side if provided as base64
+    if (body.pdfBase64 && body.newPdfPath) {
+      try {
+        const pdfBytes = Uint8Array.from(atob(body.pdfBase64), c => c.charCodeAt(0));
+        await supabase.storage.from('documents').upload(body.newPdfPath, pdfBytes, {
+          contentType: 'application/pdf',
+          upsert: true,
+        });
+        console.log('PDF uploaded server-side to', body.newPdfPath);
+      } catch (pdfErr) {
+        console.error('Server-side PDF upload failed:', pdfErr);
+      }
     }
 
     return new Response(
