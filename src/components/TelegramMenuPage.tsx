@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -38,6 +38,8 @@ import {
   ChevronRight,
   FileText,
   Zap,
+  Table2,
+  Info,
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -45,7 +47,7 @@ import {
 interface ExtraButton {
   id: string;
   text: string;
-  type: 'url' | 'copy' | 'callback';
+  type: 'url' | 'copy' | 'callback' | 'google_sheet';
   value: string;
 }
 
@@ -95,6 +97,7 @@ const BUTTON_TYPE_META = {
   url: { label: '🔗 URL-ссылка', placeholder: 'https://example.com' },
   copy: { label: '⎘ Скопировать текст', placeholder: 'Текст для копирования' },
   callback: { label: '⚡ Действие бота', placeholder: 'callback_data' },
+  google_sheet: { label: '📈 Google Таблица', placeholder: 'Лист1!A1:D20' },
 } as const;
 
 const QUICK_EMOJI = ['👋', '✅', '🔔', '📋', '💰', '📊', '⚙️', '🏠', '📱', '🔍'];
@@ -145,6 +148,7 @@ const TelegramPreview = ({ config }: { config: MenuConfig }) => {
                     {btn.text}
                     {btn.type === 'url' && <span className="ml-1 opacity-60">↗</span>}
                     {btn.type === 'copy' && <span className="ml-1 opacity-60">⎘</span>}
+                    {btn.type === 'google_sheet' && <span className="ml-1 opacity-60">📈</span>}
                   </div>
                 ))}
               </div>
@@ -657,6 +661,16 @@ export const TelegramMenuPage = () => {
                               className="text-sm h-8 flex-1 min-w-0"
                             />
                           </div>
+                          {btn.type === 'google_sheet' && (
+                            <div className="flex items-start gap-1.5 rounded-md bg-green-500/10 border border-green-500/20 px-2.5 py-2 text-xs text-green-400">
+                              <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                              <div className="space-y-0.5">
+                                <p className="font-medium">Диапазон ячеек Google Таблицы</p>
+                                <p className="opacity-75">Формат: <code className="bg-green-500/10 px-1 rounded font-mono">Лист1!A1:D20</code> или просто <code className="bg-green-500/10 px-1 rounded font-mono">A1:D10</code></p>
+                                <p className="opacity-75">При нажатии в Telegram бот прочитает эти ячейки и пришлёт данные. Таблица берётся из настроек профиля.</p>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         {/* Delete */}
@@ -1072,3 +1086,4 @@ export const TelegramMenuPage = () => {
     </div>
   );
 };
+

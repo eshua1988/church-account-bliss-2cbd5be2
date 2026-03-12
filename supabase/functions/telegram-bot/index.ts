@@ -12,6 +12,110 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const APP_URL = "https://eshua1988.github.io/church-account-bliss-2cbd5be2";
 const HISTORY_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
+// ----- Google Sheets helper -----
+
+async function getGoogleAccessToken(): Promise<string | null> {
+  try {
+    const rawCreds = Deno.env.get("GOOGLE_SHEETS_CREDENTIALS") || "{}";
+    const credentials: { client_email?: string; private_key?: string } = JSON.parse(rawCreds);
+    if (!credentials.client_email || !credentials.private_key) return null;
+
+    const header = { alg: "RS256", typ: "JWT" };
+    const now = Math.floor(Date.now() / 1000);
+    const claim = {
+      iss: credentials.client_email,
+      scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
+      aud: "https://oauth2.googleapis.com/token",
+      exp: now + 3600,
+      iat: now,
+    };
+
+    const base64urlEncode = (obj: object) => {
+      const json = JSON.stringify(obj);
+      const bytes = new TextEncoder().encode(json);
+      let binary = "";
+      for (const b of bytes) binary += String.fromCharCode(b);
+      return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    };
+
+    const headerEncoded = base64urlEncode(header);
+    const claimEncoded = base64urlEncode(claim);
+    const signatureInput = `${headerEncoded}.${claimEncoded}`;
+
+    const pemContents = credentials.private_key
+      .replace(/-----BEGIN PRIVATE KEY-----/g, "")
+      .replace(/-----END PRIVATE KEY-----/g, "")
+      .replace(/[\r\n\s]/g, "");
+
+    const binaryKey = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0));
+    const cryptoKey = await crypto.subtle.importKey(
+      "pkcs8",
+      binaryKey,
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const signature = await crypto.subtle.sign(
+      "RSASSA-PKCS1-v1_5",
+      cryptoKey,
+      new TextEncoder().encode(signatureInput),
+    );
+    const signatureEncoded = btoa(String.fromCharCode(...new Uint8Array(signature)))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+    const jwt = `${signatureInput}.${signatureEncoded}`;
+    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+    });
+    const tokenData = await tokenResponse.json();
+    return tokenData.access_token || null;
+  } catch {
+    return null;
+  }
+}
+
+async function readSheetRange(
+  spreadsheetId: string,
+  range: string,
+  accessToken: string,
+): Promise<string[][] | null> {
+  try {
+    const encodedRange = encodeURIComponent(range);
+    const res = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodedRange}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    const data = await res.json();
+    return (data.values as string[][] | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Format 2D sheet data for Telegram HTML message */
+function formatSheetData(values: string[][], title: string, range: string): string {
+  const MAX_LEN = 3800;
+  // Find max column widths for alignment
+  const lines: string[] = [`<b>📈 ${escapeHtml(title)}</b>`, `<i>${escapeHtml(range)}</i>`, ""];
+
+  for (const row of values) {
+    const cells = row.map((c) => escapeHtml(String(c ?? "")));
+    lines.push(cells.join("  │  ") || "—");
+  }
+
+  let text = lines.join("\n");
+  if (text.length > MAX_LEN) {
+    text = text.slice(0, MAX_LEN) + "\n…";
+  }
+  return text;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 // ----- Telegram helpers -----
 
 // Returns message_id of the sent message (for history tracking), or null on error.
@@ -162,6 +266,9 @@ async function buildMainMenuForUser(
       buttons.push([{ text: btn.text, url: btn.value }]);
     } else if (btn.type === "callback") {
       buttons.push([{ text: btn.text, callback_data: btn.value }]);
+    } else if (btn.type === "google_sheet" && btn.value) {
+      // Use callback: gsheet_<btn.id> — handled in webhook
+      buttons.push([{ text: btn.text, callback_data: `gsheet_${btn.id}` }]);
     }
   }
 
@@ -373,6 +480,63 @@ serve(async (req) => {
           if (callbackData === "get_links") {
             const msgId = await handleGetLinks(chatId, supabase, botToken);
             if (msgId) newIds.push(msgId);
+          } else if (callbackData.startsWith("gsheet_")) {
+            // Google Sheet data button
+            const { data: telegramUser2 } = await supabase
+              .from("telegram_users")
+              .select("user_id")
+              .eq("telegram_chat_id", chatId)
+              .eq("is_active", true)
+              .maybeSingle();
+            const userId2 = (telegramUser2 as { user_id: string } | null)?.user_id;
+            if (userId2) {
+              const btnId = callbackData.slice(7); // strip "gsheet_"
+              const { data: cfg2 } = await supabase
+                .from("telegram_bot_config")
+                .select("extra_buttons")
+                .eq("user_id", userId2)
+                .maybeSingle();
+              const extraBtns = ((cfg2 as any)?.extra_buttons as Array<{
+                id: string; text: string; type: string; value: string;
+              }>) ?? [];
+              const sheetBtn = extraBtns.find((b) => b.id === btnId && b.type === "google_sheet");
+              if (sheetBtn && sheetBtn.value) {
+                // Get spreadsheet_id from user profile
+                const { data: profile } = await supabase
+                  .from("profiles")
+                  .select("spreadsheet_id")
+                  .eq("user_id", userId2)
+                  .maybeSingle();
+                const spreadsheetId = (profile as any)?.spreadsheet_id as string | null;
+                if (spreadsheetId) {
+                  const accessToken = await getGoogleAccessToken();
+                  if (accessToken) {
+                    const sheetValues = await readSheetRange(spreadsheetId, sheetBtn.value, accessToken);
+                    if (sheetValues && sheetValues.length > 0) {
+                      const text = formatSheetData(sheetValues, sheetBtn.text, sheetBtn.value);
+                      // Back to menu button
+                      const backKbd = { inline_keyboard: [[{ text: "◀ Назад", callback_data: "get_links" }]] };
+                      const msgId = await sendMessage(chatId, text, backKbd, botToken);
+                      if (msgId) newIds.push(msgId);
+                    } else {
+                      const msgId = await sendMessage(
+                        chatId,
+                        `⚠️ Диапазон <code>${escapeHtml(sheetBtn.value)}</code> пуст или не найден.`,
+                        { inline_keyboard: [[{ text: "◀ Назад", callback_data: "get_links" }]] },
+                        botToken,
+                      );
+                      if (msgId) newIds.push(msgId);
+                    }
+                  } else {
+                    const msgId = await sendMessage(chatId, "❌ Не удалось получить доступ к Google Таблице.", undefined, botToken);
+                    if (msgId) newIds.push(msgId);
+                  }
+                } else {
+                  const msgId = await sendMessage(chatId, "❌ Google Таблица не настроена в профиле.", undefined, botToken);
+                  if (msgId) newIds.push(msgId);
+                }
+              }
+            }
           } else {
             // Check if callback matches a message template trigger
             const { data: telegramUser } = await supabase
