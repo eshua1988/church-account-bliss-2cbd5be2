@@ -101,9 +101,10 @@ Deno.serve(async (req) => {
           });
         }
         // Create a signed upload URL so the anonymous client can PUT the PDF directly
+        // upsert: true is required so a re-upload overwrites the old PDF (e.g. sans-photos original)
         const { data, error } = await supabase.storage
           .from('documents')
-          .createSignedUploadUrl(filePath);
+          .createSignedUploadUrl(filePath, { upsert: true });
 
         if (error || !data) {
           console.error('createSignedUploadUrl error:', error);

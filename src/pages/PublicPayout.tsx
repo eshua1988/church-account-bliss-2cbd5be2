@@ -1285,8 +1285,8 @@ const PublicPayout = () => {
         image.src = originalDataUrl;
       });
 
-      // Resize to max 1920px on the longest side to reduce PDF size
-      const MAX_PX = 1920;
+      // Resize to max 1200px on the longest side to keep PDF size reasonable
+      const MAX_PX = 1200;
       let srcW = imgElement.naturalWidth;
       let srcH = imgElement.naturalHeight;
       if (srcW > MAX_PX || srcH > MAX_PX) {
@@ -1299,13 +1299,13 @@ const PublicPayout = () => {
         }
       }
 
-      // Draw to offscreen canvas and export as JPEG quality 0.82
+      // Draw to offscreen canvas and export as JPEG quality 0.72
       const canvas = document.createElement('canvas');
       canvas.width = srcW;
       canvas.height = srcH;
       const ctx2d = canvas.getContext('2d')!;
       ctx2d.drawImage(imgElement, 0, 0, srcW, srcH);
-      const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+      const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.72);
 
       // Fit into PDF page
       const imgMargin = 15;
