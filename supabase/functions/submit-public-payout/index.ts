@@ -707,13 +707,6 @@ Deno.serve(async (req) => {
 
     console.log('Payout saved (no transaction), folderKey:', folderKey, 'pdfPath:', pdfPath);
 
-    // Send PDF to Telegram (fire-and-forget)
-    if (pdfPath) {
-      const fileName = `payout_${body.date}_${folderKey.slice(0, 8)}.pdf`;
-      sendPdfToTelegram(supabase, linkData.owner_user_id, pdfPath, fileName)
-        .catch(e => console.error('Telegram send error:', e));
-    }
-
     return new Response(
       JSON.stringify({ success: true, folderKey }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
