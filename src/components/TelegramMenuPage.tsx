@@ -477,6 +477,19 @@ export const TelegramMenuPage = () => {
     setTextSelections((p) => ({ ...p, [templateId]: '' }));
   };
 
+  const wrapSelectionWithCode = (templateId: string) => {
+    const el = textareaRefs.current[templateId];
+    if (!el) return;
+    const sel = textSelections[templateId]?.trim();
+    if (!sel) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const currentText = config.messageTemplates.find((t) => t.id === templateId)?.text ?? '';
+    const newText = currentText.slice(0, start) + `<code>${sel}</code>` + currentText.slice(end);
+    updateTemplate(templateId, { text: newText });
+    setTextSelections((p) => ({ ...p, [templateId]: '' }));
+  };
+
   const toggleExpanded = (id: string) =>
     setExpandedTemplates((prev) => {
       const next = new Set(prev);
@@ -907,20 +920,35 @@ export const TelegramMenuPage = () => {
                             </div>
                             {/* Selection action bar */}
                             {textSelections[tmpl.id]?.trim() && (
-                              <div className="flex items-center gap-2 rounded-lg bg-blue-500/10 border border-blue-500/25 px-3 py-2">
-                                <ClipboardCopy className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-                                <span className="text-xs text-blue-300 flex-1 min-w-0 truncate">
-                                  Выделено: <span className="font-mono font-medium">«{textSelections[tmpl.id].length > 50 ? textSelections[tmpl.id].slice(0, 50) + '…' : textSelections[tmpl.id]}»</span>
-                                </span>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  className="h-6 text-xs px-2.5 bg-blue-600 hover:bg-blue-500 text-white flex-shrink-0"
-                                  onClick={() => addTemplateButtonFromSelection(tmpl.id)}
-                                >
-                                  <Plus className="w-3 h-3 mr-1" />
-                                  Добавить кнопку
-                                </Button>
+                              <div className="space-y-1.5">
+                                <div className="flex items-center gap-1.5 rounded-lg bg-blue-500/10 border border-blue-500/25 px-3 py-2">
+                                  <ClipboardCopy className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                                  <span className="text-xs text-blue-300 flex-1 min-w-0 truncate">
+                                    «<span className="font-mono font-medium">{textSelections[tmpl.id].length > 40 ? textSelections[tmpl.id].slice(0, 40) + '…' : textSelections[tmpl.id]}</span>»
+                                  </span>
+                                </div>
+                                <div className="flex gap-1.5">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs flex-1 border-blue-500/30 text-blue-300 hover:bg-blue-500/10"
+                                    onClick={() => wrapSelectionWithCode(tmpl.id)}
+                                  >
+                                    <code className="text-[10px] mr-1.5 bg-blue-500/20 px-1 rounded">&lt;code&gt;</code>
+                                    Встроить в текст
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs flex-1 border-blue-500/30 text-blue-300 hover:bg-blue-500/10"
+                                    onClick={() => addTemplateButtonFromSelection(tmpl.id)}
+                                  >
+                                    <Plus className="w-3 h-3 mr-1" />
+                                    Кнопка снизу
+                                  </Button>
+                                </div>
                               </div>
                             )}
                           </div>
