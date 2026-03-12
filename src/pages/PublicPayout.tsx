@@ -1362,7 +1362,6 @@ const PublicPayout = () => {
         // Find category id for the selected department
         const selectedCategory = categories.find(c => c.name === formData.departmentName);
 
-        // Generate PDF first so we can pass pdfBase64 to edge function for server-side upload
         const pdfResult = await generatePDF();
 
         const updateResult = await supabase.functions.invoke('add-images-to-payout', {
@@ -1371,7 +1370,6 @@ const PublicPayout = () => {
             transactionId: continuingPayout.id,
             submitterName: exactSubmitterName,
             newPdfPath,
-            pdfBase64: pdfResult?.pdfBase64,
             updatedBasis: formData.basis,
             updatedIssuedTo: formData.issuedTo,
             updatedAmountInWords: formData.amountInWords,
@@ -1386,6 +1384,36 @@ const PublicPayout = () => {
 
         if (updateResult.error) throw updateResult.error;
         if (updateResult.data?.error) throw new Error(updateResult.data.error);
+
+        // Upload PDF via service_role signed URL (anonymous client cannot write to Storage)
+        const uploadPdfPath: string | undefined = updateResult.data?.uploadPdfPath ?? newPdfPath;
+        if (pdfResult?.pdfBlob && uploadPdfPath && linkData?.owner_user_id) {
+          try {
+            const supaUrl = (supabase as any).supabaseUrl as string;
+            const supaKey = (supabase as any).supabaseKey as string;
+            const params = new URLSearchParams({
+              action: 'upload-url',
+              filePath: uploadPdfPath,
+              userId: linkData.owner_user_id,
+              token,
+            });
+            const urlRes = await fetch(`${supaUrl}/functions/v1/upload-payout-pdf?${params}`, {
+              headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` },
+            });
+            const urlData = await urlRes.json();
+            if (urlData.signedUrl) {
+              await fetch(urlData.signedUrl, {
+                method: 'PUT',
+                body: pdfResult.pdfBlob,
+                headers: { 'Content-Type': 'application/pdf' },
+              });
+            } else {
+              console.error('[PDF upload] failed to get signedUrl:', urlData);
+            }
+          } catch (pdfErr) {
+            console.error('[PDF upload] signed URL upload failed:', pdfErr);
+          }
+        }
 
         setIsSuccess(true);
         toast({ title: t.success, description: t.photosAdded });

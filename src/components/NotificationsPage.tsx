@@ -97,7 +97,8 @@ const NotificationCard = ({
       if (json.signedUrl) {
         openPdfUrl(json.signedUrl);
       } else {
-        toast({ title: 'Ошибка', description: 'Не удалось получить ссылку на PDF', variant: 'destructive' });
+        console.error('[PDF sign] error from edge function:', json);
+        toast({ title: 'Ошибка', description: json.error || 'Не удалось получить ссылку на PDF', variant: 'destructive' });
       }
     } catch (e) {
       console.error('PDF download error:', e);

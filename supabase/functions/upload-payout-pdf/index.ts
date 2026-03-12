@@ -62,32 +62,69 @@ Deno.serve(async (req) => {
     // GET ?action=sign&filePath=...&userId=... — returns a signed URL via service_role
     if (req.method === 'GET') {
       const url = new URL(req.url);
-      if (url.searchParams.get('action') === 'sign') {
-        const filePath = url.searchParams.get('filePath');
-        const userId = url.searchParams.get('userId');
+      const action = url.searchParams.get('action');
+      const filePath = url.searchParams.get('filePath');
+      const userId = url.searchParams.get('userId');
 
-        if (!filePath || !userId) {
-          return new Response(JSON.stringify({ error: 'Missing filePath or userId' }), {
+      if (!filePath || !userId) {
+        return new Response(JSON.stringify({ error: 'Missing filePath or userId' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Validate that the filePath belongs to the requesting user
+      if (!filePath.startsWith(userId + '/') && !filePath.startsWith(userId + '%2F')) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+      if (action === 'upload-url') {
+        // Require a valid payout link token for security
+        const linkToken = url.searchParams.get('token');
+        if (!linkToken) {
+          return new Response(JSON.stringify({ error: 'Missing token' }), {
             status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-
-        // Validate that the filePath belongs to the requesting user (path starts with userId)
-        if (!filePath.startsWith(userId + '/') && !filePath.startsWith(userId + '%2F')) {
+        const { data: linkData, error: linkErr } = await supabase
+          .from('shared_payout_links')
+          .select('owner_user_id, is_active')
+          .eq('token', linkToken)
+          .single();
+        if (linkErr || !linkData?.is_active || linkData.owner_user_id !== userId) {
           return new Response(JSON.stringify({ error: 'Forbidden' }), {
             status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
+        // Create a signed upload URL so the client can PUT the PDF directly
+        const { data, error } = await supabase.storage
+          .from('documents')
+          .createSignedUploadUrl(filePath);
 
-        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        if (error || !data) {
+          console.error('createSignedUploadUrl error:', error);
+          return new Response(JSON.stringify({ error: error?.message || 'Failed to create upload URL' }), {
+            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
 
+        return new Response(JSON.stringify({ signedUrl: data.signedUrl, token: data.token, path: data.path }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (action === 'sign') {
         const { data, error } = await supabase.storage
           .from('documents')
           .createSignedUrl(filePath, 3600);
 
         if (error || !data?.signedUrl) {
+          console.error('createSignedUrl error:', error, 'filePath:', filePath);
           return new Response(JSON.stringify({ error: error?.message || 'Failed to create signed URL' }), {
             status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
