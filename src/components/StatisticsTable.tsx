@@ -536,20 +536,38 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
         </div>
         
         {selectedTransactions.size > 0 && (
-          <div className="flex items-center gap-2 mt-2">
-            <p className="text-xs text-primary">Выбрано: {selectedTransactions.size}</p>
-            {selectedTransactions.size > 1 && onDelete && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs text-destructive hover:bg-destructive/10"
-                onClick={handleDeleteSelected}
-              >
-                <Trash2 className="h-3 w-3 mr-1" />
-                Удалить выбранные
-              </Button>
-            )}
-          </div>
+          <>
+            {/* Mobile: fixed bottom bar */}
+            <div className="sm:hidden fixed bottom-0 left-0 right-0 z-50 flex items-center justify-between gap-2 px-4 py-3 bg-card border-t border-border shadow-lg">
+              <p className="text-sm text-primary font-medium">Выбрано: {selectedTransactions.size}</p>
+              {selectedTransactions.size > 1 && onDelete && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="h-8 px-3 text-sm"
+                  onClick={handleDeleteSelected}
+                >
+                  <Trash2 className="h-4 w-4 mr-1.5" />
+                  Удалить выбранные
+                </Button>
+              )}
+            </div>
+            {/* Desktop: inline bar */}
+            <div className="hidden sm:flex items-center gap-2 mt-2">
+              <p className="text-xs text-primary">Выбрано: {selectedTransactions.size}</p>
+              {selectedTransactions.size > 1 && onDelete && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs text-destructive hover:bg-destructive/10"
+                  onClick={handleDeleteSelected}
+                >
+                  <Trash2 className="h-3 w-3 mr-1" />
+                  Удалить выбранные
+                </Button>
+              )}
+            </div>
+          </>
         )}
         <p className="text-xs text-muted-foreground mt-1">
           {t('showingTransactions')}: {filteredTransactions.length}
