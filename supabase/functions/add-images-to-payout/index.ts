@@ -86,64 +86,38 @@ Deno.serve(async (req) => {
       }
 
       const meta = notif.metadata as Record<string, unknown>;
-      const finalDesc = body.updatedBasis !== undefined ? body.updatedBasis : ((meta.basis as string) || null);
 
-      const { data: newTx, error: newTxErr } = await supabase
-        .from('transactions')
-        .insert({
-          user_id: linkData.owner_user_id,
-          type: 'expense',
-          amount: body.updatedAmount ?? (meta.amount as number),
-          currency: body.updatedCurrency ?? (meta.currency as string),
-          category_id: body.updatedCategoryId !== undefined ? body.updatedCategoryId : (meta.category_id as string | null) || null,
-          description: finalDesc,
-          date: body.updatedDate ?? (meta.date as string) ?? new Date().toISOString().split('T')[0],
-          issued_to: body.updatedIssuedTo ?? (meta.issued_to as string) ?? (meta.submitter_name as string) ?? null,
-          amount_in_words: body.updatedAmountInWords ?? (meta.amount_in_words as string) ?? null,
-          decision_number: body.updatedDecisionNumber ?? (meta.decision_number as string) ?? null,
-          cashier_name: body.updatedDepartmentName ?? (meta.department_name as string) ?? null,
-        })
-        .select('id')
-        .single();
+      // Update metadata fields from the form (amount, date, etc.) — user may have edited them
+      const updatedMeta: Record<string, unknown> = {
+        ...meta,
+        images_skipped: false,
+      };
+      if (body.updatedBasis !== undefined) updatedMeta['basis'] = body.updatedBasis;
+      if (body.updatedIssuedTo !== undefined) updatedMeta['issued_to'] = body.updatedIssuedTo;
+      if (body.updatedAmountInWords !== undefined) updatedMeta['amount_in_words'] = body.updatedAmountInWords;
+      if (body.updatedDate !== undefined) updatedMeta['date'] = body.updatedDate;
+      if (body.updatedAmount !== undefined) updatedMeta['amount'] = body.updatedAmount;
+      if (body.updatedCurrency !== undefined) updatedMeta['currency'] = body.updatedCurrency;
+      if (body.updatedDecisionNumber !== undefined) updatedMeta['decision_number'] = body.updatedDecisionNumber;
+      if (body.updatedDepartmentName !== undefined) updatedMeta['department_name'] = body.updatedDepartmentName;
+      if (body.updatedCategoryId !== undefined) updatedMeta['category_id'] = body.updatedCategoryId;
 
-      if (newTxErr || !newTx) {
-        console.error('Failed to create transaction from notification:', newTxErr);
-        return new Response(JSON.stringify({ error: 'Failed to create transaction' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-
-      try {
-        const { data: files } = await supabase.storage.from('documents').list(`${linkData.owner_user_id}/${body.transactionId}`);
-        if (files && files.length > 0) {
-          for (const file of files) {
-            await supabase.storage.from('documents').move(
-              `${linkData.owner_user_id}/${body.transactionId}/${file.name}`,
-              `${linkData.owner_user_id}/${newTx.id}/${file.name}`
-            );
-          }
-        }
-      } catch (moveErr) {
-        console.warn('Failed to move files (non-critical):', moveErr);
-      }
-
-      // Build the PDF path on the server side (client doesn't know owner_user_id)
-      const pdfDate = body.updatedDate || new Date().toISOString().split('T')[0];
-      const pdfFileName = `dowod_wyplaty_${pdfDate}_${newTx.id.substring(0, 8)}.pdf`;
-      const uploadPdfPath = `${linkData.owner_user_id}/${newTx.id}/${pdfFileName}`;
+      // Files stay in the folder_key folder — no transaction created yet (owner clicks "В расход" manually)
+      // Build PDF path using folder_key as the folder
+      const pdfDate = body.updatedDate || (meta.date as string) || new Date().toISOString().split('T')[0];
+      const pdfFileName = `dowod_wyplaty_${pdfDate}_${body.transactionId.substring(0, 8)}.pdf`;
+      const uploadPdfPath = `${linkData.owner_user_id}/${body.transactionId}/${pdfFileName}`;
+      updatedMeta['pdf_path'] = uploadPdfPath;
 
       await supabase.from('notifications').update({
-        metadata: {
-          ...(meta as Record<string, unknown>),
-          images_skipped: false,
-          transaction_id: newTx.id,
-          pdf_path: uploadPdfPath,
-        },
+        metadata: updatedMeta,
         is_read: false,
         created_at: new Date().toISOString(),
       }).eq('id', notif.id);
 
-      console.log(`Created transaction ${newTx.id} from folder_key ${body.transactionId}, uploadPdfPath=${uploadPdfPath}`);
+      console.log(`Marked folder_key ${body.transactionId} as images added (no auto-transaction), uploadPdfPath=${uploadPdfPath}`);
       return new Response(
-        JSON.stringify({ success: true, transactionId: newTx.id, uploadPdfPath }),
+        JSON.stringify({ success: true, uploadPdfPath }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
