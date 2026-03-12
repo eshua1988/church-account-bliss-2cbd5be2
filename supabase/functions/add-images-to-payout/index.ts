@@ -125,24 +125,25 @@ Deno.serve(async (req) => {
         console.warn('Failed to move files (non-critical):', moveErr);
       }
 
-      const correctedPdfPath = body.newPdfPath
-        ? body.newPdfPath.replace(`/${body.transactionId}/`, `/${newTx.id}/`)
-        : (meta.pdf_path as string | null);
+      // Build the PDF path on the server side (client doesn't know owner_user_id)
+      const pdfDate = body.updatedDate || new Date().toISOString().split('T')[0];
+      const pdfFileName = `dowod_wyplaty_${pdfDate}_${newTx.id.substring(0, 8)}.pdf`;
+      const uploadPdfPath = `${linkData.owner_user_id}/${newTx.id}/${pdfFileName}`;
 
       await supabase.from('notifications').update({
         metadata: {
           ...(meta as Record<string, unknown>),
           images_skipped: false,
           transaction_id: newTx.id,
-          ...(correctedPdfPath ? { pdf_path: correctedPdfPath } : {}),
+          pdf_path: uploadPdfPath,
         },
         is_read: false,
         created_at: new Date().toISOString(),
       }).eq('id', notif.id);
 
-      console.log(`Created transaction ${newTx.id} from folder_key ${body.transactionId}, uploadPdfPath=${correctedPdfPath}`);
+      console.log(`Created transaction ${newTx.id} from folder_key ${body.transactionId}, uploadPdfPath=${uploadPdfPath}`);
       return new Response(
-        JSON.stringify({ success: true, transactionId: newTx.id, uploadPdfPath: correctedPdfPath }),
+        JSON.stringify({ success: true, transactionId: newTx.id, uploadPdfPath }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -179,23 +180,31 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (notif) {
+        // Build PDF path server-side so the anonymous client doesn't need owner_user_id
+        const pdfDate = body.updatedDate || new Date().toISOString().split('T')[0];
+        const pdfFileName = `dowod_wyplaty_${pdfDate}_${body.transactionId.substring(0, 8)}.pdf`;
+        const uploadPdfPath = `${linkData.owner_user_id}/${body.transactionId}/${pdfFileName}`;
         await supabase.from('notifications').update({
           metadata: {
             ...(notif.metadata as Record<string, unknown> || {}),
             images_skipped: false,
-            ...(body.newPdfPath ? { pdf_path: body.newPdfPath } : {}),
+            pdf_path: uploadPdfPath,
           },
           created_at: new Date().toISOString(),
           is_read: false,
         }).eq('id', notif.id);
-        console.log(`Notification ${notif.id} updated: images_skipped=false`);
+        console.log(`Notification ${notif.id} updated: images_skipped=false, pdf_path=${uploadPdfPath}`);
+        return new Response(
+          JSON.stringify({ success: true, uploadPdfPath }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
     } catch (notifErr) {
       console.warn('Failed to update notification (non-critical):', notifErr);
     }
 
     return new Response(
-      JSON.stringify({ success: true, uploadPdfPath: body.newPdfPath }),
+      JSON.stringify({ success: true, uploadPdfPath: undefined }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 

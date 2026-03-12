@@ -59,23 +59,15 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // GET ?action=sign&filePath=...&userId=... — returns a signed URL via service_role
+    // GET requests: action=sign (download URL) or action=upload-url (signed upload URL)
     if (req.method === 'GET') {
       const url = new URL(req.url);
       const action = url.searchParams.get('action');
       const filePath = url.searchParams.get('filePath');
-      const userId = url.searchParams.get('userId');
 
-      if (!filePath || !userId) {
-        return new Response(JSON.stringify({ error: 'Missing filePath or userId' }), {
+      if (!filePath) {
+        return new Response(JSON.stringify({ error: 'Missing filePath' }), {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      // Validate that the filePath belongs to the requesting user
-      if (!filePath.startsWith(userId + '/') && !filePath.startsWith(userId + '%2F')) {
-        return new Response(JSON.stringify({ error: 'Forbidden' }), {
-          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
@@ -84,7 +76,7 @@ Deno.serve(async (req) => {
       const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
       if (action === 'upload-url') {
-        // Require a valid payout link token for security
+        // Require a valid payout link token — derive userId from it (client never knows userId)
         const linkToken = url.searchParams.get('token');
         if (!linkToken) {
           return new Response(JSON.stringify({ error: 'Missing token' }), {
@@ -96,12 +88,19 @@ Deno.serve(async (req) => {
           .select('owner_user_id, is_active')
           .eq('token', linkToken)
           .single();
-        if (linkErr || !linkData?.is_active || linkData.owner_user_id !== userId) {
+        if (linkErr || !linkData?.is_active) {
           return new Response(JSON.stringify({ error: 'Forbidden' }), {
             status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        // Create a signed upload URL so the client can PUT the PDF directly
+        // Validate filePath belongs to the token owner
+        if (!filePath.startsWith(linkData.owner_user_id + '/')) {
+          console.error('filePath does not belong to token owner:', filePath, linkData.owner_user_id);
+          return new Response(JSON.stringify({ error: 'Forbidden' }), {
+            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        // Create a signed upload URL so the anonymous client can PUT the PDF directly
         const { data, error } = await supabase.storage
           .from('documents')
           .createSignedUploadUrl(filePath);
@@ -119,6 +118,17 @@ Deno.serve(async (req) => {
       }
 
       if (action === 'sign') {
+        const userId = url.searchParams.get('userId');
+        if (!userId) {
+          return new Response(JSON.stringify({ error: 'Missing userId' }), {
+            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        if (!filePath.startsWith(userId + '/') && !filePath.startsWith(userId + '%2F')) {
+          return new Response(JSON.stringify({ error: 'Forbidden' }), {
+            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
         const { data, error } = await supabase.storage
           .from('documents')
           .createSignedUrl(filePath, 3600);
