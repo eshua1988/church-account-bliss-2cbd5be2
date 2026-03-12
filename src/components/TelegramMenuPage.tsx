@@ -59,8 +59,9 @@ interface BotCommand {
 
 interface TemplateCopyButton {
   id: string;
-  label: string;    // button text
-  copyText: string; // text copied to clipboard
+  label: string;     // button text
+  copyText: string;  // text copied to clipboard
+  mode?: 'button' | 'inline'; // button = keyboard below, inline = <code> in text
 }
 
 interface MessageTemplate {
@@ -977,44 +978,67 @@ export const TelegramMenuPage = () => {
                               </div>
                             ) : (
                               <div className="space-y-2">
-                                {tmpl.buttons.map((btn) => (
-                                  <div key={btn.id} className="rounded-lg border bg-muted/20 p-2.5 space-y-1.5">
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-1 h-8 rounded-full bg-blue-500/40 flex-shrink-0" />
-                                      <div className="flex-1 min-w-0 space-y-1.5">
-                                        <div className="flex items-center gap-1.5">
-                                          <span className="text-[10px] text-muted-foreground/60 flex-shrink-0">КНОПКА</span>
-                                          <Input
-                                            value={btn.label}
-                                            onChange={(e) =>
-                                              updateTemplateButton(tmpl.id, btn.id, { label: e.target.value })
-                                            }
-                                            placeholder="📋 Скопировать карту"
-                                            className="h-7 text-xs flex-1"
-                                          />
-                                          <button
-                                            type="button"
-                                            className="p-1 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors flex-shrink-0"
-                                            onClick={() => deleteTemplateButton(tmpl.id, btn.id)}
-                                          >
-                                            <Trash2 className="w-3 h-3" />
-                                          </button>
-                                        </div>
-                                        <div className="flex items-center gap-1.5">
-                                          <ClipboardCopy className="w-3 h-3 text-muted-foreground/60 flex-shrink-0" />
-                                          <Input
-                                            value={btn.copyText}
-                                            onChange={(e) =>
-                                              updateTemplateButton(tmpl.id, btn.id, { copyText: e.target.value })
-                                            }
-                                            placeholder="Текст для копирования..."
-                                            className="h-7 text-xs flex-1 font-mono"
-                                          />
-                                        </div>
-                                      </div>
+                                {tmpl.buttons.map((btn) => {
+                                  const isInline = (btn.mode ?? 'button') === 'inline';
+                                  return (
+                                  <div key={btn.id} className={`rounded-lg border p-2.5 space-y-1.5 ${isInline ? 'bg-green-500/5 border-green-500/20' : 'bg-muted/20'}`}>
+                                    {/* Mode toggle row */}
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => updateTemplateButton(tmpl.id, btn.id, { mode: 'button' })}
+                                        className={`flex-1 h-6 text-[10px] rounded flex items-center justify-center gap-1 transition-colors border ${
+                                          !isInline ? 'bg-blue-600/20 border-blue-500/40 text-blue-300 font-medium' : 'border-transparent text-muted-foreground hover:text-foreground'
+                                        }`}
+                                      >
+                                        <ClipboardCopy className="w-2.5 h-2.5" />
+                                        Кнопка снизу
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => updateTemplateButton(tmpl.id, btn.id, { mode: 'inline' })}
+                                        className={`flex-1 h-6 text-[10px] rounded flex items-center justify-center gap-1 transition-colors border ${
+                                          isInline ? 'bg-green-600/20 border-green-500/40 text-green-300 font-medium' : 'border-transparent text-muted-foreground hover:text-foreground'
+                                        }`}
+                                      >
+                                        <code className="text-[9px]">{'<code>'}</code>
+                                        В тексте
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="p-1 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors flex-shrink-0"
+                                        onClick={() => deleteTemplateButton(tmpl.id, btn.id)}
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
                                     </div>
+                                    {/* Label + copyText */}
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-[10px] text-muted-foreground/60 w-10 flex-shrink-0">{isInline ? 'МЕТКА' : 'КНОПКА'}</span>
+                                      <Input
+                                        value={btn.label}
+                                        onChange={(e) => updateTemplateButton(tmpl.id, btn.id, { label: e.target.value })}
+                                        placeholder={isInline ? 'Карта' : '📋 Скопировать карту'}
+                                        className="h-7 text-xs flex-1"
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                      <ClipboardCopy className="w-3 h-3 text-muted-foreground/60 flex-shrink-0 ml-[2px]" />
+                                      <Input
+                                        value={btn.copyText}
+                                        onChange={(e) => updateTemplateButton(tmpl.id, btn.id, { copyText: e.target.value })}
+                                        placeholder="Текст для копирования..."
+                                        className="h-7 text-xs flex-1 font-mono"
+                                      />
+                                    </div>
+                                    {isInline && (
+                                      <div className="text-[10px] text-green-400/70 pl-1">
+                                        Будет добавлено в текст: <code className="bg-green-500/10 px-1">{btn.label}: {'<code>'}{btn.copyText || '…'}{'</code>'}</code>
+                                      </div>
+                                    )}
                                   </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                           </div>

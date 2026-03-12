@@ -566,17 +566,26 @@ serve(async (req) => {
                 .maybeSingle();
               const templates = ((cfg as any)?.message_templates as Array<{
                 id: string; title: string; text: string;
-                buttons: Array<{ id: string; label: string; copyText: string }>;
+                buttons: Array<{ id: string; label: string; copyText: string; mode?: string }>;
                 trigger: string; enabled: boolean;
               }>) ?? [];
               const tmpl = templates.find((t) => t.enabled && t.trigger === callbackData);
               if (tmpl) {
-                const tplButtons = tmpl.buttons.map((b) => [
+                // Separate inline (<code> in text) vs keyboard (below message) buttons
+                const inlineBtns = tmpl.buttons.filter((b) => b.mode === 'inline');
+                const keyboardBtns = tmpl.buttons.filter((b) => (b.mode ?? 'button') !== 'inline');
+                let msgText = tmpl.text || tmpl.title;
+                if (inlineBtns.length > 0) {
+                  msgText += '\n\n' + inlineBtns
+                    .map((b) => `${escapeHtml(b.label)}\n<code>${escapeHtml(b.copyText)}</code>`)
+                    .join('\n\n');
+                }
+                const tplButtons = keyboardBtns.map((b) => [
                   { text: b.label, copy_text: { text: b.copyText } },
                 ]);
                 const msgId = await sendMessage(
                   chatId,
-                  tmpl.text || tmpl.title,
+                  msgText,
                   tplButtons.length > 0 ? { inline_keyboard: tplButtons } : undefined,
                   botToken,
                 );
