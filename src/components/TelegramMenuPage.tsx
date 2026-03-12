@@ -33,6 +33,11 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  ClipboardCopy,
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  Zap,
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -50,11 +55,27 @@ interface BotCommand {
   description: string;
 }
 
+interface TemplateCopyButton {
+  id: string;
+  label: string;    // button text
+  copyText: string; // text copied to clipboard
+}
+
+interface MessageTemplate {
+  id: string;
+  title: string;          // admin label
+  text: string;           // message body
+  buttons: TemplateCopyButton[];
+  trigger: string;        // callback_data that triggers this template
+  enabled: boolean;
+}
+
 interface MenuConfig {
   welcomeMessage: string;
   extraButtons: ExtraButton[];
   showPayoutLinks: boolean;
   botCommands: BotCommand[];
+  messageTemplates: MessageTemplate[];
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -67,6 +88,7 @@ const defaultConfig: MenuConfig = {
     { id: '1', command: 'start', description: 'Главное меню' },
     { id: '2', command: 'help', description: 'Помощь и инструкция' },
   ],
+  messageTemplates: [],
 };
 
 const BUTTON_TYPE_META = {
@@ -160,6 +182,8 @@ export const TelegramMenuPage = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [isDeployingCmds, setIsDeployingCmds] = useState(false);
+  const [expandedTemplates, setExpandedTemplates] = useState<Set<string>>(new Set());
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [connectedBots, setConnectedBots] = useState<
     Array<{ bot_token: string | null; telegram_chat_id: number; registered_name?: string | null }>
   >([]);
@@ -174,7 +198,7 @@ export const TelegramMenuPage = () => {
         const [cfgRes, botsRes] = await Promise.all([
           supabase
             .from('telegram_bot_config')
-            .select('welcome_message, extra_buttons, show_payout_links, bot_commands')
+            .select('welcome_message, extra_buttons, show_payout_links, bot_commands, message_templates')
             .eq('user_id', user.id)
             .maybeSingle(),
           supabase
@@ -191,6 +215,7 @@ export const TelegramMenuPage = () => {
             extraButtons: (d.extra_buttons as ExtraButton[]) ?? [],
             showPayoutLinks: d.show_payout_links !== false,
             botCommands: (d.bot_commands as BotCommand[]) ?? defaultConfig.botCommands,
+            messageTemplates: (d.message_templates as MessageTemplate[]) ?? [],
           });
         }
         setConnectedBots((botsRes.data as any) ?? []);
@@ -208,13 +233,14 @@ export const TelegramMenuPage = () => {
     if (!user) return;
     setIsSaving(true);
     try {
-      const { error } = await supabase.from('telegram_bot_config').upsert(
+      const { error } = await (supabase as any).from('telegram_bot_config').upsert(
         {
           user_id: user.id,
           welcome_message: config.welcomeMessage,
           extra_buttons: config.extraButtons,
           show_payout_links: config.showPayoutLinks,
           bot_commands: config.botCommands,
+          message_templates: config.messageTemplates,
         },
         { onConflict: 'user_id' }
       );
@@ -364,6 +390,79 @@ export const TelegramMenuPage = () => {
 
   const deleteCommand = (id: string) =>
     setConfig((p) => ({ ...p, botCommands: p.botCommands.filter((c) => c.id !== id) }));
+
+  // ── Message Templates CRUD ────────────────────────────────────────────────────
+
+  const addTemplate = () => {
+    const id = crypto.randomUUID();
+    setConfig((p) => ({
+      ...p,
+      messageTemplates: [
+        ...p.messageTemplates,
+        {
+          id,
+          title: 'Новый шаблон',
+          text: '',
+          buttons: [],
+          trigger: 'template_' + id.slice(0, 6),
+          enabled: true,
+        },
+      ],
+    }));
+    setExpandedTemplates((prev) => new Set([...prev, id]));
+  };
+
+  const updateTemplate = (id: string, patch: Partial<MessageTemplate>) =>
+    setConfig((p) => ({
+      ...p,
+      messageTemplates: p.messageTemplates.map((t) => (t.id === id ? { ...t, ...patch } : t)),
+    }));
+
+  const deleteTemplate = (id: string) =>
+    setConfig((p) => ({
+      ...p,
+      messageTemplates: p.messageTemplates.filter((t) => t.id !== id),
+    }));
+
+  const addTemplateButton = (templateId: string) =>
+    updateTemplate(templateId, {
+      buttons: [
+        ...(config.messageTemplates.find((t) => t.id === templateId)?.buttons ?? []),
+        { id: crypto.randomUUID(), label: '📋 Скопировать', copyText: '' },
+      ],
+    });
+
+  const updateTemplateButton = (templateId: string, btnId: string, patch: Partial<TemplateCopyButton>) =>
+    setConfig((p) => ({
+      ...p,
+      messageTemplates: p.messageTemplates.map((t) =>
+        t.id === templateId
+          ? { ...t, buttons: t.buttons.map((b) => (b.id === btnId ? { ...b, ...patch } : b)) }
+          : t
+      ),
+    }));
+
+  const deleteTemplateButton = (templateId: string, btnId: string) =>
+    setConfig((p) => ({
+      ...p,
+      messageTemplates: p.messageTemplates.map((t) =>
+        t.id === templateId ? { ...t, buttons: t.buttons.filter((b) => b.id !== btnId) } : t
+      ),
+    }));
+
+  const toggleExpanded = (id: string) =>
+    setExpandedTemplates((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const handleCopyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1800);
+    });
+  };
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -648,6 +747,245 @@ export const TelegramMenuPage = () => {
               <p className="text-xs text-muted-foreground pt-1">
                 После редактирования нажмите «Загрузить в бота» для применения команд в Telegram.
               </p>
+            </CardContent>
+          </Card>
+
+          {/* Message templates with copy buttons */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-orange-500" />
+                    Шаблоны с кнопками копирования
+                  </CardTitle>
+                  <CardDescription className="mt-0.5">
+                    Текстовые блоки (реквизиты, данные) с кнопками «Скопировать»
+                  </CardDescription>
+                </div>
+                <Button size="sm" variant="outline" onClick={addTemplate}>
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  Добавить
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {config.messageTemplates.length === 0 ? (
+                <div className="text-center text-sm text-muted-foreground py-8 border border-dashed rounded-lg space-y-2">
+                  <ClipboardCopy className="w-8 h-8 mx-auto opacity-20" />
+                  <p>Шаблонов нет. Нажмите «Добавить».</p>
+                  <p className="text-xs opacity-60">Пример: реквизиты банка, IBAN, телефон — с кнопками копирования</p>
+                </div>
+              ) : (
+                config.messageTemplates.map((tmpl) => {
+                  const isOpen = expandedTemplates.has(tmpl.id);
+                  return (
+                    <div key={tmpl.id} className="rounded-lg border bg-card overflow-hidden">
+                      {/* Header row */}
+                      <div
+                        className="flex items-center gap-2 px-3 py-2.5 cursor-pointer hover:bg-muted/30 transition-colors select-none"
+                        onClick={() => toggleExpanded(tmpl.id)}
+                      >
+                        <button type="button" className="text-muted-foreground flex-shrink-0">
+                          {isOpen
+                            ? <ChevronDown className="w-4 h-4" />
+                            : <ChevronRight className="w-4 h-4" />}
+                        </button>
+                        <FileText className="w-3.5 h-3.5 text-orange-500 flex-shrink-0" />
+                        <span className="text-sm font-medium flex-1 truncate">{tmpl.title || 'Без названия'}</span>
+                        {tmpl.trigger && (
+                          <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono flex-shrink-0">
+                            /{tmpl.trigger}
+                          </span>
+                        )}
+                        <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <Switch
+                            checked={tmpl.enabled}
+                            onCheckedChange={(v) => updateTemplate(tmpl.id, { enabled: v })}
+                            className="scale-75"
+                          />
+                          <button
+                            type="button"
+                            className="p-1 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors"
+                            onClick={() => deleteTemplate(tmpl.id)}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Expanded content */}
+                      {isOpen && (
+                        <div className="border-t px-3 py-3 space-y-4">
+                          {/* Title + trigger */}
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <Label className="text-xs text-muted-foreground">Название (для администратора)</Label>
+                              <Input
+                                value={tmpl.title}
+                                onChange={(e) => updateTemplate(tmpl.id, { title: e.target.value })}
+                                placeholder="Реквизиты банка"
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs text-muted-foreground">
+                                Триггер <span className="text-muted-foreground/50">(callback_data)</span>
+                              </Label>
+                              <div className="flex items-center gap-1">
+                                <span className="text-muted-foreground text-sm">/</span>
+                                <Input
+                                  value={tmpl.trigger}
+                                  onChange={(e) =>
+                                    updateTemplate(tmpl.id, {
+                                      trigger: e.target.value.replace(/[^a-z0-9_]/gi, '').toLowerCase(),
+                                    })
+                                  }
+                                  placeholder="requisites"
+                                  className="h-8 text-sm font-mono"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Message text */}
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-muted-foreground">Текст сообщения</Label>
+                            <Textarea
+                              value={tmpl.text}
+                              onChange={(e) => updateTemplate(tmpl.id, { text: e.target.value })}
+                              placeholder={"Реквизиты для пожертвований:\n\nБанк: PrivatBank\nКарта: 4149 6090 1234 5678\nIBAN: UA12345678901234567890\n\nСпасибо! 🙏"}
+                              className="resize-y min-h-[120px] text-sm font-mono leading-relaxed"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              {tmpl.text.length} симв. · Поддерживается HTML: <code className="bg-muted px-1 rounded">&lt;b&gt;</code> <code className="bg-muted px-1 rounded">&lt;i&gt;</code> <code className="bg-muted px-1 rounded">&lt;code&gt;</code>
+                            </p>
+                          </div>
+
+                          {/* Copy buttons */}
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                                <ClipboardCopy className="w-3.5 h-3.5" />
+                                Кнопки копирования
+                              </Label>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 text-xs px-2"
+                                onClick={() => addTemplateButton(tmpl.id)}
+                              >
+                                <Plus className="w-3 h-3 mr-0.5" />
+                                Добавить кнопку
+                              </Button>
+                            </div>
+
+                            {tmpl.buttons.length === 0 ? (
+                              <div className="text-xs text-muted-foreground text-center py-3 border border-dashed rounded-lg">
+                                Нажмите «Добавить кнопку» — пользователи смогут скопировать нужный текст
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                {tmpl.buttons.map((btn) => (
+                                  <div key={btn.id} className="flex items-center gap-2">
+                                    <Input
+                                      value={btn.label}
+                                      onChange={(e) =>
+                                        updateTemplateButton(tmpl.id, btn.id, { label: e.target.value })
+                                      }
+                                      placeholder="📋 Скопировать карту"
+                                      className="h-8 text-sm w-44 flex-shrink-0"
+                                    />
+                                    <ClipboardCopy className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                                    <Input
+                                      value={btn.copyText}
+                                      onChange={(e) =>
+                                        updateTemplateButton(tmpl.id, btn.id, { copyText: e.target.value })
+                                      }
+                                      placeholder="Текст для копирования..."
+                                      className="h-8 text-sm flex-1 font-mono"
+                                    />
+                                    <button
+                                      type="button"
+                                      className="p-1.5 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors flex-shrink-0"
+                                      onClick={() => deleteTemplateButton(tmpl.id, btn.id)}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Web preview */}
+                          {(tmpl.text || tmpl.buttons.length > 0) && (
+                            <div className="space-y-1.5">
+                              <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                                <Smartphone className="w-3.5 h-3.5" />
+                                Предпросмотр · нажмите кнопку чтобы скопировать
+                              </Label>
+                              <div className="bg-[#17212b] rounded-xl p-3 space-y-2">
+                                {tmpl.text && (
+                                  <p
+                                    className="text-white text-[12px] leading-relaxed whitespace-pre-wrap break-words bg-[#232e3c] rounded-xl rounded-tl-sm px-3 py-2"
+                                    dangerouslySetInnerHTML={{
+                                      __html: tmpl.text
+                                        .replace(/&/g, '&amp;')
+                                        .replace(/</g, '&lt;')
+                                        .replace(/>/g, '&gt;')
+                                        .replace(/&lt;b&gt;(.*?)&lt;\/b&gt;/g, '<strong>$1</strong>')
+                                        .replace(/&lt;i&gt;(.*?)&lt;\/i&gt;/g, '<em>$1</em>')
+                                        .replace(/&lt;code&gt;(.*?)&lt;\/code&gt;/g, '<code class="bg-white/10 px-1 rounded font-mono">$1</code>'),
+                                    }}
+                                  />
+                                )}
+                                {tmpl.buttons.length > 0 && (
+                                  <div className="space-y-1">
+                                    {tmpl.buttons.map((btn) => (
+                                      <button
+                                        key={btn.id}
+                                        type="button"
+                                        className={`w-full rounded-lg px-3 py-2 text-center text-[11px] transition-all duration-150 flex items-center justify-center gap-1.5 ${
+                                          copiedId === btn.id
+                                            ? 'bg-green-500/20 text-green-400'
+                                            : 'bg-[#2b5278]/80 text-[#6ab3f3] hover:bg-[#2b5278] active:scale-95'
+                                        }`}
+                                        onClick={() =>
+                                          btn.copyText && handleCopyToClipboard(btn.copyText, btn.id)
+                                        }
+                                        disabled={!btn.copyText}
+                                      >
+                                        {copiedId === btn.id ? (
+                                          <>
+                                            <CheckCircle2 className="w-3 h-3" />
+                                            Скопировано!
+                                          </>
+                                        ) : (
+                                          <>
+                                            <ClipboardCopy className="w-3 h-3 opacity-70" />
+                                            {btn.label || 'Кнопка'}
+                                          </>
+                                        )}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+              {config.messageTemplates.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  <Zap className="w-3 h-3 inline mr-1" />
+                  Добавьте в «Кнопки меню» кнопку с типом «Действие бота» и callback_data = триггеру шаблона.
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>

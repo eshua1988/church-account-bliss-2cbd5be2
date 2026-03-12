@@ -126,7 +126,7 @@ async function buildMainMenuForUser(
   // Read custom bot config
   const { data: config } = await supabase
     .from("telegram_bot_config")
-    .select("welcome_message, extra_buttons, show_payout_links")
+    .select("welcome_message, extra_buttons, show_payout_links, message_templates")
     .eq("user_id", userId)
     .maybeSingle();
 
@@ -368,9 +368,50 @@ serve(async (req) => {
         // Inline button press
         if (update.callback_query) {
           await answerCallbackQuery(update.callback_query.id, botToken);
-          if (update.callback_query.data === "get_links") {
+          const callbackData: string = update.callback_query.data || "";
+
+          if (callbackData === "get_links") {
             const msgId = await handleGetLinks(chatId, supabase, botToken);
             if (msgId) newIds.push(msgId);
+          } else {
+            // Check if callback matches a message template trigger
+            const { data: telegramUser } = await supabase
+              .from("telegram_users")
+              .select("user_id")
+              .eq("telegram_chat_id", chatId)
+              .eq("is_active", true)
+              .maybeSingle();
+            const userId = (telegramUser as { user_id: string } | null)?.user_id;
+            if (userId) {
+              const { data: cfg } = await supabase
+                .from("telegram_bot_config")
+                .select("message_templates")
+                .eq("user_id", userId)
+                .maybeSingle();
+              const templates = ((cfg as any)?.message_templates as Array<{
+                id: string; title: string; text: string;
+                buttons: Array<{ id: string; label: string; copyText: string }>;
+                trigger: string; enabled: boolean;
+              }>) ?? [];
+              const tmpl = templates.find((t) => t.enabled && t.trigger === callbackData);
+              if (tmpl) {
+                const tplButtons = tmpl.buttons.map((b) => [
+                  { text: b.label, copy_text: { text: b.copyText } },
+                ]);
+                const msgId = await sendMessage(
+                  chatId,
+                  tmpl.text || tmpl.title,
+                  tplButtons.length > 0 ? { inline_keyboard: tplButtons } : undefined,
+                  botToken,
+                );
+                if (msgId) newIds.push(msgId);
+              } else {
+                // Unknown callback — resend menu
+                const { keyboard, welcomeMessage } = await buildMainMenuForUser(userId, supabase);
+                const msgId = await sendMessage(chatId, welcomeMessage, keyboard, botToken);
+                if (msgId) newIds.push(msgId);
+              }
+            }
           }
         }
 
