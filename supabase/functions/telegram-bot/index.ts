@@ -238,6 +238,11 @@ async function buildMainMenuForUser(
   const showPayoutLinks = (config as any)?.show_payout_links !== false;
   const extraButtons =
     ((config as any)?.extra_buttons as Array<{ text: string; type: string; value: string }>) ?? [];
+  const messageTemplates =
+    ((config as any)?.message_templates as Array<{
+      id: string; title: string; text: string; trigger: string; enabled: boolean;
+      buttons: Array<{ id: string; label: string; copyText: string }>;
+    }>) ?? [];
 
   const buttons: Array<Array<Record<string, unknown>>> = [];
 
@@ -269,6 +274,13 @@ async function buildMainMenuForUser(
     } else if (btn.type === "google_sheet" && btn.value) {
       // Use callback: gsheet_<btn.id> — handled in webhook
       buttons.push([{ text: btn.text, callback_data: `gsheet_${btn.id}` }]);
+    }
+  }
+
+  // Message template buttons
+  for (const tmpl of messageTemplates) {
+    if (tmpl.enabled && tmpl.trigger) {
+      buttons.push([{ text: tmpl.title || tmpl.trigger, callback_data: tmpl.trigger }]);
     }
   }
 
