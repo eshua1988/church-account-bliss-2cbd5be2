@@ -235,7 +235,7 @@ const NotificationCard = ({
     <>
     {/* Mobile swipe wrapper */}
     <div
-      className="relative overflow-hidden rounded-xl"
+      className="relative overflow-hidden rounded-xl bg-card"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
