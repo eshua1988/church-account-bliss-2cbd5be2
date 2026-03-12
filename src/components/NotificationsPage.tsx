@@ -310,8 +310,8 @@ const NotificationCard = ({
       {/* Main card — slides left on swipe */}
       <div
         className={cn(
-          'p-4 rounded-xl border border-border transition-colors duration-200 hover:shadow-md',
-          !notification.is_read ? 'bg-primary/5 border-primary/20' : 'bg-card'
+          'p-4 rounded-xl border transition-colors duration-200 hover:shadow-md bg-card',
+          !notification.is_read ? 'border-primary/40 border-l-4 border-l-primary' : 'border-border'
         )}
         style={{
           transform: `translateX(-${swipeOffset}px)`,
