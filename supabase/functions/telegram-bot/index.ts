@@ -94,6 +94,39 @@ async function readSheetRange(
   }
 }
 
+/** Read multiple ranges via batchGet, returns array of {range, values} */
+async function readSheetRangesBatch(
+  spreadsheetId: string,
+  ranges: string[],
+  accessToken: string,
+): Promise<Array<{ range: string; values: string[][] }>> {
+  try {
+    const params = ranges.map((r) => `ranges=${encodeURIComponent(r)}`).join("&");
+    const res = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchGet?${params}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    const data = await res.json();
+    const vr = (data.valueRanges as Array<{ range: string; values?: string[][] }>) ?? [];
+    return vr.map((r) => ({ range: r.range ?? '', values: r.values ?? [] }));
+  } catch {
+    return [];
+  }
+}
+
+/** Build Google Sheets range string from structured SheetRange */
+function buildRangeString(r: { sheetName: string; colFrom: string; colTo: string; rowFrom: string; rowTo: string }): string {
+  const prefix = r.sheetName ? `${r.sheetName}!` : '';
+  const cf = (r.colFrom || '').toUpperCase();
+  const ct = (r.colTo || r.colFrom || '').toUpperCase() || cf;
+  const rf = (r.rowFrom || '').trim();
+  const rt = (r.rowTo || '').trim();
+  if (!cf && rf) return `${prefix}${rf}:${rt || rf}`;
+  if (cf && !rf) return ct ? `${prefix}${cf}:${ct}` : `${prefix}${cf}:${cf}`;
+  if (cf && rf) return `${prefix}${cf}${rf}:${ct || cf}${rt || rf}`;
+  return `${prefix}A:Z`;
+}
+
 /** Format 2D sheet data for Telegram HTML message */
 function formatSheetData(values: string[][], title: string, range: string): string {
   const MAX_LEN = 3800;
@@ -508,11 +541,14 @@ serve(async (req) => {
                 .select("extra_buttons")
                 .eq("user_id", userId2)
                 .maybeSingle();
+              type SheetRangeCfg = { id: string; sheetName: string; colFrom: string; colTo: string; rowFrom: string; rowTo: string };
               const extraBtns = ((cfg2 as any)?.extra_buttons as Array<{
                 id: string; text: string; type: string; value: string;
+                sheetRanges?: SheetRangeCfg[];
               }>) ?? [];
               const sheetBtn = extraBtns.find((b) => b.id === btnId && b.type === "google_sheet");
-              if (sheetBtn && sheetBtn.value) {
+              const hasStructuredRanges = sheetBtn && Array.isArray(sheetBtn.sheetRanges) && sheetBtn.sheetRanges.length > 0;
+              if (sheetBtn && (hasStructuredRanges || sheetBtn.value)) {
                 // Get spreadsheet_id from user profile
                 const { data: profile } = await supabase
                   .from("profiles")
@@ -523,21 +559,56 @@ serve(async (req) => {
                 if (spreadsheetId) {
                   const accessToken = await getGoogleAccessToken();
                   if (accessToken) {
-                    const sheetValues = await readSheetRange(spreadsheetId, sheetBtn.value, accessToken);
-                    if (sheetValues && sheetValues.length > 0) {
-                      const text = formatSheetData(sheetValues, sheetBtn.text, sheetBtn.value);
-                      // Back to menu button
-                      const backKbd = { inline_keyboard: [[{ text: "◀ Назад", callback_data: "get_links" }]] };
-                      const msgId = await sendMessage(chatId, text, backKbd, botToken);
-                      if (msgId) newIds.push(msgId);
+                    const backKbd = { inline_keyboard: [[{ text: "◀ Назад", callback_data: "get_links" }]] };
+                    if (hasStructuredRanges) {
+                      // Build range strings from structured SheetRange objects
+                      const rangeStrings = sheetBtn.sheetRanges!.map((r) => buildRangeString(r));
+                      let textParts: string[] = [];
+                      if (rangeStrings.length === 1) {
+                        const vals = await readSheetRange(spreadsheetId, rangeStrings[0], accessToken);
+                        if (vals && vals.length > 0) {
+                          textParts.push(formatSheetData(vals, sheetBtn.text, rangeStrings[0]));
+                        }
+                      } else {
+                        const results = await readSheetRangesBatch(spreadsheetId, rangeStrings, accessToken);
+                        for (const r of results) {
+                          if (r.values && r.values.length > 0) {
+                            textParts.push(formatSheetData(r.values, r.range, r.range));
+                          }
+                        }
+                        if (textParts.length > 0) {
+                          // Prepend header with button name
+                          textParts.unshift(`<b>${escapeHtml(sheetBtn.text)}</b>`);
+                        }
+                      }
+                      if (textParts.length > 0) {
+                        const msgId = await sendMessage(chatId, textParts.join('\n\n'), backKbd, botToken);
+                        if (msgId) newIds.push(msgId);
+                      } else {
+                        const msgId = await sendMessage(
+                          chatId,
+                          `⚠️ Данные не найдены в указанных диапазонах.`,
+                          backKbd,
+                          botToken,
+                        );
+                        if (msgId) newIds.push(msgId);
+                      }
                     } else {
-                      const msgId = await sendMessage(
-                        chatId,
-                        `⚠️ Диапазон <code>${escapeHtml(sheetBtn.value)}</code> пуст или не найден.`,
-                        { inline_keyboard: [[{ text: "◀ Назад", callback_data: "get_links" }]] },
-                        botToken,
-                      );
-                      if (msgId) newIds.push(msgId);
+                      // Legacy: single range string in value field
+                      const sheetValues = await readSheetRange(spreadsheetId, sheetBtn.value, accessToken);
+                      if (sheetValues && sheetValues.length > 0) {
+                        const text = formatSheetData(sheetValues, sheetBtn.text, sheetBtn.value);
+                        const msgId = await sendMessage(chatId, text, backKbd, botToken);
+                        if (msgId) newIds.push(msgId);
+                      } else {
+                        const msgId = await sendMessage(
+                          chatId,
+                          `⚠️ Диапазон <code>${escapeHtml(sheetBtn.value)}</code> пуст или не найден.`,
+                          backKbd,
+                          botToken,
+                        );
+                        if (msgId) newIds.push(msgId);
+                      }
                     }
                   } else {
                     const msgId = await sendMessage(chatId, "❌ Не удалось получить доступ к Google Таблице.", undefined, botToken);

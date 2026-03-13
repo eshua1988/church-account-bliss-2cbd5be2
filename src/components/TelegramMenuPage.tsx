@@ -44,11 +44,21 @@ import {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+interface SheetRange {
+  id: string;
+  sheetName: string; // e.g. "Лист1", "Info 2026"
+  colFrom: string;   // e.g. "A"
+  colTo: string;     // e.g. "C" (empty = same as colFrom)
+  rowFrom: string;   // e.g. "1" (empty = all rows from start)
+  rowTo: string;     // e.g. "50" (empty = all rows to end)
+}
+
 interface ExtraButton {
   id: string;
   text: string;
   type: 'url' | 'copy' | 'callback' | 'google_sheet';
   value: string;
+  sheetRanges?: SheetRange[]; // structured ranges for google_sheet type
 }
 
 interface BotCommand {
@@ -378,7 +388,7 @@ export const TelegramMenuPage = () => {
       ...p,
       extraButtons: [
         ...p.extraButtons,
-        { id: crypto.randomUUID(), text: '🔘 Новая кнопка', type: 'url', value: '' },
+        { id: crypto.randomUUID(), text: '🔘 Новая кнопка', type: 'url', value: '', sheetRanges: [] },
       ],
     }));
 
@@ -399,6 +409,36 @@ export const TelegramMenuPage = () => {
       if (dir === 'down' && i < arr.length - 1) [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]];
       return { ...p, extraButtons: arr };
     });
+
+  const addSheetRange = (btnId: string) =>
+    setConfig((p) => ({
+      ...p,
+      extraButtons: p.extraButtons.map((b) =>
+        b.id === btnId
+          ? { ...b, sheetRanges: [...(b.sheetRanges ?? []), { id: crypto.randomUUID(), sheetName: '', colFrom: 'A', colTo: 'A', rowFrom: '1', rowTo: '50' }] }
+          : b
+      ),
+    }));
+
+  const updateSheetRange = (btnId: string, rangeId: string, patch: Partial<SheetRange>) =>
+    setConfig((p) => ({
+      ...p,
+      extraButtons: p.extraButtons.map((b) =>
+        b.id === btnId
+          ? { ...b, sheetRanges: (b.sheetRanges ?? []).map((r) => (r.id === rangeId ? { ...r, ...patch } : r)) }
+          : b
+      ),
+    }));
+
+  const deleteSheetRange = (btnId: string, rangeId: string) =>
+    setConfig((p) => ({
+      ...p,
+      extraButtons: p.extraButtons.map((b) =>
+        b.id === btnId
+          ? { ...b, sheetRanges: (b.sheetRanges ?? []).filter((r) => r.id !== rangeId) }
+          : b
+      ),
+    }));
 
   // ── Commands CRUD ─────────────────────────────────────────────────────────────
 
@@ -734,21 +774,101 @@ export const TelegramMenuPage = () => {
                                 )}
                               </SelectContent>
                             </Select>
-                            <Input
-                              value={btn.value}
-                              onChange={(e) => updateButton(btn.id, { value: e.target.value })}
-                              placeholder={BUTTON_TYPE_META[btn.type].placeholder}
-                              className="text-sm h-8 flex-1 min-w-0"
-                            />
+                            {btn.type !== 'google_sheet' && (
+                              <Input
+                                value={btn.value}
+                                onChange={(e) => updateButton(btn.id, { value: e.target.value })}
+                                placeholder={BUTTON_TYPE_META[btn.type].placeholder}
+                                className="text-sm h-8 flex-1 min-w-0"
+                              />
+                            )}
                           </div>
                           {btn.type === 'google_sheet' && (
-                            <div className="flex items-start gap-1.5 rounded-md bg-green-500/10 border border-green-500/20 px-2.5 py-2 text-xs text-green-400">
-                              <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                              <div className="space-y-0.5">
-                                <p className="font-medium">Диапазон ячеек Google Таблицы</p>
-                                <p className="opacity-75">Формат: <code className="bg-green-500/10 px-1 rounded font-mono">Лист1!A1:D20</code> или просто <code className="bg-green-500/10 px-1 rounded font-mono">A1:D10</code></p>
-                                <p className="opacity-75">При нажатии в Telegram бот прочитает эти ячейки и пришлёт данные. Таблица берётся из настроек профиля.</p>
-                              </div>
+                            <div className="space-y-2">
+                              {/* Range list */}
+                              {(btn.sheetRanges ?? []).length === 0 ? (
+                                <div className="text-xs text-muted-foreground text-center py-2 border border-dashed border-green-500/20 rounded-lg">
+                                  Нажмите «+ Диапазон» чтобы выбрать столбцы и строки
+                                </div>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  {(btn.sheetRanges ?? []).map((rng, ri) => {
+                                    const preview = (() => {
+                                      const sh = rng.sheetName ? `${rng.sheetName}!` : '';
+                                      const cf = rng.colFrom.trim().toUpperCase();
+                                      const ct = (rng.colTo.trim().toUpperCase()) || cf;
+                                      const rf = rng.rowFrom.trim();
+                                      const rt = rng.rowTo.trim();
+                                      if (!cf && rf) return `${sh}${rf}:${rt || rf}`;
+                                      if (cf && !rf) return `${sh}${cf}:${ct}`;
+                                      if (cf && rf) return `${sh}${cf}${rf}:${ct}${rt || rf}`;
+                                      return `${sh}A:Z`;
+                                    })();
+                                    return (
+                                      <div key={rng.id} className="rounded-lg border border-green-500/20 bg-green-500/5 p-2 space-y-1.5">
+                                        <div className="flex items-center gap-1 text-[10px] text-green-400/80 font-medium">
+                                          <span className="flex-1">Диапазон {ri + 1}</span>
+                                          <code className="bg-green-500/10 px-1.5 py-0.5 rounded font-mono text-green-300">{preview}</code>
+                                          <button type="button"
+                                            onClick={() => deleteSheetRange(btn.id, rng.id)}
+                                            className="p-0.5 rounded hover:bg-destructive/20 hover:text-destructive text-muted-foreground transition-colors">
+                                            <Trash2 className="w-3 h-3" />
+                                          </button>
+                                        </div>
+                                        {/* Sheet name */}
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-[10px] text-muted-foreground/60 w-11 flex-shrink-0">ЛИСТ</span>
+                                          <Input value={rng.sheetName}
+                                            onChange={(e) => updateSheetRange(btn.id, rng.id, { sheetName: e.target.value })}
+                                            placeholder="Лист1"
+                                            className="h-6 text-xs flex-1 font-mono" />
+                                        </div>
+                                        {/* Columns */}
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-[10px] text-muted-foreground/60 w-11 flex-shrink-0">СТОЛБЦЫ</span>
+                                          <div className="flex items-center gap-1 flex-1">
+                                            <Input value={rng.colFrom}
+                                              onChange={(e) => updateSheetRange(btn.id, rng.id, { colFrom: e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase() })}
+                                              placeholder="A"
+                                              className="h-6 text-xs w-10 font-mono text-center flex-shrink-0" />
+                                            <span className="text-muted-foreground text-xs">—</span>
+                                            <Input value={rng.colTo}
+                                              onChange={(e) => updateSheetRange(btn.id, rng.id, { colTo: e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase() })}
+                                              placeholder={rng.colFrom || 'A'}
+                                              className="h-6 text-xs w-10 font-mono text-center flex-shrink-0" />
+                                            <span className="text-[10px] text-muted-foreground/50 ml-1">(пусто = один столбец)</span>
+                                          </div>
+                                        </div>
+                                        {/* Rows */}
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-[10px] text-muted-foreground/60 w-11 flex-shrink-0">СТРОКИ</span>
+                                          <div className="flex items-center gap-1 flex-1">
+                                            <Input value={rng.rowFrom}
+                                              onChange={(e) => updateSheetRange(btn.id, rng.id, { rowFrom: e.target.value.replace(/\D/g, '') })}
+                                              placeholder="1"
+                                              className="h-6 text-xs w-14 font-mono text-center flex-shrink-0" />
+                                            <span className="text-muted-foreground text-xs">—</span>
+                                            <Input value={rng.rowTo}
+                                              onChange={(e) => updateSheetRange(btn.id, rng.id, { rowTo: e.target.value.replace(/\D/g, '') })}
+                                              placeholder="50"
+                                              className="h-6 text-xs w-14 font-mono text-center flex-shrink-0" />
+                                            <span className="text-[10px] text-muted-foreground/50 ml-1">(пусто = все строки)</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              <Button size="sm" variant="outline"
+                                className="h-6 text-xs w-full border-green-500/30 text-green-400 hover:bg-green-500/10"
+                                onClick={() => addSheetRange(btn.id)}>
+                                <Plus className="w-3 h-3 mr-1" />
+                                + Диапазон
+                              </Button>
+                              <p className="text-[10px] text-muted-foreground/60">
+                                При нажатии бот прочитает все диапазоны и пришлёт данные. Таблица из настроек профиля.
+                              </p>
                             </div>
                           )}
                         </div>
