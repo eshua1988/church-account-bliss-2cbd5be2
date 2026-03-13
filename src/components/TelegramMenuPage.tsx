@@ -40,6 +40,7 @@ import {
   Zap,
   Table2,
   Info,
+  GripVertical,
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -210,6 +211,9 @@ export const TelegramMenuPage = () => {
   const [connectedBots, setConnectedBots] = useState<
     Array<{ bot_token: string | null; telegram_chat_id: number; registered_name?: string | null }>
   >([]);
+  // Drag-and-drop state for block reordering: "templateId::blockId"
+  const dragBlock = useRef<{ templateId: string; blockId: string } | null>(null);
+  const [dragOverBlock, setDragOverBlock] = useState<{ templateId: string; blockId: string } | null>(null);
 
   // ── Load config ─────────────────────────────────────────────────────────────
 
@@ -544,6 +548,23 @@ export const TelegramMenuPage = () => {
         return { ...t, blocks: newBlocks };
       }),
     }));
+
+  const reorderBlocks = (templateId: string, fromId: string, toId: string) => {
+    if (fromId === toId) return;
+    setConfig((p) => ({
+      ...p,
+      messageTemplates: p.messageTemplates.map((t) => {
+        if (t.id !== templateId) return t;
+        const arr = [...t.blocks];
+        const fromIdx = arr.findIndex((b) => b.id === fromId);
+        const toIdx = arr.findIndex((b) => b.id === toId);
+        if (fromIdx < 0 || toIdx < 0) return t;
+        const [item] = arr.splice(fromIdx, 1);
+        arr.splice(toIdx, 0, item);
+        return { ...t, blocks: arr };
+      }),
+    }));
+  };
 
   const addBlockFromSelection = (templateId: string) => {
     const sel = textSelections[templateId]?.trim();
@@ -1086,10 +1107,36 @@ export const TelegramMenuPage = () => {
                               </div>
                             ) : (
                               <div className="space-y-2">
-                                {(tmpl.blocks ?? []).map((block, bIdx) => (
-                                  <div key={block.id} className={`rounded-lg border p-2.5 space-y-1.5 ${block.type === 'button' ? 'bg-blue-500/5 border-blue-500/20' : 'bg-muted/10'}`}>
-                                    {/* Block header: type badge + order arrows + delete */}
+                                {(tmpl.blocks ?? []).map((block, bIdx) => {
+                                  const isDragOver = dragOverBlock?.templateId === tmpl.id && dragOverBlock?.blockId === block.id;
+                                  return (
+                                  <div
+                                    key={block.id}
+                                    draggable
+                                    onDragStart={() => { dragBlock.current = { templateId: tmpl.id, blockId: block.id }; }}
+                                    onDragOver={(e) => { e.preventDefault(); setDragOverBlock({ templateId: tmpl.id, blockId: block.id }); }}
+                                    onDragLeave={() => setDragOverBlock(null)}
+                                    onDrop={(e) => {
+                                      e.preventDefault();
+                                      if (dragBlock.current && dragBlock.current.templateId === tmpl.id) {
+                                        reorderBlocks(tmpl.id, dragBlock.current.blockId, block.id);
+                                      }
+                                      dragBlock.current = null;
+                                      setDragOverBlock(null);
+                                    }}
+                                    onDragEnd={() => { dragBlock.current = null; setDragOverBlock(null); }}
+                                    className={`rounded-lg border p-2.5 space-y-1.5 transition-all ${
+                                      block.type === 'button' ? 'bg-blue-500/5 border-blue-500/20' : 'bg-muted/10'
+                                    } ${isDragOver ? 'ring-2 ring-blue-400/60 scale-[1.01]' : ''}`}
+                                  >
+                                    {/* Block header: drag handle + type badge + order arrows + delete */}
                                     <div className="flex items-center gap-1.5">
+                                      <span
+                                        className="cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors flex-shrink-0"
+                                        title="Перетащить для изменения порядка"
+                                      >
+                                        <GripVertical className="w-3.5 h-3.5" />
+                                      </span>
                                       <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${block.type === 'button' ? 'bg-blue-500/20 text-blue-300' : 'bg-muted text-muted-foreground'}`}>
                                         {block.type === 'button' ? '🔘 КНОПКА' : '📝 ТЕКСТ'}
                                       </span>
@@ -1168,7 +1215,8 @@ export const TelegramMenuPage = () => {
                                       </div>
                                     )}
                                   </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
