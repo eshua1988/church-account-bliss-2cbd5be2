@@ -155,20 +155,82 @@ function buildRangeString(r: { sheetName: string; colFrom: string; colTo: string
   return buildRangeStrings(r)[0];
 }
 
-/** Format 2D sheet data for Telegram HTML message */
-function formatSheetData(values: string[][], title: string, range: string): string {
-  const MAX_LEN = 3800;
-  // Find max column widths for alignment
-  const lines: string[] = [`<b>📈 ${escapeHtml(title)}</b>`, `<i>${escapeHtml(range)}</i>`, ""];
+/** Build range strings with their column labels for display */
+function buildRangeStringsWithLabels(r: {
+  sheetName: string;
+  cols?: Array<{ id: string; from: string; to: string; label?: string }>;
+  rows?: Array<{ id: string; from: string; to: string }>;
+  colFrom?: string; colTo?: string; rowFrom?: string; rowTo?: string;
+}): Array<{ range: string; colLabel?: string }> {
+  const prefix = r.sheetName ? `${r.sheetName}!` : '';
+  const colPairs = r.cols?.length
+    ? r.cols
+    : [{ from: r.colFrom ?? 'A', to: r.colTo ?? '', label: undefined as string | undefined }];
+  const rowPairs = r.rows?.length
+    ? r.rows
+    : [{ from: r.rowFrom ?? '', to: r.rowTo ?? '' }];
 
-  for (const row of values) {
-    const cells = row.map((c) => escapeHtml(String(c ?? "")));
-    lines.push(cells.join("  │  ") || "—");
+  const results: Array<{ range: string; colLabel?: string }> = [];
+  for (const col of colPairs) {
+    for (const row of rowPairs) {
+      const cf = (col.from || '').toUpperCase();
+      const ct = (col.to || col.from || '').toUpperCase() || cf;
+      const rf = (row.from || '').trim();
+      const rt = (row.to || '').trim();
+      let seg: string;
+      if (!cf && rf) seg = `${rf}:${rt || rf}`;
+      else if (cf && !rf) seg = ct ? `${cf}:${ct}` : `${cf}:${cf}`;
+      else if (cf && rf) seg = `${cf}${rf}:${ct || cf}${rt || rf}`;
+      else seg = 'A:Z';
+      results.push({ range: `${prefix}${seg}`, colLabel: (col as any).label || undefined });
+    }
+  }
+  return results.length > 0 ? results : [{ range: `${prefix}A:Z` }];
+}
+
+/** Format 2D sheet data for Telegram HTML message with column alignment */
+function formatSheetData(values: string[][], title: string, range: string, headerLabels?: string[]): string {
+  const MAX_LEN = 3800;
+  if (!values || values.length === 0) return '';
+
+  // Merge custom labels as header row if provided
+  const rows = headerLabels && headerLabels.length > 0
+    ? [headerLabels, ...values]
+    : values;
+
+  // Compute max width per column
+  const colCount = Math.max(...rows.map((r) => r.length));
+  const widths = Array.from({ length: colCount }, (_, ci) =>
+    Math.min(30, Math.max(...rows.map((r) => String(r[ci] ?? '').length)))
+  );
+
+  const pad = (s: string, w: number) => {
+    const str = String(s ?? '').slice(0, w);
+    return str + ' '.repeat(Math.max(0, w - str.length));
+  };
+
+  const lines: string[] = [];
+  // Header with button name (only if label row is custom), otherwise use first spreadsheet row as-is
+  if (headerLabels && headerLabels.length > 0) {
+    lines.push(`<b>📈 ${escapeHtml(title)}</b>`);
   }
 
-  let text = lines.join("\n");
+  for (let ri = 0; ri < rows.length; ri++) {
+    const row = rows[ri];
+    const cells = widths.map((w, ci) => pad(String(row[ci] ?? ''), w));
+    const line = cells.join(' | ');
+    if (ri === 0 && rows.length > 1) {
+      // Header row in bold
+      lines.push(`<b>${escapeHtml(line)}</b>`);
+      lines.push('—'.repeat(Math.min(60, line.length)));
+    } else {
+      lines.push(escapeHtml(line));
+    }
+  }
+
+  let text = (headerLabels ? '' : `<b>📈 ${escapeHtml(title)}</b>\n<i>${escapeHtml(range)}</i>\n\n`) + lines.join('\n');
   if (text.length > MAX_LEN) {
-    text = text.slice(0, MAX_LEN) + "\n…";
+    text = text.slice(0, MAX_LEN) + '\n…';
   }
   return text;
 }
@@ -594,24 +656,30 @@ serve(async (req) => {
                   if (accessToken) {
                     const backKbd = { inline_keyboard: [[{ text: "◀ Назад", callback_data: "get_links" }]] };
                     if (hasStructuredRanges) {
-                      // Build range strings from structured SheetRange objects
-                      const rangeStrings = sheetBtn.sheetRanges!.flatMap((r) => buildRangeStrings(r));
+                      // Build range strings with labels from structured SheetRange objects
+                      const rangeItems = sheetBtn.sheetRanges!.flatMap((r) => buildRangeStringsWithLabels(r));
+                      const rangeStrings = rangeItems.map((ri) => ri.range);
                       let textParts: string[] = [];
                       if (rangeStrings.length === 1) {
                         const vals = await readSheetRange(spreadsheetId, rangeStrings[0], accessToken);
                         if (vals && vals.length > 0) {
-                          textParts.push(formatSheetData(vals, sheetBtn.text, rangeStrings[0]));
+                          const label = rangeItems[0]?.colLabel;
+                          textParts.push(
+                            `<b>📈 ${escapeHtml(sheetBtn.text)}</b>\n` +
+                            formatSheetData(vals, sheetBtn.text, rangeStrings[0], label ? [label] : undefined)
+                          );
                         }
                       } else {
                         const results = await readSheetRangesBatch(spreadsheetId, rangeStrings, accessToken);
-                        for (const r of results) {
+                        for (let i = 0; i < results.length; i++) {
+                          const r = results[i];
                           if (r.values && r.values.length > 0) {
-                            textParts.push(formatSheetData(r.values, r.range, r.range));
+                            const label = rangeItems[i]?.colLabel;
+                            textParts.push(formatSheetData(r.values, r.range, r.range, label ? [label] : undefined));
                           }
                         }
                         if (textParts.length > 0) {
-                          // Prepend header with button name
-                          textParts.unshift(`<b>${escapeHtml(sheetBtn.text)}</b>`);
+                          textParts.unshift(`<b>📈 ${escapeHtml(sheetBtn.text)}</b>`);
                         }
                       }
                       if (textParts.length > 0) {

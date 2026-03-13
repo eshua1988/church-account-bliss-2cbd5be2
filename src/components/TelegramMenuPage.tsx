@@ -45,7 +45,7 @@ import {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface ColRowPair { id: string; from: string; to: string; }
+interface ColRowPair { id: string; from: string; to: string; label?: string; }
 interface SheetRange {
   id: string;
   sheetName: string;
@@ -488,7 +488,7 @@ export const TelegramMenuPage = () => {
       ),
     }));
 
-  const updateSheetRangeCol = (btnId: string, rangeId: string, pairId: string, patch: Partial<{from: string; to: string}>) =>
+  const updateSheetRangeCol = (btnId: string, rangeId: string, pairId: string, patch: Partial<{from: string; to: string; label: string}>) =>
     setConfig((p) => ({
       ...p,
       extraButtons: p.extraButtons.map((b) =>
@@ -939,78 +939,81 @@ export const TelegramMenuPage = () => {
                                             placeholder="Лист1"
                                             className="h-6 text-xs flex-1 font-mono" />
                                         </div>
-                                        {/* Columns list */}
+                                        {/* Columns — horizontal cards */}
                                         <div className="space-y-1">
-                                          <div className="flex items-start gap-1">
-                                            <span className="text-[10px] text-muted-foreground/60 w-11 flex-shrink-0 pt-1.5">СТОЛБЦЫ</span>
-                                            <div className="flex flex-wrap items-center gap-1 flex-1">
-                                              {rng.cols.map((col, ci) => (
-                                                <>
-                                                  {ci > 0 && (
-                                                    <span className="text-green-400/70 font-bold text-sm leading-none">+</span>
-                                                  )}
-                                                  <div key={col.id} className="flex items-center gap-0.5">
+                                          <span className="text-[10px] text-muted-foreground/60">СТОЛБЦЫ</span>
+                                          <div className="flex items-start gap-1.5 overflow-x-auto pb-0.5">
+                                            {rng.cols.map((col, ci) => (
+                                              <>
+                                                {ci > 0 && (
+                                                  <span className="text-green-400/60 font-bold text-base self-center flex-shrink-0 leading-none">+</span>
+                                                )}
+                                                <div key={col.id} className="flex flex-col gap-1 flex-shrink-0 bg-green-500/5 border border-green-500/20 rounded-md p-1.5">
+                                                  <Input
+                                                    value={col.label ?? ''}
+                                                    onChange={(e) => updateSheetRangeCol(btn.id, rng.id, col.id, { label: e.target.value })}
+                                                    placeholder="Название..."
+                                                    className="h-5 text-[10px] w-24 font-medium" />
+                                                  <div className="flex items-center gap-0.5 justify-center">
                                                     <Input value={col.from}
                                                       onChange={(e) => updateSheetRangeCol(btn.id, rng.id, col.id, { from: e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase() })}
                                                       placeholder="A"
-                                                      className="h-6 text-xs w-10 font-mono text-center" />
-                                                    <span className="text-muted-foreground text-[10px]">—</span>
+                                                      className="h-5 text-xs w-9 font-mono text-center" />
+                                                    <span className="text-muted-foreground text-[9px]">—</span>
                                                     <Input value={col.to}
                                                       onChange={(e) => updateSheetRangeCol(btn.id, rng.id, col.id, { to: e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase() })}
                                                       placeholder={col.from || 'A'}
-                                                      className="h-6 text-xs w-10 font-mono text-center" />
+                                                      className="h-5 text-xs w-9 font-mono text-center" />
                                                     {ci > 0 && (
                                                       <button type="button" onClick={() => removeSheetRangeCol(btn.id, rng.id, col.id)}
-                                                        className="p-0.5 rounded hover:bg-destructive/20 hover:text-destructive text-muted-foreground/50 transition-colors">
+                                                        className="p-0.5 rounded hover:text-destructive text-muted-foreground/40 transition-colors">
                                                         <Trash2 className="w-2.5 h-2.5" />
                                                       </button>
                                                     )}
                                                   </div>
-                                                </>
-                                              ))}
-                                              <button type="button" onClick={() => addSheetRangeCol(btn.id, rng.id)}
-                                                className="h-6 px-1.5 rounded text-[10px] text-green-400 border border-green-500/30 hover:bg-green-500/10 transition-colors flex items-center gap-0.5"
-                                                title="Добавить ещё столбец">
-                                                <Plus className="w-2.5 h-2.5" />стлб
-                                              </button>
-                                            </div>
+                                                </div>
+                                              </>
+                                            ))}
+                                            <button type="button" onClick={() => addSheetRangeCol(btn.id, rng.id)}
+                                              className="self-center flex-shrink-0 h-7 px-2 rounded text-[10px] text-green-400 border border-green-500/30 hover:bg-green-500/10 transition-colors flex items-center gap-0.5"
+                                              title="Добавить столбец">
+                                              <Plus className="w-2.5 h-2.5" />+ стлб
+                                            </button>
                                           </div>
                                         </div>
-                                        {/* Rows list */}
+                                        {/* Rows — horizontal layout */}
                                         <div className="space-y-1">
-                                          <div className="flex items-start gap-1">
-                                            <span className="text-[10px] text-muted-foreground/60 w-11 flex-shrink-0 pt-1.5">СТРОКИ</span>
-                                            <div className="flex flex-wrap items-center gap-1 flex-1">
-                                              {rng.rows.map((row, rwi) => (
-                                                <>
+                                          <span className="text-[10px] text-muted-foreground/60">СТРОКИ</span>
+                                          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                                            {rng.rows.map((row, rwi) => (
+                                              <>
+                                                {rwi > 0 && (
+                                                  <span className="text-green-400/60 font-bold text-base flex-shrink-0 leading-none">+</span>
+                                                )}
+                                                <div key={row.id} className="flex items-center gap-0.5 flex-shrink-0 bg-green-500/5 border border-green-500/20 rounded-md px-1.5 py-1">
+                                                  <Input value={row.from}
+                                                    onChange={(e) => updateSheetRangeRow(btn.id, rng.id, row.id, { from: e.target.value.replace(/\D/g, '') })}
+                                                    placeholder="1"
+                                                    className="h-5 text-xs w-12 font-mono text-center" />
+                                                  <span className="text-muted-foreground text-[9px]">—</span>
+                                                  <Input value={row.to}
+                                                    onChange={(e) => updateSheetRangeRow(btn.id, rng.id, row.id, { to: e.target.value.replace(/\D/g, '') })}
+                                                    placeholder="50"
+                                                    className="h-5 text-xs w-12 font-mono text-center" />
                                                   {rwi > 0 && (
-                                                    <span className="text-green-400/70 font-bold text-sm leading-none">+</span>
+                                                    <button type="button" onClick={() => removeSheetRangeRow(btn.id, rng.id, row.id)}
+                                                      className="p-0.5 rounded hover:text-destructive text-muted-foreground/40 transition-colors">
+                                                      <Trash2 className="w-2.5 h-2.5" />
+                                                    </button>
                                                   )}
-                                                  <div key={row.id} className="flex items-center gap-0.5">
-                                                    <Input value={row.from}
-                                                      onChange={(e) => updateSheetRangeRow(btn.id, rng.id, row.id, { from: e.target.value.replace(/\D/g, '') })}
-                                                      placeholder="1"
-                                                      className="h-6 text-xs w-14 font-mono text-center" />
-                                                    <span className="text-muted-foreground text-[10px]">—</span>
-                                                    <Input value={row.to}
-                                                      onChange={(e) => updateSheetRangeRow(btn.id, rng.id, row.id, { to: e.target.value.replace(/\D/g, '') })}
-                                                      placeholder="50"
-                                                      className="h-6 text-xs w-14 font-mono text-center" />
-                                                    {rwi > 0 && (
-                                                      <button type="button" onClick={() => removeSheetRangeRow(btn.id, rng.id, row.id)}
-                                                        className="p-0.5 rounded hover:bg-destructive/20 hover:text-destructive text-muted-foreground/50 transition-colors">
-                                                        <Trash2 className="w-2.5 h-2.5" />
-                                                      </button>
-                                                    )}
-                                                  </div>
-                                                </>
-                                              ))}
-                                              <button type="button" onClick={() => addSheetRangeRow(btn.id, rng.id)}
-                                                className="h-6 px-1.5 rounded text-[10px] text-green-400 border border-green-500/30 hover:bg-green-500/10 transition-colors flex items-center gap-0.5"
-                                                title="Добавить ещё строки">
-                                                <Plus className="w-2.5 h-2.5" />стрк
-                                              </button>
-                                            </div>
+                                                </div>
+                                              </>
+                                            ))}
+                                            <button type="button" onClick={() => addSheetRangeRow(btn.id, rng.id)}
+                                              className="flex-shrink-0 h-7 px-2 rounded text-[10px] text-green-400 border border-green-500/30 hover:bg-green-500/10 transition-colors flex items-center gap-0.5"
+                                              title="Добавить строки">
+                                              <Plus className="w-2.5 h-2.5" />+ стрк
+                                            </button>
                                           </div>
                                         </div>
                                       </div>
