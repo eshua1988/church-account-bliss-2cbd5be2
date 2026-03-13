@@ -239,6 +239,23 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/** Format rows as aligned table, first row in bold as header. Used for horizontally-merged output. */
+function formatTableRows(rows: string[][]): string {
+  if (!rows.length) return '';
+  const colCount = Math.max(...rows.map((r) => r.length));
+  const widths = Array.from({ length: colCount }, (_, ci) =>
+    Math.min(28, Math.max(1, ...rows.map((r) => String(r[ci] ?? '').length)))
+  );
+  const pad = (s: string, w: number) => {
+    const str = String(s ?? '').slice(0, w);
+    return str + ' '.repeat(Math.max(0, w - str.length));
+  };
+  return rows.map((row, ri) => {
+    const line = widths.map((w, ci) => pad(String(row[ci] ?? ''), w)).join(' | ');
+    return ri === 0 ? `<b>${escapeHtml(line)}</b>` : escapeHtml(line);
+  }).join('\n');
+}
+
 // ----- Telegram helpers -----
 
 // Returns message_id of the sent message (for history tracking), or null on error.
@@ -656,42 +673,58 @@ serve(async (req) => {
                   if (accessToken) {
                     const backKbd = { inline_keyboard: [[{ text: "◀ Назад", callback_data: "get_links" }]] };
                     if (hasStructuredRanges) {
-                      // Build range strings with labels from structured SheetRange objects
-                      const rangeItems = sheetBtn.sheetRanges!.flatMap((r) => buildRangeStringsWithLabels(r));
-                      const rangeStrings = rangeItems.map((ri) => ri.range);
                       let textParts: string[] = [];
-                      if (rangeStrings.length === 1) {
-                        const vals = await readSheetRange(spreadsheetId, rangeStrings[0], accessToken);
-                        if (vals && vals.length > 0) {
-                          const label = rangeItems[0]?.colLabel;
-                          textParts.push(
-                            `<b>📈 ${escapeHtml(sheetBtn.text)}</b>\n` +
-                            formatSheetData(vals, sheetBtn.text, rangeStrings[0], label ? [label] : undefined)
-                          );
-                        }
-                      } else {
-                        const results = await readSheetRangesBatch(spreadsheetId, rangeStrings, accessToken);
-                        for (let i = 0; i < results.length; i++) {
-                          const r = results[i];
-                          if (r.values && r.values.length > 0) {
-                            const label = rangeItems[i]?.colLabel;
-                            textParts.push(formatSheetData(r.values, r.range, r.range, label ? [label] : undefined));
+
+                      for (const sheetRange of sheetBtn.sheetRanges!) {
+                        const prefix = sheetRange.sheetName ? `${sheetRange.sheetName}!` : '';
+                        const colPairs = sheetRange.cols?.length
+                          ? sheetRange.cols
+                          : [{ from: sheetRange.colFrom ?? 'A', to: sheetRange.colTo ?? '' }];
+                        const rowPairs = sheetRange.rows?.length
+                          ? sheetRange.rows
+                          : [{ from: sheetRange.rowFrom ?? '', to: sheetRange.rowTo ?? '' }];
+
+                        for (const row of rowPairs) {
+                          const rf = (row.from || '').trim();
+                          const rt = (row.to || '').trim();
+
+                          // Build all col-range strings for this row pair
+                          const colRangeStrings = colPairs.map((col) => {
+                            const cf = (col.from || '').toUpperCase();
+                            const ct = (col.to || col.from || '').toUpperCase() || cf;
+                            let seg: string;
+                            if (!cf && rf) seg = `${rf}:${rt || rf}`;
+                            else if (cf && !rf) seg = ct ? `${cf}:${ct}` : `${cf}:${cf}`;
+                            else if (cf && rf) seg = `${cf}${rf}:${ct || cf}${rt || rf}`;
+                            else seg = 'A:Z';
+                            return `${prefix}${seg}`;
+                          });
+
+                          // Fetch all col ranges and merge horizontally (row by row)
+                          let mergedValues: string[][] = [];
+                          if (colRangeStrings.length === 1) {
+                            mergedValues = (await readSheetRange(spreadsheetId, colRangeStrings[0], accessToken)) ?? [];
+                          } else {
+                            const batchResults = await readSheetRangesBatch(spreadsheetId, colRangeStrings, accessToken);
+                            const maxLen = Math.max(0, ...batchResults.map((r) => r.values.length));
+                            mergedValues = Array.from({ length: maxLen }, (_, ri) =>
+                              batchResults.flatMap((r) => r.values[ri] ?? [])
+                            );
+                          }
+
+                          if (mergedValues.length > 0) {
+                            textParts.push(formatTableRows(mergedValues));
                           }
                         }
-                        if (textParts.length > 0) {
-                          textParts.unshift(`<b>📈 ${escapeHtml(sheetBtn.text)}</b>`);
-                        }
                       }
+
                       if (textParts.length > 0) {
-                        const msgId = await sendMessage(chatId, textParts.join('\n\n'), backKbd, botToken);
+                        let fullText = `<b>📈 ${escapeHtml(sheetBtn.text)}</b>\n\n` + textParts.join('\n\n');
+                        if (fullText.length > 3800) fullText = fullText.slice(0, 3800) + '\n…';
+                        const msgId = await sendMessage(chatId, fullText, backKbd, botToken);
                         if (msgId) newIds.push(msgId);
                       } else {
-                        const msgId = await sendMessage(
-                          chatId,
-                          `⚠️ Данные не найдены в указанных диапазонах.`,
-                          backKbd,
-                          botToken,
-                        );
+                        const msgId = await sendMessage(chatId, `⚠️ Данные не найдены в указанных диапазонах.`, backKbd, botToken);
                         if (msgId) newIds.push(msgId);
                       }
                     } else {
