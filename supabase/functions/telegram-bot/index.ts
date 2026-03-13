@@ -239,21 +239,47 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-/** Format rows as aligned table, first row in bold as header. Used for horizontally-merged output. */
-function formatTableRows(rows: string[][]): string {
+/**
+ * Format rows as aligned table wrapped in <pre> for monospace rendering in Telegram.
+ * - Filters out rows where every cell is empty/whitespace.
+ * - Optional colLabels: shown as bold header row before <pre> block.
+ * - Last column is right-aligned (for numeric values), others left-aligned.
+ */
+function formatTableRows(rows: string[][], colLabels?: string[]): string {
   if (!rows.length) return '';
-  const colCount = Math.max(...rows.map((r) => r.length));
+  // Skip fully-empty rows
+  const dataRows = rows.filter((r) => r.some((c) => String(c ?? '').trim() !== ''));
+  if (!dataRows.length) return '';
+
+  const hasLabels = colLabels && colLabels.some((l) => l.trim() !== '');
+  const allRows = hasLabels ? [colLabels!, ...dataRows] : dataRows;
+  const colCount = Math.max(...allRows.map((r) => r.length));
+
   const widths = Array.from({ length: colCount }, (_, ci) =>
-    Math.min(28, Math.max(1, ...rows.map((r) => String(r[ci] ?? '').length)))
+    Math.min(24, Math.max(1, ...allRows.map((r) => String(r[ci] ?? '').length)))
   );
-  const pad = (s: string, w: number) => {
+
+  const padL = (s: string, w: number) => {
     const str = String(s ?? '').slice(0, w);
     return str + ' '.repeat(Math.max(0, w - str.length));
   };
-  return rows.map((row, ri) => {
-    const line = widths.map((w, ci) => pad(String(row[ci] ?? ''), w)).join(' | ');
-    return ri === 0 ? `<b>${escapeHtml(line)}</b>` : escapeHtml(line);
-  }).join('\n');
+  const padR = (s: string, w: number) => {
+    const str = String(s ?? '').slice(0, w);
+    return ' '.repeat(Math.max(0, w - str.length)) + str;
+  };
+  const fmtRow = (row: string[]): string =>
+    widths.map((w, ci) => {
+      const cell = String(row[ci] ?? '');
+      return ci === colCount - 1 ? padR(cell, w) : padL(cell, w);
+    }).join(' │ ');
+
+  const parts: string[] = [];
+  if (hasLabels) {
+    parts.push(`<b>${escapeHtml(fmtRow(colLabels!))}</b>`);
+  }
+  const preContent = dataRows.map((r) => escapeHtml(fmtRow(r))).join('\n');
+  parts.push(`<pre>${preContent}</pre>`);
+  return parts.join('\n');
 }
 
 // ----- Telegram helpers -----
@@ -700,6 +726,9 @@ serve(async (req) => {
                             return `${prefix}${seg}`;
                           });
 
+                          // Collect column labels (one per colPair) for display as header
+                          const colLabels = colPairs.map((col) => (col as any).label ?? '');
+
                           // Fetch all col ranges and merge horizontally (row by row)
                           let mergedValues: string[][] = [];
                           if (colRangeStrings.length === 1) {
@@ -713,7 +742,8 @@ serve(async (req) => {
                           }
 
                           if (mergedValues.length > 0) {
-                            textParts.push(formatTableRows(mergedValues));
+                            const labels = colLabels.some((l: string) => l.trim()) ? colLabels : undefined;
+                            textParts.push(formatTableRows(mergedValues, labels));
                           }
                         }
                       }
