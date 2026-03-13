@@ -771,7 +771,7 @@ serve(async (req) => {
                 .maybeSingle();
               const templates = ((cfg as any)?.message_templates as Array<{
                 id: string; title: string; text: string;
-                blocks?: Array<{ id: string; type: string; content?: string; label?: string; copyText?: string }>;
+                blocks?: Array<{ id: string; type: string; content?: string; label?: string; copyText?: string; btnType?: string }>;
                 buttons: Array<{ id: string; label: string; copyText: string; mode?: string }>;
                 trigger: string; enabled: boolean;
               }>) ?? [];
@@ -787,7 +787,20 @@ serve(async (req) => {
                       if (msgText) msgText += '\n\n';
                       msgText += block.content ?? '';
                     } else if (block.type === 'button') {
-                      keyboardRows.push([{ text: block.label ?? '', copy_text: { text: block.copyText ?? '' } }]);
+                      const btnType = block.btnType ?? 'copy';
+                      const bLabel = block.label ?? '';
+                      const bVal = block.copyText ?? '';
+                      if (btnType === 'copy' && bVal) {
+                        keyboardRows.push([{ text: bLabel, copy_text: { text: bVal } }]);
+                      } else if ((btnType === 'url' || btnType === 'message') && bVal) {
+                        keyboardRows.push([{ text: bLabel, url: bVal }]);
+                      } else if ((btnType === 'mention' || btnType === 'bot' || btnType === 'channel') && bVal) {
+                        const username = bVal.replace(/^@/, '');
+                        if (username) keyboardRows.push([{ text: bLabel, url: `https://t.me/${username}` }]);
+                      } else if (btnType === 'hashtag' && bVal) {
+                        const tag = bVal.startsWith('#') ? bVal : `#${bVal}`;
+                        keyboardRows.push([{ text: bLabel, switch_inline_query_current_chat: tag }]);
+                      }
                     }
                   }
                   if (!msgText) msgText = tmpl.title;

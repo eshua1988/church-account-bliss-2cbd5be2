@@ -41,6 +41,14 @@ import {
   Table2,
   Info,
   GripVertical,
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  Code2,
+  AtSign,
+  Megaphone,
+  ExternalLink,
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -74,9 +82,11 @@ interface TemplateCopyButton {
   mode?: 'button' | 'inline'; // button = keyboard below, inline = <code> in text
 }
 
+type ButtonBlockType = 'copy' | 'url' | 'mention' | 'hashtag' | 'bot' | 'channel' | 'message';
+
 type TemplateBlock =
   | { id: string; type: 'text'; content: string }
-  | { id: string; type: 'button'; label: string; copyText: string };
+  | { id: string; type: 'button'; btnType?: ButtonBlockType; label: string; copyText: string };
 
 interface MessageTemplate {
   id: string;
@@ -117,6 +127,16 @@ const BUTTON_TYPE_META = {
 } as const;
 
 const QUICK_EMOJI = ['👋', '✅', '🔔', '📋', '💰', '📊', '⚙️', '🏠', '📱', '🔍'];
+
+const BUTTON_BLOCK_META: Record<ButtonBlockType, { label: string; badge: string; valuePlaceholder: string; valueLabel: string }> = {
+  copy:    { label: '⎘ Копировать',   badge: '⎘ КОПИЯ',  valuePlaceholder: 'Текст для копирования...',  valueLabel: 'КОПИР.' },
+  url:     { label: '🔗 URL-ссылка',  badge: '🔗 URL',    valuePlaceholder: 'https://example.com',        valueLabel: 'ССЫЛКА' },
+  mention: { label: '@Упоминание',    badge: '@ USER',   valuePlaceholder: '@username',                  valueLabel: '@USER' },
+  hashtag: { label: '#Хэштег',        badge: '# ТЭГ',    valuePlaceholder: '#молитва',                   valueLabel: '#ТЭГ' },
+  bot:     { label: '🤖 Ссылка на бот', badge: '🤖 БОТ', valuePlaceholder: '@mybot',                     valueLabel: '@БОТ' },
+  channel: { label: '📢 Канал',        badge: '📢 КАНАЛ', valuePlaceholder: '@mychannel',                 valueLabel: '@КАНАЛ' },
+  message: { label: '💬 Сообщение',   badge: '💬 СООБЩ.', valuePlaceholder: 'https://t.me/c/123/456',   valueLabel: 'ССЫЛКА' },
+};
 
 // ─── Telegram mock preview ────────────────────────────────────────────────────
 
@@ -597,7 +617,7 @@ export const TelegramMenuPage = () => {
                 ...t.blocks,
                 type === 'text'
                   ? { id: crypto.randomUUID(), type: 'text' as const, content: '' }
-                  : { id: crypto.randomUUID(), type: 'button' as const, label: '📋 Скопировать', copyText: '' },
+                  : { id: crypto.randomUUID(), type: 'button' as const, btnType: 'copy' as ButtonBlockType, label: '📋 Скопировать', copyText: '' },
               ],
             }
           : t
@@ -695,6 +715,37 @@ export const TelegramMenuPage = () => {
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 1800);
     });
+  };
+
+  // Wrap selected text in a textarea with an HTML tag pair
+  const insertFormat = (refKey: string, templateId: string, blockId: string, open: string, close: string) => {
+    const el = textareaRefs.current[refKey];
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const val = el.value;
+    const sel = val.slice(start, end) || 'текст';
+    const newVal = val.slice(0, start) + open + sel + close + val.slice(end);
+    updateBlock(templateId, blockId, { content: newVal } as any);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start + open.length, start + open.length + sel.length);
+    });
+  };
+
+  // Wrap selected text in <a href="..."> via URL prompt
+  const insertLink = (refKey: string, templateId: string, blockId: string) => {
+    const el = textareaRefs.current[refKey];
+    if (!el) return;
+    const url = window.prompt('URL ссылки:', 'https://');
+    if (!url?.trim()) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const val = el.value;
+    const text = val.slice(start, end) || 'ссылка';
+    const tag = `<a href="${url.trim()}">${text}</a>`;
+    const newVal = val.slice(0, start) + tag + val.slice(end > start ? end : start);
+    updateBlock(templateId, blockId, { content: newVal } as any);
   };
 
   // ── Render ────────────────────────────────────────────────────────────────────
@@ -1278,7 +1329,9 @@ export const TelegramMenuPage = () => {
                                         <GripVertical className="w-3.5 h-3.5" />
                                       </span>
                                       <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${block.type === 'button' ? 'bg-blue-500/20 text-blue-300' : 'bg-muted text-muted-foreground'}`}>
-                                        {block.type === 'button' ? '🔘 КНОПКА' : '📝 ТЕКСТ'}
+                                        {block.type === 'button'
+                                          ? BUTTON_BLOCK_META[((block as any).btnType ?? 'copy') as ButtonBlockType].badge
+                                          : '📝 ТЕКСТ'}
                                       </span>
                                       <div className="flex-1" />
                                       <button type="button"
@@ -1303,6 +1356,38 @@ export const TelegramMenuPage = () => {
                                     {block.type === 'text' ? (
                                       /* Text block */
                                       <div className="space-y-1">
+                                        {/* Formatting toolbar */}
+                                        <div className="flex items-center gap-0.5 border border-border/40 rounded-md px-1 py-0.5 bg-muted/20 flex-wrap">
+                                          {([
+                                            { open: '<b>',     close: '</b>',     Icon: Bold,          title: 'Жирный (<b>)' },
+                                            { open: '<i>',     close: '</i>',     Icon: Italic,        title: 'Курсив (<i>)' },
+                                            { open: '<u>',     close: '</u>',     Icon: Underline,     title: 'Подчёркнутый (<u>)' },
+                                            { open: '<s>',     close: '</s>',     Icon: Strikethrough, title: 'Зачёркнутый (<s>)' },
+                                            { open: '<code>',  close: '</code>',  Icon: Code2,         title: 'Код (<code>)' },
+                                          ] as { open: string; close: string; Icon: React.FC<{ className?: string }>; title: string }[]).map(({ open, close, Icon, title }) => (
+                                            <button key={open} type="button" title={title}
+                                              className="p-1 rounded hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
+                                              onMouseDown={(e) => { e.preventDefault(); insertFormat(`${tmpl.id}_${block.id}`, tmpl.id, block.id, open, close); }}>
+                                              <Icon className="w-3 h-3" />
+                                            </button>
+                                          ))}
+                                          <div className="w-px h-3.5 bg-border/50 mx-0.5 self-center" />
+                                          <button type="button" title="Ссылка (<a href=...>)"
+                                            className="p-1 rounded hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
+                                            onMouseDown={(e) => { e.preventDefault(); insertLink(`${tmpl.id}_${block.id}`, tmpl.id, block.id); }}>
+                                            <Link2 className="w-3 h-3" />
+                                          </button>
+                                          <button type="button" title="@Упоминание"
+                                            className="p-1 rounded hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
+                                            onMouseDown={(e) => { e.preventDefault(); insertFormat(`${tmpl.id}_${block.id}`, tmpl.id, block.id, '@', ''); }}>
+                                            <AtSign className="w-3 h-3" />
+                                          </button>
+                                          <button type="button" title="#Хэштег"
+                                            className="p-1 rounded hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
+                                            onMouseDown={(e) => { e.preventDefault(); insertFormat(`${tmpl.id}_${block.id}`, tmpl.id, block.id, '#', ''); }}>
+                                            <Hash className="w-3 h-3" />
+                                          </button>
+                                        </div>
                                         <Textarea
                                           ref={(el) => { textareaRefs.current[`${tmpl.id}_${block.id}`] = el; }}
                                           value={block.content}
@@ -1334,21 +1419,42 @@ export const TelegramMenuPage = () => {
                                     ) : (
                                       /* Button block */
                                       <div className="space-y-1.5">
+                                        {/* Type selector */}
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-[10px] text-muted-foreground/60 w-9 flex-shrink-0">ТИП</span>
+                                          <Select
+                                            value={(block as any).btnType ?? 'copy'}
+                                            onValueChange={(v) => updateBlock(tmpl.id, block.id, { btnType: v } as any)}
+                                          >
+                                            <SelectTrigger className="h-7 text-xs flex-1">
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {(Object.keys(BUTTON_BLOCK_META) as ButtonBlockType[]).map((k) => (
+                                                <SelectItem key={k} value={k}>{BUTTON_BLOCK_META[k].label}</SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                        {/* Button label */}
                                         <div className="flex items-center gap-1.5">
                                           <span className="text-[10px] text-muted-foreground/60 w-9 flex-shrink-0">ТЕКСТ</span>
                                           <Input
                                             value={block.label}
                                             onChange={(e) => updateBlock(tmpl.id, block.id, { label: e.target.value } as any)}
-                                            placeholder="📋 Скопировать карту"
+                                            placeholder="📋 Текст кнопки"
                                             className="h-7 text-xs flex-1"
                                           />
                                         </div>
+                                        {/* Value */}
                                         <div className="flex items-center gap-1.5">
-                                          <ClipboardCopy className="w-3 h-3 text-muted-foreground/60 flex-shrink-0" />
+                                          <span className="text-[10px] text-muted-foreground/60 w-9 flex-shrink-0 truncate">
+                                            {BUTTON_BLOCK_META[((block as any).btnType ?? 'copy') as ButtonBlockType].valueLabel}
+                                          </span>
                                           <Input
                                             value={block.copyText}
                                             onChange={(e) => updateBlock(tmpl.id, block.id, { copyText: e.target.value } as any)}
-                                            placeholder="Текст для копирования..."
+                                            placeholder={BUTTON_BLOCK_META[((block as any).btnType ?? 'copy') as ButtonBlockType].valuePlaceholder}
                                             className="h-7 text-xs flex-1 font-mono"
                                           />
                                         </div>
