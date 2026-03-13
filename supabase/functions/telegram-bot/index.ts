@@ -566,27 +566,45 @@ serve(async (req) => {
                 .maybeSingle();
               const templates = ((cfg as any)?.message_templates as Array<{
                 id: string; title: string; text: string;
+                blocks?: Array<{ id: string; type: string; content?: string; label?: string; copyText?: string }>;
                 buttons: Array<{ id: string; label: string; copyText: string; mode?: string }>;
                 trigger: string; enabled: boolean;
               }>) ?? [];
               const tmpl = templates.find((t) => t.enabled && t.trigger === callbackData);
               if (tmpl) {
-                // Separate inline (<code> in text) vs keyboard (below message) buttons
-                const inlineBtns = tmpl.buttons.filter((b) => b.mode === 'inline');
-                const keyboardBtns = tmpl.buttons.filter((b) => (b.mode ?? 'button') !== 'inline');
-                let msgText = tmpl.text || tmpl.title;
-                if (inlineBtns.length > 0) {
-                  msgText += '\n\n' + inlineBtns
-                    .map((b) => `${escapeHtml(b.label)}\n<code>${escapeHtml(b.copyText)}</code>`)
-                    .join('\n\n');
+                let msgText = '';
+                const keyboardRows: Array<Array<Record<string, unknown>>> = [];
+
+                if (tmpl.blocks && tmpl.blocks.length > 0) {
+                  // New block-based format
+                  for (const block of tmpl.blocks) {
+                    if (block.type === 'text') {
+                      if (msgText) msgText += '\n\n';
+                      msgText += block.content ?? '';
+                    } else if (block.type === 'button') {
+                      keyboardRows.push([{ text: block.label ?? '', copy_text: { text: block.copyText ?? '' } }]);
+                    }
+                  }
+                  if (!msgText) msgText = tmpl.title;
+                } else {
+                  // Legacy format (text + buttons with mode)
+                  const inlineBtns = tmpl.buttons.filter((b) => b.mode === 'inline');
+                  const kbBtns = tmpl.buttons.filter((b) => (b.mode ?? 'button') !== 'inline');
+                  msgText = tmpl.text || tmpl.title;
+                  if (inlineBtns.length > 0) {
+                    msgText += '\n\n' + inlineBtns
+                      .map((b) => `${escapeHtml(b.label)}\n<code>${escapeHtml(b.copyText)}</code>`)
+                      .join('\n\n');
+                  }
+                  for (const b of kbBtns) {
+                    keyboardRows.push([{ text: b.label, copy_text: { text: b.copyText } }]);
+                  }
                 }
-                const tplButtons = keyboardBtns.map((b) => [
-                  { text: b.label, copy_text: { text: b.copyText } },
-                ]);
+
                 const msgId = await sendMessage(
                   chatId,
                   msgText,
-                  tplButtons.length > 0 ? { inline_keyboard: tplButtons } : undefined,
+                  keyboardRows.length > 0 ? { inline_keyboard: keyboardRows } : undefined,
                   botToken,
                 );
                 if (msgId) newIds.push(msgId);

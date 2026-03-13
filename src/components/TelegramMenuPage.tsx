@@ -64,11 +64,16 @@ interface TemplateCopyButton {
   mode?: 'button' | 'inline'; // button = keyboard below, inline = <code> in text
 }
 
+type TemplateBlock =
+  | { id: string; type: 'text'; content: string }
+  | { id: string; type: 'button'; label: string; copyText: string };
+
 interface MessageTemplate {
   id: string;
   title: string;          // admin label
-  text: string;           // message body
-  buttons: TemplateCopyButton[];
+  text: string;           // legacy — kept for compat, not used in new flow
+  buttons: TemplateCopyButton[]; // legacy
+  blocks: TemplateBlock[]; // new — ordered list of text + button blocks
   trigger: string;        // callback_data that triggers this template
   enabled: boolean;
 }
@@ -218,12 +223,28 @@ export const TelegramMenuPage = () => {
 
         if (cfgRes.data) {
           const d = cfgRes.data as any;
+          // Backward compat: migrate old {text, buttons} → blocks
+          const rawTemplates: any[] = d.message_templates ?? [];
+          const migratedTemplates: MessageTemplate[] = rawTemplates.map((t: any) => {
+            if (t.blocks && t.blocks.length > 0) return t as MessageTemplate;
+            // old format: build blocks from text + buttons
+            const blocks: TemplateBlock[] = [];
+            if (t.text) blocks.push({ id: crypto.randomUUID(), type: 'text', content: t.text });
+            for (const b of (t.buttons ?? [])) {
+              if (b.mode === 'inline') {
+                blocks.push({ id: b.id ?? crypto.randomUUID(), type: 'text', content: `${b.label}\n<code>${b.copyText}</code>` });
+              } else {
+                blocks.push({ id: b.id ?? crypto.randomUUID(), type: 'button', label: b.label, copyText: b.copyText });
+              }
+            }
+            return { ...t, blocks, text: t.text ?? '', buttons: t.buttons ?? [] } as MessageTemplate;
+          });
           setConfig({
             welcomeMessage: d.welcome_message ?? defaultConfig.welcomeMessage,
             extraButtons: (d.extra_buttons as ExtraButton[]) ?? [],
             showPayoutLinks: d.show_payout_links !== false,
             botCommands: (d.bot_commands as BotCommand[]) ?? defaultConfig.botCommands,
-            messageTemplates: (d.message_templates as MessageTemplate[]) ?? [],
+            messageTemplates: migratedTemplates,
           });
         }
         setConnectedBots((botsRes.data as any) ?? []);
@@ -412,6 +433,7 @@ export const TelegramMenuPage = () => {
           title: 'Новый шаблон',
           text: '',
           buttons: [],
+          blocks: [{ id: crypto.randomUUID(), type: 'text' as const, content: '' }],
           trigger: 'template_' + id.slice(0, 6),
           enabled: true,
         },
@@ -432,31 +454,78 @@ export const TelegramMenuPage = () => {
       messageTemplates: p.messageTemplates.filter((t) => t.id !== id),
     }));
 
-  const addTemplateButton = (templateId: string) =>
-    updateTemplate(templateId, {
-      buttons: [
-        ...(config.messageTemplates.find((t) => t.id === templateId)?.buttons ?? []),
-        { id: crypto.randomUUID(), label: '📋 Скопировать', copyText: '' },
-      ],
-    });
-
-  const updateTemplateButton = (templateId: string, btnId: string, patch: Partial<TemplateCopyButton>) =>
+  const addTemplateBlock = (templateId: string, type: 'text' | 'button') =>
     setConfig((p) => ({
       ...p,
       messageTemplates: p.messageTemplates.map((t) =>
         t.id === templateId
-          ? { ...t, buttons: t.buttons.map((b) => (b.id === btnId ? { ...b, ...patch } : b)) }
+          ? {
+              ...t,
+              blocks: [
+                ...t.blocks,
+                type === 'text'
+                  ? { id: crypto.randomUUID(), type: 'text' as const, content: '' }
+                  : { id: crypto.randomUUID(), type: 'button' as const, label: '📋 Скопировать', copyText: '' },
+              ],
+            }
           : t
       ),
     }));
 
-  const deleteTemplateButton = (templateId: string, btnId: string) =>
+  const updateBlock = (templateId: string, blockId: string, patch: Partial<TemplateBlock>) =>
     setConfig((p) => ({
       ...p,
       messageTemplates: p.messageTemplates.map((t) =>
-        t.id === templateId ? { ...t, buttons: t.buttons.filter((b) => b.id !== btnId) } : t
+        t.id === templateId
+          ? { ...t, blocks: t.blocks.map((b) => (b.id === blockId ? ({ ...b, ...patch } as TemplateBlock) : b)) }
+          : t
       ),
     }));
+
+  const deleteBlock = (templateId: string, blockId: string) =>
+    setConfig((p) => ({
+      ...p,
+      messageTemplates: p.messageTemplates.map((t) =>
+        t.id === templateId ? { ...t, blocks: t.blocks.filter((b) => b.id !== blockId) } : t
+      ),
+    }));
+
+  const moveBlock = (templateId: string, blockId: string, dir: 'up' | 'down') =>
+    setConfig((p) => ({
+      ...p,
+      messageTemplates: p.messageTemplates.map((t) => {
+        if (t.id !== templateId) return t;
+        const idx = t.blocks.findIndex((b) => b.id === blockId);
+        if (idx < 0) return t;
+        const newBlocks = [...t.blocks];
+        const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
+        if (swapIdx < 0 || swapIdx >= newBlocks.length) return t;
+        [newBlocks[idx], newBlocks[swapIdx]] = [newBlocks[swapIdx], newBlocks[idx]];
+        return { ...t, blocks: newBlocks };
+      }),
+    }));
+
+  const addBlockFromSelection = (templateId: string) => {
+    const sel = textSelections[templateId]?.trim();
+    if (!sel) return;
+    addTemplateBlock(templateId, 'button');
+    // Update the last block (just added)
+    setConfig((p) => {
+      const tmpl = p.messageTemplates.find((t) => t.id === templateId);
+      if (!tmpl) return p;
+      const lastBlock = tmpl.blocks[tmpl.blocks.length - 1];
+      const label = '📋 ' + (sel.length > 28 ? sel.slice(0, 28) + '…' : sel);
+      return {
+        ...p,
+        messageTemplates: p.messageTemplates.map((t) =>
+          t.id === templateId
+            ? { ...t, blocks: t.blocks.map((b) => (b.id === lastBlock?.id ? { ...b, label, copyText: sel } : b)) }
+            : t
+        ),
+      };
+    });
+    setTextSelections((prev) => ({ ...prev, [templateId]: '' }));
+  };
 
   const handleTextareaSelect = useCallback((templateId: string) => {
     const el = textareaRefs.current[templateId];
@@ -464,32 +533,6 @@ export const TelegramMenuPage = () => {
     const sel = el.value.slice(el.selectionStart, el.selectionEnd);
     setTextSelections((p) => ({ ...p, [templateId]: sel }));
   }, []);
-
-  const addTemplateButtonFromSelection = (templateId: string) => {
-    const sel = textSelections[templateId]?.trim();
-    if (!sel) return;
-    const label = '📋 ' + (sel.length > 28 ? sel.slice(0, 28) + '…' : sel);
-    updateTemplate(templateId, {
-      buttons: [
-        ...(config.messageTemplates.find((t) => t.id === templateId)?.buttons ?? []),
-        { id: crypto.randomUUID(), label, copyText: sel },
-      ],
-    });
-    setTextSelections((p) => ({ ...p, [templateId]: '' }));
-  };
-
-  const wrapSelectionWithCode = (templateId: string) => {
-    const el = textareaRefs.current[templateId];
-    if (!el) return;
-    const sel = textSelections[templateId]?.trim();
-    if (!sel) return;
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-    const currentText = config.messageTemplates.find((t) => t.id === templateId)?.text ?? '';
-    const newText = currentText.slice(0, start) + `<code>${sel}</code>` + currentText.slice(end);
-    updateTemplate(templateId, { text: newText });
-    setTextSelections((p) => ({ ...p, [templateId]: '' }));
-  };
 
   const toggleExpanded = (id: string) =>
     setExpandedTemplates((prev) => {
@@ -899,203 +942,159 @@ export const TelegramMenuPage = () => {
                             </div>
                           </div>
 
-                          {/* Message text */}
-                          <div className="space-y-1.5">
-                            <Label className="text-xs text-muted-foreground">Текст сообщения</Label>
-                            <div className="relative">
-                              <Textarea
-                                ref={(el) => { textareaRefs.current[tmpl.id] = el; }}
-                                value={tmpl.text}
-                                onChange={(e) => updateTemplate(tmpl.id, { text: e.target.value })}
-                                onSelect={() => handleTextareaSelect(tmpl.id)}
-                                onMouseUp={() => handleTextareaSelect(tmpl.id)}
-                                onKeyUp={() => handleTextareaSelect(tmpl.id)}
-                                placeholder={"Реквизиты для пожертвований:\n\nБанк: PrivatBank\nКарта: 4149 6090 1234 5678\nIBAN: UA12345678901234567890\n\nСпасибо! 🙏"}
-                                className="resize-y min-h-[120px] text-sm font-mono leading-relaxed"
-                              />
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <p className="text-xs text-muted-foreground">
-                                {tmpl.text.length} симв. · Поддерживается HTML: <code className="bg-muted px-1 rounded">&lt;b&gt;</code> <code className="bg-muted px-1 rounded">&lt;i&gt;</code> <code className="bg-muted px-1 rounded">&lt;code&gt;</code>
-                              </p>
-                            </div>
-                            {/* Selection action bar */}
-                            {textSelections[tmpl.id]?.trim() && (
-                              <div className="space-y-1.5">
-                                <div className="flex items-center gap-1.5 rounded-lg bg-blue-500/10 border border-blue-500/25 px-3 py-2">
-                                  <ClipboardCopy className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-                                  <span className="text-xs text-blue-300 flex-1 min-w-0 truncate">
-                                    «<span className="font-mono font-medium">{textSelections[tmpl.id].length > 40 ? textSelections[tmpl.id].slice(0, 40) + '…' : textSelections[tmpl.id]}</span>»
-                                  </span>
-                                </div>
-                                <div className="flex gap-1.5">
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-7 text-xs flex-1 border-blue-500/30 text-blue-300 hover:bg-blue-500/10"
-                                    onClick={() => wrapSelectionWithCode(tmpl.id)}
-                                  >
-                                    <code className="text-[10px] mr-1.5 bg-blue-500/20 px-1 rounded">&lt;code&gt;</code>
-                                    Встроить в текст
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-7 text-xs flex-1 border-blue-500/30 text-blue-300 hover:bg-blue-500/10"
-                                    onClick={() => addTemplateButtonFromSelection(tmpl.id)}
-                                  >
-                                    <Plus className="w-3 h-3 mr-1" />
-                                    Кнопка снизу
-                                  </Button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Copy buttons */}
+                          {/* Block editor */}
                           <div className="space-y-2">
                             <div className="flex items-center justify-between">
-                              <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                                <ClipboardCopy className="w-3.5 h-3.5" />
-                                Кнопки копирования
-                              </Label>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 text-xs px-2"
-                                onClick={() => addTemplateButton(tmpl.id)}
-                              >
-                                <Plus className="w-3 h-3 mr-0.5" />
-                                Добавить вручную
-                              </Button>
+                              <Label className="text-xs text-muted-foreground">Содержимое сообщения</Label>
+                              <div className="flex gap-1.5">
+                                <Button size="sm" variant="outline" className="h-6 text-xs px-2"
+                                  onClick={() => addTemplateBlock(tmpl.id, 'text')}>
+                                  <Plus className="w-3 h-3 mr-0.5" />
+                                  Текст
+                                </Button>
+                                <Button size="sm" variant="outline" className="h-6 text-xs px-2"
+                                  onClick={() => addTemplateBlock(tmpl.id, 'button')}>
+                                  <ClipboardCopy className="w-3 h-3 mr-0.5" />
+                                  Кнопка
+                                </Button>
+                              </div>
                             </div>
 
-                            {tmpl.buttons.length === 0 ? (
-                              <div className="text-xs text-muted-foreground text-center py-3 border border-dashed rounded-lg">
-                                Выделите текст выше → появится кнопка «Добавить кнопку», или нажмите «Добавить вручную»
+                            {(tmpl.blocks ?? []).length === 0 ? (
+                              <div className="text-xs text-muted-foreground text-center py-4 border border-dashed rounded-lg">
+                                Нажмите «Текст» или «Кнопка» чтобы добавить блок
                               </div>
                             ) : (
                               <div className="space-y-2">
-                                {tmpl.buttons.map((btn) => {
-                                  const isInline = (btn.mode ?? 'button') === 'inline';
-                                  return (
-                                  <div key={btn.id} className={`rounded-lg border p-2.5 space-y-1.5 ${isInline ? 'bg-green-500/5 border-green-500/20' : 'bg-muted/20'}`}>
-                                    {/* Mode toggle row */}
+                                {(tmpl.blocks ?? []).map((block, bIdx) => (
+                                  <div key={block.id} className={`rounded-lg border p-2.5 space-y-1.5 ${block.type === 'button' ? 'bg-blue-500/5 border-blue-500/20' : 'bg-muted/10'}`}>
+                                    {/* Block header: type badge + order arrows + delete */}
                                     <div className="flex items-center gap-1.5">
-                                      <button
-                                        type="button"
-                                        onClick={() => updateTemplateButton(tmpl.id, btn.id, { mode: 'button' })}
-                                        className={`flex-1 h-6 text-[10px] rounded flex items-center justify-center gap-1 transition-colors border ${
-                                          !isInline ? 'bg-blue-600/20 border-blue-500/40 text-blue-300 font-medium' : 'border-transparent text-muted-foreground hover:text-foreground'
-                                        }`}
-                                      >
-                                        <ClipboardCopy className="w-2.5 h-2.5" />
-                                        Кнопка снизу
+                                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${block.type === 'button' ? 'bg-blue-500/20 text-blue-300' : 'bg-muted text-muted-foreground'}`}>
+                                        {block.type === 'button' ? '🔘 КНОПКА' : '📝 ТЕКСТ'}
+                                      </span>
+                                      <div className="flex-1" />
+                                      <button type="button"
+                                        disabled={bIdx === 0}
+                                        onClick={() => moveBlock(tmpl.id, block.id, 'up')}
+                                        className="p-0.5 rounded hover:bg-muted disabled:opacity-25 transition-colors">
+                                        <ArrowUp className="w-3 h-3" />
                                       </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => updateTemplateButton(tmpl.id, btn.id, { mode: 'inline' })}
-                                        className={`flex-1 h-6 text-[10px] rounded flex items-center justify-center gap-1 transition-colors border ${
-                                          isInline ? 'bg-green-600/20 border-green-500/40 text-green-300 font-medium' : 'border-transparent text-muted-foreground hover:text-foreground'
-                                        }`}
-                                      >
-                                        <code className="text-[9px]">{'<code>'}</code>
-                                        В тексте
+                                      <button type="button"
+                                        disabled={bIdx === (tmpl.blocks ?? []).length - 1}
+                                        onClick={() => moveBlock(tmpl.id, block.id, 'down')}
+                                        className="p-0.5 rounded hover:bg-muted disabled:opacity-25 transition-colors">
+                                        <ArrowDown className="w-3 h-3" />
                                       </button>
-                                      <button
-                                        type="button"
-                                        className="p-1 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors flex-shrink-0"
-                                        onClick={() => deleteTemplateButton(tmpl.id, btn.id)}
-                                      >
+                                      <button type="button"
+                                        onClick={() => deleteBlock(tmpl.id, block.id)}
+                                        className="p-0.5 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors">
                                         <Trash2 className="w-3 h-3" />
                                       </button>
                                     </div>
-                                    {/* Label + copyText */}
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="text-[10px] text-muted-foreground/60 w-10 flex-shrink-0">{isInline ? 'МЕТКА' : 'КНОПКА'}</span>
-                                      <Input
-                                        value={btn.label}
-                                        onChange={(e) => updateTemplateButton(tmpl.id, btn.id, { label: e.target.value })}
-                                        placeholder={isInline ? 'Карта' : '📋 Скопировать карту'}
-                                        className="h-7 text-xs flex-1"
-                                      />
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                      <ClipboardCopy className="w-3 h-3 text-muted-foreground/60 flex-shrink-0 ml-[2px]" />
-                                      <Input
-                                        value={btn.copyText}
-                                        onChange={(e) => updateTemplateButton(tmpl.id, btn.id, { copyText: e.target.value })}
-                                        placeholder="Текст для копирования..."
-                                        className="h-7 text-xs flex-1 font-mono"
-                                      />
-                                    </div>
-                                    {isInline && (
-                                      <div className="text-[10px] text-green-400/70 pl-1">
-                                        Будет добавлено в текст: <code className="bg-green-500/10 px-1">{btn.label}: {'<code>'}{btn.copyText || '…'}{'</code>'}</code>
+
+                                    {block.type === 'text' ? (
+                                      /* Text block */
+                                      <div className="space-y-1">
+                                        <Textarea
+                                          ref={(el) => { textareaRefs.current[`${tmpl.id}_${block.id}`] = el; }}
+                                          value={block.content}
+                                          onChange={(e) => updateBlock(tmpl.id, block.id, { content: e.target.value } as any)}
+                                          onSelect={() => handleTextareaSelect(`${tmpl.id}_${block.id}`)}
+                                          onMouseUp={() => handleTextareaSelect(`${tmpl.id}_${block.id}`)}
+                                          onKeyUp={() => handleTextareaSelect(`${tmpl.id}_${block.id}`)}
+                                          placeholder={"Реквизиты для пожертвований:\n\nБанк: PrivatBank\nКарта: 4149 6090 1234 5678"}
+                                          className="resize-y min-h-[80px] text-sm font-mono leading-relaxed"
+                                        />
+                                        <p className="text-[10px] text-muted-foreground">
+                                          {block.content.length} симв. · HTML: <code className="bg-muted px-0.5 rounded">&lt;b&gt;</code> <code className="bg-muted px-0.5 rounded">&lt;i&gt;</code> <code className="bg-muted px-0.5 rounded">&lt;code&gt;</code>
+                                        </p>
+                                        {/* Selection bar */}
+                                        {textSelections[`${tmpl.id}_${block.id}`]?.trim() && (
+                                          <div className="flex items-center gap-1.5 rounded-md bg-blue-500/10 border border-blue-500/20 px-2 py-1.5">
+                                            <span className="text-[10px] text-blue-300 flex-1 min-w-0 truncate font-mono">
+                                              «{textSelections[`${tmpl.id}_${block.id}`].slice(0, 45)}»
+                                            </span>
+                                            <Button type="button" size="sm"
+                                              className="h-5 text-[10px] px-2 bg-blue-600 hover:bg-blue-500 text-white flex-shrink-0"
+                                              onClick={() => addBlockFromSelection(tmpl.id)}>
+                                              <Plus className="w-2.5 h-2.5 mr-0.5" />
+                                              → Кнопка
+                                            </Button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      /* Button block */
+                                      <div className="space-y-1.5">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-[10px] text-muted-foreground/60 w-9 flex-shrink-0">ТЕКСТ</span>
+                                          <Input
+                                            value={block.label}
+                                            onChange={(e) => updateBlock(tmpl.id, block.id, { label: e.target.value } as any)}
+                                            placeholder="📋 Скопировать карту"
+                                            className="h-7 text-xs flex-1"
+                                          />
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                          <ClipboardCopy className="w-3 h-3 text-muted-foreground/60 flex-shrink-0" />
+                                          <Input
+                                            value={block.copyText}
+                                            onChange={(e) => updateBlock(tmpl.id, block.id, { copyText: e.target.value } as any)}
+                                            placeholder="Текст для копирования..."
+                                            className="h-7 text-xs flex-1 font-mono"
+                                          />
+                                        </div>
                                       </div>
                                     )}
                                   </div>
-                                  );
-                                })}
+                                ))}
                               </div>
                             )}
                           </div>
 
                           {/* Web preview */}
-                          {(tmpl.text || tmpl.buttons.length > 0) && (
+                          {(tmpl.blocks ?? []).length > 0 && (
                             <div className="space-y-1.5">
                               <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
                                 <Smartphone className="w-3.5 h-3.5" />
                                 Предпросмотр · нажмите кнопку чтобы скопировать
                               </Label>
-                              <div className="bg-[#17212b] rounded-xl p-3 space-y-2">
-                                {tmpl.text && (
-                                  <p
-                                    className="text-white text-[12px] leading-relaxed whitespace-pre-wrap break-words bg-[#232e3c] rounded-xl rounded-tl-sm px-3 py-2"
-                                    dangerouslySetInnerHTML={{
-                                      __html: tmpl.text
-                                        .replace(/&/g, '&amp;')
-                                        .replace(/</g, '&lt;')
-                                        .replace(/>/g, '&gt;')
-                                        .replace(/&lt;b&gt;(.*?)&lt;\/b&gt;/g, '<strong>$1</strong>')
-                                        .replace(/&lt;i&gt;(.*?)&lt;\/i&gt;/g, '<em>$1</em>')
-                                        .replace(/&lt;code&gt;(.*?)&lt;\/code&gt;/g, '<code class="bg-white/10 px-1 rounded font-mono">$1</code>'),
-                                    }}
-                                  />
-                                )}
-                                {tmpl.buttons.length > 0 && (
-                                  <div className="space-y-1">
-                                    {tmpl.buttons.map((btn) => (
-                                      <button
-                                        key={btn.id}
-                                        type="button"
+                              <div className="bg-[#17212b] rounded-xl p-3 space-y-1">
+                                <div className="bg-[#232e3c] rounded-xl rounded-tl-sm px-3 py-2 space-y-2">
+                                  {(tmpl.blocks ?? []).map((block) => {
+                                    if (block.type === 'text') {
+                                      return (
+                                        <p key={block.id}
+                                          className="text-white text-[12px] leading-relaxed whitespace-pre-wrap break-words"
+                                          dangerouslySetInnerHTML={{
+                                            __html: block.content
+                                              .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                                              .replace(/&lt;b&gt;(.*?)&lt;\/b&gt;/g, '<strong>$1</strong>')
+                                              .replace(/&lt;i&gt;(.*?)&lt;\/i&gt;/g, '<em>$1</em>')
+                                              .replace(/&lt;code&gt;(.*?)&lt;\/code&gt;/g, '<code class="bg-white/10 px-1 rounded font-mono">$1</code>'),
+                                          }}
+                                        />
+                                      );
+                                    }
+                                    return (
+                                      <button key={block.id} type="button"
                                         className={`w-full rounded-lg px-3 py-2 text-center text-[11px] transition-all duration-150 flex items-center justify-center gap-1.5 ${
-                                          copiedId === btn.id
+                                          copiedId === block.id
                                             ? 'bg-green-500/20 text-green-400'
                                             : 'bg-[#2b5278]/80 text-[#6ab3f3] hover:bg-[#2b5278] active:scale-95'
                                         }`}
-                                        onClick={() =>
-                                          btn.copyText && handleCopyToClipboard(btn.copyText, btn.id)
-                                        }
-                                        disabled={!btn.copyText}
-                                      >
-                                        {copiedId === btn.id ? (
-                                          <>
-                                            <CheckCircle2 className="w-3 h-3" />
-                                            Скопировано!
-                                          </>
+                                        onClick={() => block.copyText && handleCopyToClipboard(block.copyText, block.id)}
+                                        disabled={!block.copyText}>
+                                        {copiedId === block.id ? (
+                                          <><CheckCircle2 className="w-3 h-3" />Скопировано!</>
                                         ) : (
-                                          <>
-                                            <ClipboardCopy className="w-3 h-3 opacity-70" />
-                                            {btn.label || 'Кнопка'}
-                                          </>
+                                          <><ClipboardCopy className="w-3 h-3 opacity-70" />{block.label || 'Кнопка'}</>
                                         )}
                                       </button>
-                                    ))}
-                                  </div>
-                                )}
+                                    );
+                                  })}
+                                </div>
                               </div>
                             </div>
                           )}
