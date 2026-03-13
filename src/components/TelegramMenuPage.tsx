@@ -1346,51 +1346,6 @@ export const TelegramMenuPage = () => {
                             )}
                           </div>
 
-                          {/* Web preview */}
-                          {(tmpl.blocks ?? []).length > 0 && (
-                            <div className="space-y-1.5">
-                              <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                                <Smartphone className="w-3.5 h-3.5" />
-                                Предпросмотр · нажмите кнопку чтобы скопировать
-                              </Label>
-                              <div className="bg-[#17212b] rounded-xl p-3 space-y-1">
-                                <div className="bg-[#232e3c] rounded-xl rounded-tl-sm px-3 py-2 space-y-2">
-                                  {(tmpl.blocks ?? []).map((block) => {
-                                    if (block.type === 'text') {
-                                      return (
-                                        <p key={block.id}
-                                          className="text-white text-[12px] leading-relaxed whitespace-pre-wrap break-words"
-                                          dangerouslySetInnerHTML={{
-                                            __html: block.content
-                                              .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                                              .replace(/&lt;b&gt;(.*?)&lt;\/b&gt;/g, '<strong>$1</strong>')
-                                              .replace(/&lt;i&gt;(.*?)&lt;\/i&gt;/g, '<em>$1</em>')
-                                              .replace(/&lt;code&gt;(.*?)&lt;\/code&gt;/g, '<code class="bg-white/10 px-1 rounded font-mono">$1</code>'),
-                                          }}
-                                        />
-                                      );
-                                    }
-                                    return (
-                                      <button key={block.id} type="button"
-                                        className={`w-full rounded-lg px-3 py-2 text-center text-[11px] transition-all duration-150 flex items-center justify-center gap-1.5 ${
-                                          copiedId === block.id
-                                            ? 'bg-green-500/20 text-green-400'
-                                            : 'bg-[#2b5278]/80 text-[#6ab3f3] hover:bg-[#2b5278] active:scale-95'
-                                        }`}
-                                        onClick={() => block.copyText && handleCopyToClipboard(block.copyText, block.id)}
-                                        disabled={!block.copyText}>
-                                        {copiedId === block.id ? (
-                                          <><CheckCircle2 className="w-3 h-3" />Скопировано!</>
-                                        ) : (
-                                          <><ClipboardCopy className="w-3 h-3 opacity-70" />{block.label || 'Кнопка'}</>
-                                        )}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            </div>
-                          )}
                         </div>
                       )}
                     </div>
