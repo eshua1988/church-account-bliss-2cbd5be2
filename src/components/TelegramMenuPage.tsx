@@ -45,13 +45,12 @@ import {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+interface ColRowPair { id: string; from: string; to: string; }
 interface SheetRange {
   id: string;
-  sheetName: string; // e.g. "Лист1", "Info 2026"
-  colFrom: string;   // e.g. "A"
-  colTo: string;     // e.g. "C" (empty = same as colFrom)
-  rowFrom: string;   // e.g. "1" (empty = all rows from start)
-  rowTo: string;     // e.g. "50" (empty = all rows to end)
+  sheetName: string;
+  cols: ColRowPair[]; // multiple column ranges
+  rows: ColRowPair[]; // multiple row ranges
 }
 
 interface ExtraButton {
@@ -253,9 +252,25 @@ export const TelegramMenuPage = () => {
             }
             return { ...t, blocks, text: t.text ?? '', buttons: t.buttons ?? [] } as MessageTemplate;
           });
+          // Migrate old SheetRange format (colFrom/colTo/rowFrom/rowTo) → new (cols/rows)
+          const rawButtons: any[] = d.extra_buttons ?? [];
+          const migratedButtons: ExtraButton[] = rawButtons.map((b: any) => {
+            if (!Array.isArray(b.sheetRanges)) return b as ExtraButton;
+            const ranges: SheetRange[] = b.sheetRanges.map((r: any): SheetRange => {
+              if (Array.isArray(r.cols) && Array.isArray(r.rows)) return r as SheetRange;
+              // old format
+              return {
+                id: r.id ?? crypto.randomUUID(),
+                sheetName: r.sheetName ?? '',
+                cols: [{ id: crypto.randomUUID(), from: r.colFrom ?? 'A', to: r.colTo ?? '' }],
+                rows: [{ id: crypto.randomUUID(), from: r.rowFrom ?? '1', to: r.rowTo ?? '50' }],
+              };
+            });
+            return { ...b, sheetRanges: ranges } as ExtraButton;
+          });
           setConfig({
             welcomeMessage: d.welcome_message ?? defaultConfig.welcomeMessage,
-            extraButtons: (d.extra_buttons as ExtraButton[]) ?? [],
+            extraButtons: migratedButtons,
             showPayoutLinks: d.show_payout_links !== false,
             botCommands: (d.bot_commands as BotCommand[]) ?? defaultConfig.botCommands,
             messageTemplates: migratedTemplates,
@@ -414,17 +429,24 @@ export const TelegramMenuPage = () => {
       return { ...p, extraButtons: arr };
     });
 
+  const mkSheetRange = (): SheetRange => ({
+    id: crypto.randomUUID(),
+    sheetName: '',
+    cols: [{ id: crypto.randomUUID(), from: 'A', to: '' }],
+    rows: [{ id: crypto.randomUUID(), from: '1', to: '50' }],
+  });
+
   const addSheetRange = (btnId: string) =>
     setConfig((p) => ({
       ...p,
       extraButtons: p.extraButtons.map((b) =>
         b.id === btnId
-          ? { ...b, sheetRanges: [...(b.sheetRanges ?? []), { id: crypto.randomUUID(), sheetName: '', colFrom: 'A', colTo: 'A', rowFrom: '1', rowTo: '50' }] }
+          ? { ...b, sheetRanges: [...(b.sheetRanges ?? []), mkSheetRange()] }
           : b
       ),
     }));
 
-  const updateSheetRange = (btnId: string, rangeId: string, patch: Partial<SheetRange>) =>
+  const updateSheetRange = (btnId: string, rangeId: string, patch: { sheetName: string }) =>
     setConfig((p) => ({
       ...p,
       extraButtons: p.extraButtons.map((b) =>
@@ -440,6 +462,72 @@ export const TelegramMenuPage = () => {
       extraButtons: p.extraButtons.map((b) =>
         b.id === btnId
           ? { ...b, sheetRanges: (b.sheetRanges ?? []).filter((r) => r.id !== rangeId) }
+          : b
+      ),
+    }));
+
+  const addSheetRangeCol = (btnId: string, rangeId: string) =>
+    setConfig((p) => ({
+      ...p,
+      extraButtons: p.extraButtons.map((b) =>
+        b.id === btnId
+          ? { ...b, sheetRanges: (b.sheetRanges ?? []).map((r) =>
+              r.id === rangeId ? { ...r, cols: [...r.cols, { id: crypto.randomUUID(), from: '', to: '' }] } : r) }
+          : b
+      ),
+    }));
+
+  const removeSheetRangeCol = (btnId: string, rangeId: string, pairId: string) =>
+    setConfig((p) => ({
+      ...p,
+      extraButtons: p.extraButtons.map((b) =>
+        b.id === btnId
+          ? { ...b, sheetRanges: (b.sheetRanges ?? []).map((r) =>
+              r.id === rangeId ? { ...r, cols: r.cols.filter((c) => c.id !== pairId) } : r) }
+          : b
+      ),
+    }));
+
+  const updateSheetRangeCol = (btnId: string, rangeId: string, pairId: string, patch: Partial<{from: string; to: string}>) =>
+    setConfig((p) => ({
+      ...p,
+      extraButtons: p.extraButtons.map((b) =>
+        b.id === btnId
+          ? { ...b, sheetRanges: (b.sheetRanges ?? []).map((r) =>
+              r.id === rangeId ? { ...r, cols: r.cols.map((c) => c.id === pairId ? { ...c, ...patch } : c) } : r) }
+          : b
+      ),
+    }));
+
+  const addSheetRangeRow = (btnId: string, rangeId: string) =>
+    setConfig((p) => ({
+      ...p,
+      extraButtons: p.extraButtons.map((b) =>
+        b.id === btnId
+          ? { ...b, sheetRanges: (b.sheetRanges ?? []).map((r) =>
+              r.id === rangeId ? { ...r, rows: [...r.rows, { id: crypto.randomUUID(), from: '', to: '' }] } : r) }
+          : b
+      ),
+    }));
+
+  const removeSheetRangeRow = (btnId: string, rangeId: string, pairId: string) =>
+    setConfig((p) => ({
+      ...p,
+      extraButtons: p.extraButtons.map((b) =>
+        b.id === btnId
+          ? { ...b, sheetRanges: (b.sheetRanges ?? []).map((r) =>
+              r.id === rangeId ? { ...r, rows: r.rows.filter((rw) => rw.id !== pairId) } : r) }
+          : b
+      ),
+    }));
+
+  const updateSheetRangeRow = (btnId: string, rangeId: string, pairId: string, patch: Partial<{from: string; to: string}>) =>
+    setConfig((p) => ({
+      ...p,
+      extraButtons: p.extraButtons.map((b) =>
+        b.id === btnId
+          ? { ...b, sheetRanges: (b.sheetRanges ?? []).map((r) =>
+              r.id === rangeId ? { ...r, rows: r.rows.map((rw) => rw.id === pairId ? { ...rw, ...patch } : rw) } : r) }
           : b
       ),
     }));
@@ -814,22 +902,29 @@ export const TelegramMenuPage = () => {
                               ) : (
                                 <div className="space-y-1.5">
                                   {(btn.sheetRanges ?? []).map((rng, ri) => {
-                                    const preview = (() => {
-                                      const sh = rng.sheetName ? `${rng.sheetName}!` : '';
-                                      const cf = rng.colFrom.trim().toUpperCase();
-                                      const ct = (rng.colTo.trim().toUpperCase()) || cf;
-                                      const rf = rng.rowFrom.trim();
-                                      const rt = rng.rowTo.trim();
-                                      if (!cf && rf) return `${sh}${rf}:${rt || rf}`;
-                                      if (cf && !rf) return `${sh}${cf}:${ct}`;
-                                      if (cf && rf) return `${sh}${cf}${rf}:${ct}${rt || rf}`;
-                                      return `${sh}A:Z`;
-                                    })();
+                                    // Build preview strings for all col×row combos
+                                    const sh = rng.sheetName ? `${rng.sheetName}!` : '';
+                                    const previewParts: string[] = [];
+                                    for (const col of rng.cols) {
+                                      for (const row of rng.rows) {
+                                        const cf = (col.from || '').toUpperCase();
+                                        const ct = (col.to || col.from || '').toUpperCase() || cf;
+                                        const rf = (row.from || '').trim();
+                                        const rt = (row.to || '').trim();
+                                        let seg: string;
+                                        if (!cf && rf) seg = `${rf}:${rt || rf}`;
+                                        else if (cf && !rf) seg = ct ? `${cf}:${ct}` : `${cf}`;
+                                        else if (cf && rf) seg = `${cf}${rf}:${ct || cf}${rt || rf}`;
+                                        else seg = 'A:Z';
+                                        previewParts.push(`${sh}${seg}`);
+                                      }
+                                    }
+                                    const preview = previewParts.join(', ') || `${sh}A:Z`;
                                     return (
                                       <div key={rng.id} className="rounded-lg border border-green-500/20 bg-green-500/5 p-2 space-y-1.5">
                                         <div className="flex items-center gap-1 text-[10px] text-green-400/80 font-medium">
                                           <span className="flex-1">Диапазон {ri + 1}</span>
-                                          <code className="bg-green-500/10 px-1.5 py-0.5 rounded font-mono text-green-300">{preview}</code>
+                                          <code className="bg-green-500/10 px-1.5 py-0.5 rounded font-mono text-green-300 max-w-[160px] truncate">{preview}</code>
                                           <button type="button"
                                             onClick={() => deleteSheetRange(btn.id, rng.id)}
                                             className="p-0.5 rounded hover:bg-destructive/20 hover:text-destructive text-muted-foreground transition-colors">
@@ -844,36 +939,66 @@ export const TelegramMenuPage = () => {
                                             placeholder="Лист1"
                                             className="h-6 text-xs flex-1 font-mono" />
                                         </div>
-                                        {/* Columns */}
-                                        <div className="flex items-center gap-1.5">
-                                          <span className="text-[10px] text-muted-foreground/60 w-11 flex-shrink-0">СТОЛБЦЫ</span>
-                                          <div className="flex items-center gap-1 flex-1">
-                                            <Input value={rng.colFrom}
-                                              onChange={(e) => updateSheetRange(btn.id, rng.id, { colFrom: e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase() })}
-                                              placeholder="A"
-                                              className="h-6 text-xs w-10 font-mono text-center flex-shrink-0" />
-                                            <span className="text-muted-foreground text-xs">—</span>
-                                            <Input value={rng.colTo}
-                                              onChange={(e) => updateSheetRange(btn.id, rng.id, { colTo: e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase() })}
-                                              placeholder={rng.colFrom || 'A'}
-                                              className="h-6 text-xs w-10 font-mono text-center flex-shrink-0" />
-                                            <span className="text-[10px] text-muted-foreground/50 ml-1">(пусто = один столбец)</span>
+                                        {/* Columns list */}
+                                        <div className="space-y-1">
+                                          <div className="flex items-center gap-1">
+                                            <span className="text-[10px] text-muted-foreground/60 w-11 flex-shrink-0">СТОЛБЦЫ</span>
+                                            <div className="flex flex-wrap gap-1 flex-1">
+                                              {rng.cols.map((col, ci) => (
+                                                <div key={col.id} className="flex items-center gap-0.5">
+                                                  <Input value={col.from}
+                                                    onChange={(e) => updateSheetRangeCol(btn.id, rng.id, col.id, { from: e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase() })}
+                                                    placeholder="A"
+                                                    className="h-6 text-xs w-10 font-mono text-center" />
+                                                  <span className="text-muted-foreground text-[10px]">—</span>
+                                                  <Input value={col.to}
+                                                    onChange={(e) => updateSheetRangeCol(btn.id, rng.id, col.id, { to: e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase() })}
+                                                    placeholder={col.from || 'A'}
+                                                    className="h-6 text-xs w-10 font-mono text-center" />
+                                                  {ci > 0 && (
+                                                    <button type="button" onClick={() => removeSheetRangeCol(btn.id, rng.id, col.id)}
+                                                      className="p-0.5 rounded hover:bg-destructive/20 hover:text-destructive text-muted-foreground/50 transition-colors">
+                                                      <Trash2 className="w-2.5 h-2.5" />
+                                                    </button>
+                                                  )}
+                                                </div>
+                                              ))}
+                                              <button type="button" onClick={() => addSheetRangeCol(btn.id, rng.id)}
+                                                className="h-6 px-1.5 rounded text-[10px] text-green-400 border border-green-500/30 hover:bg-green-500/10 transition-colors flex items-center gap-0.5">
+                                                <Plus className="w-2.5 h-2.5" />стлб
+                                              </button>
+                                            </div>
                                           </div>
                                         </div>
-                                        {/* Rows */}
-                                        <div className="flex items-center gap-1.5">
-                                          <span className="text-[10px] text-muted-foreground/60 w-11 flex-shrink-0">СТРОКИ</span>
-                                          <div className="flex items-center gap-1 flex-1">
-                                            <Input value={rng.rowFrom}
-                                              onChange={(e) => updateSheetRange(btn.id, rng.id, { rowFrom: e.target.value.replace(/\D/g, '') })}
-                                              placeholder="1"
-                                              className="h-6 text-xs w-14 font-mono text-center flex-shrink-0" />
-                                            <span className="text-muted-foreground text-xs">—</span>
-                                            <Input value={rng.rowTo}
-                                              onChange={(e) => updateSheetRange(btn.id, rng.id, { rowTo: e.target.value.replace(/\D/g, '') })}
-                                              placeholder="50"
-                                              className="h-6 text-xs w-14 font-mono text-center flex-shrink-0" />
-                                            <span className="text-[10px] text-muted-foreground/50 ml-1">(пусто = все строки)</span>
+                                        {/* Rows list */}
+                                        <div className="space-y-1">
+                                          <div className="flex items-center gap-1">
+                                            <span className="text-[10px] text-muted-foreground/60 w-11 flex-shrink-0">СТРОКИ</span>
+                                            <div className="flex flex-wrap gap-1 flex-1">
+                                              {rng.rows.map((row, rwi) => (
+                                                <div key={row.id} className="flex items-center gap-0.5">
+                                                  <Input value={row.from}
+                                                    onChange={(e) => updateSheetRangeRow(btn.id, rng.id, row.id, { from: e.target.value.replace(/\D/g, '') })}
+                                                    placeholder="1"
+                                                    className="h-6 text-xs w-14 font-mono text-center" />
+                                                  <span className="text-muted-foreground text-[10px]">—</span>
+                                                  <Input value={row.to}
+                                                    onChange={(e) => updateSheetRangeRow(btn.id, rng.id, row.id, { to: e.target.value.replace(/\D/g, '') })}
+                                                    placeholder="50"
+                                                    className="h-6 text-xs w-14 font-mono text-center" />
+                                                  {rwi > 0 && (
+                                                    <button type="button" onClick={() => removeSheetRangeRow(btn.id, rng.id, row.id)}
+                                                      className="p-0.5 rounded hover:bg-destructive/20 hover:text-destructive text-muted-foreground/50 transition-colors">
+                                                      <Trash2 className="w-2.5 h-2.5" />
+                                                    </button>
+                                                  )}
+                                                </div>
+                                              ))}
+                                              <button type="button" onClick={() => addSheetRangeRow(btn.id, rng.id)}
+                                                className="h-6 px-1.5 rounded text-[10px] text-green-400 border border-green-500/30 hover:bg-green-500/10 transition-colors flex items-center gap-0.5">
+                                                <Plus className="w-2.5 h-2.5" />стрк
+                                              </button>
+                                            </div>
                                           </div>
                                         </div>
                                       </div>

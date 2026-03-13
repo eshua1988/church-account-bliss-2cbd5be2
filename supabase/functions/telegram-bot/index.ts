@@ -115,16 +115,44 @@ async function readSheetRangesBatch(
 }
 
 /** Build Google Sheets range string from structured SheetRange */
-function buildRangeString(r: { sheetName: string; colFrom: string; colTo: string; rowFrom: string; rowTo: string }): string {
+/** Build one or more range strings from a SheetRange (supports multiple cols and rows) */
+function buildRangeStrings(r: {
+  sheetName: string;
+  // new format
+  cols?: Array<{ from: string; to: string }>;
+  rows?: Array<{ from: string; to: string }>;
+  // legacy format
+  colFrom?: string; colTo?: string; rowFrom?: string; rowTo?: string;
+}): string[] {
   const prefix = r.sheetName ? `${r.sheetName}!` : '';
-  const cf = (r.colFrom || '').toUpperCase();
-  const ct = (r.colTo || r.colFrom || '').toUpperCase() || cf;
-  const rf = (r.rowFrom || '').trim();
-  const rt = (r.rowTo || '').trim();
-  if (!cf && rf) return `${prefix}${rf}:${rt || rf}`;
-  if (cf && !rf) return ct ? `${prefix}${cf}:${ct}` : `${prefix}${cf}:${cf}`;
-  if (cf && rf) return `${prefix}${cf}${rf}:${ct || cf}${rt || rf}`;
-  return `${prefix}A:Z`;
+  const colPairs = (r.cols && r.cols.length > 0)
+    ? r.cols
+    : [{ from: r.colFrom ?? 'A', to: r.colTo ?? '' }];
+  const rowPairs = (r.rows && r.rows.length > 0)
+    ? r.rows
+    : [{ from: r.rowFrom ?? '', to: r.rowTo ?? '' }];
+
+  const results: string[] = [];
+  for (const col of colPairs) {
+    for (const row of rowPairs) {
+      const cf = (col.from || '').toUpperCase();
+      const ct = (col.to || col.from || '').toUpperCase() || cf;
+      const rf = (row.from || '').trim();
+      const rt = (row.to || '').trim();
+      let seg: string;
+      if (!cf && rf) seg = `${rf}:${rt || rf}`;
+      else if (cf && !rf) seg = ct ? `${cf}:${ct}` : `${cf}:${cf}`;
+      else if (cf && rf) seg = `${cf}${rf}:${ct || cf}${rt || rf}`;
+      else seg = 'A:Z';
+      results.push(`${prefix}${seg}`);
+    }
+  }
+  return results.length > 0 ? results : [`${prefix}A:Z`];
+}
+
+/** @deprecated use buildRangeStrings */
+function buildRangeString(r: { sheetName: string; colFrom: string; colTo: string; rowFrom: string; rowTo: string }): string {
+  return buildRangeStrings(r)[0];
 }
 
 /** Format 2D sheet data for Telegram HTML message */
@@ -541,7 +569,12 @@ serve(async (req) => {
                 .select("extra_buttons")
                 .eq("user_id", userId2)
                 .maybeSingle();
-              type SheetRangeCfg = { id: string; sheetName: string; colFrom: string; colTo: string; rowFrom: string; rowTo: string };
+              type SheetRangeCfg = {
+                id: string; sheetName: string;
+                cols?: Array<{ id: string; from: string; to: string }>;
+                rows?: Array<{ id: string; from: string; to: string }>;
+                colFrom?: string; colTo?: string; rowFrom?: string; rowTo?: string;
+              };
               const extraBtns = ((cfg2 as any)?.extra_buttons as Array<{
                 id: string; text: string; type: string; value: string;
                 sheetRanges?: SheetRangeCfg[];
@@ -562,7 +595,7 @@ serve(async (req) => {
                     const backKbd = { inline_keyboard: [[{ text: "◀ Назад", callback_data: "get_links" }]] };
                     if (hasStructuredRanges) {
                       // Build range strings from structured SheetRange objects
-                      const rangeStrings = sheetBtn.sheetRanges!.map((r) => buildRangeString(r));
+                      const rangeStrings = sheetBtn.sheetRanges!.flatMap((r) => buildRangeStrings(r));
                       let textParts: string[] = [];
                       if (rangeStrings.length === 1) {
                         const vals = await readSheetRange(spreadsheetId, rangeStrings[0], accessToken);
