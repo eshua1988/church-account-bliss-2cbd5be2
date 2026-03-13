@@ -941,30 +941,36 @@ export const TelegramMenuPage = () => {
                                         </div>
                                         {/* Columns list */}
                                         <div className="space-y-1">
-                                          <div className="flex items-center gap-1">
-                                            <span className="text-[10px] text-muted-foreground/60 w-11 flex-shrink-0">СТОЛБЦЫ</span>
-                                            <div className="flex flex-wrap gap-1 flex-1">
+                                          <div className="flex items-start gap-1">
+                                            <span className="text-[10px] text-muted-foreground/60 w-11 flex-shrink-0 pt-1.5">СТОЛБЦЫ</span>
+                                            <div className="flex flex-wrap items-center gap-1 flex-1">
                                               {rng.cols.map((col, ci) => (
-                                                <div key={col.id} className="flex items-center gap-0.5">
-                                                  <Input value={col.from}
-                                                    onChange={(e) => updateSheetRangeCol(btn.id, rng.id, col.id, { from: e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase() })}
-                                                    placeholder="A"
-                                                    className="h-6 text-xs w-10 font-mono text-center" />
-                                                  <span className="text-muted-foreground text-[10px]">—</span>
-                                                  <Input value={col.to}
-                                                    onChange={(e) => updateSheetRangeCol(btn.id, rng.id, col.id, { to: e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase() })}
-                                                    placeholder={col.from || 'A'}
-                                                    className="h-6 text-xs w-10 font-mono text-center" />
+                                                <>
                                                   {ci > 0 && (
-                                                    <button type="button" onClick={() => removeSheetRangeCol(btn.id, rng.id, col.id)}
-                                                      className="p-0.5 rounded hover:bg-destructive/20 hover:text-destructive text-muted-foreground/50 transition-colors">
-                                                      <Trash2 className="w-2.5 h-2.5" />
-                                                    </button>
+                                                    <span className="text-green-400/70 font-bold text-sm leading-none">+</span>
                                                   )}
-                                                </div>
+                                                  <div key={col.id} className="flex items-center gap-0.5">
+                                                    <Input value={col.from}
+                                                      onChange={(e) => updateSheetRangeCol(btn.id, rng.id, col.id, { from: e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase() })}
+                                                      placeholder="A"
+                                                      className="h-6 text-xs w-10 font-mono text-center" />
+                                                    <span className="text-muted-foreground text-[10px]">—</span>
+                                                    <Input value={col.to}
+                                                      onChange={(e) => updateSheetRangeCol(btn.id, rng.id, col.id, { to: e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase() })}
+                                                      placeholder={col.from || 'A'}
+                                                      className="h-6 text-xs w-10 font-mono text-center" />
+                                                    {ci > 0 && (
+                                                      <button type="button" onClick={() => removeSheetRangeCol(btn.id, rng.id, col.id)}
+                                                        className="p-0.5 rounded hover:bg-destructive/20 hover:text-destructive text-muted-foreground/50 transition-colors">
+                                                        <Trash2 className="w-2.5 h-2.5" />
+                                                      </button>
+                                                    )}
+                                                  </div>
+                                                </>
                                               ))}
                                               <button type="button" onClick={() => addSheetRangeCol(btn.id, rng.id)}
-                                                className="h-6 px-1.5 rounded text-[10px] text-green-400 border border-green-500/30 hover:bg-green-500/10 transition-colors flex items-center gap-0.5">
+                                                className="h-6 px-1.5 rounded text-[10px] text-green-400 border border-green-500/30 hover:bg-green-500/10 transition-colors flex items-center gap-0.5"
+                                                title="Добавить ещё столбец">
                                                 <Plus className="w-2.5 h-2.5" />стлб
                                               </button>
                                             </div>
@@ -972,30 +978,36 @@ export const TelegramMenuPage = () => {
                                         </div>
                                         {/* Rows list */}
                                         <div className="space-y-1">
-                                          <div className="flex items-center gap-1">
-                                            <span className="text-[10px] text-muted-foreground/60 w-11 flex-shrink-0">СТРОКИ</span>
-                                            <div className="flex flex-wrap gap-1 flex-1">
+                                          <div className="flex items-start gap-1">
+                                            <span className="text-[10px] text-muted-foreground/60 w-11 flex-shrink-0 pt-1.5">СТРОКИ</span>
+                                            <div className="flex flex-wrap items-center gap-1 flex-1">
                                               {rng.rows.map((row, rwi) => (
-                                                <div key={row.id} className="flex items-center gap-0.5">
-                                                  <Input value={row.from}
-                                                    onChange={(e) => updateSheetRangeRow(btn.id, rng.id, row.id, { from: e.target.value.replace(/\D/g, '') })}
-                                                    placeholder="1"
-                                                    className="h-6 text-xs w-14 font-mono text-center" />
-                                                  <span className="text-muted-foreground text-[10px]">—</span>
-                                                  <Input value={row.to}
-                                                    onChange={(e) => updateSheetRangeRow(btn.id, rng.id, row.id, { to: e.target.value.replace(/\D/g, '') })}
-                                                    placeholder="50"
-                                                    className="h-6 text-xs w-14 font-mono text-center" />
+                                                <>
                                                   {rwi > 0 && (
-                                                    <button type="button" onClick={() => removeSheetRangeRow(btn.id, rng.id, row.id)}
-                                                      className="p-0.5 rounded hover:bg-destructive/20 hover:text-destructive text-muted-foreground/50 transition-colors">
-                                                      <Trash2 className="w-2.5 h-2.5" />
-                                                    </button>
+                                                    <span className="text-green-400/70 font-bold text-sm leading-none">+</span>
                                                   )}
-                                                </div>
+                                                  <div key={row.id} className="flex items-center gap-0.5">
+                                                    <Input value={row.from}
+                                                      onChange={(e) => updateSheetRangeRow(btn.id, rng.id, row.id, { from: e.target.value.replace(/\D/g, '') })}
+                                                      placeholder="1"
+                                                      className="h-6 text-xs w-14 font-mono text-center" />
+                                                    <span className="text-muted-foreground text-[10px]">—</span>
+                                                    <Input value={row.to}
+                                                      onChange={(e) => updateSheetRangeRow(btn.id, rng.id, row.id, { to: e.target.value.replace(/\D/g, '') })}
+                                                      placeholder="50"
+                                                      className="h-6 text-xs w-14 font-mono text-center" />
+                                                    {rwi > 0 && (
+                                                      <button type="button" onClick={() => removeSheetRangeRow(btn.id, rng.id, row.id)}
+                                                        className="p-0.5 rounded hover:bg-destructive/20 hover:text-destructive text-muted-foreground/50 transition-colors">
+                                                        <Trash2 className="w-2.5 h-2.5" />
+                                                      </button>
+                                                    )}
+                                                  </div>
+                                                </>
                                               ))}
                                               <button type="button" onClick={() => addSheetRangeRow(btn.id, rng.id)}
-                                                className="h-6 px-1.5 rounded text-[10px] text-green-400 border border-green-500/30 hover:bg-green-500/10 transition-colors flex items-center gap-0.5">
+                                                className="h-6 px-1.5 rounded text-[10px] text-green-400 border border-green-500/30 hover:bg-green-500/10 transition-colors flex items-center gap-0.5"
+                                                title="Добавить ещё строки">
                                                 <Plus className="w-2.5 h-2.5" />стрк
                                               </button>
                                             </div>
