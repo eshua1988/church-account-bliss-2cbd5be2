@@ -161,9 +161,6 @@ const TelegramLayoutEditor = ({
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const allButtons: EditableBtn[] = [
-    ...(config.showPayoutLinks
-      ? [{ id: '__payout__', text: '🔗 Ссылка Ордера расходов - Скопировать', type: 'copy', fixed: true, extraIdx: -1 }]
-      : []),
     ...config.extraButtons.map((b, i) => ({ id: b.id, text: b.text, type: b.type, fixed: false, extraIdx: i })),
   ];
 
@@ -279,13 +276,12 @@ const TelegramLayoutEditor = ({
 
             {/* Templates list */}
             {config.messageTemplates.filter((t) => t.enabled).length > 0 && (
-              <div className="mt-1.5 border-t border-white/5 pt-2 space-y-0.5">
-                <div className="text-[9px] text-white/20 uppercase tracking-widest px-0.5 mb-1">Шаблоны (по триггеру)</div>
+              <div className="mt-0.5 space-y-0.5">
                 {config.messageTemplates.filter((t) => t.enabled).map((tmpl) => (
-                  <div key={tmpl.id} className="flex items-center gap-1.5 rounded-md px-2 py-1 bg-orange-500/5 border border-orange-500/10">
-                    <FileText className="w-2.5 h-2.5 text-orange-400/50 flex-shrink-0" />
-                    <span className="flex-1 text-[10px] text-white/35 truncate">{tmpl.title}</span>
-                    <code className="text-[9px] text-white/20 font-mono">/{tmpl.trigger}</code>
+                  <div key={tmpl.id} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 bg-[#2b5278]/80 cursor-default">
+                    <FileText className="w-3 h-3 text-orange-400/70 flex-shrink-0" />
+                    <span className="flex-1 text-[11px] text-[#6ab3f3] truncate text-center">{tmpl.title}</span>
+                    <code className="text-[9px] text-white/30 font-mono flex-shrink-0">/{tmpl.trigger}</code>
                   </div>
                 ))}
               </div>
