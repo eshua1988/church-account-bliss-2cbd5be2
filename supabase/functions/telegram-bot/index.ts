@@ -431,23 +431,29 @@ async function buildMainMenuForUser(
 
   // Custom extra buttons
   for (const btn of extraButtons) {
-    if (btn.type === "copy") {
-      buttons.push([{ text: btn.text, copy_text: { text: btn.value } }]);
-    } else if (btn.type === "url") {
-      buttons.push([{ text: btn.text, url: btn.value }]);
-    } else if (btn.type === "callback") {
-      buttons.push([{ text: btn.text, callback_data: btn.value }]);
-    } else if (btn.type === "google_sheet" && btn.value) {
-      // Use callback: gsheet_<btn.id> — handled in webhook
-      buttons.push([{ text: btn.text, callback_data: `gsheet_${btn.id}` }]);
-    } else if (btn.type === "web_app" && btn.value) {
-      buttons.push([{ text: btn.text, web_app: { url: btn.value } }]);
-    } else if (btn.type === "switch_inline") {
-      buttons.push([{ text: btn.text, switch_inline_query: btn.value ?? "" }]);
-    } else if (btn.type === "switch_inline_current") {
-      buttons.push([{ text: btn.text, switch_inline_query_current_chat: btn.value ?? "" }]);
-    } else if (btn.type === "login_url" && btn.value) {
-      buttons.push([{ text: btn.text, login_url: { url: btn.value } }]);
+    try {
+      if (btn.type === "copy" && btn.value) {
+        buttons.push([{ text: btn.text, copy_text: { text: btn.value } }]);
+      } else if (btn.type === "url" && btn.value) {
+        buttons.push([{ text: btn.text, url: btn.value }]);
+      } else if (btn.type === "callback" && btn.value) {
+        buttons.push([{ text: btn.text, callback_data: btn.value }]);
+      } else if (btn.type === "google_sheet") {
+        // Use callback: gsheet_<btn.id> — handled in webhook
+        buttons.push([{ text: btn.text, callback_data: `gsheet_${btn.id}` }]);
+      } else if (btn.type === "web_app" && btn.value) {
+        // web_app works with any HTTPS URL, no BotFather registration needed
+        buttons.push([{ text: btn.text, web_app: { url: btn.value } }]);
+      } else if (btn.type === "switch_inline") {
+        buttons.push([{ text: btn.text, switch_inline_query: btn.value ?? "" }]);
+      } else if (btn.type === "switch_inline_current") {
+        buttons.push([{ text: btn.text, switch_inline_query_current_chat: btn.value ?? "" }]);
+      } else if (btn.type === "login_url" && btn.value) {
+        // login_url requires BotFather domain registration — fallback to plain url
+        buttons.push([{ text: btn.text, url: btn.value }]);
+      }
+    } catch {
+      // Skip malformed button so it doesn't break the entire keyboard
     }
   }
 

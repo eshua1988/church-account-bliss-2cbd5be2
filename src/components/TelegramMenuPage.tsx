@@ -127,7 +127,7 @@ const BUTTON_TYPE_META: Record<ExtraButton['type'], { label: string; placeholder
   web_app:                { label: '📱 Mini App (WebApp)',       placeholder: 'https://your-webapp.com',      hint: 'Открыть Telegram Mini App по URL',                  color: 'cyan' },
   switch_inline:          { label: '🔄 Inline → другой чат',    placeholder: 'запрос для inline...',         hint: 'Переключит на inline-режим в выбранном чате',       color: 'orange' },
   switch_inline_current:  { label: '💬 Inline → этот чат',      placeholder: 'запрос для inline...',         hint: 'Переключит на inline-режим в текущем чате',         color: 'orange' },
-  login_url:              { label: '🔑 Login URL (OAuth)',       placeholder: 'https://your-oauth.com/auth',  hint: 'Авторизация через Telegram Login Widget',           color: 'red' },
+  login_url:              { label: '🔑 Login URL (OAuth)',       placeholder: 'https://your-oauth.com/auth',  hint: '⚠️ Требует регистрации домена в BotFather → отправляется как URL-кнопка',   color: 'red' },
 };
 
 const QUICK_EMOJI = ['👋', '✅', '🔔', '📋', '💰', '📊', '⚙️', '🏠', '📱', '🔍'];
