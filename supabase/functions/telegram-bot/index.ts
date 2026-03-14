@@ -423,47 +423,63 @@ async function buildMainMenuForUser(
           ...messageTemplates.filter((t) => t.enabled).map((t) => ({ id: t.id, kind: "template" })),
         ];
 
-  // Build flat list of button objects first, then chunk into rows
-  const flatButtons: Array<Record<string, unknown>> = [];
+  // Build flat list of button objects with per-item newRow flag
+  type FlatItem = { btn: Record<string, unknown>; newRow: boolean };
+  const flatItems: FlatItem[] = [];
 
   for (const entry of orderedIds) {
     try {
+      const forceNewRow = (entry as any).newRow === true;
+      let flatBtn: Record<string, unknown> | null = null;
+
       if (entry.kind === "button") {
         const btn = btnMap.get(entry.id);
         if (!btn || (btn as any).enabled === false) continue;
         if (btn.type === "copy" && btn.value) {
-          flatButtons.push({ text: btn.text, copy_text: { text: btn.value } });
+          flatBtn = { text: btn.text, copy_text: { text: btn.value } };
         } else if (btn.type === "url" && btn.value) {
-          flatButtons.push({ text: btn.text, url: btn.value });
+          flatBtn = { text: btn.text, url: btn.value };
         } else if (btn.type === "callback" && btn.value) {
-          flatButtons.push({ text: btn.text, callback_data: btn.value });
+          flatBtn = { text: btn.text, callback_data: btn.value };
         } else if (btn.type === "google_sheet") {
-          flatButtons.push({ text: btn.text, callback_data: `gsheet_${btn.id}` });
+          flatBtn = { text: btn.text, callback_data: `gsheet_${btn.id}` };
         } else if (btn.type === "web_app" && btn.value) {
-          flatButtons.push({ text: btn.text, web_app: { url: btn.value } });
+          flatBtn = { text: btn.text, web_app: { url: btn.value } };
         } else if (btn.type === "switch_inline") {
-          flatButtons.push({ text: btn.text, switch_inline_query: btn.value ?? "" });
+          flatBtn = { text: btn.text, switch_inline_query: btn.value ?? "" };
         } else if (btn.type === "switch_inline_current") {
-          flatButtons.push({ text: btn.text, switch_inline_query_current_chat: btn.value ?? "" });
+          flatBtn = { text: btn.text, switch_inline_query_current_chat: btn.value ?? "" };
         } else if (btn.type === "hashtag" && btn.value) {
           const tag = btn.value.startsWith("#") ? btn.value : `#${btn.value}`;
-          flatButtons.push({ text: btn.text, switch_inline_query_current_chat: tag });
+          flatBtn = { text: btn.text, switch_inline_query_current_chat: tag };
         }
       } else if (entry.kind === "template") {
         const tmpl = tmplMap.get(entry.id);
         if (!tmpl) continue;
-        flatButtons.push({ text: tmpl.title || tmpl.trigger, callback_data: tmpl.trigger });
+        flatBtn = { text: tmpl.title || tmpl.trigger, callback_data: tmpl.trigger };
       }
+
+      if (flatBtn) flatItems.push({ btn: flatBtn, newRow: forceNewRow });
     } catch {
       // Skip malformed entry so it doesn't break the entire keyboard
     }
   }
 
-  // Chunk flat buttons into rows of buttonsPerRow
+  // Build rows: respect per-item newRow flag and global buttonsPerRow limit
   const buttons: Array<Array<Record<string, unknown>>> = [];
-  for (let i = 0; i < flatButtons.length; i += buttonsPerRow) {
-    buttons.push(flatButtons.slice(i, i + buttonsPerRow));
+  let currentRow: Record<string, unknown>[] = [];
+  for (const item of flatItems) {
+    if (item.newRow && currentRow.length > 0) {
+      buttons.push(currentRow);
+      currentRow = [];
+    }
+    currentRow.push(item.btn);
+    if (currentRow.length >= buttonsPerRow) {
+      buttons.push(currentRow);
+      currentRow = [];
+    }
   }
+  if (currentRow.length > 0) buttons.push(currentRow);
 
   if (buttons.length === 0) {
     buttons.push([{ text: "🔗 Ссылка ордера расходов", callback_data: "get_links" }]);

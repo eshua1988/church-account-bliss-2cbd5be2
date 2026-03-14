@@ -51,6 +51,7 @@ import {
   ExternalLink,
   Palette,
   Rows3,
+  CornerDownLeft,
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -101,7 +102,7 @@ interface MessageTemplate {
   enabled: boolean;
 }
 
-interface MenuOrderItem { id: string; kind: 'button' | 'template'; }
+interface MenuOrderItem { id: string; kind: 'button' | 'template'; newRow?: boolean; }
 
 interface LayoutSettings {
   buttonsPerRow: 1 | 2 | 3;
@@ -185,8 +186,8 @@ const BUTTON_BLOCK_META: Record<ButtonBlockType, { label: string; badge: string;
 // ─── Telegram interactive layout editor ─────────────────────────────────────
 
 type UnifiedItem =
-  | { kind: 'button'; id: string; text: string; btnType: string; idx: number }
-  | { kind: 'template'; id: string; text: string; trigger: string; idx: number };
+  | { kind: 'button'; id: string; text: string; btnType: string; idx: number; newRow?: boolean }
+  | { kind: 'template'; id: string; text: string; trigger: string; idx: number; newRow?: boolean };
 
 const TelegramLayoutEditor = ({
   config,
@@ -215,19 +216,29 @@ const TelegramLayoutEditor = ({
     .map((o): UnifiedItem | null => {
       if (o.kind === 'button') {
         const b = btnMap.get(o.id);
-        return b ? { kind: 'button', id: b.id, text: b.text, btnType: b.type, idx: b.idx } : null;
+        return b ? { kind: 'button', id: b.id, text: b.text, btnType: b.type, idx: b.idx, newRow: o.newRow } : null;
       } else {
         const t = tmplMap.get(o.id);
-        return t ? { kind: 'template', id: t.id, text: t.title, trigger: t.trigger, idx: t.idx } : null;
+        return t ? { kind: 'template', id: t.id, text: t.title, trigger: t.trigger, idx: t.idx, newRow: o.newRow } : null;
       }
     })
     .filter((x): x is UnifiedItem => x !== null);
 
-  // Group flat list into display rows
+  // Group into display rows, respecting per-item newRow flag
   const rowGroups: UnifiedItem[][] = [];
-  for (let i = 0; i < items.length; i += buttonsPerRow) {
-    rowGroups.push(items.slice(i, i + buttonsPerRow));
+  let currentRow: UnifiedItem[] = [];
+  for (const item of items) {
+    if (item.newRow && currentRow.length > 0) {
+      rowGroups.push(currentRow);
+      currentRow = [];
+    }
+    currentRow.push(item);
+    if (currentRow.length >= buttonsPerRow) {
+      rowGroups.push(currentRow);
+      currentRow = [];
+    }
   }
+  if (currentRow.length > 0) rowGroups.push(currentRow);
 
   const btnPy = buttonSize === 'sm' ? 'py-1' : buttonSize === 'lg' ? 'py-2.5' : 'py-1.5';
 
@@ -689,6 +700,12 @@ export const TelegramMenuPage = () => {
       ...p,
       extraButtons: p.extraButtons.filter((b) => b.id !== id),
       menuOrder: p.menuOrder.filter((x) => x.id !== id),
+    }));
+
+  const updateMenuOrder = (id: string, patch: Partial<MenuOrderItem>) =>
+    setConfig((p) => ({
+      ...p,
+      menuOrder: p.menuOrder.map((x) => x.id === id ? { ...x, ...patch } : x),
     }));
 
   const moveButton = (id: string, dir: 'up' | 'down') =>
@@ -1184,7 +1201,20 @@ export const TelegramMenuPage = () => {
                             <ArrowDown className="w-3 h-3" />
                           </button>
                         </div>
-                        <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          {(() => {
+                            const isNewRow = config.menuOrder.find(x => x.id === btn.id)?.newRow === true;
+                            return (
+                              <button
+                                type="button"
+                                title={isNewRow ? 'Всегда с новой строки (нажмите чтобы отменить)' : 'Добавить перенос строки перед кнопкой'}
+                                onClick={() => updateMenuOrder(btn.id, { newRow: !isNewRow })}
+                                className={`p-1 rounded transition-colors ${isNewRow ? 'text-primary bg-primary/15' : 'text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted'}`}
+                              >
+                                <CornerDownLeft className="w-3.5 h-3.5" />
+                              </button>
+                            );
+                          })()}
                           <Switch
                             checked={btn.enabled !== false}
                             onCheckedChange={(v) => updateButton(btn.id, { enabled: v })}
@@ -1516,7 +1546,20 @@ export const TelegramMenuPage = () => {
                             /{tmpl.trigger}
                           </span>
                         )}
-                        <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          {(() => {
+                            const isNewRow = config.menuOrder.find(x => x.id === tmpl.id)?.newRow === true;
+                            return (
+                              <button
+                                type="button"
+                                title={isNewRow ? 'Всегда с новой строки (нажмите чтобы отменить)' : 'Добавить перенос строки перед шаблоном'}
+                                onClick={() => updateMenuOrder(tmpl.id, { newRow: !isNewRow })}
+                                className={`p-1 rounded transition-colors ${isNewRow ? 'text-primary bg-primary/15' : 'text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted'}`}
+                              >
+                                <CornerDownLeft className="w-3.5 h-3.5" />
+                              </button>
+                            );
+                          })()}
                           <Switch
                             checked={tmpl.enabled}
                             onCheckedChange={(v) => updateTemplate(tmpl.id, { enabled: v })}
