@@ -53,6 +53,12 @@ import {
   Rows3,
   CornerDownLeft,
   EyeOff,
+  Settings,
+  Languages,
+  LayoutTemplate,
+  Bell,
+  BellOff,
+  Clock,
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -111,6 +117,13 @@ interface LayoutSettings {
   buttonColor: string;
 }
 
+interface BotSettings {
+  language: 'ru' | 'en' | 'uk';
+  disableNotifications: boolean;
+  deleteOldMessages: boolean;
+  sessionTimeout: number; // hours, 0 = unlimited
+}
+
 interface MenuConfig {
   welcomeMessage: string;
   extraButtons: ExtraButton[];
@@ -118,6 +131,7 @@ interface MenuConfig {
   messageTemplates: MessageTemplate[];
   menuOrder: MenuOrderItem[];
   layoutSettings: LayoutSettings;
+  botSettings: BotSettings;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -129,6 +143,13 @@ const COLOR_PRESETS = [
 
 const defaultLayoutSettings: LayoutSettings = { buttonsPerRow: 1, buttonSize: 'md', buttonColor: '#2b5278' };
 
+const defaultBotSettings: BotSettings = {
+  language: 'ru',
+  disableNotifications: false,
+  deleteOldMessages: true,
+  sessionTimeout: 6,
+};
+
 const defaultConfig: MenuConfig = {
   welcomeMessage: '👋 Выберите действие:',
   extraButtons: [],
@@ -139,6 +160,7 @@ const defaultConfig: MenuConfig = {
   ],
   messageTemplates: [],
   menuOrder: [],
+  botSettings: defaultBotSettings,
 };
 
 // Build menuOrder from current buttons + templates, preserving existing order
@@ -558,6 +580,7 @@ export const TelegramMenuPage = () => {
   const touchBlockGripTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragOverBlockRef = useRef<{ templateId: string; blockId: string } | null>(null);
   const [dragOverBlock, setDragOverBlock] = useState<{ templateId: string; blockId: string } | null>(null);
+  const [activeSection, setActiveSection] = useState<'constructor' | 'settings'>('constructor');
 
   // ── Load config ─────────────────────────────────────────────────────────────
 
@@ -569,7 +592,7 @@ export const TelegramMenuPage = () => {
         const [cfgRes, botsRes] = await Promise.all([
           supabase
             .from('telegram_bot_config')
-            .select('welcome_message, extra_buttons, bot_commands, message_templates, menu_order, button_layout')
+            .select('welcome_message, extra_buttons, bot_commands, message_templates, menu_order, button_layout, bot_settings')
             .eq('user_id', user.id)
             .maybeSingle(),
           supabase
@@ -624,6 +647,7 @@ export const TelegramMenuPage = () => {
             messageTemplates: migratedTemplates,
             menuOrder: builtOrder,
             layoutSettings: { ...defaultLayoutSettings, ...(d.button_layout ?? {}) },
+            botSettings: { ...defaultBotSettings, ...(d.bot_settings ?? {}) },
           });
         }
         setConnectedBots((botsRes.data as any) ?? []);
@@ -650,6 +674,7 @@ export const TelegramMenuPage = () => {
           message_templates: config.messageTemplates,
           menu_order: buildMenuOrder(config.extraButtons, config.messageTemplates, config.menuOrder),
           button_layout: config.layoutSettings,
+          bot_settings: config.botSettings,
         },
         { onConflict: 'user_id' }
       );
@@ -1180,6 +1205,34 @@ export const TelegramMenuPage = () => {
         </div>
       </div>
 
+      {/* ── Section tabs ────────────────────────────────────────────────── */}
+      <div className="flex gap-1 border-b border-border/60 pb-0">
+        <button
+          onClick={() => setActiveSection('constructor')}
+          className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-t-lg border border-b-0 transition-colors -mb-px ${
+            activeSection === 'constructor'
+              ? 'bg-background border-border/60 text-foreground'
+              : 'bg-transparent border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <LayoutTemplate className="w-3.5 h-3.5" />
+          Конструктор
+        </button>
+        <button
+          onClick={() => setActiveSection('settings')}
+          className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-t-lg border border-b-0 transition-colors -mb-px ${
+            activeSection === 'settings'
+              ? 'bg-background border-border/60 text-foreground'
+              : 'bg-transparent border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Settings className="w-3.5 h-3.5" />
+          Настройки
+        </button>
+      </div>
+
+      {/* ── Constructor tab ─────────────────────────────────────────────── */}
+      {activeSection === 'constructor' && (
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
         {/* ── Left column ──────────────────────────────────────────────────── */}
         <div className="space-y-5">
@@ -2071,6 +2124,212 @@ export const TelegramMenuPage = () => {
           </Card>
         </div>
       </div>
+      )} {/* end constructor tab */}
+
+      {/* ── Settings tab ────────────────────────────────────────────────── */}
+      {activeSection === 'settings' && (
+        <div className="space-y-5 max-w-2xl">
+
+          {/* Language */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Languages className="w-4 h-4 text-blue-500" />
+                Язык бота
+              </CardTitle>
+              <CardDescription>
+                Язык системных сообщений, которые бот отправляет пользователям
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Язык интерфейса бота</Label>
+                <Select
+                  value={config.botSettings.language}
+                  onValueChange={(v) =>
+                    setConfig((p) => ({
+                      ...p,
+                      botSettings: { ...p.botSettings, language: v as BotSettings['language'] },
+                    }))
+                  }
+                >
+                  <SelectTrigger className="w-60">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ru">🇷🇺 Русский</SelectItem>
+                    <SelectItem value="uk">🇺🇦 Українська</SelectItem>
+                    <SelectItem value="en">🇬🇧 English</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Влияет на системные подсказки и сообщения об ошибках, которые отправляет бот.
+                  Ваши собственные тексты кнопок и шаблонов не изменяются.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Advanced settings */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Settings className="w-4 h-4 text-blue-500" />
+                Расширенные настройки
+              </CardTitle>
+              <CardDescription>
+                Дополнительные параметры поведения бота
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+
+              {/* Delete old messages */}
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-0.5">
+                  <Label className="text-sm">Удалять старые сообщения</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Бот будет удалять предыдущее меню при каждом обновлении, чтобы не засорять чат
+                  </p>
+                </div>
+                <Switch
+                  checked={config.botSettings.deleteOldMessages}
+                  onCheckedChange={(v) =>
+                    setConfig((p) => ({
+                      ...p,
+                      botSettings: { ...p.botSettings, deleteOldMessages: v },
+                    }))
+                  }
+                />
+              </div>
+
+              <Separator />
+
+              {/* Disable notifications */}
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5">
+                    {config.botSettings.disableNotifications ? (
+                      <BellOff className="w-3.5 h-3.5 text-muted-foreground" />
+                    ) : (
+                      <Bell className="w-3.5 h-3.5 text-muted-foreground" />
+                    )}
+                    <Label className="text-sm">Беззвучные сообщения</Label>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Сообщения бота не будут вызывать звук уведомления у пользователей
+                  </p>
+                </div>
+                <Switch
+                  checked={config.botSettings.disableNotifications}
+                  onCheckedChange={(v) =>
+                    setConfig((p) => ({
+                      ...p,
+                      botSettings: { ...p.botSettings, disableNotifications: v },
+                    }))
+                  }
+                />
+              </div>
+
+              <Separator />
+
+              {/* Session timeout */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+                  <Label className="text-sm">Тайм-аут сессии (часы)</Label>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={168}
+                    value={config.botSettings.sessionTimeout}
+                    onChange={(e) =>
+                      setConfig((p) => ({
+                        ...p,
+                        botSettings: {
+                          ...p.botSettings,
+                          sessionTimeout: Math.max(0, Math.min(168, Number(e.target.value))),
+                        },
+                      }))
+                    }
+                    className="w-24 h-8 text-sm"
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {config.botSettings.sessionTimeout === 0
+                      ? 'Без ограничений'
+                      : `Сессия истекает через ${config.botSettings.sessionTimeout} ч`}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  После истечения тайм-аута пользователь получит приветственное сообщение заново.
+                  0 = без ограничений.
+                </p>
+              </div>
+
+            </CardContent>
+          </Card>
+
+          {/* Connected bots in settings */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Bot className="w-4 h-4 text-blue-500" />
+                Подключённые боты
+              </CardTitle>
+              <CardDescription>
+                Активные Telegram-боты, привязанные к вашему аккаунту
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {connectedBots.length === 0 ? (
+                <div className="text-center py-4">
+                  <XCircle className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">Нет активных ботов</p>
+                  <p className="text-xs text-muted-foreground/60 mt-1">
+                    Подключите бота в разделе «Настройки» приложения
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {connectedBots.map((bot, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-3 rounded-lg border px-3 py-2.5"
+                    >
+                      <div className="w-7 h-7 rounded-full bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+                        <Bot className="w-3.5 h-3.5 text-blue-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium truncate">
+                          {bot.registered_name || `Chat ${bot.telegram_chat_id}`}
+                        </div>
+                        <div className="text-xs text-muted-foreground font-mono">
+                          {bot.bot_token ? `${bot.bot_token.slice(0, 8)}…` : 'Общий бот'}
+                        </div>
+                      </div>
+                      <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <div className="flex justify-end pt-2">
+            <Button size="sm" onClick={handleSave} disabled={isSaving}>
+              {isSaving ? (
+                <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4 mr-1.5" />
+              )}
+              Сохранить настройки
+            </Button>
+          </div>
+
+        </div>
+      )} {/* end settings tab */}
+
     </div>
   );
 };
