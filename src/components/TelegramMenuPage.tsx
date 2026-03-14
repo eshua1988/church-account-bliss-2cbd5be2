@@ -64,7 +64,7 @@ interface SheetRange {
 interface ExtraButton {
   id: string;
   text: string;
-  type: 'url' | 'copy' | 'callback' | 'google_sheet';
+  type: 'url' | 'copy' | 'callback' | 'google_sheet' | 'web_app' | 'switch_inline' | 'switch_inline_current' | 'login_url';
   value: string;
   sheetRanges?: SheetRange[]; // structured ranges for google_sheet type
 }
@@ -119,12 +119,16 @@ const defaultConfig: MenuConfig = {
   messageTemplates: [],
 };
 
-const BUTTON_TYPE_META = {
-  url: { label: '🔗 URL-ссылка', placeholder: 'https://example.com' },
-  copy: { label: '⎘ Скопировать текст', placeholder: 'Текст для копирования' },
-  callback: { label: '⚡ Действие бота', placeholder: 'callback_data' },
-  google_sheet: { label: '📈 Google Таблица', placeholder: 'Лист1!A1:D20' },
-} as const;
+const BUTTON_TYPE_META: Record<ExtraButton['type'], { label: string; placeholder: string; hint: string; color?: string }> = {
+  url:                    { label: '🔗 URL-ссылка',            placeholder: 'https://example.com',          hint: 'Открыть ссылку в браузере',                        color: 'blue' },
+  copy:                   { label: '⎘ Скопировать текст',      placeholder: 'Текст для копирования',        hint: 'Нажатие копирует текст в буфер обмена',             color: 'purple' },
+  callback:               { label: '⚡ Действие бота',          placeholder: 'callback_data',                hint: 'Отправляет callback боту — для обработки логики',   color: 'yellow' },
+  google_sheet:           { label: '📈 Google Таблица',         placeholder: 'Лист1!A1:D20',                hint: 'Бот пришлёт данные из Google Sheets',               color: 'green' },
+  web_app:                { label: '📱 Mini App (WebApp)',       placeholder: 'https://your-webapp.com',      hint: 'Открыть Telegram Mini App по URL',                  color: 'cyan' },
+  switch_inline:          { label: '🔄 Inline → другой чат',    placeholder: 'запрос для inline...',         hint: 'Переключит на inline-режим в выбранном чате',       color: 'orange' },
+  switch_inline_current:  { label: '💬 Inline → этот чат',      placeholder: 'запрос для inline...',         hint: 'Переключит на inline-режим в текущем чате',         color: 'orange' },
+  login_url:              { label: '🔑 Login URL (OAuth)',       placeholder: 'https://your-oauth.com/auth',  hint: 'Авторизация через Telegram Login Widget',           color: 'red' },
+};
 
 const QUICK_EMOJI = ['👋', '✅', '🔔', '📋', '💰', '📊', '⚙️', '🏠', '📱', '🔍'];
 
@@ -169,6 +173,10 @@ const TelegramLayoutEditor = ({
     if (type === 'copy') return <Copy className="w-2.5 h-2.5" />;
     if (type === 'google_sheet') return <span className="text-[9px]">📈</span>;
     if (type === 'callback') return <Zap className="w-2.5 h-2.5" />;
+    if (type === 'web_app') return <span className="text-[9px]">📱</span>;
+    if (type === 'switch_inline') return <RefreshCw className="w-2.5 h-2.5" />;
+    if (type === 'switch_inline_current') return <MessageSquare className="w-2.5 h-2.5" />;
+    if (type === 'login_url') return <span className="text-[9px]">🔑</span>;
     return null;
   };
 
@@ -1036,17 +1044,15 @@ export const TelegramMenuPage = () => {
                                 updateButton(btn.id, { type: v as ExtraButton['type'] })
                               }
                             >
-                              <SelectTrigger className="h-8 text-xs w-44 flex-shrink-0">
+                              <SelectTrigger className="h-8 text-xs w-48 flex-shrink-0">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                {(Object.keys(BUTTON_TYPE_META) as ExtraButton['type'][]).map(
-                                  (k) => (
-                                    <SelectItem key={k} value={k}>
-                                      {BUTTON_TYPE_META[k].label}
-                                    </SelectItem>
-                                  )
-                                )}
+                                {(Object.keys(BUTTON_TYPE_META) as ExtraButton['type'][]).map((k) => (
+                                  <SelectItem key={k} value={k}>
+                                    {BUTTON_TYPE_META[k].label}
+                                  </SelectItem>
+                                ))}
                               </SelectContent>
                             </Select>
                             {btn.type !== 'google_sheet' && (
@@ -1058,6 +1064,13 @@ export const TelegramMenuPage = () => {
                               />
                             )}
                           </div>
+                          {/* Hint for current type */}
+                          {btn.type !== 'google_sheet' && (
+                            <p className="text-[10px] text-muted-foreground/55 flex items-start gap-1">
+                              <Info className="w-3 h-3 flex-shrink-0 mt-px" />
+                              {BUTTON_TYPE_META[btn.type].hint}
+                            </p>
+                          )}
                           {btn.type === 'google_sheet' && (
                             <div className="space-y-2">
                               {/* Range list */}

@@ -440,6 +440,14 @@ async function buildMainMenuForUser(
     } else if (btn.type === "google_sheet" && btn.value) {
       // Use callback: gsheet_<btn.id> — handled in webhook
       buttons.push([{ text: btn.text, callback_data: `gsheet_${btn.id}` }]);
+    } else if (btn.type === "web_app" && btn.value) {
+      buttons.push([{ text: btn.text, web_app: { url: btn.value } }]);
+    } else if (btn.type === "switch_inline") {
+      buttons.push([{ text: btn.text, switch_inline_query: btn.value ?? "" }]);
+    } else if (btn.type === "switch_inline_current") {
+      buttons.push([{ text: btn.text, switch_inline_query_current_chat: btn.value ?? "" }]);
+    } else if (btn.type === "login_url" && btn.value) {
+      buttons.push([{ text: btn.text, login_url: { url: btn.value } }]);
     }
   }
 
