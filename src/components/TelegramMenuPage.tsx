@@ -202,6 +202,8 @@ const TelegramLayoutEditor = ({
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const dragStartPos = useRef<{ x: number; y: number } | null>(null);
+  const gripDown = useRef(false);
+  const touchDragId = useRef<string | null>(null);
 
   const ls = config.layoutSettings;
   const { buttonsPerRow, buttonSize, buttonColor } = ls;
@@ -394,8 +396,14 @@ const TelegramLayoutEditor = ({
                         return (
                           <div
                             key={item.id}
+                            data-item-id={item.id}
                             draggable
-                            onDragStart={(e) => { setDragId(item.id); dragStartPos.current = { x: e.clientX, y: e.clientY }; }}
+                            onDragStart={(e) => {
+                              if (!gripDown.current) { e.preventDefault(); return; }
+                              gripDown.current = false;
+                              setDragId(item.id);
+                              dragStartPos.current = { x: e.clientX, y: e.clientY };
+                            }}
                             onDragOver={(e) => {
                               e.preventDefault();
                               if (!dragStartPos.current) return;
@@ -411,16 +419,40 @@ const TelegramLayoutEditor = ({
                               setDragOverId(null);
                               dragStartPos.current = null;
                             }}
-                            onDragEnd={() => { setDragId(null); setDragOverId(null); dragStartPos.current = null; }}
+                            onDragEnd={() => { gripDown.current = false; setDragId(null); setDragOverId(null); dragStartPos.current = null; }}
                             style={{ background: buttonColor }}
                             className={[
-                              `group flex flex-1 items-center gap-1 rounded-lg px-1.5 ${btnPy} transition-all duration-150 cursor-grab active:cursor-grabbing`,
+                              `group flex flex-1 items-center gap-1 rounded-lg px-1.5 ${btnPy} transition-all duration-150 select-none`,
                               item.kind === 'template' ? 'brightness-90' : '',
                               isDragOver ? 'ring-2 ring-white/50 scale-[1.02]' : '',
                               isDragging ? 'opacity-30 scale-95' : 'opacity-100',
                             ].join(' ')}
                           >
-                            <GripVertical className="w-2.5 h-2.5 text-white/30 group-hover:text-white/60 flex-shrink-0 transition-colors" />
+                            <span
+                              className="touch-none cursor-grab active:cursor-grabbing flex-shrink-0"
+                              onPointerDown={() => { gripDown.current = true; }}
+                              onPointerUp={() => { gripDown.current = false; }}
+                              onTouchStart={() => { touchDragId.current = item.id; setDragId(item.id); }}
+                              onTouchMove={(e) => {
+                                const touch = e.touches[0];
+                                const el = document.elementFromPoint(touch.clientX, touch.clientY);
+                                const itemEl = el?.closest('[data-item-id]');
+                                if (itemEl) {
+                                  const targetId = itemEl.getAttribute('data-item-id');
+                                  if (targetId && targetId !== touchDragId.current) setDragOverId(targetId);
+                                }
+                              }}
+                              onTouchEnd={() => {
+                                if (touchDragId.current && dragOverId && touchDragId.current !== dragOverId) {
+                                  onReorderMenu(touchDragId.current, dragOverId);
+                                }
+                                touchDragId.current = null;
+                                setDragId(null);
+                                setDragOverId(null);
+                              }}
+                            >
+                              <GripVertical className="w-2.5 h-2.5 text-white/30 group-hover:text-white/60 transition-colors" />
+                            </span>
                             {item.kind === 'template' && (
                               <FileText className="w-2 h-2 text-white/50 flex-shrink-0" />
                             )}
@@ -494,6 +526,8 @@ export const TelegramMenuPage = () => {
   // Drag-and-drop state for block reordering: "templateId::blockId"
   const dragBlock = useRef<{ templateId: string; blockId: string } | null>(null);
   const dragBlockStartPos = useRef<{ x: number; y: number } | null>(null);
+  const blockGripDown = useRef(false);
+  const touchBlockDrag = useRef<{ templateId: string; blockId: string } | null>(null);
   const [dragOverBlock, setDragOverBlock] = useState<{ templateId: string; blockId: string } | null>(null);
 
   // ── Load config ─────────────────────────────────────────────────────────────
@@ -1666,8 +1700,15 @@ export const TelegramMenuPage = () => {
                                   return (
                                   <div
                                     key={block.id}
+                                    data-block-id={block.id}
+                                    data-tmpl-id={tmpl.id}
                                     draggable
-                                    onDragStart={(e) => { dragBlock.current = { templateId: tmpl.id, blockId: block.id }; dragBlockStartPos.current = { x: e.clientX, y: e.clientY }; }}
+                                    onDragStart={(e) => {
+                                      if (!blockGripDown.current) { e.preventDefault(); return; }
+                                      blockGripDown.current = false;
+                                      dragBlock.current = { templateId: tmpl.id, blockId: block.id };
+                                      dragBlockStartPos.current = { x: e.clientX, y: e.clientY };
+                                    }}
                                     onDragOver={(e) => {
                                       e.preventDefault();
                                       if (!dragBlockStartPos.current) return;
@@ -1685,16 +1726,41 @@ export const TelegramMenuPage = () => {
                                       dragBlockStartPos.current = null;
                                       setDragOverBlock(null);
                                     }}
-                                    onDragEnd={() => { dragBlock.current = null; dragBlockStartPos.current = null; setDragOverBlock(null); }}
-                                    className={`rounded-lg border p-2.5 space-y-1.5 transition-all ${
+                                    onDragEnd={() => { blockGripDown.current = false; dragBlock.current = null; dragBlockStartPos.current = null; setDragOverBlock(null); }}
+                                    className={`rounded-lg border p-2.5 space-y-1.5 transition-all select-none ${
                                       block.type === 'button' ? 'bg-blue-500/5 border-blue-500/20' : 'bg-muted/10'
                                     } ${isDragOver ? 'ring-2 ring-blue-400/60 scale-[1.01]' : ''}`}
                                   >
                                     {/* Block header: drag handle + type badge + order arrows + delete */}
                                     <div className="flex items-center gap-1.5">
                                       <span
-                                        className="cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors flex-shrink-0"
+                                        className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors flex-shrink-0"
                                         title="Перетащить для изменения порядка"
+                                        onPointerDown={() => { blockGripDown.current = true; }}
+                                        onPointerUp={() => { blockGripDown.current = false; }}
+                                        onTouchStart={() => { touchBlockDrag.current = { templateId: tmpl.id, blockId: block.id }; }}
+                                        onTouchMove={(e) => {
+                                          const touch = e.touches[0];
+                                          const el = document.elementFromPoint(touch.clientX, touch.clientY);
+                                          const blockEl = el?.closest('[data-block-id]');
+                                          if (blockEl) {
+                                            const tBlockId = blockEl.getAttribute('data-block-id');
+                                            const tTmplId = blockEl.getAttribute('data-tmpl-id');
+                                            if (tBlockId && tTmplId) setDragOverBlock({ templateId: tTmplId, blockId: tBlockId });
+                                          }
+                                        }}
+                                        onTouchEnd={() => {
+                                          if (touchBlockDrag.current && dragOverBlock &&
+                                              touchBlockDrag.current.templateId === dragOverBlock.templateId &&
+                                              touchBlockDrag.current.blockId !== dragOverBlock.blockId) {
+                                            reorderBlocks(dragOverBlock.templateId, touchBlockDrag.current.blockId, dragOverBlock.blockId);
+                                          }
+                                          touchBlockDrag.current = null;
+                                          blockGripDown.current = false;
+                                          dragBlock.current = null;
+                                          dragBlockStartPos.current = null;
+                                          setDragOverBlock(null);
+                                        }}
                                       >
                                         <GripVertical className="w-3.5 h-3.5" />
                                       </span>
