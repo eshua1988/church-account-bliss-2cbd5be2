@@ -203,10 +203,10 @@ const TelegramLayoutEditor = ({
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const dragStartPos = useRef<{ x: number; y: number } | null>(null);
   const gripDown = useRef(false);
+  const dragOverIdRef = useRef<string | null>(null);
   const touchDragId = useRef<string | null>(null);
   const touchDragActive = useRef(false);
   const touchGripTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const touchStartPos = useRef<{ x: number; y: number } | null>(null);
 
   const ls = config.layoutSettings;
   const { buttonsPerRow, buttonSize, buttonColor } = ls;
@@ -435,49 +435,46 @@ const TelegramLayoutEditor = ({
                               className="touch-none cursor-grab active:cursor-grabbing flex-shrink-0 flex items-center justify-center px-2 py-3 -my-3 -mx-1 rounded"
                               onPointerDown={() => { gripDown.current = true; }}
                               onPointerUp={() => { gripDown.current = false; }}
-                              onTouchStart={(e) => {
-                                const touch = e.touches[0];
-                                touchStartPos.current = { x: touch.clientX, y: touch.clientY };
-                                touchDragActive.current = false;
+                              onTouchStart={() => {
+                                if (touchGripTimer.current) clearTimeout(touchGripTimer.current);
                                 touchGripTimer.current = setTimeout(() => {
+                                  touchGripTimer.current = null;
                                   touchDragActive.current = true;
                                   touchDragId.current = item.id;
                                   setDragId(item.id);
+                                  if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(40);
+
+                                  const onMove = (ev: TouchEvent) => {
+                                    ev.preventDefault();
+                                    const t = ev.touches[0];
+                                    const el = document.elementFromPoint(t.clientX, t.clientY);
+                                    const itemEl = el?.closest('[data-item-id]');
+                                    if (itemEl) {
+                                      const targetId = itemEl.getAttribute('data-item-id');
+                                      if (targetId && targetId !== touchDragId.current) {
+                                        dragOverIdRef.current = targetId;
+                                        setDragOverId(targetId);
+                                      }
+                                    }
+                                  };
+                                  const onEnd = () => {
+                                    if (touchDragId.current && dragOverIdRef.current && touchDragId.current !== dragOverIdRef.current) {
+                                      onReorderMenu(touchDragId.current, dragOverIdRef.current);
+                                    }
+                                    touchDragId.current = null;
+                                    touchDragActive.current = false;
+                                    dragOverIdRef.current = null;
+                                    setDragId(null);
+                                    setDragOverId(null);
+                                    document.removeEventListener('touchmove', onMove);
+                                    document.removeEventListener('touchend', onEnd);
+                                  };
+                                  document.addEventListener('touchmove', onMove, { passive: false });
+                                  document.addEventListener('touchend', onEnd);
                                 }, 400);
                               }}
-                              onTouchMove={(e) => {
-                                const touch = e.touches[0];
-                                if (!touchDragActive.current) {
-                                  // cancel long-press if finger moved too much
-                                  if (touchStartPos.current) {
-                                    const dx = Math.abs(touch.clientX - touchStartPos.current.x);
-                                    const dy = Math.abs(touch.clientY - touchStartPos.current.y);
-                                    if (dx > 8 || dy > 8) {
-                                      if (touchGripTimer.current) clearTimeout(touchGripTimer.current);
-                                      touchGripTimer.current = null;
-                                    }
-                                  }
-                                  return;
-                                }
-                                e.preventDefault();
-                                const el = document.elementFromPoint(touch.clientX, touch.clientY);
-                                const itemEl = el?.closest('[data-item-id]');
-                                if (itemEl) {
-                                  const targetId = itemEl.getAttribute('data-item-id');
-                                  if (targetId && targetId !== touchDragId.current) setDragOverId(targetId);
-                                }
-                              }}
                               onTouchEnd={() => {
-                                if (touchGripTimer.current) clearTimeout(touchGripTimer.current);
-                                touchGripTimer.current = null;
-                                if (touchDragActive.current && touchDragId.current && dragOverId && touchDragId.current !== dragOverId) {
-                                  onReorderMenu(touchDragId.current, dragOverId);
-                                }
-                                touchDragId.current = null;
-                                touchDragActive.current = false;
-                                touchStartPos.current = null;
-                                setDragId(null);
-                                setDragOverId(null);
+                                if (touchGripTimer.current) { clearTimeout(touchGripTimer.current); touchGripTimer.current = null; }
                               }}
                             >
                               <GripVertical className="w-4 h-4 text-white/40 group-hover:text-white/70 transition-colors" />
@@ -559,7 +556,7 @@ export const TelegramMenuPage = () => {
   const touchBlockDrag = useRef<{ templateId: string; blockId: string } | null>(null);
   const touchBlockDragActive = useRef(false);
   const touchBlockGripTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const touchBlockStartPos = useRef<{ x: number; y: number } | null>(null);
+  const dragOverBlockRef = useRef<{ templateId: string; blockId: string } | null>(null);
   const [dragOverBlock, setDragOverBlock] = useState<{ templateId: string; blockId: string } | null>(null);
 
   // ── Load config ─────────────────────────────────────────────────────────────
@@ -1770,52 +1767,51 @@ export const TelegramMenuPage = () => {
                                         title="Перетащить для изменения порядка"
                                         onPointerDown={() => { blockGripDown.current = true; }}
                                         onPointerUp={() => { blockGripDown.current = false; }}
-                                        onTouchStart={(e) => {
-                                          const touch = e.touches[0];
-                                          touchBlockStartPos.current = { x: touch.clientX, y: touch.clientY };
-                                          touchBlockDragActive.current = false;
+                                        onTouchStart={() => {
+                                          if (touchBlockGripTimer.current) clearTimeout(touchBlockGripTimer.current);
                                           touchBlockGripTimer.current = setTimeout(() => {
+                                            touchBlockGripTimer.current = null;
                                             touchBlockDragActive.current = true;
                                             touchBlockDrag.current = { templateId: tmpl.id, blockId: block.id };
+                                            if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(40);
+
+                                            const onMove = (ev: TouchEvent) => {
+                                              ev.preventDefault();
+                                              const t = ev.touches[0];
+                                              const el = document.elementFromPoint(t.clientX, t.clientY);
+                                              const blockEl = el?.closest('[data-block-id]');
+                                              if (blockEl) {
+                                                const tBlockId = blockEl.getAttribute('data-block-id');
+                                                const tTmplId = blockEl.getAttribute('data-tmpl-id');
+                                                if (tBlockId && tTmplId) {
+                                                  const target = { templateId: tTmplId, blockId: tBlockId };
+                                                  dragOverBlockRef.current = target;
+                                                  setDragOverBlock(target);
+                                                }
+                                              }
+                                            };
+                                            const onEnd = () => {
+                                              const src = touchBlockDrag.current;
+                                              const dst = dragOverBlockRef.current;
+                                              if (src && dst && src.templateId === dst.templateId && src.blockId !== dst.blockId) {
+                                                reorderBlocks(dst.templateId, src.blockId, dst.blockId);
+                                              }
+                                              touchBlockDrag.current = null;
+                                              touchBlockDragActive.current = false;
+                                              dragOverBlockRef.current = null;
+                                              blockGripDown.current = false;
+                                              dragBlock.current = null;
+                                              dragBlockStartPos.current = null;
+                                              setDragOverBlock(null);
+                                              document.removeEventListener('touchmove', onMove);
+                                              document.removeEventListener('touchend', onEnd);
+                                            };
+                                            document.addEventListener('touchmove', onMove, { passive: false });
+                                            document.addEventListener('touchend', onEnd);
                                           }, 400);
                                         }}
-                                        onTouchMove={(e) => {
-                                          const touch = e.touches[0];
-                                          if (!touchBlockDragActive.current) {
-                                            if (touchBlockStartPos.current) {
-                                              const dx = Math.abs(touch.clientX - touchBlockStartPos.current.x);
-                                              const dy = Math.abs(touch.clientY - touchBlockStartPos.current.y);
-                                              if (dx > 8 || dy > 8) {
-                                                if (touchBlockGripTimer.current) clearTimeout(touchBlockGripTimer.current);
-                                                touchBlockGripTimer.current = null;
-                                              }
-                                            }
-                                            return;
-                                          }
-                                          e.preventDefault();
-                                          const el = document.elementFromPoint(touch.clientX, touch.clientY);
-                                          const blockEl = el?.closest('[data-block-id]');
-                                          if (blockEl) {
-                                            const tBlockId = blockEl.getAttribute('data-block-id');
-                                            const tTmplId = blockEl.getAttribute('data-tmpl-id');
-                                            if (tBlockId && tTmplId) setDragOverBlock({ templateId: tTmplId, blockId: tBlockId });
-                                          }
-                                        }}
                                         onTouchEnd={() => {
-                                          if (touchBlockGripTimer.current) clearTimeout(touchBlockGripTimer.current);
-                                          touchBlockGripTimer.current = null;
-                                          if (touchBlockDragActive.current && touchBlockDrag.current && dragOverBlock &&
-                                              touchBlockDrag.current.templateId === dragOverBlock.templateId &&
-                                              touchBlockDrag.current.blockId !== dragOverBlock.blockId) {
-                                            reorderBlocks(dragOverBlock.templateId, touchBlockDrag.current.blockId, dragOverBlock.blockId);
-                                          }
-                                          touchBlockDrag.current = null;
-                                          touchBlockDragActive.current = false;
-                                          touchBlockStartPos.current = null;
-                                          blockGripDown.current = false;
-                                          dragBlock.current = null;
-                                          dragBlockStartPos.current = null;
-                                          setDragOverBlock(null);
+                                          if (touchBlockGripTimer.current) { clearTimeout(touchBlockGripTimer.current); touchBlockGripTimer.current = null; }
                                         }}
                                       >
                                         <GripVertical className="w-4 h-4" />
