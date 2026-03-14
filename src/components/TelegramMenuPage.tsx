@@ -138,19 +138,46 @@ const BUTTON_BLOCK_META: Record<ButtonBlockType, { label: string; badge: string;
   message: { label: '💬 Сообщение',   badge: '💬 СООБЩ.', valuePlaceholder: 'https://t.me/c/123/456',   valueLabel: 'ССЫЛКА' },
 };
 
-// ─── Telegram mock preview ────────────────────────────────────────────────────
+// ─── Telegram interactive layout editor ─────────────────────────────────────
 
-const TelegramPreview = ({ config }: { config: MenuConfig }) => {
-  const allButtons: Array<{ text: string; type: string }> = [
+type EditableBtn = {
+  id: string;
+  text: string;
+  type: string;
+  fixed: boolean;
+  extraIdx: number;
+};
+
+const TelegramLayoutEditor = ({
+  config,
+  onMoveButton,
+  onReorderButtons,
+}: {
+  config: MenuConfig;
+  onMoveButton: (id: string, dir: 'up' | 'down') => void;
+  onReorderButtons: (fromId: string, toId: string) => void;
+}) => {
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  const allButtons: EditableBtn[] = [
     ...(config.showPayoutLinks
-      ? [{ text: '🔗 Ссылка Ордера расходов - Скопировать', type: 'copy' }]
+      ? [{ id: '__payout__', text: '🔗 Ссылка Ордера расходов - Скопировать', type: 'copy', fixed: true, extraIdx: -1 }]
       : []),
-    ...config.extraButtons,
+    ...config.extraButtons.map((b, i) => ({ id: b.id, text: b.text, type: b.type, fixed: false, extraIdx: i })),
   ];
 
+  const typeIcon = (type: string) => {
+    if (type === 'url') return <ExternalLink className="w-2.5 h-2.5" />;
+    if (type === 'copy') return <Copy className="w-2.5 h-2.5" />;
+    if (type === 'google_sheet') return <span className="text-[9px]">📈</span>;
+    if (type === 'callback') return <Zap className="w-2.5 h-2.5" />;
+    return null;
+  };
+
   return (
-    <div className="bg-[#17212b] rounded-2xl overflow-hidden shadow-xl border border-white/5 select-none">
-      {/* Header bar */}
+    <div className="bg-[#17212b] rounded-2xl overflow-hidden shadow-xl border border-white/5">
+      {/* Header */}
       <div className="bg-[#242f3d] px-4 pt-3 pb-2.5 flex items-center gap-2.5">
         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow">
           <Bot className="w-4 h-4 text-white" />
@@ -162,43 +189,112 @@ const TelegramPreview = ({ config }: { config: MenuConfig }) => {
             <span className="text-[10px] text-green-400/90">в сети</span>
           </div>
         </div>
+        <span className="text-[9px] text-white/25 uppercase tracking-widest font-semibold">МАКЕТ</span>
       </div>
 
       {/* Chat area */}
-      <div className="px-3 py-4 min-h-[160px]">
-        <div className="flex items-end gap-1.5">
-          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex-shrink-0 flex items-center justify-center">
+      <div className="px-3 py-4 min-h-[140px]">
+        <div className="flex items-start gap-1.5">
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex-shrink-0 flex items-center justify-center mt-0.5">
             <Bot className="w-3.5 h-3.5 text-white" />
           </div>
-          <div className="bg-[#232e3c] rounded-2xl rounded-bl-sm px-3 py-2 max-w-[85%] space-y-2">
-            <p className="text-white text-[12px] leading-relaxed whitespace-pre-wrap break-words">
-              {config.welcomeMessage || '👋 Выберите действие:'}
-            </p>
-            {allButtons.length > 0 && (
-              <div className="border-t border-white/10 pt-2 space-y-1">
-                {allButtons.map((btn, i) => (
-                  <div
-                    key={i}
-                    className="bg-[#2b5278]/80 rounded-lg px-2.5 py-1.5 text-center text-[11px] text-[#6ab3f3] truncate"
-                  >
-                    {btn.text}
-                    {btn.type === 'url' && <span className="ml-1 opacity-60">↗</span>}
-                    {btn.type === 'copy' && <span className="ml-1 opacity-60">⎘</span>}
-                    {btn.type === 'google_sheet' && <span className="ml-1 opacity-60">📈</span>}
+          <div className="flex-1 min-w-0 space-y-1">
+            {/* Message bubble */}
+            <div className="bg-[#232e3c] rounded-2xl rounded-tl-sm px-3 py-2">
+              <p className="text-white text-[12px] leading-relaxed whitespace-pre-wrap break-words">
+                {config.welcomeMessage || '👋 Выберите действие:'}
+              </p>
+            </div>
+
+            {/* Inline keyboard — draggable */}
+            {allButtons.length > 0 ? (
+              <div className="space-y-0.5 pt-0.5">
+                {allButtons.map((btn) => {
+                  const isDragOver = dragOverId === btn.id;
+                  const isDragging = dragId === btn.id;
+                  return (
+                    <div
+                      key={btn.id}
+                      draggable={!btn.fixed}
+                      onDragStart={() => { if (!btn.fixed) setDragId(btn.id); }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        if (!btn.fixed && dragId && dragId !== btn.id) setDragOverId(btn.id);
+                      }}
+                      onDragLeave={() => setDragOverId(null)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (dragId && !btn.fixed && dragId !== btn.id) onReorderButtons(dragId, btn.id);
+                        setDragId(null);
+                        setDragOverId(null);
+                      }}
+                      onDragEnd={() => { setDragId(null); setDragOverId(null); }}
+                      className={[
+                        'group relative flex items-center gap-1.5 rounded-lg px-2 py-1.5 transition-all duration-150',
+                        btn.fixed ? 'bg-[#2b5278]/50 cursor-default' : 'bg-[#2b5278]/80 cursor-grab active:cursor-grabbing hover:bg-[#2b5278]',
+                        isDragOver ? 'ring-2 ring-blue-400/70 scale-[1.02] bg-[#2b5278]' : '',
+                        isDragging ? 'opacity-30 scale-95' : 'opacity-100',
+                      ].join(' ')}
+                    >
+                      {btn.fixed ? (
+                        <span className="text-white/20 flex-shrink-0 text-[9px] w-3">🔒</span>
+                      ) : (
+                        <GripVertical className="w-3 h-3 text-white/30 group-hover:text-white/60 flex-shrink-0 transition-colors" />
+                      )}
+                      <span className="flex-1 text-[11px] text-[#6ab3f3] truncate text-center">
+                        {btn.text}
+                      </span>
+                      <span className="flex-shrink-0 text-white/35">
+                        {typeIcon(btn.type)}
+                      </span>
+                      {!btn.fixed && (
+                        <div className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-px bg-[#17212b]/90 rounded px-0.5 z-10">
+                          <button
+                            type="button"
+                            disabled={btn.extraIdx === 0}
+                            onMouseDown={(e) => { e.stopPropagation(); onMoveButton(btn.id, 'up'); }}
+                            className="p-0.5 rounded hover:bg-white/10 disabled:opacity-20 transition-colors text-white/50 hover:text-white"
+                          >
+                            <ArrowUp className="w-2.5 h-2.5" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={btn.extraIdx === config.extraButtons.length - 1}
+                            onMouseDown={(e) => { e.stopPropagation(); onMoveButton(btn.id, 'down'); }}
+                            className="p-0.5 rounded hover:bg-white/10 disabled:opacity-20 transition-colors text-white/50 hover:text-white"
+                          >
+                            <ArrowDown className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-white/20 text-[11px] text-center py-3 border border-white/5 border-dashed rounded-lg mt-1">
+                Кнопки не добавлены
+              </div>
+            )}
+
+            {/* Templates list */}
+            {config.messageTemplates.filter((t) => t.enabled).length > 0 && (
+              <div className="mt-1.5 border-t border-white/5 pt-2 space-y-0.5">
+                <div className="text-[9px] text-white/20 uppercase tracking-widest px-0.5 mb-1">Шаблоны (по триггеру)</div>
+                {config.messageTemplates.filter((t) => t.enabled).map((tmpl) => (
+                  <div key={tmpl.id} className="flex items-center gap-1.5 rounded-md px-2 py-1 bg-orange-500/5 border border-orange-500/10">
+                    <FileText className="w-2.5 h-2.5 text-orange-400/50 flex-shrink-0" />
+                    <span className="flex-1 text-[10px] text-white/35 truncate">{tmpl.title}</span>
+                    <code className="text-[9px] text-white/20 font-mono">/{tmpl.trigger}</code>
                   </div>
                 ))}
               </div>
             )}
           </div>
         </div>
-        {allButtons.length === 0 && (
-          <p className="text-white/20 text-[11px] text-center mt-4">
-            Кнопки не добавлены
-          </p>
-        )}
       </div>
 
-      {/* Input bar mock */}
+      {/* Input bar */}
       <div className="bg-[#242f3d] px-3 py-2 flex items-center gap-2">
         <div className="flex-1 bg-[#17212b] rounded-xl px-3 py-1.5">
           <span className="text-white/20 text-xs">Написать сообщение...</span>
@@ -207,6 +303,16 @@ const TelegramPreview = ({ config }: { config: MenuConfig }) => {
           <Send className="w-3.5 h-3.5 text-blue-400" />
         </div>
       </div>
+
+      {/* Drag hint */}
+      {config.extraButtons.length > 1 && (
+        <div className="bg-[#17212b] px-3 pb-2 pt-1 text-center">
+          <p className="text-[9px] text-white/20 flex items-center justify-center gap-1">
+            <GripVertical className="w-2.5 h-2.5" />
+            Перетащите кнопку для изменения порядка
+          </p>
+        </div>
+      )}
     </div>
   );
 };
@@ -448,6 +554,19 @@ export const TelegramMenuPage = () => {
       if (dir === 'down' && i < arr.length - 1) [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]];
       return { ...p, extraButtons: arr };
     });
+
+  const reorderExtraButtons = (fromId: string, toId: string) => {
+    if (fromId === toId) return;
+    setConfig((p) => {
+      const arr = [...p.extraButtons];
+      const fromIdx = arr.findIndex((b) => b.id === fromId);
+      const toIdx = arr.findIndex((b) => b.id === toId);
+      if (fromIdx < 0 || toIdx < 0) return p;
+      const [item] = arr.splice(fromIdx, 1);
+      arr.splice(toIdx, 0, item);
+      return { ...p, extraButtons: arr };
+    });
+  };
 
   const mkSheetRange = (): SheetRange => ({
     id: crypto.randomUUID(),
@@ -1485,16 +1604,23 @@ export const TelegramMenuPage = () => {
 
         {/* ── Right column ─────────────────────────────────────────────────── */}
         <div className="space-y-5">
-          {/* Preview */}
+          {/* Layout editor */}
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
-                <Smartphone className="w-4 h-4 text-muted-foreground" />
-                Предварительный просмотр
+                <Smartphone className="w-4 h-4 text-blue-500" />
+                Редактор расположения
               </CardTitle>
+              <p className="text-[11px] text-muted-foreground">
+                Перетаскивайте кнопки прямо в окне бота
+              </p>
             </CardHeader>
             <CardContent>
-              <TelegramPreview config={config} />
+              <TelegramLayoutEditor
+                config={config}
+                onMoveButton={moveButton}
+                onReorderButtons={reorderExtraButtons}
+              />
             </CardContent>
           </Card>
 
