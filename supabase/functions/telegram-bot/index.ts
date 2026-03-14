@@ -448,9 +448,9 @@ async function buildMainMenuForUser(
         buttons.push([{ text: btn.text, switch_inline_query: btn.value ?? "" }]);
       } else if (btn.type === "switch_inline_current") {
         buttons.push([{ text: btn.text, switch_inline_query_current_chat: btn.value ?? "" }]);
-      } else if (btn.type === "login_url" && btn.value) {
-        // login_url requires BotFather domain registration — fallback to plain url
-        buttons.push([{ text: btn.text, url: btn.value }]);
+      } else if (btn.type === "hashtag" && btn.value) {
+        const tag = btn.value.startsWith("#") ? btn.value : `#${btn.value}`;
+        buttons.push([{ text: btn.text, switch_inline_query_current_chat: tag }]);
       }
     } catch {
       // Skip malformed button so it doesn't break the entire keyboard

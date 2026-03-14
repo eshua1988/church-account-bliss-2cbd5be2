@@ -64,7 +64,7 @@ interface SheetRange {
 interface ExtraButton {
   id: string;
   text: string;
-  type: 'url' | 'copy' | 'callback' | 'google_sheet' | 'web_app' | 'switch_inline' | 'switch_inline_current' | 'login_url';
+  type: 'url' | 'copy' | 'callback' | 'google_sheet' | 'web_app' | 'switch_inline' | 'switch_inline_current' | 'hashtag';
   value: string;
   sheetRanges?: SheetRange[]; // structured ranges for google_sheet type
 }
@@ -127,7 +127,7 @@ const BUTTON_TYPE_META: Record<ExtraButton['type'], { label: string; placeholder
   web_app:                { label: '📱 Mini App (WebApp)',       placeholder: 'https://your-webapp.com',      hint: 'Открыть Telegram Mini App по URL',                  color: 'cyan' },
   switch_inline:          { label: '🔄 Inline → другой чат',    placeholder: 'запрос для inline...',         hint: 'Переключит на inline-режим в выбранном чате',       color: 'orange' },
   switch_inline_current:  { label: '💬 Inline → этот чат',      placeholder: 'запрос для inline...',         hint: 'Переключит на inline-режим в текущем чате',         color: 'orange' },
-  login_url:              { label: '🔑 Login URL (OAuth)',       placeholder: 'https://your-oauth.com/auth',  hint: '⚠️ Требует регистрации домена в BotFather → отправляется как URL-кнопка',   color: 'red' },
+  hashtag:                { label: '# Хэштег',                 placeholder: '#молитва',                     hint: 'Вставляет хэштег в поле поиска текущего чата',      color: 'pink' },
 };
 
 const QUICK_EMOJI = ['👋', '✅', '🔔', '📋', '💰', '📊', '⚙️', '🏠', '📱', '🔍'];
@@ -176,7 +176,7 @@ const TelegramLayoutEditor = ({
     if (type === 'web_app') return <span className="text-[9px]">📱</span>;
     if (type === 'switch_inline') return <RefreshCw className="w-2.5 h-2.5" />;
     if (type === 'switch_inline_current') return <MessageSquare className="w-2.5 h-2.5" />;
-    if (type === 'login_url') return <span className="text-[9px]">🔑</span>;
+    if (type === 'hashtag') return <span className="text-[9px]">#</span>;
     return null;
   };
 
