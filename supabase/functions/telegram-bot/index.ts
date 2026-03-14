@@ -396,23 +396,24 @@ async function buildMainMenuForUser(
   // Read custom bot config
   const { data: config } = await supabase
     .from("telegram_bot_config")
-    .select("welcome_message, extra_buttons, show_payout_links, message_templates")
+    .select("welcome_message, extra_buttons, show_payout_links, message_templates, menu_order")
     .eq("user_id", userId)
     .maybeSingle();
 
   const welcomeMessage = (config as any)?.welcome_message ?? "👋 Выберите действие:";
   const showPayoutLinks = (config as any)?.show_payout_links !== false;
-  const extraButtons =
-    ((config as any)?.extra_buttons as Array<{ text: string; type: string; value: string }>) ?? [];
-  const messageTemplates =
-    ((config as any)?.message_templates as Array<{
-      id: string; title: string; text: string; trigger: string; enabled: boolean;
-      buttons: Array<{ id: string; label: string; copyText: string }>;
-    }>) ?? [];
+  const extraButtons: Array<{ id: string; text: string; type: string; value: string }> =
+    ((config as any)?.extra_buttons) ?? [];
+  const messageTemplates: Array<{
+    id: string; title: string; text: string; trigger: string; enabled: boolean;
+    buttons: Array<{ id: string; label: string; copyText: string }>;
+  }> = ((config as any)?.message_templates) ?? [];
+  const menuOrder: Array<{ id: string; kind: string }> =
+    ((config as any)?.menu_order) ?? [];
 
   const buttons: Array<Array<Record<string, unknown>>> = [];
 
-  // Payout link buttons
+  // Payout link buttons (always first — system level)
   if (showPayoutLinks) {
     const { data: links } = await supabase
       .from("shared_payout_links")
@@ -429,38 +430,48 @@ async function buildMainMenuForUser(
     }
   }
 
-  // Custom extra buttons
-  for (const btn of extraButtons) {
+  const btnMap = new Map(extraButtons.map((b) => [b.id, b]));
+  const tmplMap = new Map(messageTemplates.filter((t) => t.enabled && t.trigger).map((t) => [t.id, t]));
+
+  // Build unified order: use menuOrder if available, else buttons then templates
+  const orderedIds: Array<{ id: string; kind: string }> =
+    menuOrder.length > 0
+      ? menuOrder
+      : [
+          ...extraButtons.map((b) => ({ id: b.id, kind: "button" })),
+          ...messageTemplates.filter((t) => t.enabled).map((t) => ({ id: t.id, kind: "template" })),
+        ];
+
+  for (const entry of orderedIds) {
     try {
-      if (btn.type === "copy" && btn.value) {
-        buttons.push([{ text: btn.text, copy_text: { text: btn.value } }]);
-      } else if (btn.type === "url" && btn.value) {
-        buttons.push([{ text: btn.text, url: btn.value }]);
-      } else if (btn.type === "callback" && btn.value) {
-        buttons.push([{ text: btn.text, callback_data: btn.value }]);
-      } else if (btn.type === "google_sheet") {
-        // Use callback: gsheet_<btn.id> — handled in webhook
-        buttons.push([{ text: btn.text, callback_data: `gsheet_${btn.id}` }]);
-      } else if (btn.type === "web_app" && btn.value) {
-        // web_app works with any HTTPS URL, no BotFather registration needed
-        buttons.push([{ text: btn.text, web_app: { url: btn.value } }]);
-      } else if (btn.type === "switch_inline") {
-        buttons.push([{ text: btn.text, switch_inline_query: btn.value ?? "" }]);
-      } else if (btn.type === "switch_inline_current") {
-        buttons.push([{ text: btn.text, switch_inline_query_current_chat: btn.value ?? "" }]);
-      } else if (btn.type === "hashtag" && btn.value) {
-        const tag = btn.value.startsWith("#") ? btn.value : `#${btn.value}`;
-        buttons.push([{ text: btn.text, switch_inline_query_current_chat: tag }]);
+      if (entry.kind === "button") {
+        const btn = btnMap.get(entry.id);
+        if (!btn) continue;
+        if (btn.type === "copy" && btn.value) {
+          buttons.push([{ text: btn.text, copy_text: { text: btn.value } }]);
+        } else if (btn.type === "url" && btn.value) {
+          buttons.push([{ text: btn.text, url: btn.value }]);
+        } else if (btn.type === "callback" && btn.value) {
+          buttons.push([{ text: btn.text, callback_data: btn.value }]);
+        } else if (btn.type === "google_sheet") {
+          buttons.push([{ text: btn.text, callback_data: `gsheet_${btn.id}` }]);
+        } else if (btn.type === "web_app" && btn.value) {
+          buttons.push([{ text: btn.text, web_app: { url: btn.value } }]);
+        } else if (btn.type === "switch_inline") {
+          buttons.push([{ text: btn.text, switch_inline_query: btn.value ?? "" }]);
+        } else if (btn.type === "switch_inline_current") {
+          buttons.push([{ text: btn.text, switch_inline_query_current_chat: btn.value ?? "" }]);
+        } else if (btn.type === "hashtag" && btn.value) {
+          const tag = btn.value.startsWith("#") ? btn.value : `#${btn.value}`;
+          buttons.push([{ text: btn.text, switch_inline_query_current_chat: tag }]);
+        }
+      } else if (entry.kind === "template") {
+        const tmpl = tmplMap.get(entry.id);
+        if (!tmpl) continue;
+        buttons.push([{ text: tmpl.title || tmpl.trigger, callback_data: tmpl.trigger }]);
       }
     } catch {
-      // Skip malformed button so it doesn't break the entire keyboard
-    }
-  }
-
-  // Message template buttons
-  for (const tmpl of messageTemplates) {
-    if (tmpl.enabled && tmpl.trigger) {
-      buttons.push([{ text: tmpl.title || tmpl.trigger, callback_data: tmpl.trigger }]);
+      // Skip malformed entry so it doesn't break the entire keyboard
     }
   }
 

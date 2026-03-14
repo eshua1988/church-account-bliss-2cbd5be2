@@ -98,12 +98,15 @@ interface MessageTemplate {
   enabled: boolean;
 }
 
+interface MenuOrderItem { id: string; kind: 'button' | 'template'; }
+
 interface MenuConfig {
   welcomeMessage: string;
   extraButtons: ExtraButton[];
   showPayoutLinks: boolean;
   botCommands: BotCommand[];
   messageTemplates: MessageTemplate[];
+  menuOrder: MenuOrderItem[];
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -117,7 +120,28 @@ const defaultConfig: MenuConfig = {
     { id: '2', command: 'help', description: 'Помощь и инструкция' },
   ],
   messageTemplates: [],
+  menuOrder: [],
 };
+
+// Build menuOrder from current buttons + templates, preserving existing order
+function buildMenuOrder(
+  extraButtons: ExtraButton[],
+  messageTemplates: MessageTemplate[],
+  existing: MenuOrderItem[],
+): MenuOrderItem[] {
+  const all: MenuOrderItem[] = [
+    ...extraButtons.map((b) => ({ id: b.id, kind: 'button' as const })),
+    ...messageTemplates.map((t) => ({ id: t.id, kind: 'template' as const })),
+  ];
+  const allIds = new Set(all.map((x) => x.id));
+  // Keep existing order, drop removed items, append new ones at end
+  const ordered = existing.filter((x) => allIds.has(x.id));
+  const orderedIds = new Set(ordered.map((x) => x.id));
+  for (const item of all) {
+    if (!orderedIds.has(item.id)) ordered.push(item);
+  }
+  return ordered;
+}
 
 const BUTTON_TYPE_META: Record<ExtraButton['type'], { label: string; placeholder: string; hint: string; color?: string }> = {
   url:                    { label: '🔗 URL-ссылка',            placeholder: 'https://example.com',          hint: 'Открыть ссылку в браузере',                        color: 'blue' },
@@ -144,29 +168,37 @@ const BUTTON_BLOCK_META: Record<ButtonBlockType, { label: string; badge: string;
 
 // ─── Telegram interactive layout editor ─────────────────────────────────────
 
-type EditableBtn = {
-  id: string;
-  text: string;
-  type: string;
-  fixed: boolean;
-  extraIdx: number;
-};
+type UnifiedItem =
+  | { kind: 'button'; id: string; text: string; btnType: string; idx: number }
+  | { kind: 'template'; id: string; text: string; trigger: string; idx: number };
 
 const TelegramLayoutEditor = ({
   config,
-  onMoveButton,
-  onReorderButtons,
+  onReorderMenu,
 }: {
   config: MenuConfig;
-  onMoveButton: (id: string, dir: 'up' | 'down') => void;
-  onReorderButtons: (fromId: string, toId: string) => void;
+  onReorderMenu: (fromId: string, toId: string) => void;
 }) => {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
-  const allButtons: EditableBtn[] = [
-    ...config.extraButtons.map((b, i) => ({ id: b.id, text: b.text, type: b.type, fixed: false, extraIdx: i })),
-  ];
+  const btnMap = new Map(config.extraButtons.map((b, i) => [b.id, { ...b, idx: i }]));
+  const tmplMap = new Map(
+    config.messageTemplates.filter((t) => t.enabled).map((t, i) => [t.id, { ...t, idx: i }])
+  );
+
+  const order = buildMenuOrder(config.extraButtons, config.messageTemplates, config.menuOrder);
+  const items: UnifiedItem[] = order
+    .map((o): UnifiedItem | null => {
+      if (o.kind === 'button') {
+        const b = btnMap.get(o.id);
+        return b ? { kind: 'button', id: b.id, text: b.text, btnType: b.type, idx: b.idx } : null;
+      } else {
+        const t = tmplMap.get(o.id);
+        return t ? { kind: 'template', id: t.id, text: t.title, trigger: t.trigger, idx: t.idx } : null;
+      }
+    })
+    .filter((x): x is UnifiedItem => x !== null);
 
   const typeIcon = (type: string) => {
     if (type === 'url') return <ExternalLink className="w-2.5 h-2.5" />;
@@ -198,100 +230,68 @@ const TelegramLayoutEditor = ({
       </div>
 
       {/* Chat area */}
-      <div className="px-3 py-4 min-h-[140px]">
+      <div className="px-3 py-4 min-h-[100px]">
         <div className="flex items-start gap-1.5">
           <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex-shrink-0 flex items-center justify-center mt-0.5">
             <Bot className="w-3.5 h-3.5 text-white" />
           </div>
-          <div className="flex-1 min-w-0 space-y-1">
+          <div className="flex-1 min-w-0 space-y-0.5">
             {/* Message bubble */}
-            <div className="bg-[#232e3c] rounded-2xl rounded-tl-sm px-3 py-2">
+            <div className="bg-[#232e3c] rounded-2xl rounded-tl-sm px-3 py-2 mb-1">
               <p className="text-white text-[12px] leading-relaxed whitespace-pre-wrap break-words">
                 {config.welcomeMessage || '👋 Выберите действие:'}
               </p>
             </div>
 
-            {/* Inline keyboard — draggable */}
-            {allButtons.length > 0 ? (
-              <div className="space-y-0.5 pt-0.5">
-                {allButtons.map((btn) => {
-                  const isDragOver = dragOverId === btn.id;
-                  const isDragging = dragId === btn.id;
-                  return (
-                    <div
-                      key={btn.id}
-                      draggable={!btn.fixed}
-                      onDragStart={() => { if (!btn.fixed) setDragId(btn.id); }}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        if (!btn.fixed && dragId && dragId !== btn.id) setDragOverId(btn.id);
-                      }}
-                      onDragLeave={() => setDragOverId(null)}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        if (dragId && !btn.fixed && dragId !== btn.id) onReorderButtons(dragId, btn.id);
-                        setDragId(null);
-                        setDragOverId(null);
-                      }}
-                      onDragEnd={() => { setDragId(null); setDragOverId(null); }}
-                      className={[
-                        'group relative flex items-center gap-1.5 rounded-lg px-2 py-1.5 transition-all duration-150',
-                        btn.fixed ? 'bg-[#2b5278]/50 cursor-default' : 'bg-[#2b5278]/80 cursor-grab active:cursor-grabbing hover:bg-[#2b5278]',
-                        isDragOver ? 'ring-2 ring-blue-400/70 scale-[1.02] bg-[#2b5278]' : '',
-                        isDragging ? 'opacity-30 scale-95' : 'opacity-100',
-                      ].join(' ')}
-                    >
-                      {btn.fixed ? (
-                        <span className="text-white/20 flex-shrink-0 text-[9px] w-3">🔒</span>
-                      ) : (
-                        <GripVertical className="w-3 h-3 text-white/30 group-hover:text-white/60 flex-shrink-0 transition-colors" />
-                      )}
-                      <span className="flex-1 text-[11px] text-[#6ab3f3] truncate text-center">
-                        {btn.text}
-                      </span>
-                      <span className="flex-shrink-0 text-white/35">
-                        {typeIcon(btn.type)}
-                      </span>
-                      {!btn.fixed && (
-                        <div className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-px bg-[#17212b]/90 rounded px-0.5 z-10">
-                          <button
-                            type="button"
-                            disabled={btn.extraIdx === 0}
-                            onMouseDown={(e) => { e.stopPropagation(); onMoveButton(btn.id, 'up'); }}
-                            className="p-0.5 rounded hover:bg-white/10 disabled:opacity-20 transition-colors text-white/50 hover:text-white"
-                          >
-                            <ArrowUp className="w-2.5 h-2.5" />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={btn.extraIdx === config.extraButtons.length - 1}
-                            onMouseDown={(e) => { e.stopPropagation(); onMoveButton(btn.id, 'down'); }}
-                            className="p-0.5 rounded hover:bg-white/10 disabled:opacity-20 transition-colors text-white/50 hover:text-white"
-                          >
-                            <ArrowDown className="w-2.5 h-2.5" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="text-white/20 text-[11px] text-center py-3 border border-white/5 border-dashed rounded-lg mt-1">
-                Кнопки не добавлены
-              </div>
-            )}
-
-            {/* Templates list */}
-            {config.messageTemplates.filter((t) => t.enabled).length > 0 && (
-              <div className="mt-0.5 space-y-0.5">
-                {config.messageTemplates.filter((t) => t.enabled).map((tmpl) => (
-                  <div key={tmpl.id} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 bg-[#2b5278]/80 cursor-default">
-                    <FileText className="w-3 h-3 text-orange-400/70 flex-shrink-0" />
-                    <span className="flex-1 text-[11px] text-[#6ab3f3] truncate text-center">{tmpl.title}</span>
-                    <code className="text-[9px] text-white/30 font-mono flex-shrink-0">/{tmpl.trigger}</code>
+            {/* Unified draggable keyboard */}
+            {items.length > 0 ? (
+              items.map((item) => {
+                const isDragOver = dragOverId === item.id;
+                const isDragging = dragId === item.id;
+                return (
+                  <div
+                    key={item.id}
+                    draggable
+                    onDragStart={() => setDragId(item.id)}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      if (dragId && dragId !== item.id) setDragOverId(item.id);
+                    }}
+                    onDragLeave={() => setDragOverId(null)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (dragId && dragId !== item.id) onReorderMenu(dragId, item.id);
+                      setDragId(null);
+                      setDragOverId(null);
+                    }}
+                    onDragEnd={() => { setDragId(null); setDragOverId(null); }}
+                    className={[
+                      'group flex items-center gap-1.5 rounded-lg px-2 py-1.5 transition-all duration-150 cursor-grab active:cursor-grabbing',
+                      item.kind === 'template'
+                        ? 'bg-[#2b5278]/70 border border-orange-500/20'
+                        : 'bg-[#2b5278]/80',
+                      isDragOver ? 'ring-2 ring-blue-400/70 scale-[1.02]' : '',
+                      isDragging ? 'opacity-30 scale-95' : 'opacity-100',
+                    ].join(' ')}
+                  >
+                    <GripVertical className="w-3 h-3 text-white/30 group-hover:text-white/60 flex-shrink-0 transition-colors" />
+                    {item.kind === 'template' && (
+                      <FileText className="w-2.5 h-2.5 text-orange-400/60 flex-shrink-0" />
+                    )}
+                    <span className="flex-1 text-[11px] text-[#6ab3f3] truncate text-center">
+                      {item.text}
+                    </span>
+                    <span className="flex-shrink-0 text-white/35">
+                      {item.kind === 'button'
+                        ? typeIcon(item.btnType)
+                        : <code className="text-[9px] text-white/25 font-mono">/{item.trigger}</code>}
+                    </span>
                   </div>
-                ))}
+                );
+              })
+            ) : (
+              <div className="text-white/20 text-[11px] text-center py-3 border border-white/5 border-dashed rounded-lg">
+                Кнопки не добавлены
               </div>
             )}
           </div>
@@ -309,11 +309,11 @@ const TelegramLayoutEditor = ({
       </div>
 
       {/* Drag hint */}
-      {config.extraButtons.length > 1 && (
+      {items.length > 1 && (
         <div className="bg-[#17212b] px-3 pb-2 pt-1 text-center">
           <p className="text-[9px] text-white/20 flex items-center justify-center gap-1">
             <GripVertical className="w-2.5 h-2.5" />
-            Перетащите кнопку для изменения порядка
+            Перетащите кнопку или шаблон для изменения порядка
           </p>
         </div>
       )}
@@ -398,12 +398,15 @@ export const TelegramMenuPage = () => {
             });
             return { ...b, sheetRanges: ranges } as ExtraButton;
           });
+          const rawMenuOrder: MenuOrderItem[] = d.menu_order ?? [];
+          const builtOrder = buildMenuOrder(migratedButtons, migratedTemplates, rawMenuOrder);
           setConfig({
             welcomeMessage: d.welcome_message ?? defaultConfig.welcomeMessage,
             extraButtons: migratedButtons,
             showPayoutLinks: d.show_payout_links !== false,
             botCommands: (d.bot_commands as BotCommand[]) ?? defaultConfig.botCommands,
             messageTemplates: migratedTemplates,
+            menuOrder: builtOrder,
           });
         }
         setConnectedBots((botsRes.data as any) ?? []);
@@ -429,6 +432,7 @@ export const TelegramMenuPage = () => {
           show_payout_links: config.showPayoutLinks,
           bot_commands: config.botCommands,
           message_templates: config.messageTemplates,
+          menu_order: buildMenuOrder(config.extraButtons, config.messageTemplates, config.menuOrder),
         },
         { onConflict: 'user_id' }
       );
@@ -532,14 +536,17 @@ export const TelegramMenuPage = () => {
 
   // ── Buttons CRUD ──────────────────────────────────────────────────────────────
 
-  const addButton = () =>
+  const addButton = () => {
+    const newId = crypto.randomUUID();
     setConfig((p) => ({
       ...p,
       extraButtons: [
         ...p.extraButtons,
-        { id: crypto.randomUUID(), text: '🔘 Новая кнопка', type: 'url', value: '', sheetRanges: [] },
+        { id: newId, text: '🔘 Новая кнопка', type: 'url', value: '', sheetRanges: [] },
       ],
+      menuOrder: [...p.menuOrder, { id: newId, kind: 'button' as const }],
     }));
+  };
 
   const updateButton = (id: string, patch: Partial<ExtraButton>) =>
     setConfig((p) => ({
@@ -548,15 +555,19 @@ export const TelegramMenuPage = () => {
     }));
 
   const deleteButton = (id: string) =>
-    setConfig((p) => ({ ...p, extraButtons: p.extraButtons.filter((b) => b.id !== id) }));
+    setConfig((p) => ({
+      ...p,
+      extraButtons: p.extraButtons.filter((b) => b.id !== id),
+      menuOrder: p.menuOrder.filter((x) => x.id !== id),
+    }));
 
   const moveButton = (id: string, dir: 'up' | 'down') =>
     setConfig((p) => {
-      const arr = [...p.extraButtons];
-      const i = arr.findIndex((b) => b.id === id);
-      if (dir === 'up' && i > 0) [arr[i - 1], arr[i]] = [arr[i], arr[i - 1]];
-      if (dir === 'down' && i < arr.length - 1) [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]];
-      return { ...p, extraButtons: arr };
+      const order = [...p.menuOrder];
+      const i = order.findIndex((x) => x.id === id);
+      if (dir === 'up' && i > 0) [order[i - 1], order[i]] = [order[i], order[i - 1]];
+      if (dir === 'down' && i < order.length - 1) [order[i], order[i + 1]] = [order[i + 1], order[i]];
+      return { ...p, menuOrder: order };
     });
 
   const reorderExtraButtons = (fromId: string, toId: string) => {
@@ -569,6 +580,19 @@ export const TelegramMenuPage = () => {
       const [item] = arr.splice(fromIdx, 1);
       arr.splice(toIdx, 0, item);
       return { ...p, extraButtons: arr };
+    });
+  };
+
+  const reorderMenu = (fromId: string, toId: string) => {
+    if (fromId === toId) return;
+    setConfig((p) => {
+      const order = [...p.menuOrder];
+      const fromIdx = order.findIndex((x) => x.id === fromId);
+      const toIdx = order.findIndex((x) => x.id === toId);
+      if (fromIdx < 0 || toIdx < 0) return p;
+      const [item] = order.splice(fromIdx, 1);
+      order.splice(toIdx, 0, item);
+      return { ...p, menuOrder: order };
     });
   };
 
@@ -713,6 +737,7 @@ export const TelegramMenuPage = () => {
           enabled: true,
         },
       ],
+      menuOrder: [...p.menuOrder, { id, kind: 'template' as const }],
     }));
     setExpandedTemplates((prev) => new Set([...prev, id]));
   };
@@ -727,6 +752,7 @@ export const TelegramMenuPage = () => {
     setConfig((p) => ({
       ...p,
       messageTemplates: p.messageTemplates.filter((t) => t.id !== id),
+      menuOrder: p.menuOrder.filter((x) => x.id !== id),
     }));
 
   const addTemplateBlock = (templateId: string, type: 'text' | 'button') =>
@@ -1627,8 +1653,7 @@ export const TelegramMenuPage = () => {
             <CardContent>
               <TelegramLayoutEditor
                 config={config}
-                onMoveButton={moveButton}
-                onReorderButtons={reorderExtraButtons}
+                onReorderMenu={reorderMenu}
               />
             </CardContent>
           </Card>
