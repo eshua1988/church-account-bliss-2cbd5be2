@@ -103,7 +103,6 @@ interface MenuOrderItem { id: string; kind: 'button' | 'template'; }
 interface MenuConfig {
   welcomeMessage: string;
   extraButtons: ExtraButton[];
-  showPayoutLinks: boolean;
   botCommands: BotCommand[];
   messageTemplates: MessageTemplate[];
   menuOrder: MenuOrderItem[];
@@ -114,7 +113,6 @@ interface MenuConfig {
 const defaultConfig: MenuConfig = {
   welcomeMessage: '👋 Выберите действие:',
   extraButtons: [],
-  showPayoutLinks: true,
   botCommands: [
     { id: '1', command: 'start', description: 'Главное меню' },
     { id: '2', command: 'help', description: 'Помощь и инструкция' },
@@ -354,7 +352,7 @@ export const TelegramMenuPage = () => {
         const [cfgRes, botsRes] = await Promise.all([
           supabase
             .from('telegram_bot_config')
-            .select('welcome_message, extra_buttons, show_payout_links, bot_commands, message_templates')
+            .select('welcome_message, extra_buttons, bot_commands, message_templates, menu_order')
             .eq('user_id', user.id)
             .maybeSingle(),
           supabase
@@ -403,7 +401,6 @@ export const TelegramMenuPage = () => {
           setConfig({
             welcomeMessage: d.welcome_message ?? defaultConfig.welcomeMessage,
             extraButtons: migratedButtons,
-            showPayoutLinks: d.show_payout_links !== false,
             botCommands: (d.bot_commands as BotCommand[]) ?? defaultConfig.botCommands,
             messageTemplates: migratedTemplates,
             menuOrder: builtOrder,
@@ -429,7 +426,6 @@ export const TelegramMenuPage = () => {
           user_id: user.id,
           welcome_message: config.welcomeMessage,
           extra_buttons: config.extraButtons,
-          show_payout_links: config.showPayoutLinks,
           bot_commands: config.botCommands,
           message_templates: config.messageTemplates,
           menu_order: buildMenuOrder(config.extraButtons, config.messageTemplates, config.menuOrder),
@@ -1008,23 +1004,6 @@ export const TelegramMenuPage = () => {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Payout link auto-button toggle */}
-              <div className="flex items-center justify-between rounded-lg border px-4 py-3 bg-muted/30">
-                <div>
-                  <div className="text-sm font-medium flex items-center gap-2">
-                    <Link2 className="w-3.5 h-3.5 text-blue-500" />
-                    Кнопка ссылки ордера (авто)
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    Автоматически добавляет кнопку копирования ссылки расходов
-                  </div>
-                </div>
-                <Switch
-                  checked={config.showPayoutLinks}
-                  onCheckedChange={(v) => setConfig((p) => ({ ...p, showPayoutLinks: v }))}
-                />
-              </div>
-
               {/* Custom buttons list */}
               {config.extraButtons.length === 0 ? (
                 <div className="text-center text-sm text-muted-foreground py-6 border border-dashed rounded-lg">

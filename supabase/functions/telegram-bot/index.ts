@@ -396,12 +396,11 @@ async function buildMainMenuForUser(
   // Read custom bot config
   const { data: config } = await supabase
     .from("telegram_bot_config")
-    .select("welcome_message, extra_buttons, show_payout_links, message_templates, menu_order")
+    .select("welcome_message, extra_buttons, message_templates, menu_order")
     .eq("user_id", userId)
     .maybeSingle();
 
   const welcomeMessage = (config as any)?.welcome_message ?? "👋 Выберите действие:";
-  const showPayoutLinks = (config as any)?.show_payout_links !== false;
   const extraButtons: Array<{ id: string; text: string; type: string; value: string }> =
     ((config as any)?.extra_buttons) ?? [];
   const messageTemplates: Array<{
@@ -412,23 +411,6 @@ async function buildMainMenuForUser(
     ((config as any)?.menu_order) ?? [];
 
   const buttons: Array<Array<Record<string, unknown>>> = [];
-
-  // Payout link buttons (always first — system level)
-  if (showPayoutLinks) {
-    const { data: links } = await supabase
-      .from("shared_payout_links")
-      .select("token, name, link_type")
-      .eq("owner_user_id", userId)
-      .eq("is_active", true)
-      .order("created_at", { ascending: false });
-
-    if (links && links.length > 0) {
-      (links as Array<{ token: string; name: string | null; link_type: string }>).forEach((link) => {
-        const url = `${APP_URL}/payout/${link.token}`;
-        buttons.push([{ text: "🔗 Ссылка Ордера расходов - Скопировать", copy_text: { text: url } }]);
-      });
-    }
-  }
 
   const btnMap = new Map(extraButtons.map((b) => [b.id, b]));
   const tmplMap = new Map(messageTemplates.filter((t) => t.enabled && t.trigger).map((t) => [t.id, t]));
