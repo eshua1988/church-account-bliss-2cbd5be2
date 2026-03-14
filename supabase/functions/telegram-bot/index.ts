@@ -488,53 +488,68 @@ async function buildMainMenuForUser(
   return { keyboard: { inline_keyboard: buttons }, welcomeMessage };
 }
 
-async function buildMainMenu(
+// ----- Resolve bot owner (no account linking required) -----
+// Priority: 1) owner encoded in webhook URL, 2) direct chatId link, 3) first active user (shared public bot)
+async function resolveBotOwner(
   chatId: number,
+  ownerFromUrl: string | null,
   supabase: ReturnType<typeof createClient>,
-): Promise<{ keyboard: object; welcomeMessage: string }> {
-  const { data: telegramUser } = await supabase
-    .from("telegram_users")
-    .select("user_id")
-    .eq("telegram_chat_id", chatId)
-    .eq("is_active", true)
-    .maybeSingle();
-
-  const userId = (telegramUser as { user_id: string } | null)?.user_id;
-  if (!userId) {
+): Promise<{ userId: string | null; botToken: string }> {
+  // 1) Owner encoded in webhook URL (custom bots set this when activating webhook)
+  if (ownerFromUrl) {
+    const { data } = await supabase
+      .from("telegram_users")
+      .select("bot_token")
+      .eq("user_id", ownerFromUrl)
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
     return {
-      keyboard: { inline_keyboard: [[{ text: "🔗 Ссылка ордера расходов", callback_data: "get_links" }]] },
-      welcomeMessage: "👋 Выберите действие:",
+      userId: ownerFromUrl,
+      botToken: (data as any)?.bot_token || TELEGRAM_BOT_TOKEN,
     };
   }
 
-  return buildMainMenuForUser(userId, supabase);
-}
-
-// ----- Business logic (fallback for old callback buttons) -----
-
-async function handleGetLinks(
-  chatId: number,
-  supabase: ReturnType<typeof createClient>,
-  botToken: string,
-): Promise<number | null> {
-  const { data: telegramUser } = await supabase
+  // 2) Direct link: the sender has their own account linked
+  const { data: direct } = await supabase
     .from("telegram_users")
-    .select("user_id")
+    .select("user_id, bot_token")
     .eq("telegram_chat_id", chatId)
     .eq("is_active", true)
     .maybeSingle();
-
-  if (!(telegramUser as { user_id: string } | null)?.user_id) {
-    const { keyboard, welcomeMessage } = await buildMainMenu(chatId, supabase);
-    return sendMessage(
-      chatId,
-      "❌ Ваш аккаунт не привязан к приложению.\n\nОбратитесь к администратору для привязки.",
-      keyboard,
-      botToken,
-    );
+  if (direct) {
+    return {
+      userId: (direct as any).user_id,
+      botToken: (direct as any).bot_token || TELEGRAM_BOT_TOKEN,
+    };
   }
 
-  const { keyboard, welcomeMessage } = await buildMainMenu(chatId, supabase);
+  // 3) Fall back to first active user (shared public bot — anyone can use it)
+  const { data: anyUser } = await supabase
+    .from("telegram_users")
+    .select("user_id, bot_token")
+    .eq("is_active", true)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return {
+    userId: (anyUser as any)?.user_id ?? null,
+    botToken: (anyUser as any)?.bot_token || TELEGRAM_BOT_TOKEN,
+  };
+}
+
+// ----- Business logic (resend menu on get_links) -----
+
+async function handleGetLinks(
+  chatId: number,
+  botOwnerId: string | null,
+  supabase: ReturnType<typeof createClient>,
+  botToken: string,
+): Promise<number | null> {
+  if (!botOwnerId) {
+    return sendMessage(chatId, "👋 Выберите действие:", undefined, botToken);
+  }
+  const { keyboard, welcomeMessage } = await buildMainMenuForUser(botOwnerId, supabase);
   return sendMessage(chatId, welcomeMessage, keyboard, botToken);
 }
 
@@ -560,7 +575,10 @@ serve(async (req) => {
 
   // Setup shared bot webhook
   if (url.searchParams.get("setup") === "true") {
-    const webhookUrl = `${SUPABASE_URL}/functions/v1/telegram-bot`;
+    const ownerId = url.searchParams.get("owner_id");
+    const webhookUrl = ownerId
+      ? `${SUPABASE_URL}/functions/v1/telegram-bot?owner=${ownerId}`
+      : `${SUPABASE_URL}/functions/v1/telegram-bot`;
     const getMeRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe`);
     const getMeResult = await getMeRes.json();
     if (!getMeResult.ok) {
@@ -577,7 +595,7 @@ serve(async (req) => {
   // Setup custom bot webhook
   if (url.searchParams.get("setup_custom") === "true" && req.method === "POST") {
     try {
-      const { bot_token } = await req.json() as { bot_token: string };
+      const { bot_token, user_id } = await req.json() as { bot_token: string; user_id?: string };
       if (!bot_token) {
         return new Response(JSON.stringify({ ok: false, description: "bot_token required" }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -590,7 +608,10 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const webhookUrl = `${SUPABASE_URL}/functions/v1/telegram-bot`;
+      // Encode the bot owner in the webhook URL so all users' messages are served from their config
+      const webhookUrl = user_id
+        ? `${SUPABASE_URL}/functions/v1/telegram-bot?owner=${user_id}`
+        : `${SUPABASE_URL}/functions/v1/telegram-bot`;
       const result = await setWebhook(bot_token, webhookUrl);
       return new Response(JSON.stringify({ ...result, bot: getMeResult.result }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -668,15 +689,19 @@ serve(async (req) => {
       }
 
       if (chatId) {
-        const botToken = await getBotToken(chatId, supabase);
+        // Resolve bot owner & token without requiring the sender to be linked
+        const ownerFromUrl = url.searchParams.get("owner");
+        const { userId: botOwnerId, botToken } = await resolveBotOwner(chatId, ownerFromUrl, supabase);
 
-        // Clear history if user was inactive for 6+ hours
+        // Clear history if user was inactive for 6+ hours (only applies for linked users)
         const existingIds = await clearStaleHistory(chatId, supabase, botToken);
         const newIds: number[] = [];
 
-        // Regular message → send menu
+        // Regular message → send configured menu to everyone
         if (update.message?.chat?.type === "private") {
-          const { keyboard, welcomeMessage } = await buildMainMenu(chatId, supabase);
+          const { keyboard, welcomeMessage } = botOwnerId
+            ? await buildMainMenuForUser(botOwnerId, supabase)
+            : { keyboard: { inline_keyboard: [] as any }, welcomeMessage: "👋 Выберите действие:" };
           const msgId = await sendMessage(chatId, welcomeMessage, keyboard, botToken);
           if (msgId) newIds.push(msgId);
         }
@@ -687,17 +712,11 @@ serve(async (req) => {
           const callbackData: string = update.callback_query.data || "";
 
           if (callbackData === "get_links") {
-            const msgId = await handleGetLinks(chatId, supabase, botToken);
+            const msgId = await handleGetLinks(chatId, botOwnerId, supabase, botToken);
             if (msgId) newIds.push(msgId);
           } else if (callbackData.startsWith("gsheet_")) {
-            // Google Sheet data button
-            const { data: telegramUser2 } = await supabase
-              .from("telegram_users")
-              .select("user_id")
-              .eq("telegram_chat_id", chatId)
-              .eq("is_active", true)
-              .maybeSingle();
-            const userId2 = (telegramUser2 as { user_id: string } | null)?.user_id;
+            // Google Sheet data button — use bot owner's config
+            const userId2 = botOwnerId;
             if (userId2) {
               const btnId = callbackData.slice(7); // strip "gsheet_"
               const { data: cfg2 } = await supabase
@@ -816,14 +835,8 @@ serve(async (req) => {
               }
             }
           } else {
-            // Check if callback matches a message template trigger
-            const { data: telegramUser } = await supabase
-              .from("telegram_users")
-              .select("user_id")
-              .eq("telegram_chat_id", chatId)
-              .eq("is_active", true)
-              .maybeSingle();
-            const userId = (telegramUser as { user_id: string } | null)?.user_id;
+            // Check if callback matches a message template trigger — use bot owner's config
+            const userId = botOwnerId;
             if (userId) {
               const { data: cfg } = await supabase
                 .from("telegram_bot_config")

@@ -161,11 +161,11 @@ export function TelegramBotSettings() {
         response = await fetch(`${SUPABASE_URL}/functions/v1/telegram-bot?setup_custom=true`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bot_token: wizardToken.trim() }),
+          body: JSON.stringify({ bot_token: wizardToken.trim(), user_id: user?.id }),
         });
       } else {
         // Shared bot
-        response = await fetch(`${SUPABASE_URL}/functions/v1/telegram-bot?setup=true`);
+        response = await fetch(`${SUPABASE_URL}/functions/v1/telegram-bot?setup=true&owner_id=${user?.id ?? ''}`);
       }
       const result = await response.json();
       if (result.ok) {
@@ -189,10 +189,10 @@ export function TelegramBotSettings() {
         response = await fetch(`${SUPABASE_URL}/functions/v1/telegram-bot?setup_custom=true`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bot_token: token }),
+          body: JSON.stringify({ bot_token: token, user_id: user?.id }),
         });
       } else {
-        response = await fetch(`${SUPABASE_URL}/functions/v1/telegram-bot?setup=true`);
+        response = await fetch(`${SUPABASE_URL}/functions/v1/telegram-bot?setup=true&owner_id=${user?.id ?? ''}`);
       }
       const result = await response.json();
       if (result.ok) {
