@@ -396,7 +396,7 @@ async function buildMainMenuForUser(
   // Read custom bot config
   const { data: config } = await supabase
     .from("telegram_bot_config")
-    .select("welcome_message, extra_buttons, message_templates, menu_order")
+    .select("welcome_message, extra_buttons, message_templates, menu_order, button_layout")
     .eq("user_id", userId)
     .maybeSingle();
 
@@ -409,8 +409,7 @@ async function buildMainMenuForUser(
   }> = ((config as any)?.message_templates) ?? [];
   const menuOrder: Array<{ id: string; kind: string }> =
     ((config as any)?.menu_order) ?? [];
-
-  const buttons: Array<Array<Record<string, unknown>>> = [];
+  const buttonsPerRow: number = Math.min(3, Math.max(1, Number((config as any)?.button_layout?.buttonsPerRow ?? 1)));
 
   const btnMap = new Map(extraButtons.map((b) => [b.id, b]));
   const tmplMap = new Map(messageTemplates.filter((t) => t.enabled && t.trigger).map((t) => [t.id, t]));
@@ -424,37 +423,46 @@ async function buildMainMenuForUser(
           ...messageTemplates.filter((t) => t.enabled).map((t) => ({ id: t.id, kind: "template" })),
         ];
 
+  // Build flat list of button objects first, then chunk into rows
+  const flatButtons: Array<Record<string, unknown>> = [];
+
   for (const entry of orderedIds) {
     try {
       if (entry.kind === "button") {
         const btn = btnMap.get(entry.id);
         if (!btn) continue;
         if (btn.type === "copy" && btn.value) {
-          buttons.push([{ text: btn.text, copy_text: { text: btn.value } }]);
+          flatButtons.push({ text: btn.text, copy_text: { text: btn.value } });
         } else if (btn.type === "url" && btn.value) {
-          buttons.push([{ text: btn.text, url: btn.value }]);
+          flatButtons.push({ text: btn.text, url: btn.value });
         } else if (btn.type === "callback" && btn.value) {
-          buttons.push([{ text: btn.text, callback_data: btn.value }]);
+          flatButtons.push({ text: btn.text, callback_data: btn.value });
         } else if (btn.type === "google_sheet") {
-          buttons.push([{ text: btn.text, callback_data: `gsheet_${btn.id}` }]);
+          flatButtons.push({ text: btn.text, callback_data: `gsheet_${btn.id}` });
         } else if (btn.type === "web_app" && btn.value) {
-          buttons.push([{ text: btn.text, web_app: { url: btn.value } }]);
+          flatButtons.push({ text: btn.text, web_app: { url: btn.value } });
         } else if (btn.type === "switch_inline") {
-          buttons.push([{ text: btn.text, switch_inline_query: btn.value ?? "" }]);
+          flatButtons.push({ text: btn.text, switch_inline_query: btn.value ?? "" });
         } else if (btn.type === "switch_inline_current") {
-          buttons.push([{ text: btn.text, switch_inline_query_current_chat: btn.value ?? "" }]);
+          flatButtons.push({ text: btn.text, switch_inline_query_current_chat: btn.value ?? "" });
         } else if (btn.type === "hashtag" && btn.value) {
           const tag = btn.value.startsWith("#") ? btn.value : `#${btn.value}`;
-          buttons.push([{ text: btn.text, switch_inline_query_current_chat: tag }]);
+          flatButtons.push({ text: btn.text, switch_inline_query_current_chat: tag });
         }
       } else if (entry.kind === "template") {
         const tmpl = tmplMap.get(entry.id);
         if (!tmpl) continue;
-        buttons.push([{ text: tmpl.title || tmpl.trigger, callback_data: tmpl.trigger }]);
+        flatButtons.push({ text: tmpl.title || tmpl.trigger, callback_data: tmpl.trigger });
       }
     } catch {
       // Skip malformed entry so it doesn't break the entire keyboard
     }
+  }
+
+  // Chunk flat buttons into rows of buttonsPerRow
+  const buttons: Array<Array<Record<string, unknown>>> = [];
+  for (let i = 0; i < flatButtons.length; i += buttonsPerRow) {
+    buttons.push(flatButtons.slice(i, i + buttonsPerRow));
   }
 
   if (buttons.length === 0) {

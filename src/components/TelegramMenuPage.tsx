@@ -49,6 +49,8 @@ import {
   AtSign,
   Megaphone,
   ExternalLink,
+  Palette,
+  Rows3,
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -100,19 +102,34 @@ interface MessageTemplate {
 
 interface MenuOrderItem { id: string; kind: 'button' | 'template'; }
 
+interface LayoutSettings {
+  buttonsPerRow: 1 | 2 | 3;
+  buttonSize: 'sm' | 'md' | 'lg';
+  buttonColor: string;
+}
+
 interface MenuConfig {
   welcomeMessage: string;
   extraButtons: ExtraButton[];
   botCommands: BotCommand[];
   messageTemplates: MessageTemplate[];
   menuOrder: MenuOrderItem[];
+  layoutSettings: LayoutSettings;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+const COLOR_PRESETS = [
+  '#2b5278', '#1a5276', '#1e8449', '#6c3483',
+  '#922b21', '#935116', '#212f3c', '#7d6608',
+];
+
+const defaultLayoutSettings: LayoutSettings = { buttonsPerRow: 1, buttonSize: 'md', buttonColor: '#2b5278' };
+
 const defaultConfig: MenuConfig = {
   welcomeMessage: '👋 Выберите действие:',
   extraButtons: [],
+  layoutSettings: defaultLayoutSettings,
   botCommands: [
     { id: '1', command: 'start', description: 'Главное меню' },
     { id: '2', command: 'help', description: 'Помощь и инструкция' },
@@ -173,12 +190,17 @@ type UnifiedItem =
 const TelegramLayoutEditor = ({
   config,
   onReorderMenu,
+  onChangeLayout,
 }: {
   config: MenuConfig;
   onReorderMenu: (fromId: string, toId: string) => void;
+  onChangeLayout: (s: LayoutSettings) => void;
 }) => {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  const ls = config.layoutSettings;
+  const { buttonsPerRow, buttonSize, buttonColor } = ls;
 
   const btnMap = new Map(config.extraButtons.map((b, i) => [b.id, { ...b, idx: i }]));
   const tmplMap = new Map(
@@ -198,6 +220,14 @@ const TelegramLayoutEditor = ({
     })
     .filter((x): x is UnifiedItem => x !== null);
 
+  // Group flat list into display rows
+  const rowGroups: UnifiedItem[][] = [];
+  for (let i = 0; i < items.length; i += buttonsPerRow) {
+    rowGroups.push(items.slice(i, i + buttonsPerRow));
+  }
+
+  const btnPy = buttonSize === 'sm' ? 'py-1' : buttonSize === 'lg' ? 'py-2.5' : 'py-1.5';
+
   const typeIcon = (type: string) => {
     if (type === 'url') return <ExternalLink className="w-2.5 h-2.5" />;
     if (type === 'copy') return <Copy className="w-2.5 h-2.5" />;
@@ -211,110 +241,205 @@ const TelegramLayoutEditor = ({
   };
 
   return (
-    <div className="bg-[#17212b] rounded-2xl overflow-hidden shadow-xl border border-white/5">
-      {/* Header */}
-      <div className="bg-[#242f3d] px-4 pt-3 pb-2.5 flex items-center gap-2.5">
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow">
-          <Bot className="w-4 h-4 text-white" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-white text-sm font-semibold truncate">Мой Telegram Бот</div>
-          <div className="flex items-center gap-1 mt-0.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-400"></div>
-            <span className="text-[10px] text-green-400/90">в сети</span>
+    <div className="space-y-3">
+      {/* ── Settings panel ── */}
+      <div className="rounded-xl border bg-muted/20 px-3 py-2.5 space-y-2.5">
+        {/* Кнопок в ряд */}
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground w-32 flex-shrink-0 flex items-center gap-1.5">
+            <Rows3 className="w-3 h-3" /> Кнопок в ряд
+          </span>
+          <div className="flex gap-1">
+            {([1, 2, 3] as const).map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => onChangeLayout({ ...ls, buttonsPerRow: n })}
+                className={`w-7 h-7 rounded text-xs font-semibold transition-colors ${
+                  buttonsPerRow === n
+                    ? 'bg-primary text-primary-foreground shadow'
+                    : 'bg-muted hover:bg-muted/60 text-muted-foreground'
+                }`}
+              >
+                {n}
+              </button>
+            ))}
           </div>
         </div>
-        <span className="text-[9px] text-white/25 uppercase tracking-widest font-semibold">МАКЕТ</span>
-      </div>
 
-      {/* Chat area */}
-      <div className="px-3 py-4 min-h-[100px]">
-        <div className="flex items-start gap-1.5">
-          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex-shrink-0 flex items-center justify-center mt-0.5">
-            <Bot className="w-3.5 h-3.5 text-white" />
+        {/* Размер кнопки */}
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground w-32 flex-shrink-0">
+            Размер кнопки
+          </span>
+          <div className="flex gap-1">
+            {(['sm', 'md', 'lg'] as const).map((sz) => (
+              <button
+                key={sz}
+                type="button"
+                onClick={() => onChangeLayout({ ...ls, buttonSize: sz })}
+                className={`px-3 h-7 rounded text-xs font-semibold transition-colors ${
+                  buttonSize === sz
+                    ? 'bg-primary text-primary-foreground shadow'
+                    : 'bg-muted hover:bg-muted/60 text-muted-foreground'
+                }`}
+              >
+                {{ sm: 'S', md: 'M', lg: 'L' }[sz]}
+              </button>
+            ))}
           </div>
-          <div className="flex-1 min-w-0 space-y-0.5">
-            {/* Message bubble */}
-            <div className="bg-[#232e3c] rounded-2xl rounded-tl-sm px-3 py-2 mb-1">
-              <p className="text-white text-[12px] leading-relaxed whitespace-pre-wrap break-words">
-                {config.welcomeMessage || '👋 Выберите действие:'}
-              </p>
-            </div>
+        </div>
 
-            {/* Unified draggable keyboard */}
-            {items.length > 0 ? (
-              items.map((item) => {
-                const isDragOver = dragOverId === item.id;
-                const isDragging = dragId === item.id;
-                return (
-                  <div
-                    key={item.id}
-                    draggable
-                    onDragStart={() => setDragId(item.id)}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      if (dragId && dragId !== item.id) setDragOverId(item.id);
-                    }}
-                    onDragLeave={() => setDragOverId(null)}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      if (dragId && dragId !== item.id) onReorderMenu(dragId, item.id);
-                      setDragId(null);
-                      setDragOverId(null);
-                    }}
-                    onDragEnd={() => { setDragId(null); setDragOverId(null); }}
-                    className={[
-                      'group flex items-center gap-1.5 rounded-lg px-2 py-1.5 transition-all duration-150 cursor-grab active:cursor-grabbing',
-                      item.kind === 'template'
-                        ? 'bg-[#2b5278]/70 border border-orange-500/20'
-                        : 'bg-[#2b5278]/80',
-                      isDragOver ? 'ring-2 ring-blue-400/70 scale-[1.02]' : '',
-                      isDragging ? 'opacity-30 scale-95' : 'opacity-100',
-                    ].join(' ')}
-                  >
-                    <GripVertical className="w-3 h-3 text-white/30 group-hover:text-white/60 flex-shrink-0 transition-colors" />
-                    {item.kind === 'template' && (
-                      <FileText className="w-2.5 h-2.5 text-orange-400/60 flex-shrink-0" />
-                    )}
-                    <span className="flex-1 text-[11px] text-[#6ab3f3] truncate text-center">
-                      {item.text}
-                    </span>
-                    <span className="flex-shrink-0 text-white/35">
-                      {item.kind === 'button'
-                        ? typeIcon(item.btnType)
-                        : <code className="text-[9px] text-white/25 font-mono">/{item.trigger}</code>}
-                    </span>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="text-white/20 text-[11px] text-center py-3 border border-white/5 border-dashed rounded-lg">
-                Кнопки не добавлены
+        {/* Цвет кнопок */}
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground w-32 flex-shrink-0 flex items-center gap-1.5">
+            <Palette className="w-3 h-3" /> Цвет кнопок
+          </span>
+          <div className="flex gap-1.5 flex-wrap items-center">
+            {COLOR_PRESETS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                title={c}
+                onClick={() => onChangeLayout({ ...ls, buttonColor: c })}
+                style={{ background: c }}
+                className={`w-6 h-6 rounded-md transition-all ${
+                  buttonColor === c
+                    ? 'ring-2 ring-offset-1 ring-white scale-110'
+                    : 'opacity-70 hover:opacity-100 hover:scale-105'
+                }`}
+              />
+            ))}
+            {/* Custom colour picker */}
+            <label className="relative w-6 h-6 cursor-pointer" title="Свой цвет">
+              <input
+                type="color"
+                value={buttonColor}
+                onChange={(e) => onChangeLayout({ ...ls, buttonColor: e.target.value })}
+                className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+              />
+              <div
+                style={{ background: buttonColor }}
+                className="w-6 h-6 rounded-md border-2 border-dashed border-white/50 flex items-center justify-center"
+              >
+                <Palette className="w-2.5 h-2.5 text-white/70 pointer-events-none" />
               </div>
-            )}
+            </label>
           </div>
         </div>
       </div>
 
-      {/* Input bar */}
-      <div className="bg-[#242f3d] px-3 py-2 flex items-center gap-2">
-        <div className="flex-1 bg-[#17212b] rounded-xl px-3 py-1.5">
-          <span className="text-white/20 text-xs">Написать сообщение...</span>
+      {/* ── Phone preview ── */}
+      <div className="bg-[#17212b] rounded-2xl overflow-hidden shadow-xl border border-white/5">
+        {/* Header */}
+        <div className="bg-[#242f3d] px-4 pt-3 pb-2.5 flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow">
+            <Bot className="w-4 h-4 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-white text-sm font-semibold truncate">Мой Telegram Бот</div>
+            <div className="flex items-center gap-1 mt-0.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-green-400"></div>
+              <span className="text-[10px] text-green-400/90">в сети</span>
+            </div>
+          </div>
+          <span className="text-[9px] text-white/25 uppercase tracking-widest font-semibold">МАКЕТ</span>
         </div>
-        <div className="w-7 h-7 rounded-full bg-blue-500/20 flex items-center justify-center">
-          <Send className="w-3.5 h-3.5 text-blue-400" />
-        </div>
-      </div>
 
-      {/* Drag hint */}
-      {items.length > 1 && (
-        <div className="bg-[#17212b] px-3 pb-2 pt-1 text-center">
-          <p className="text-[9px] text-white/20 flex items-center justify-center gap-1">
-            <GripVertical className="w-2.5 h-2.5" />
-            Перетащите кнопку или шаблон для изменения порядка
-          </p>
+        {/* Chat area */}
+        <div className="px-3 py-4 min-h-[100px]">
+          <div className="flex items-start gap-1.5">
+            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex-shrink-0 flex items-center justify-center mt-0.5">
+              <Bot className="w-3.5 h-3.5 text-white" />
+            </div>
+            <div className="flex-1 min-w-0 space-y-0.5">
+              {/* Message bubble */}
+              <div className="bg-[#232e3c] rounded-2xl rounded-tl-sm px-3 py-2 mb-1">
+                <p className="text-white text-[12px] leading-relaxed whitespace-pre-wrap break-words">
+                  {config.welcomeMessage || '👋 Выберите действие:'}
+                </p>
+              </div>
+
+              {/* Keyboard grouped by buttonsPerRow */}
+              {rowGroups.length > 0 ? (
+                <div className="space-y-0.5">
+                  {rowGroups.map((row, rowIdx) => (
+                    <div key={rowIdx} className="flex gap-0.5">
+                      {row.map((item) => {
+                        const isDragOver = dragOverId === item.id;
+                        const isDragging = dragId === item.id;
+                        return (
+                          <div
+                            key={item.id}
+                            draggable
+                            onDragStart={() => setDragId(item.id)}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              if (dragId && dragId !== item.id) setDragOverId(item.id);
+                            }}
+                            onDragLeave={() => setDragOverId(null)}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              if (dragId && dragId !== item.id) onReorderMenu(dragId, item.id);
+                              setDragId(null);
+                              setDragOverId(null);
+                            }}
+                            onDragEnd={() => { setDragId(null); setDragOverId(null); }}
+                            style={{ background: buttonColor }}
+                            className={[
+                              `group flex flex-1 items-center gap-1 rounded-lg px-1.5 ${btnPy} transition-all duration-150 cursor-grab active:cursor-grabbing`,
+                              item.kind === 'template' ? 'brightness-90' : '',
+                              isDragOver ? 'ring-2 ring-white/50 scale-[1.02]' : '',
+                              isDragging ? 'opacity-30 scale-95' : 'opacity-100',
+                            ].join(' ')}
+                          >
+                            <GripVertical className="w-2.5 h-2.5 text-white/30 group-hover:text-white/60 flex-shrink-0 transition-colors" />
+                            {item.kind === 'template' && (
+                              <FileText className="w-2 h-2 text-white/50 flex-shrink-0" />
+                            )}
+                            <span className="flex-1 text-[10px] text-white/90 truncate text-center">
+                              {item.text}
+                            </span>
+                            <span className="flex-shrink-0 text-white/40">
+                              {item.kind === 'button'
+                                ? typeIcon(item.btnType)
+                                : <code className="text-[8px] text-white/25 font-mono">/{item.trigger}</code>}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-white/20 text-[11px] text-center py-3 border border-white/5 border-dashed rounded-lg">
+                  Кнопки не добавлены
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-      )}
+
+        {/* Input bar */}
+        <div className="bg-[#242f3d] px-3 py-2 flex items-center gap-2">
+          <div className="flex-1 bg-[#17212b] rounded-xl px-3 py-1.5">
+            <span className="text-white/20 text-xs">Написать сообщение...</span>
+          </div>
+          <div className="w-7 h-7 rounded-full bg-blue-500/20 flex items-center justify-center">
+            <Send className="w-3.5 h-3.5 text-blue-400" />
+          </div>
+        </div>
+
+        {/* Drag hint */}
+        {items.length > 1 && (
+          <div className="bg-[#17212b] px-3 pb-2 pt-1 text-center">
+            <p className="text-[9px] text-white/20 flex items-center justify-center gap-1">
+              <GripVertical className="w-2.5 h-2.5" />
+              Перетащите кнопку или шаблон для изменения порядка
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -352,7 +477,7 @@ export const TelegramMenuPage = () => {
         const [cfgRes, botsRes] = await Promise.all([
           supabase
             .from('telegram_bot_config')
-            .select('welcome_message, extra_buttons, bot_commands, message_templates, menu_order')
+            .select('welcome_message, extra_buttons, bot_commands, message_templates, menu_order, button_layout')
             .eq('user_id', user.id)
             .maybeSingle(),
           supabase
@@ -404,6 +529,7 @@ export const TelegramMenuPage = () => {
             botCommands: (d.bot_commands as BotCommand[]) ?? defaultConfig.botCommands,
             messageTemplates: migratedTemplates,
             menuOrder: builtOrder,
+            layoutSettings: { ...defaultLayoutSettings, ...(d.button_layout ?? {}) },
           });
         }
         setConnectedBots((botsRes.data as any) ?? []);
@@ -429,6 +555,7 @@ export const TelegramMenuPage = () => {
           bot_commands: config.botCommands,
           message_templates: config.messageTemplates,
           menu_order: buildMenuOrder(config.extraButtons, config.messageTemplates, config.menuOrder),
+          button_layout: config.layoutSettings,
         },
         { onConflict: 'user_id' }
       );
@@ -1633,6 +1760,7 @@ export const TelegramMenuPage = () => {
               <TelegramLayoutEditor
                 config={config}
                 onReorderMenu={reorderMenu}
+                onChangeLayout={(s) => setConfig((p) => ({ ...p, layoutSettings: s }))}
               />
             </CardContent>
           </Card>
