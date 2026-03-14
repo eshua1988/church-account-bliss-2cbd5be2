@@ -11,6 +11,28 @@ function isValidSpreadsheetId(id: string): boolean {
   return /^[a-zA-Z0-9_-]+$/.test(id) && id.length > 10 && id.length < 100;
 }
 
+/** Convert 1-based column number to letter(s): 1→A, 26→Z, 27→AA, 28→AB … */
+function numToColLetter(n: number): string {
+  let col = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    col = String.fromCharCode(65 + rem) + col;
+    n = Math.floor((n - 1) / 26);
+  }
+  return col;
+}
+
+/**
+ * Expand the column range in a sheet reference so it covers `colCount` columns.
+ * E.g. "'Data app'!A:Z" with colCount=30 → "'Data app'!A:AD"
+ * If there are no column bounds (e.g. "Sheet1!A1:Z100") the bounds are left untouched.
+ */
+function expandRangeColumns(range: string, colCount: number): string {
+  const lastCol = numToColLetter(Math.max(colCount, 1));
+  // Match patterns like "A:Z" or "A:AZ" at the end of the range
+  return range.replace(/([A-Z]+):([A-Z]+)$/, `A:${lastCol}`);
+}
+
 interface NoteData {
   row: number;
   col: number;
@@ -374,19 +396,24 @@ serve(async (req) => {
       
       case 'write': {
         if (!values) throw new Error('Values required for write action');
-        
+
+        // Dynamically expand range to cover actual data width (avoids "tried writing to column AA" errors)
+        const maxDataCols = Math.max(...values.map(row => row.length), 1);
+        const writeRange = expandRangeColumns(resolvedRange, maxDataCols);
+        console.log(`Write range expanded: ${resolvedRange} → ${writeRange} (${maxDataCols} columns)`);
+
         const sheetId = sheetIdNum;
         const clearNotesRequest = {
           requests: [
             {
-              // Clear all notes in columns A-Z, rows 1-1000
+              // Clear all notes up to actual data width, rows 1-1000
               repeatCell: {
                 range: {
                   sheetId: sheetId,
                   startRowIndex: 0,
                   endRowIndex: 1000,
                   startColumnIndex: 0,
-                  endColumnIndex: 26, // A-Z
+                  endColumnIndex: maxDataCols,
                 },
                 cell: {
                   note: '',
@@ -414,9 +441,10 @@ serve(async (req) => {
           console.log('Cleared existing notes from sheet');
         }
         
-        // Then clear the values
+        // Then clear the values (use expanded write range so all columns are cleared)
         const clearResponse = await fetch(
-          `${baseUrl}/values/${encodeURIComponent(resolvedRange)}:clear`,
+          `${baseUrl}/values/${encodeURIComponent(writeRange)}:clear`,
+
           {
             method: 'POST',
             headers: {
@@ -434,9 +462,10 @@ serve(async (req) => {
           console.log('Cleared existing data from sheet');
         }
         
-        // Then, write the new values
+        // Then, write the new values using the dynamically-expanded range
         response = await fetch(
-          `${baseUrl}/values/${encodeURIComponent(resolvedRange)}?valueInputOption=USER_ENTERED`,
+          `${baseUrl}/values/${encodeURIComponent(writeRange)}?valueInputOption=USER_ENTERED`,
+
           {
             method: 'PUT',
             headers: {
