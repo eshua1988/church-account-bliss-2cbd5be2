@@ -240,6 +240,33 @@ function escapeHtml(s: string): string {
 }
 
 /**
+ * Sanitize user-authored HTML for Telegram HTML parse mode.
+ * Preserves valid Telegram HTML formatting tags; escapes &, <, > in all
+ * plain-text segments so the Telegram HTML parser doesn't choke.
+ */
+function sanitizeTelegramHtml(text: string): string {
+  // Tags allowed by Telegram HTML mode
+  const ALLOWED_TAG = /<\/?(?:b|strong|i|em|u|s|strike|del|code|pre|tg-spoiler|blockquote)>|<a\s[^>]{0,400}>|<\/a>|<tg-emoji[^>]{0,100}>|<\/tg-emoji>/gi;
+  const parts: string[] = [];
+  let lastIdx = 0;
+  let m: RegExpExecArray | null;
+  ALLOWED_TAG.lastIndex = 0;
+  while ((m = ALLOWED_TAG.exec(text)) !== null) {
+    if (m.index > lastIdx) {
+      const seg = text.slice(lastIdx, m.index);
+      parts.push(seg.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"));
+    }
+    parts.push(m[0]);
+    lastIdx = m.index + m[0].length;
+  }
+  if (lastIdx < text.length) {
+    const seg = text.slice(lastIdx);
+    parts.push(seg.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"));
+  }
+  return parts.join("");
+}
+
+/**
  * Format rows as aligned table wrapped in <pre> for monospace rendering in Telegram.
  * - Filters out rows where every cell is empty/whitespace.
  * - Optional colLabels: shown as bold header row before <pre> block.
@@ -400,7 +427,7 @@ async function buildMainMenuForUser(
     .eq("user_id", userId)
     .maybeSingle();
 
-  const welcomeMessage = (config as any)?.welcome_message ?? "👋 Выберите действие:";
+  const welcomeMessage = sanitizeTelegramHtml((config as any)?.welcome_message ?? "👋 Выберите действие:");
   const extraButtons: Array<{ id: string; text: string; type: string; value: string }> =
     ((config as any)?.extra_buttons) ?? [];
   const messageTemplates: Array<{
@@ -859,7 +886,7 @@ serve(async (req) => {
                   for (const block of tmpl.blocks) {
                     if (block.type === 'text') {
                       if (msgText) msgText += '\n\n';
-                      msgText += block.content ?? '';
+                      msgText += sanitizeTelegramHtml(block.content ?? '');
                     } else if (block.type === 'button') {
                       const btnType = block.btnType ?? 'copy';
                       const bLabel = block.label ?? '';

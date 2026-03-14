@@ -52,6 +52,7 @@ import {
   Palette,
   Rows3,
   CornerDownLeft,
+  EyeOff,
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -1036,6 +1037,20 @@ export const TelegramMenuPage = () => {
     });
   };
 
+  // Insert text at cursor position without wrapping
+  const insertAtCursor = (refKey: string, templateId: string, blockId: string, text: string) => {
+    const el = textareaRefs.current[refKey];
+    if (!el) return;
+    const start = el.selectionStart;
+    const val = el.value;
+    const newVal = val.slice(0, start) + text + val.slice(start);
+    updateBlock(templateId, blockId, { content: newVal } as any);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start + text.length, start + text.length);
+    });
+  };
+
   // Wrap selected text in <a href="..."> via URL prompt
   const insertLink = (refKey: string, templateId: string, blockId: string) => {
     const el = textareaRefs.current[refKey];
@@ -1701,11 +1716,12 @@ export const TelegramMenuPage = () => {
                                         {/* Formatting toolbar */}
                                         <div className="flex items-center gap-0.5 border border-border/40 rounded-md px-1 py-0.5 bg-muted/20 flex-wrap">
                                           {([
-                                            { open: '<b>',     close: '</b>',     Icon: Bold,          title: 'Жирный (<b>)' },
-                                            { open: '<i>',     close: '</i>',     Icon: Italic,        title: 'Курсив (<i>)' },
-                                            { open: '<u>',     close: '</u>',     Icon: Underline,     title: 'Подчёркнутый (<u>)' },
-                                            { open: '<s>',     close: '</s>',     Icon: Strikethrough, title: 'Зачёркнутый (<s>)' },
-                                            { open: '<code>',  close: '</code>',  Icon: Code2,         title: 'Код (<code>)' },
+                                            { open: '<b>',           close: '</b>',           Icon: Bold,          title: 'Жирный (<b>)' },
+                                            { open: '<i>',           close: '</i>',           Icon: Italic,        title: 'Курсив (<i>)' },
+                                            { open: '<u>',           close: '</u>',           Icon: Underline,     title: 'Подчёркнутый (<u>)' },
+                                            { open: '<s>',           close: '</s>',           Icon: Strikethrough, title: 'Зачёркнутый (<s>)' },
+                                            { open: '<code>',        close: '</code>',        Icon: Code2,         title: 'Код (<code>)' },
+                                            { open: '<tg-spoiler>',  close: '</tg-spoiler>',  Icon: EyeOff,        title: 'Спойлер (<tg-spoiler>)' },
                                           ] as { open: string; close: string; Icon: React.FC<{ className?: string }>; title: string }[]).map(({ open, close, Icon, title }) => (
                                             <button key={open} type="button" title={title}
                                               className="p-1 rounded hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
@@ -1729,6 +1745,16 @@ export const TelegramMenuPage = () => {
                                             onMouseDown={(e) => { e.preventDefault(); insertFormat(`${tmpl.id}_${block.id}`, tmpl.id, block.id, '#', ''); }}>
                                             <Hash className="w-3 h-3" />
                                           </button>
+                                          <div className="w-px h-3.5 bg-border/50 mx-0.5 self-center" />
+                                          {/* Color emoji palette — Telegram does not support HTML colors,
+                                              so we offer colored emoji squares as visual color markers */}
+                                          {['🔴','🟠','🟡','🟢','🔵','🟣','🟤','⚫','⚪'].map((em) => (
+                                            <button key={em} type="button" title={`Цвет ${em} (emoji)`}
+                                              className="text-[11px] leading-none p-0.5 rounded hover:bg-muted/80 transition-colors"
+                                              onMouseDown={(e) => { e.preventDefault(); insertAtCursor(`${tmpl.id}_${block.id}`, tmpl.id, block.id, em); }}>
+                                              {em}
+                                            </button>
+                                          ))}
                                         </div>
                                         <Textarea
                                           ref={(el) => { textareaRefs.current[`${tmpl.id}_${block.id}`] = el; }}
@@ -1788,6 +1814,9 @@ export const TelegramMenuPage = () => {
                                             className="h-7 text-xs flex-1"
                                           />
                                         </div>
+                                        <p className="text-[9px] text-muted-foreground/40 pl-[2.75rem]">
+                                          Telegram не поддерживает форматирование в тексте кнопок. Используйте emoji для обозначения цвета: 🔴🟠🟡🟢🔵🟣
+                                        </p>
                                         {/* Value */}
                                         <div className="flex items-center gap-1.5">
                                           <span className="text-[10px] text-muted-foreground/60 w-9 flex-shrink-0 truncate">
