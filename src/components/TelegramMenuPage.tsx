@@ -258,6 +258,13 @@ const TelegramLayoutEditor = ({
     <div className="space-y-3">
       {/* ── Settings panel ── */}
       <div className="rounded-xl border bg-muted/20 px-3 py-2.5 space-y-2.5">
+        {/* Telegram limitation notice */}
+        <div className="flex items-start gap-1.5 rounded-md bg-yellow-500/10 border border-yellow-500/20 px-2.5 py-1.5">
+          <Info className="w-3 h-3 text-yellow-400/80 flex-shrink-0 mt-px" />
+          <p className="text-[10px] text-yellow-400/80 leading-relaxed">
+            <span className="font-semibold">Только предпросмотр.</span> Цвет и размер кнопок не передаются в Telegram — внешний вид кнопок определяется темой приложения у пользователя. Работает только <span className="font-semibold">«Кнопок в ряд»</span>.
+          </p>
+        </div>
         {/* Кнопок в ряд */}
         <div className="flex items-center gap-3">
           <span className="text-xs text-muted-foreground w-32 flex-shrink-0 flex items-center gap-1.5">
