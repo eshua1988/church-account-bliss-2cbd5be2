@@ -430,7 +430,7 @@ async function buildMainMenuForUser(
     try {
       if (entry.kind === "button") {
         const btn = btnMap.get(entry.id);
-        if (!btn) continue;
+        if (!btn || (btn as any).enabled === false) continue;
         if (btn.type === "copy" && btn.value) {
           flatButtons.push({ text: btn.text, copy_text: { text: btn.value } });
         } else if (btn.type === "url" && btn.value) {

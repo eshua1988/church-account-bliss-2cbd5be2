@@ -68,6 +68,7 @@ interface ExtraButton {
   text: string;
   type: 'url' | 'copy' | 'callback' | 'google_sheet' | 'web_app' | 'switch_inline' | 'switch_inline_current' | 'hashtag';
   value: string;
+  enabled: boolean;
   sheetRanges?: SheetRange[]; // structured ranges for google_sheet type
 }
 
@@ -202,7 +203,9 @@ const TelegramLayoutEditor = ({
   const ls = config.layoutSettings;
   const { buttonsPerRow, buttonSize, buttonColor } = ls;
 
-  const btnMap = new Map(config.extraButtons.map((b, i) => [b.id, { ...b, idx: i }]));
+  const btnMap = new Map(
+    config.extraButtons.filter((b) => b.enabled !== false).map((b, i) => [b.id, { ...b, idx: i }])
+  );
   const tmplMap = new Map(
     config.messageTemplates.filter((t) => t.enabled).map((t, i) => [t.id, { ...t, idx: i }])
   );
@@ -456,6 +459,7 @@ export const TelegramMenuPage = () => {
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [isDeployingCmds, setIsDeployingCmds] = useState(false);
   const [expandedTemplates, setExpandedTemplates] = useState<Set<string>>(new Set());
+  const [expandedButtons, setExpandedButtons] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
   // templateId → currently selected text in its textarea
   const [textSelections, setTextSelections] = useState<Record<string, string>>({});
@@ -508,7 +512,9 @@ export const TelegramMenuPage = () => {
           // Migrate old SheetRange format (colFrom/colTo/rowFrom/rowTo) → new (cols/rows)
           const rawButtons: any[] = d.extra_buttons ?? [];
           const migratedButtons: ExtraButton[] = rawButtons.map((b: any) => {
-            if (!Array.isArray(b.sheetRanges)) return b as ExtraButton;
+            // ensure enabled defaults to true for existing buttons
+            const withEnabled = { enabled: true, ...b };
+            if (!Array.isArray(withEnabled.sheetRanges)) return withEnabled as ExtraButton;
             const ranges: SheetRange[] = b.sheetRanges.map((r: any): SheetRange => {
               if (Array.isArray(r.cols) && Array.isArray(r.rows)) return r as SheetRange;
               // old format
@@ -665,10 +671,11 @@ export const TelegramMenuPage = () => {
       ...p,
       extraButtons: [
         ...p.extraButtons,
-        { id: newId, text: '🔘 Новая кнопка', type: 'url', value: '', sheetRanges: [] },
+        { id: newId, text: '🔘 Новая кнопка', type: 'url', value: '', enabled: true, sheetRanges: [] },
       ],
       menuOrder: [...p.menuOrder, { id: newId, kind: 'button' as const }],
     }));
+    setExpandedButtons((prev) => new Set([...prev, newId]));
   };
 
   const updateButton = (id: string, patch: Partial<ExtraButton>) =>
@@ -1137,12 +1144,29 @@ export const TelegramMenuPage = () => {
                   Кастомных кнопок нет. Нажмите «Добавить».
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {config.extraButtons.map((btn, idx) => (
-                    <div key={btn.id} className="rounded-lg border bg-card p-3 space-y-2.5">
-                      <div className="flex items-start gap-2">
+                <div className="space-y-2">
+                  {config.extraButtons.map((btn, idx) => {
+                    const isOpen = expandedButtons.has(btn.id);
+                    return (
+                    <div key={btn.id} className="rounded-lg border bg-card overflow-hidden">
+                      {/* Collapsed header row */}
+                      <div
+                        className="flex items-center gap-2 px-3 py-2.5 cursor-pointer hover:bg-muted/30 transition-colors select-none"
+                        onClick={() => setExpandedButtons((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(btn.id)) next.delete(btn.id); else next.add(btn.id);
+                          return next;
+                        })}
+                      >
+                        <button type="button" className="text-muted-foreground flex-shrink-0">
+                          {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                        </button>
+                        <span className="text-[11px] flex-shrink-0 text-muted-foreground/60">
+                          {BUTTON_TYPE_META[btn.type]?.label.split(' ')[0]}
+                        </span>
+                        <span className="text-sm font-medium flex-1 truncate">{btn.text || 'Без названия'}</span>
                         {/* Order arrows */}
-                        <div className="flex flex-col gap-0.5 pt-1">
+                        <div className="flex gap-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                           <button
                             type="button"
                             className="p-0.5 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
@@ -1160,9 +1184,25 @@ export const TelegramMenuPage = () => {
                             <ArrowDown className="w-3 h-3" />
                           </button>
                         </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <Switch
+                            checked={btn.enabled !== false}
+                            onCheckedChange={(v) => updateButton(btn.id, { enabled: v })}
+                            className="scale-75"
+                          />
+                          <button
+                            type="button"
+                            className="p-1 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors"
+                            onClick={() => deleteButton(btn.id)}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
 
-                        {/* Fields */}
-                        <div className="flex-1 space-y-2 min-w-0">
+                      {/* Expanded editor */}
+                      {isOpen && (
+                        <div className="border-t px-3 py-3 space-y-2.5">
                           <Input
                             value={btn.text}
                             onChange={(e) => updateButton(btn.id, { text: e.target.value })}
@@ -1250,7 +1290,7 @@ export const TelegramMenuPage = () => {
                                             placeholder="Лист1"
                                             className="h-6 text-xs flex-1 font-mono" />
                                         </div>
-                                        {/* Columns — horizontal cards */}
+                                        {/* Columns */}
                                         <div className="space-y-1">
                                           <span className="text-[10px] text-muted-foreground/60">СТОЛБЦЫ</span>
                                           <div className="flex items-start gap-1.5 overflow-x-auto pb-0.5">
@@ -1292,7 +1332,7 @@ export const TelegramMenuPage = () => {
                                             </button>
                                           </div>
                                         </div>
-                                        {/* Rows — horizontal layout */}
+                                        {/* Rows */}
                                         <div className="space-y-1">
                                           <span className="text-[10px] text-muted-foreground/60">СТРОКИ</span>
                                           <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
@@ -1344,18 +1384,10 @@ export const TelegramMenuPage = () => {
                             </div>
                           )}
                         </div>
-
-                        {/* Delete */}
-                        <button
-                          type="button"
-                          className="p-1.5 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors flex-shrink-0 mt-0.5"
-                          onClick={() => deleteButton(btn.id)}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
