@@ -204,6 +204,9 @@ const TelegramLayoutEditor = ({
   const dragStartPos = useRef<{ x: number; y: number } | null>(null);
   const gripDown = useRef(false);
   const touchDragId = useRef<string | null>(null);
+  const touchDragActive = useRef(false);
+  const touchGripTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartPos = useRef<{ x: number; y: number } | null>(null);
 
   const ls = config.layoutSettings;
   const { buttonsPerRow, buttonSize, buttonColor } = ls;
@@ -429,12 +432,34 @@ const TelegramLayoutEditor = ({
                             ].join(' ')}
                           >
                             <span
-                              className="touch-none cursor-grab active:cursor-grabbing flex-shrink-0"
+                              className="touch-none cursor-grab active:cursor-grabbing flex-shrink-0 flex items-center justify-center px-2 py-3 -my-3 -mx-1 rounded"
                               onPointerDown={() => { gripDown.current = true; }}
                               onPointerUp={() => { gripDown.current = false; }}
-                              onTouchStart={() => { touchDragId.current = item.id; setDragId(item.id); }}
+                              onTouchStart={(e) => {
+                                const touch = e.touches[0];
+                                touchStartPos.current = { x: touch.clientX, y: touch.clientY };
+                                touchDragActive.current = false;
+                                touchGripTimer.current = setTimeout(() => {
+                                  touchDragActive.current = true;
+                                  touchDragId.current = item.id;
+                                  setDragId(item.id);
+                                }, 400);
+                              }}
                               onTouchMove={(e) => {
                                 const touch = e.touches[0];
+                                if (!touchDragActive.current) {
+                                  // cancel long-press if finger moved too much
+                                  if (touchStartPos.current) {
+                                    const dx = Math.abs(touch.clientX - touchStartPos.current.x);
+                                    const dy = Math.abs(touch.clientY - touchStartPos.current.y);
+                                    if (dx > 8 || dy > 8) {
+                                      if (touchGripTimer.current) clearTimeout(touchGripTimer.current);
+                                      touchGripTimer.current = null;
+                                    }
+                                  }
+                                  return;
+                                }
+                                e.preventDefault();
                                 const el = document.elementFromPoint(touch.clientX, touch.clientY);
                                 const itemEl = el?.closest('[data-item-id]');
                                 if (itemEl) {
@@ -443,15 +468,19 @@ const TelegramLayoutEditor = ({
                                 }
                               }}
                               onTouchEnd={() => {
-                                if (touchDragId.current && dragOverId && touchDragId.current !== dragOverId) {
+                                if (touchGripTimer.current) clearTimeout(touchGripTimer.current);
+                                touchGripTimer.current = null;
+                                if (touchDragActive.current && touchDragId.current && dragOverId && touchDragId.current !== dragOverId) {
                                   onReorderMenu(touchDragId.current, dragOverId);
                                 }
                                 touchDragId.current = null;
+                                touchDragActive.current = false;
+                                touchStartPos.current = null;
                                 setDragId(null);
                                 setDragOverId(null);
                               }}
                             >
-                              <GripVertical className="w-2.5 h-2.5 text-white/30 group-hover:text-white/60 transition-colors" />
+                              <GripVertical className="w-4 h-4 text-white/40 group-hover:text-white/70 transition-colors" />
                             </span>
                             {item.kind === 'template' && (
                               <FileText className="w-2 h-2 text-white/50 flex-shrink-0" />
@@ -528,6 +557,9 @@ export const TelegramMenuPage = () => {
   const dragBlockStartPos = useRef<{ x: number; y: number } | null>(null);
   const blockGripDown = useRef(false);
   const touchBlockDrag = useRef<{ templateId: string; blockId: string } | null>(null);
+  const touchBlockDragActive = useRef(false);
+  const touchBlockGripTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchBlockStartPos = useRef<{ x: number; y: number } | null>(null);
   const [dragOverBlock, setDragOverBlock] = useState<{ templateId: string; blockId: string } | null>(null);
 
   // ── Load config ─────────────────────────────────────────────────────────────
@@ -1734,13 +1766,33 @@ export const TelegramMenuPage = () => {
                                     {/* Block header: drag handle + type badge + order arrows + delete */}
                                     <div className="flex items-center gap-1.5">
                                       <span
-                                        className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors flex-shrink-0"
+                                        className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors flex-shrink-0 flex items-center justify-center px-2.5 py-3 -my-3 -mx-1 rounded"
                                         title="Перетащить для изменения порядка"
                                         onPointerDown={() => { blockGripDown.current = true; }}
                                         onPointerUp={() => { blockGripDown.current = false; }}
-                                        onTouchStart={() => { touchBlockDrag.current = { templateId: tmpl.id, blockId: block.id }; }}
+                                        onTouchStart={(e) => {
+                                          const touch = e.touches[0];
+                                          touchBlockStartPos.current = { x: touch.clientX, y: touch.clientY };
+                                          touchBlockDragActive.current = false;
+                                          touchBlockGripTimer.current = setTimeout(() => {
+                                            touchBlockDragActive.current = true;
+                                            touchBlockDrag.current = { templateId: tmpl.id, blockId: block.id };
+                                          }, 400);
+                                        }}
                                         onTouchMove={(e) => {
                                           const touch = e.touches[0];
+                                          if (!touchBlockDragActive.current) {
+                                            if (touchBlockStartPos.current) {
+                                              const dx = Math.abs(touch.clientX - touchBlockStartPos.current.x);
+                                              const dy = Math.abs(touch.clientY - touchBlockStartPos.current.y);
+                                              if (dx > 8 || dy > 8) {
+                                                if (touchBlockGripTimer.current) clearTimeout(touchBlockGripTimer.current);
+                                                touchBlockGripTimer.current = null;
+                                              }
+                                            }
+                                            return;
+                                          }
+                                          e.preventDefault();
                                           const el = document.elementFromPoint(touch.clientX, touch.clientY);
                                           const blockEl = el?.closest('[data-block-id]');
                                           if (blockEl) {
@@ -1750,19 +1802,23 @@ export const TelegramMenuPage = () => {
                                           }
                                         }}
                                         onTouchEnd={() => {
-                                          if (touchBlockDrag.current && dragOverBlock &&
+                                          if (touchBlockGripTimer.current) clearTimeout(touchBlockGripTimer.current);
+                                          touchBlockGripTimer.current = null;
+                                          if (touchBlockDragActive.current && touchBlockDrag.current && dragOverBlock &&
                                               touchBlockDrag.current.templateId === dragOverBlock.templateId &&
                                               touchBlockDrag.current.blockId !== dragOverBlock.blockId) {
                                             reorderBlocks(dragOverBlock.templateId, touchBlockDrag.current.blockId, dragOverBlock.blockId);
                                           }
                                           touchBlockDrag.current = null;
+                                          touchBlockDragActive.current = false;
+                                          touchBlockStartPos.current = null;
                                           blockGripDown.current = false;
                                           dragBlock.current = null;
                                           dragBlockStartPos.current = null;
                                           setDragOverBlock(null);
                                         }}
                                       >
-                                        <GripVertical className="w-3.5 h-3.5" />
+                                        <GripVertical className="w-4 h-4" />
                                       </span>
                                       <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${block.type === 'button' ? 'bg-blue-500/20 text-blue-300' : 'bg-muted text-muted-foreground'}`}>
                                         {block.type === 'button'
