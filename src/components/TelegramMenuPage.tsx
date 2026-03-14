@@ -201,6 +201,7 @@ const TelegramLayoutEditor = ({
 }) => {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const dragStartPos = useRef<{ x: number; y: number } | null>(null);
 
   const ls = config.layoutSettings;
   const { buttonsPerRow, buttonSize, buttonColor } = ls;
@@ -394,10 +395,13 @@ const TelegramLayoutEditor = ({
                           <div
                             key={item.id}
                             draggable
-                            onDragStart={() => setDragId(item.id)}
+                            onDragStart={(e) => { setDragId(item.id); dragStartPos.current = { x: e.clientX, y: e.clientY }; }}
                             onDragOver={(e) => {
                               e.preventDefault();
-                              if (dragId && dragId !== item.id) setDragOverId(item.id);
+                              if (!dragStartPos.current) return;
+                              const dx = Math.abs(e.clientX - dragStartPos.current.x);
+                              const dy = Math.abs(e.clientY - dragStartPos.current.y);
+                              if (dy > dx && dragId && dragId !== item.id) setDragOverId(item.id);
                             }}
                             onDragLeave={() => setDragOverId(null)}
                             onDrop={(e) => {
@@ -405,8 +409,9 @@ const TelegramLayoutEditor = ({
                               if (dragId && dragId !== item.id) onReorderMenu(dragId, item.id);
                               setDragId(null);
                               setDragOverId(null);
+                              dragStartPos.current = null;
                             }}
-                            onDragEnd={() => { setDragId(null); setDragOverId(null); }}
+                            onDragEnd={() => { setDragId(null); setDragOverId(null); dragStartPos.current = null; }}
                             style={{ background: buttonColor }}
                             className={[
                               `group flex flex-1 items-center gap-1 rounded-lg px-1.5 ${btnPy} transition-all duration-150 cursor-grab active:cursor-grabbing`,
@@ -488,6 +493,7 @@ export const TelegramMenuPage = () => {
   >([]);
   // Drag-and-drop state for block reordering: "templateId::blockId"
   const dragBlock = useRef<{ templateId: string; blockId: string } | null>(null);
+  const dragBlockStartPos = useRef<{ x: number; y: number } | null>(null);
   const [dragOverBlock, setDragOverBlock] = useState<{ templateId: string; blockId: string } | null>(null);
 
   // ── Load config ─────────────────────────────────────────────────────────────
@@ -1661,8 +1667,14 @@ export const TelegramMenuPage = () => {
                                   <div
                                     key={block.id}
                                     draggable
-                                    onDragStart={() => { dragBlock.current = { templateId: tmpl.id, blockId: block.id }; }}
-                                    onDragOver={(e) => { e.preventDefault(); setDragOverBlock({ templateId: tmpl.id, blockId: block.id }); }}
+                                    onDragStart={(e) => { dragBlock.current = { templateId: tmpl.id, blockId: block.id }; dragBlockStartPos.current = { x: e.clientX, y: e.clientY }; }}
+                                    onDragOver={(e) => {
+                                      e.preventDefault();
+                                      if (!dragBlockStartPos.current) return;
+                                      const dx = Math.abs(e.clientX - dragBlockStartPos.current.x);
+                                      const dy = Math.abs(e.clientY - dragBlockStartPos.current.y);
+                                      if (dy > dx) setDragOverBlock({ templateId: tmpl.id, blockId: block.id });
+                                    }}
                                     onDragLeave={() => setDragOverBlock(null)}
                                     onDrop={(e) => {
                                       e.preventDefault();
@@ -1670,9 +1682,10 @@ export const TelegramMenuPage = () => {
                                         reorderBlocks(tmpl.id, dragBlock.current.blockId, block.id);
                                       }
                                       dragBlock.current = null;
+                                      dragBlockStartPos.current = null;
                                       setDragOverBlock(null);
                                     }}
-                                    onDragEnd={() => { dragBlock.current = null; setDragOverBlock(null); }}
+                                    onDragEnd={() => { dragBlock.current = null; dragBlockStartPos.current = null; setDragOverBlock(null); }}
                                     className={`rounded-lg border p-2.5 space-y-1.5 transition-all ${
                                       block.type === 'button' ? 'bg-blue-500/5 border-blue-500/20' : 'bg-muted/10'
                                     } ${isDragOver ? 'ring-2 ring-blue-400/60 scale-[1.01]' : ''}`}
