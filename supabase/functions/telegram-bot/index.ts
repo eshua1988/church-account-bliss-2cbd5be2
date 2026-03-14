@@ -414,20 +414,68 @@ async function saveTrackedIds(
   }
 }
 
+// ----- Bot i18n (system messages) -----
+type BotLang = 'ru' | 'uk' | 'en' | 'pl';
+
+const botI18n: Record<string, Record<BotLang, string>> = {
+  welcomeFallback: {
+    ru: '👋 Выберите действие:',
+    uk: '👋 Оберіть дію:',
+    en: '👋 Choose an action:',
+    pl: '👋 Wybierz akcję:',
+  },
+  fallbackButton: {
+    ru: '🔗 Ссылка ордера расходов',
+    uk: '🔗 Посилання ордера витрат',
+    en: '🔗 Expense order link',
+    pl: '🔗 Link zamówienia wydatków',
+  },
+  noGoogleAccess: {
+    ru: '❌ Не удалось получить доступ к Google Таблице.',
+    uk: '❌ Не вдалося отримати доступ до Google Таблиці.',
+    en: '❌ Failed to access the Google Sheet.',
+    pl: '❌ Nie udało się uzyskać dostępu do Arkusza Google.',
+  },
+  googleNotConfigured: {
+    ru: '❌ Google Таблица не настроена в профиле.',
+    uk: '❌ Google Таблиця не налаштована в профілі.',
+    en: '❌ Google Sheet is not configured in the profile.',
+    pl: '❌ Arkusz Google nie jest skonfigurowany w profilu.',
+  },
+};
+
+function getLang(
+  botSettings: Record<string, unknown> | null | undefined,
+  tgLangCode?: string,
+): BotLang {
+  const configured = (botSettings?.language as string) ?? 'ru';
+  if (configured === 'auto') {
+    const code = (tgLangCode ?? '').split('-')[0].toLowerCase();
+    if (['ru', 'be', 'kk', 'ky', 'tg', 'uz'].includes(code)) return 'ru';
+    if (code === 'uk') return 'uk';
+    if (code === 'pl') return 'pl';
+    return 'en';
+  }
+  const supported: BotLang[] = ['ru', 'uk', 'en', 'pl'];
+  return supported.includes(configured as BotLang) ? (configured as BotLang) : 'ru';
+}
+
 // ----- Dynamic main menu -----
 
 async function buildMainMenuForUser(
   userId: string,
   supabase: ReturnType<typeof createClient>,
+  tgUserLangCode?: string,
 ): Promise<{ keyboard: object; welcomeMessage: string }> {
   // Read custom bot config
   const { data: config } = await supabase
     .from("telegram_bot_config")
-    .select("welcome_message, extra_buttons, message_templates, menu_order, button_layout")
+    .select("welcome_message, extra_buttons, message_templates, menu_order, button_layout, bot_settings")
     .eq("user_id", userId)
     .maybeSingle();
 
-  const welcomeMessage = sanitizeTelegramHtml((config as any)?.welcome_message ?? "👋 Выберите действие:");
+  const lang = getLang((config as any)?.bot_settings, tgUserLangCode);
+  const welcomeMessage = sanitizeTelegramHtml((config as any)?.welcome_message ?? botI18n.welcomeFallback[lang]);
   const extraButtons: Array<{ id: string; text: string; type: string; value: string }> =
     ((config as any)?.extra_buttons) ?? [];
   const messageTemplates: Array<{
@@ -509,7 +557,7 @@ async function buildMainMenuForUser(
   if (currentRow.length > 0) buttons.push(currentRow);
 
   if (buttons.length === 0) {
-    buttons.push([{ text: "🔗 Ссылка ордера расходов", callback_data: "get_links" }]);
+    buttons.push([{ text: botI18n.fallbackButton[lang], callback_data: "get_links" }]);
   }
 
   return { keyboard: { inline_keyboard: buttons }, welcomeMessage };
@@ -572,11 +620,12 @@ async function handleGetLinks(
   botOwnerId: string | null,
   supabase: ReturnType<typeof createClient>,
   botToken: string,
+  tgUserLangCode?: string,
 ): Promise<number | null> {
   if (!botOwnerId) {
-    return sendMessage(chatId, "👋 Выберите действие:", undefined, botToken);
+    return sendMessage(chatId, botI18n.welcomeFallback[getLang(null, tgUserLangCode)], undefined, botToken);
   }
-  const { keyboard, welcomeMessage } = await buildMainMenuForUser(botOwnerId, supabase);
+  const { keyboard, welcomeMessage } = await buildMainMenuForUser(botOwnerId, supabase, tgUserLangCode);
   return sendMessage(chatId, welcomeMessage, keyboard, botToken);
 }
 
@@ -718,6 +767,7 @@ serve(async (req) => {
       if (chatId) {
         // Resolve bot owner & token without requiring the sender to be linked
         const ownerFromUrl = url.searchParams.get("owner");
+        const userLangCode: string = update.message?.from?.language_code ?? update.callback_query?.from?.language_code ?? '';
         const { userId: botOwnerId, botToken } = await resolveBotOwner(chatId, ownerFromUrl, supabase);
 
         // Clear history if user was inactive for 6+ hours (only applies for linked users)
@@ -727,8 +777,8 @@ serve(async (req) => {
         // Regular message → send configured menu to everyone
         if (update.message?.chat?.type === "private") {
           const { keyboard, welcomeMessage } = botOwnerId
-            ? await buildMainMenuForUser(botOwnerId, supabase)
-            : { keyboard: { inline_keyboard: [] as any }, welcomeMessage: "👋 Выберите действие:" };
+            ? await buildMainMenuForUser(botOwnerId, supabase, userLangCode)
+            : { keyboard: { inline_keyboard: [] as any }, welcomeMessage: botI18n.welcomeFallback[getLang(null, userLangCode)] };
           const msgId = await sendMessage(chatId, welcomeMessage, keyboard, botToken);
           if (msgId) newIds.push(msgId);
         }
@@ -739,7 +789,7 @@ serve(async (req) => {
           const callbackData: string = update.callback_query.data || "";
 
           if (callbackData === "get_links") {
-            const msgId = await handleGetLinks(chatId, botOwnerId, supabase, botToken);
+            const msgId = await handleGetLinks(chatId, botOwnerId, supabase, botToken, userLangCode);
             if (msgId) newIds.push(msgId);
           } else if (callbackData.startsWith("gsheet_")) {
             // Google Sheet data button — use bot owner's config
@@ -748,9 +798,10 @@ serve(async (req) => {
               const btnId = callbackData.slice(7); // strip "gsheet_"
               const { data: cfg2 } = await supabase
                 .from("telegram_bot_config")
-                .select("extra_buttons")
+                .select("extra_buttons, bot_settings")
                 .eq("user_id", userId2)
                 .maybeSingle();
+              const gsheetLang = getLang((cfg2 as any)?.bot_settings, userLangCode);
               type SheetRangeCfg = {
                 id: string; sheetName: string;
                 cols?: Array<{ id: string; from: string; to: string }>;
@@ -852,11 +903,11 @@ serve(async (req) => {
                       }
                     }
                   } else {
-                    const msgId = await sendMessage(chatId, "❌ Не удалось получить доступ к Google Таблице.", undefined, botToken);
+                    const msgId = await sendMessage(chatId, botI18n.noGoogleAccess[gsheetLang], undefined, botToken);
                     if (msgId) newIds.push(msgId);
                   }
                 } else {
-                  const msgId = await sendMessage(chatId, "❌ Google Таблица не настроена в профиле.", undefined, botToken);
+                  const msgId = await sendMessage(chatId, botI18n.googleNotConfigured[gsheetLang], undefined, botToken);
                   if (msgId) newIds.push(msgId);
                 }
               }
@@ -929,7 +980,7 @@ serve(async (req) => {
                 if (msgId) newIds.push(msgId);
               } else {
                 // Unknown callback — resend menu
-                const { keyboard, welcomeMessage } = await buildMainMenuForUser(userId, supabase);
+              const { keyboard, welcomeMessage } = await buildMainMenuForUser(userId, supabase, userLangCode);
                 const msgId = await sendMessage(chatId, welcomeMessage, keyboard, botToken);
                 if (msgId) newIds.push(msgId);
               }

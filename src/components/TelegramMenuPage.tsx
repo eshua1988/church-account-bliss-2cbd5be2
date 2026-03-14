@@ -2,6 +2,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { useTranslation } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -118,7 +119,7 @@ interface LayoutSettings {
 }
 
 interface BotSettings {
-  language: 'ru' | 'en' | 'uk';
+  language: 'ru' | 'en' | 'uk' | 'pl' | 'auto';
   disableNotifications: boolean;
   deleteOldMessages: boolean;
   sessionTimeout: number; // hours, 0 = unlimited
@@ -229,6 +230,7 @@ const TelegramLayoutEditor = ({
   const touchDragId = useRef<string | null>(null);
   const touchDragActive = useRef(false);
   const touchGripTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { t } = useTranslation();
 
   const ls = config.layoutSettings;
   const { buttonsPerRow, buttonSize, buttonColor } = ls;
@@ -291,13 +293,13 @@ const TelegramLayoutEditor = ({
         <div className="flex items-start gap-1.5 rounded-md bg-yellow-500/10 border border-yellow-500/20 px-2.5 py-1.5">
           <Info className="w-3 h-3 text-yellow-400/80 flex-shrink-0 mt-px" />
           <p className="text-[10px] text-yellow-400/80 leading-relaxed">
-            <span className="font-semibold">Только предпросмотр.</span> Цвет и размер кнопок не передаются в Telegram — внешний вид кнопок определяется темой приложения у пользователя. Работает только <span className="font-semibold">«Кнопок в ряд»</span>.
+            <span className="font-semibold">{t('tgPreviewOnly')}</span> {t('tgPreviewNote')}
           </p>
         </div>
         {/* Кнопок в ряд */}
         <div className="flex items-center gap-3">
           <span className="text-xs text-muted-foreground w-32 flex-shrink-0 flex items-center gap-1.5">
-            <Rows3 className="w-3 h-3" /> Кнопок в ряд
+            <Rows3 className="w-3 h-3" /> {t('tgButtonsPerRow')}
           </span>
           <div className="flex gap-1">
             {([1, 2, 3] as const).map((n) => (
@@ -320,7 +322,7 @@ const TelegramLayoutEditor = ({
         {/* Размер кнопки */}
         <div className="flex items-center gap-3">
           <span className="text-xs text-muted-foreground w-32 flex-shrink-0">
-            Размер кнопки
+            {t('tgButtonSize')}
           </span>
           <div className="flex gap-1">
             {(['sm', 'md', 'lg'] as const).map((sz) => (
@@ -343,7 +345,7 @@ const TelegramLayoutEditor = ({
         {/* Цвет кнопок */}
         <div className="flex items-center gap-3">
           <span className="text-xs text-muted-foreground w-32 flex-shrink-0 flex items-center gap-1.5">
-            <Palette className="w-3 h-3" /> Цвет кнопок
+            <Palette className="w-3 h-3" /> {t('tgButtonColor')}
           </span>
           <div className="flex gap-1.5 flex-wrap items-center">
             {COLOR_PRESETS.map((c) => (
@@ -361,7 +363,7 @@ const TelegramLayoutEditor = ({
               />
             ))}
             {/* Custom colour picker */}
-            <label className="relative w-6 h-6 cursor-pointer" title="Свой цвет">
+            <label className="relative w-6 h-6 cursor-pointer" title={t('tgCustomColor')}>
               <input
                 type="color"
                 value={buttonColor}
@@ -387,13 +389,13 @@ const TelegramLayoutEditor = ({
             <Bot className="w-4 h-4 text-white" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-white text-sm font-semibold truncate">Мой Telegram Бот</div>
+            <div className="text-white text-sm font-semibold truncate">{t('telegramBot')}</div>
             <div className="flex items-center gap-1 mt-0.5">
               <div className="w-1.5 h-1.5 rounded-full bg-green-400"></div>
-              <span className="text-[10px] text-green-400/90">в сети</span>
+              <span className="text-[10px] text-green-400/90">{t('tgOnline')}</span>
             </div>
           </div>
-          <span className="text-[9px] text-white/25 uppercase tracking-widest font-semibold">МАКЕТ</span>
+          <span className="text-[9px] text-white/25 uppercase tracking-widest font-semibold">{t('tgLayout')}</span>
         </div>
 
         {/* Chat area */}
@@ -406,7 +408,7 @@ const TelegramLayoutEditor = ({
               {/* Message bubble */}
               <div className="bg-[#232e3c] rounded-2xl rounded-tl-sm px-3 py-2 mb-1">
                 <p className="text-white text-[12px] leading-relaxed whitespace-pre-wrap break-words">
-                  {config.welcomeMessage || '👋 Выберите действие:'}
+                  {config.welcomeMessage || '👋 '+t('tgMenuTitle')}
                 </p>
               </div>
 
@@ -520,7 +522,7 @@ const TelegramLayoutEditor = ({
                 </div>
               ) : (
                 <div className="text-white/20 text-[11px] text-center py-3 border border-white/5 border-dashed rounded-lg">
-                  Кнопки не добавлены
+                  {t('tgNoButtonsAdded')}
                 </div>
               )}
             </div>
@@ -530,7 +532,7 @@ const TelegramLayoutEditor = ({
         {/* Input bar */}
         <div className="bg-[#242f3d] px-3 py-2 flex items-center gap-2">
           <div className="flex-1 bg-[#17212b] rounded-xl px-3 py-1.5">
-            <span className="text-white/20 text-xs">Написать сообщение...</span>
+            <span className="text-white/20 text-xs">{t('tgTypeMessage')}</span>
           </div>
           <div className="w-7 h-7 rounded-full bg-blue-500/20 flex items-center justify-center">
             <Send className="w-3.5 h-3.5 text-blue-400" />
@@ -555,6 +557,7 @@ const TelegramLayoutEditor = ({
 
 export const TelegramMenuPage = () => {
   const { user } = useAuth();
+  const { t } = useTranslation();
   const { toast } = useToast();
 
   const [config, setConfig] = useState<MenuConfig>(defaultConfig);
@@ -1179,10 +1182,10 @@ export const TelegramMenuPage = () => {
             <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
               <Bot className="w-5 h-5 text-blue-500" />
             </div>
-            <h2 className="text-xl font-bold">Настройка меню Telegram бота</h2>
+            <h2 className="text-xl font-bold">{t('tgMenuTitle')}</h2>
           </div>
           <p className="text-sm text-muted-foreground">
-            Приветственное сообщение, кнопки и команды, которые видят пользователи
+            {t('tgMenuSubtitle')}
           </p>
         </div>
         <div className="flex gap-2">
@@ -1192,7 +1195,7 @@ export const TelegramMenuPage = () => {
             ) : (
               <Send className="w-4 h-4 mr-1.5" />
             )}
-            Тест
+            {t('tgTest')}
           </Button>
           <Button size="sm" onClick={handleSave} disabled={isSaving}>
             {isSaving ? (
@@ -1200,7 +1203,7 @@ export const TelegramMenuPage = () => {
             ) : (
               <Save className="w-4 h-4 mr-1.5" />
             )}
-            Сохранить
+            {t('tgSave')}
           </Button>
         </div>
       </div>
@@ -1216,7 +1219,7 @@ export const TelegramMenuPage = () => {
           }`}
         >
           <LayoutTemplate className="w-3.5 h-3.5" />
-          Конструктор
+          {t('tgConstructor')}
         </button>
         <button
           onClick={() => setActiveSection('settings')}
@@ -1227,7 +1230,7 @@ export const TelegramMenuPage = () => {
           }`}
         >
           <Settings className="w-3.5 h-3.5" />
-          Настройки
+          {t('settings')}
         </button>
       </div>
 
@@ -1241,10 +1244,10 @@ export const TelegramMenuPage = () => {
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <MessageSquare className="w-4 h-4 text-blue-500" />
-                Приветственное сообщение
+                {t('tgWelcomeMessage')}
               </CardTitle>
               <CardDescription>
-                Отображается каждый раз, когда пользователь пишет боту
+                {t('tgWelcomeMessageDesc')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -1286,15 +1289,15 @@ export const TelegramMenuPage = () => {
                 <div>
                   <CardTitle className="text-base flex items-center gap-2">
                     <Hash className="w-4 h-4 text-purple-500" />
-                    Кнопки меню
+                    {t('tgMenuButtons')}
                   </CardTitle>
                   <CardDescription className="mt-0.5">
-                    Кнопки отображаются под сообщением бота
+                    {t('tgMenuButtonsDesc')}
                   </CardDescription>
                 </div>
                 <Button size="sm" variant="outline" onClick={addButton}>
                   <Plus className="w-3.5 h-3.5 mr-1" />
-                  Добавить
+                  {t('tgAdd')}
                 </Button>
               </div>
             </CardHeader>
@@ -1302,7 +1305,7 @@ export const TelegramMenuPage = () => {
               {/* Custom buttons list */}
               {config.extraButtons.length === 0 ? (
                 <div className="text-center text-sm text-muted-foreground py-6 border border-dashed rounded-lg">
-                  Кастомных кнопок нет. Нажмите «Добавить».
+                  {t('tgNoButtons')}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -1325,7 +1328,7 @@ export const TelegramMenuPage = () => {
                         <span className="text-[11px] flex-shrink-0 text-muted-foreground/60">
                           {BUTTON_TYPE_META[btn.type]?.label.split(' ')[0]}
                         </span>
-                        <span className="text-sm font-medium flex-1 truncate">{btn.text || 'Без названия'}</span>
+                        <span className="text-sm font-medium flex-1 truncate">{btn.text || t('tgNoName')}</span>
                         {/* Order arrows */}
                         <div className="flex gap-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                           <button
@@ -1351,7 +1354,7 @@ export const TelegramMenuPage = () => {
                             return (
                               <button
                                 type="button"
-                                title={isNewRow ? 'Всегда с новой строки (нажмите чтобы отменить)' : 'Добавить перенос строки перед кнопкой'}
+                                title={isNewRow ? t('tgNewRowOn') : t('tgNewRowBtn')}
                                 onClick={() => updateMenuOrder(btn.id, { newRow: !isNewRow })}
                                 className={`p-1 rounded transition-colors ${isNewRow ? 'text-primary bg-primary/15' : 'text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted'}`}
                               >
@@ -1380,7 +1383,7 @@ export const TelegramMenuPage = () => {
                           <Input
                             value={btn.text}
                             onChange={(e) => updateButton(btn.id, { text: e.target.value })}
-                            placeholder="Текст кнопки (с эмодзи)"
+                            placeholder={t('tgBtnText')}
                             className="text-sm h-8"
                           />
                           <div className="flex gap-2">
@@ -1422,7 +1425,7 @@ export const TelegramMenuPage = () => {
                               {/* Range list */}
                               {(btn.sheetRanges ?? []).length === 0 ? (
                                 <div className="text-xs text-muted-foreground text-center py-2 border border-dashed border-green-500/20 rounded-lg">
-                                  Нажмите «+ Диапазон» чтобы выбрать столбцы и строки
+                                  {t('tgAddRangeHint')}
                                 </div>
                               ) : (
                                 <div className="space-y-1.5">
@@ -1448,7 +1451,7 @@ export const TelegramMenuPage = () => {
                                     return (
                                       <div key={rng.id} className="rounded-lg border border-green-500/20 bg-green-500/5 p-2 space-y-1.5">
                                         <div className="flex items-center gap-1 text-[10px] text-green-400/80 font-medium">
-                                          <span className="flex-1">Диапазон {ri + 1}</span>
+                                          <span className="flex-1">{t('tgRange')} {ri + 1}</span>
                                           <code className="bg-green-500/10 px-1.5 py-0.5 rounded font-mono text-green-300 max-w-[160px] truncate">{preview}</code>
                                           <button type="button"
                                             onClick={() => deleteSheetRange(btn.id, rng.id)}
@@ -1458,7 +1461,7 @@ export const TelegramMenuPage = () => {
                                         </div>
                                         {/* Sheet name */}
                                         <div className="flex items-center gap-1.5">
-                                          <span className="text-[10px] text-muted-foreground/60 w-11 flex-shrink-0">ЛИСТ</span>
+                                          <span className="text-[10px] text-muted-foreground/60 w-11 flex-shrink-0">{t('tgSheet')}</span>
                                           <Input value={rng.sheetName}
                                             onChange={(e) => updateSheetRange(btn.id, rng.id, { sheetName: e.target.value })}
                                             placeholder="Лист1"
@@ -1466,7 +1469,7 @@ export const TelegramMenuPage = () => {
                                         </div>
                                         {/* Columns */}
                                         <div className="space-y-1">
-                                          <span className="text-[10px] text-muted-foreground/60">СТОЛБЦЫ</span>
+                                          <span className="text-[10px] text-muted-foreground/60">{t('tgColumns')}</span>
                                           <div className="flex items-start gap-1.5 overflow-x-auto pb-0.5">
                                             {rng.cols.map((col, ci) => (
                                               <>
@@ -1477,7 +1480,7 @@ export const TelegramMenuPage = () => {
                                                   <Input
                                                     value={col.label ?? ''}
                                                     onChange={(e) => updateSheetRangeCol(btn.id, rng.id, col.id, { label: e.target.value })}
-                                                    placeholder="Название..."
+                                                    placeholder={t('tgColNamePlaceholder')}
                                                     className="h-5 text-[10px] w-24 font-medium" />
                                                   <div className="flex items-center gap-0.5 justify-center">
                                                     <Input value={col.from}
@@ -1501,14 +1504,14 @@ export const TelegramMenuPage = () => {
                                             ))}
                                             <button type="button" onClick={() => addSheetRangeCol(btn.id, rng.id)}
                                               className="self-center flex-shrink-0 h-7 px-2 rounded text-[10px] text-green-400 border border-green-500/30 hover:bg-green-500/10 transition-colors flex items-center gap-0.5"
-                                              title="Добавить столбец">
-                                              <Plus className="w-2.5 h-2.5" />+ стлб
+                                              title={t('tgAdd')}>
+                                              <Plus className="w-2.5 h-2.5" />+ {t('tgColumns').slice(0,3).toLowerCase()}
                                             </button>
                                           </div>
                                         </div>
                                         {/* Rows */}
                                         <div className="space-y-1">
-                                          <span className="text-[10px] text-muted-foreground/60">СТРОКИ</span>
+                                          <span className="text-[10px] text-muted-foreground/60">{t('tgRows')}</span>
                                           <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
                                             {rng.rows.map((row, rwi) => (
                                               <>
@@ -1536,8 +1539,8 @@ export const TelegramMenuPage = () => {
                                             ))}
                                             <button type="button" onClick={() => addSheetRangeRow(btn.id, rng.id)}
                                               className="flex-shrink-0 h-7 px-2 rounded text-[10px] text-green-400 border border-green-500/30 hover:bg-green-500/10 transition-colors flex items-center gap-0.5"
-                                              title="Добавить строки">
-                                              <Plus className="w-2.5 h-2.5" />+ стрк
+                                              title={t('tgAdd')}>
+                                              <Plus className="w-2.5 h-2.5" />+ {t('tgRows').slice(0,3).toLowerCase()}
                                             </button>
                                           </div>
                                         </div>
@@ -1550,10 +1553,10 @@ export const TelegramMenuPage = () => {
                                 className="h-6 text-xs w-full border-green-500/30 text-green-400 hover:bg-green-500/10"
                                 onClick={() => addSheetRange(btn.id)}>
                                 <Plus className="w-3 h-3 mr-1" />
-                                + Диапазон
+                                {t('tgAddRange')}
                               </Button>
                               <p className="text-[10px] text-muted-foreground/60">
-                                При нажатии бот прочитает все диапазоны и пришлёт данные. Таблица из настроек профиля.
+                                {t('tgSheetReadHint')}
                               </p>
                             </div>
                           )}
@@ -1574,16 +1577,16 @@ export const TelegramMenuPage = () => {
                 <div>
                   <CardTitle className="text-base flex items-center gap-2">
                     <Hash className="w-4 h-4 text-green-500" />
-                    Команды бота
+                    {t('tgBotCommands')}
                   </CardTitle>
                   <CardDescription className="mt-0.5">
-                    /команды в левом нижнем меню Telegram
+                    {t('tgBotCommandsDesc')}
                   </CardDescription>
                 </div>
                 <div className="flex gap-2 flex-shrink-0">
                   <Button size="sm" variant="outline" onClick={addCommand}>
                     <Plus className="w-3.5 h-3.5 mr-1" />
-                    Добавить
+                    {t('tgAdd')}
                   </Button>
                   <Button
                     size="sm"
@@ -1596,7 +1599,7 @@ export const TelegramMenuPage = () => {
                     ) : (
                       <Send className="w-3.5 h-3.5 mr-1" />
                     )}
-                    Загрузить в бота
+                    {t('tgDeployCommands')}
                   </Button>
                 </div>
               </div>
@@ -1604,7 +1607,7 @@ export const TelegramMenuPage = () => {
             <CardContent className="space-y-2">
               {config.botCommands.length === 0 ? (
                 <div className="text-center text-sm text-muted-foreground py-6 border border-dashed rounded-lg">
-                  Команд нет. Нажмите «Добавить».
+                  {t('tgNoCommands')}
                 </div>
               ) : (
                 config.botCommands.map((cmd) => (
@@ -1623,7 +1626,7 @@ export const TelegramMenuPage = () => {
                     <Input
                       value={cmd.description}
                       onChange={(e) => updateCommand(cmd.id, { description: e.target.value })}
-                      placeholder="Описание команды"
+                      placeholder={t('tgCommandDesc')}
                       className="text-sm h-8 flex-1"
                     />
                     <button
@@ -1637,7 +1640,7 @@ export const TelegramMenuPage = () => {
                 ))
               )}
               <p className="text-xs text-muted-foreground pt-1">
-                После редактирования нажмите «Загрузить в бота» для применения команд в Telegram.
+                {t('tgCommandsHint')}
               </p>
             </CardContent>
           </Card>
@@ -1649,15 +1652,15 @@ export const TelegramMenuPage = () => {
                 <div>
                   <CardTitle className="text-base flex items-center gap-2">
                     <FileText className="w-4 h-4 text-orange-500" />
-                    Шаблоны с кнопками копирования
+                    {t('tgTemplates')}
                   </CardTitle>
                   <CardDescription className="mt-0.5">
-                    Текстовые блоки (реквизиты, данные) с кнопками «Скопировать»
+                    {t('tgTemplatesDesc')}
                   </CardDescription>
                 </div>
                 <Button size="sm" variant="outline" onClick={addTemplate}>
                   <Plus className="w-3.5 h-3.5 mr-1" />
-                  Добавить
+                  {t('tgAdd')}
                 </Button>
               </div>
             </CardHeader>
@@ -1665,8 +1668,8 @@ export const TelegramMenuPage = () => {
               {config.messageTemplates.length === 0 ? (
                 <div className="text-center text-sm text-muted-foreground py-8 border border-dashed rounded-lg space-y-2">
                   <ClipboardCopy className="w-8 h-8 mx-auto opacity-20" />
-                  <p>Шаблонов нет. Нажмите «Добавить».</p>
-                  <p className="text-xs opacity-60">Пример: реквизиты банка, IBAN, телефон — с кнопками копирования</p>
+                  <p>{t('tgNoTemplates')}</p>
+                  <p className="text-xs opacity-60">{t('tgTemplateExample')}</p>
                 </div>
               ) : (
                 config.messageTemplates.map((tmpl) => {
@@ -1684,7 +1687,7 @@ export const TelegramMenuPage = () => {
                             : <ChevronRight className="w-4 h-4" />}
                         </button>
                         <FileText className="w-3.5 h-3.5 text-orange-500 flex-shrink-0" />
-                        <span className="text-sm font-medium flex-1 truncate">{tmpl.title || 'Без названия'}</span>
+                        <span className="text-sm font-medium flex-1 truncate">{tmpl.title || t('tgNoName')}</span>
                         {tmpl.trigger && (
                           <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono flex-shrink-0">
                             /{tmpl.trigger}
@@ -1696,7 +1699,7 @@ export const TelegramMenuPage = () => {
                             return (
                               <button
                                 type="button"
-                                title={isNewRow ? 'Всегда с новой строки (нажмите чтобы отменить)' : 'Добавить перенос строки перед шаблоном'}
+                                title={isNewRow ? t('tgNewRowOn') : t('tgNewRowTemplate')}
                                 onClick={() => updateMenuOrder(tmpl.id, { newRow: !isNewRow })}
                                 className={`p-1 rounded transition-colors ${isNewRow ? 'text-primary bg-primary/15' : 'text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted'}`}
                               >
@@ -1725,17 +1728,17 @@ export const TelegramMenuPage = () => {
                           {/* Title + trigger */}
                           <div className="grid grid-cols-2 gap-2">
                             <div className="space-y-1">
-                              <Label className="text-xs text-muted-foreground">Название (для администратора)</Label>
+                              <Label className="text-xs text-muted-foreground">{t('tgTemplateName')}</Label>
                               <Input
                                 value={tmpl.title}
                                 onChange={(e) => updateTemplate(tmpl.id, { title: e.target.value })}
-                                placeholder="Реквизиты банка"
+                                placeholder={t('tgTemplateNamePlaceholder')}
                                 className="h-8 text-sm"
                               />
                             </div>
                             <div className="space-y-1">
                               <Label className="text-xs text-muted-foreground">
-                                Триггер <span className="text-muted-foreground/50">(callback_data)</span>
+                                {t('tgTemplateTrigger')} <span className="text-muted-foreground/50">(callback_data)</span>
                               </Label>
                               <div className="flex items-center gap-1">
                                 <span className="text-muted-foreground text-sm">/</span>
@@ -1756,24 +1759,24 @@ export const TelegramMenuPage = () => {
                           {/* Block editor */}
                           <div className="space-y-2">
                             <div className="flex items-center justify-between">
-                              <Label className="text-xs text-muted-foreground">Содержимое сообщения</Label>
+                              <Label className="text-xs text-muted-foreground">{t('tgTemplateContent')}</Label>
                               <div className="flex gap-1.5">
                                 <Button size="sm" variant="outline" className="h-6 text-xs px-2"
                                   onClick={() => addTemplateBlock(tmpl.id, 'text')}>
                                   <Plus className="w-3 h-3 mr-0.5" />
-                                  Текст
+                                  {t('tgAddText')}
                                 </Button>
                                 <Button size="sm" variant="outline" className="h-6 text-xs px-2"
                                   onClick={() => addTemplateBlock(tmpl.id, 'button')}>
                                   <ClipboardCopy className="w-3 h-3 mr-0.5" />
-                                  Кнопка
+                                  {t('tgAddButton')}
                                 </Button>
                               </div>
                             </div>
 
                             {(tmpl.blocks ?? []).length === 0 ? (
                               <div className="text-xs text-muted-foreground text-center py-4 border border-dashed rounded-lg">
-                                Нажмите «Текст» или «Кнопка» чтобы добавить блок
+                                {t('tgNoBlocks')}
                               </div>
                             ) : (
                               <div className="space-y-2">
@@ -1817,7 +1820,7 @@ export const TelegramMenuPage = () => {
                                     <div className="flex items-center gap-1.5">
                                       <span
                                         className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors flex-shrink-0 flex items-center justify-center px-2.5 py-3 -my-3 -mx-1 rounded"
-                                        title="Перетащить для изменения порядка"
+                                        title={t('tgDragHint')}
                                         onPointerDown={() => { blockGripDown.current = true; }}
                                         onPointerUp={() => { blockGripDown.current = false; }}
                                         onTouchStart={() => {
@@ -2135,15 +2138,15 @@ export const TelegramMenuPage = () => {
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Languages className="w-4 h-4 text-blue-500" />
-                Язык бота
+                {t('tgBotLanguage')}
               </CardTitle>
               <CardDescription>
-                Язык системных сообщений, которые бот отправляет пользователям
+                {t('tgBotLanguageDesc')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label>Язык интерфейса бота</Label>
+                <Label>{t('tgBotLanguageLabel')}</Label>
                 <Select
                   value={config.botSettings.language}
                   onValueChange={(v) =>
@@ -2157,15 +2160,22 @@ export const TelegramMenuPage = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="auto">{t('tgBotLangAuto')}</SelectItem>
                     <SelectItem value="ru">🇷🇺 Русский</SelectItem>
                     <SelectItem value="uk">🇺🇦 Українська</SelectItem>
                     <SelectItem value="en">🇬🇧 English</SelectItem>
+                    <SelectItem value="pl">🇵🇱 Polski</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">
-                  Влияет на системные подсказки и сообщения об ошибках, которые отправляет бот.
-                  Ваши собственные тексты кнопок и шаблонов не изменяются.
-                </p>
+                {config.botSettings.language === 'auto' ? (
+                  <p className="text-xs text-blue-400/80">
+                    {t('tgBotLangAutoHint')}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {t('tgBotLanguageHint')}
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -2175,10 +2185,10 @@ export const TelegramMenuPage = () => {
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Settings className="w-4 h-4 text-blue-500" />
-                Расширенные настройки
+                {t('tgAdvancedSettings')}
               </CardTitle>
               <CardDescription>
-                Дополнительные параметры поведения бота
+                {t('tgAdvancedSettingsDesc')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -2186,9 +2196,9 @@ export const TelegramMenuPage = () => {
               {/* Delete old messages */}
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-0.5">
-                  <Label className="text-sm">Удалять старые сообщения</Label>
+                  <Label className="text-sm">{t('tgDeleteOldMessages')}</Label>
                   <p className="text-xs text-muted-foreground">
-                    Бот будет удалять предыдущее меню при каждом обновлении, чтобы не засорять чат
+                    {t('tgDeleteOldMessagesHint')}
                   </p>
                 </div>
                 <Switch
@@ -2213,10 +2223,10 @@ export const TelegramMenuPage = () => {
                     ) : (
                       <Bell className="w-3.5 h-3.5 text-muted-foreground" />
                     )}
-                    <Label className="text-sm">Беззвучные сообщения</Label>
+                    <Label className="text-sm">{t('tgSilentMessages')}</Label>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Сообщения бота не будут вызывать звук уведомления у пользователей
+                    {t('tgSilentMessagesHint')}
                   </p>
                 </div>
                 <Switch
@@ -2236,7 +2246,7 @@ export const TelegramMenuPage = () => {
               <div className="space-y-2">
                 <div className="flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                  <Label className="text-sm">Тайм-аут сессии (часы)</Label>
+                  <Label className="text-sm">{t('tgSessionTimeout')}</Label>
                 </div>
                 <div className="flex items-center gap-3">
                   <Input
@@ -2257,13 +2267,12 @@ export const TelegramMenuPage = () => {
                   />
                   <span className="text-xs text-muted-foreground">
                     {config.botSettings.sessionTimeout === 0
-                      ? 'Без ограничений'
-                      : `Сессия истекает через ${config.botSettings.sessionTimeout} ч`}
+                      ? t('tgNoLimit')
+                      : t('tgSessionExpires').replace('{h}', String(config.botSettings.sessionTimeout))}
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  После истечения тайм-аута пользователь получит приветственное сообщение заново.
-                  0 = без ограничений.
+                  {t('tgSessionTimeoutHint')}
                 </p>
               </div>
 
@@ -2275,19 +2284,19 @@ export const TelegramMenuPage = () => {
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Bot className="w-4 h-4 text-blue-500" />
-                Подключённые боты
+                {t('tgConnectedBots')}
               </CardTitle>
               <CardDescription>
-                Активные Telegram-боты, привязанные к вашему аккаунту
+                {t('tgConnectedBotsDesc')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {connectedBots.length === 0 ? (
                 <div className="text-center py-4">
                   <XCircle className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">Нет активных ботов</p>
+                  <p className="text-sm text-muted-foreground">{t('tgNoActiveBots')}</p>
                   <p className="text-xs text-muted-foreground/60 mt-1">
-                    Подключите бота в разделе «Настройки» приложения
+                    {t('tgConnectBotAppHint')}
                   </p>
                 </div>
               ) : (
@@ -2305,7 +2314,7 @@ export const TelegramMenuPage = () => {
                           {bot.registered_name || `Chat ${bot.telegram_chat_id}`}
                         </div>
                         <div className="text-xs text-muted-foreground font-mono">
-                          {bot.bot_token ? `${bot.bot_token.slice(0, 8)}…` : 'Общий бот'}
+                          {bot.bot_token ? `${bot.bot_token.slice(0, 8)}…` : t('tgSharedBot')}
                         </div>
                       </div>
                       <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
@@ -2323,7 +2332,7 @@ export const TelegramMenuPage = () => {
               ) : (
                 <Save className="w-4 h-4 mr-1.5" />
               )}
-              Сохранить настройки
+              {t('tgSaveSettings')}
             </Button>
           </div>
 
