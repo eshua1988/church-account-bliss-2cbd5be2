@@ -71,8 +71,37 @@ Deno.serve(async (req) => {
     for (const conn of connections) {
       const connBankName = conn.bank_name || 'PKO BP'
       const source = connBankName.toLowerCase().replace(/\s+/g, '_')
-      const accounts = conn.accounts || []
-      if (accounts.length === 0) continue
+      let accounts = conn.accounts || []
+
+      // If no accounts saved, try refreshing from the session
+      if (accounts.length === 0 && conn.session_id) {
+        try {
+          const sessRes = await fetch(`https://api.enablebanking.com/sessions/${conn.session_id}`, {
+            headers: ebHeaders,
+          })
+          if (sessRes.ok) {
+            const sessData = await sessRes.json()
+            accounts = sessData.accounts || []
+            // Save refreshed accounts back to DB
+            if (accounts.length > 0) {
+              const accountsInfo = accounts.map(a => ({
+                uid: a.uid,
+                iban: a.account_id?.iban || a.iban || '',
+                name: a.account_id?.iban || a.uid,
+              }))
+              await db.from('bank_connections').update({ accounts: accountsInfo })
+                .eq('user_id', user_id).eq('bank_name', connBankName)
+            }
+          }
+        } catch (e) {
+          // ignore session refresh error
+        }
+      }
+
+      if (accounts.length === 0) {
+        allSyncDebug.push({ bank: connBankName, error: 'Нет счетов. Попробуйте переподключить банк.' })
+        continue
+      }
 
     // Fetch only new transactions since last sync
     const dateFrom = conn.last_sync_at

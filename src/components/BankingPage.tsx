@@ -473,7 +473,9 @@ export const BankingPage = () => {
         title: 'Синхронизация завершена',
         description: json.imported > 0
           ? `Добавлено ${json.imported} новых транзакций`
-          : 'Новых транзакций нет',
+          : json.debug?.some((d: any) => d.error) 
+            ? 'Нет счетов — попробуйте переподключить банк'
+            : 'Новых транзакций нет',
       });
     } catch (e) {
       toast({ title: 'Ошибка синхронизации', description: String(e), variant: 'destructive' });
