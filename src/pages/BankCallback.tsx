@@ -19,14 +19,17 @@ export default function BankCallback() {
     const error = searchParams.get('error');
     const stateParam = searchParams.get('state');
 
-    // Decode bank_name from state (format: JSON { user_id, bank_name })
+    // Decode bank_name and user_id from state (format: JSON { user_id, bank_name })
     let decodedBankName = '';
+    let stateUserId = '';
     if (stateParam) {
       try {
         const parsed = JSON.parse(stateParam);
         decodedBankName = parsed.bank_name || '';
+        stateUserId = parsed.user_id || '';
       } catch {
         // state is not JSON — legacy format (just user_id)
+        stateUserId = stateParam;
       }
     }
     setBankName(decodedBankName || 'Банк');
@@ -42,10 +45,10 @@ export default function BankCallback() {
       return;
     }
 
-    completeAuth(code, decodedBankName);
+    completeAuth(code, decodedBankName, stateUserId);
   }, []);
 
-  async function completeAuth(code: string, resolvedBankName: string) {
+  async function completeAuth(code: string, resolvedBankName: string, fallbackUserId: string) {
     try {
       setMessage('Получение токена доступа...');
       const supabaseUrl = (supabase as any).supabaseUrl as string;
@@ -54,7 +57,9 @@ export default function BankCallback() {
       // Get user session to pass user_id and real access token
       const { data: { session } } = await supabase.auth.getSession();
       const accessToken = session?.access_token || supabaseKey;
-      const userId = session?.user?.id;
+      // Use session user_id, fallback to user_id from state parameter
+      const userId = session?.user?.id || fallbackUserId;
+      console.log('[BankCallback] userId:', userId, 'bank:', resolvedBankName, 'hasSession:', !!session);
 
       const res = await fetch(`${supabaseUrl}/functions/v1/banking-auth-complete`, {
         method: 'POST',

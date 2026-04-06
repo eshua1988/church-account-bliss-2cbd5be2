@@ -104,12 +104,23 @@ Deno.serve(async (req) => {
     if (aspspListRes.ok) {
       const aspspData = await aspspListRes.json()
       const allAspsps = aspspData.aspsps || []
+
+      // Normalize for matching: lowercase, remove SA/S.A., trim
+      const norm = (s) => (s || '').toLowerCase().replace(/\bs\.?a\.?\b/g, '').replace(/\s+/g, ' ').trim()
+      const inputNorm = norm(aspsp_name)
+
       // Try exact match first
       let found = allAspsps.find((a: any) => a.name === aspsp_name)
+      // Try normalized exact match
       if (!found && aspsp_name) {
-        // Try partial match
-        const lower = aspsp_name.toLowerCase()
-        found = allAspsps.find((a: any) => a.name?.toLowerCase().includes(lower))
+        found = allAspsps.find((a: any) => norm(a.name) === inputNorm)
+      }
+      // Try bidirectional partial match (either name contains the other)
+      if (!found && aspsp_name) {
+        found = allAspsps.find((a: any) => {
+          const aN = norm(a.name)
+          return aN.includes(inputNorm) || inputNorm.includes(aN)
+        })
       }
       if (!found) {
         // Fallback to PKO
