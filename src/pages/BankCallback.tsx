@@ -10,12 +10,26 @@ export default function BankCallback() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
-  const [message, setMessage] = useState('Обработка авторизации PKO BP...');
+  const [message, setMessage] = useState('Обработка авторизации банка...');
   const [imported, setImported] = useState(0);
+  const [bankName, setBankName] = useState('');
 
   useEffect(() => {
     const code  = searchParams.get('code');
     const error = searchParams.get('error');
+    const stateParam = searchParams.get('state');
+
+    // Decode bank_name from state (format: JSON { user_id, bank_name })
+    let decodedBankName = '';
+    if (stateParam) {
+      try {
+        const parsed = JSON.parse(stateParam);
+        decodedBankName = parsed.bank_name || '';
+      } catch {
+        // state is not JSON — legacy format (just user_id)
+      }
+    }
+    setBankName(decodedBankName || 'Банк');
 
     if (error) {
       setStatus('error');
@@ -28,10 +42,10 @@ export default function BankCallback() {
       return;
     }
 
-    completeAuth(code);
+    completeAuth(code, decodedBankName);
   }, []);
 
-  async function completeAuth(code: string) {
+  async function completeAuth(code: string, resolvedBankName: string) {
     try {
       setMessage('Получение токена доступа...');
       const supabaseUrl = (supabase as any).supabaseUrl as string;
@@ -49,7 +63,7 @@ export default function BankCallback() {
           'apikey': supabaseKey,
           'Authorization': `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ code, user_id: userId }),
+        body: JSON.stringify({ code, user_id: userId, bank_name: resolvedBankName }),
       });
 
       const json = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
@@ -65,7 +79,7 @@ export default function BankCallback() {
       const detail = json.total != null ? ` (найдено в банке: ${json.total})` : '';
       setMessage(`Импортировано транзакций: ${json.imported || 0}${detail}`);
       if (json.debug) console.log('[BankCallback] debug:', json.debug);
-      toast({ title: 'PKO BP подключён', description: `Импортировано ${json.imported || 0} транзакций${detail}` });
+      toast({ title: `${resolvedBankName || 'Банк'} подключён`, description: `Импортировано ${json.imported || 0} транзакций${detail}` });
     } catch (e) {
       setStatus('error');
       setMessage(String(e));
@@ -82,8 +96,8 @@ export default function BankCallback() {
         </div>
         <div>
           <h1 className="text-xl font-bold mb-2">
-            {status === 'loading' ? 'Подключение PKO BP...' :
-             status === 'success' ? 'PKO BP подключён!' :
+            {status === 'loading' ? `Подключение ${bankName}...` :
+             status === 'success' ? `${bankName} подключён!` :
              'Ошибка подключения'}
           </h1>
           <p className="text-muted-foreground text-sm">{message}</p>

@@ -62,7 +62,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { redirect_uri, state } = await req.json()
+    const body = await req.json()
+    const { redirect_uri, state, aspsp_name, list_banks } = body
 
     const privateKey = Deno.env.get('EB_PRIVATE_KEY')
     const appId      = Deno.env.get('EB_APP_ID')
@@ -74,17 +75,49 @@ Deno.serve(async (req) => {
     try { jwt = await createJWT(privateKey, appId) }
     catch (e) { return respond(400, { error: 'Ошибка JWT (проверьте EB_PRIVATE_KEY): ' + String(e) }) }
 
+    // Mode: list all Polish banks
+    if (list_banks) {
+      const aspspListRes = await fetch('https://api.enablebanking.com/aspsps?country=PL', {
+        headers: { 'Authorization': 'Bearer ' + jwt },
+      })
+      if (!aspspListRes.ok) {
+        return respond(400, { error: 'Не удалось получить список банков: ' + aspspListRes.status })
+      }
+      const aspspData = await aspspListRes.json()
+      const banks = (aspspData.aspsps || []).map((a: any) => ({
+        name: a.name,
+        country: a.country,
+        bic: a.bic || null,
+        logo: a.logo || null,
+        beta: a.beta || false,
+        psu_types: a.psu_types || [],
+      }))
+      return respond(200, { banks })
+    }
+
+    // Mode: start auth for a specific bank
     // Get the exact ASPSP name from Enable Banking
     const aspspListRes = await fetch('https://api.enablebanking.com/aspsps?country=PL', {
       headers: { 'Authorization': 'Bearer ' + jwt },
     })
-    let aspspName = 'PKO Bank Polski SA'
+    let aspspName = aspsp_name || 'PKO Bank Polski SA'
     if (aspspListRes.ok) {
       const aspspData = await aspspListRes.json()
-      const pko = (aspspData.aspsps || []).find((a: any) =>
-        a.name?.toLowerCase().includes('pko') || a.name?.toLowerCase().includes('powszechna')
-      )
-      if (pko) aspspName = pko.name
+      const allAspsps = aspspData.aspsps || []
+      // Try exact match first
+      let found = allAspsps.find((a: any) => a.name === aspsp_name)
+      if (!found && aspsp_name) {
+        // Try partial match
+        const lower = aspsp_name.toLowerCase()
+        found = allAspsps.find((a: any) => a.name?.toLowerCase().includes(lower))
+      }
+      if (!found) {
+        // Fallback to PKO
+        found = allAspsps.find((a: any) =>
+          a.name?.toLowerCase().includes('pko') || a.name?.toLowerCase().includes('powszechna')
+        )
+      }
+      if (found) aspspName = found.name
     }
 
     const authResponse = await fetch('https://api.enablebanking.com/auth', {
@@ -107,7 +140,7 @@ Deno.serve(async (req) => {
     }
 
     const data = JSON.parse(respText)
-    return respond(200, { url: data.url, authorization_id: data.authorization_id })
+    return respond(200, { url: data.url, authorization_id: data.authorization_id, aspsp_name: aspspName })
 
   } catch (e) {
     return respond(500, { error: String(e) })

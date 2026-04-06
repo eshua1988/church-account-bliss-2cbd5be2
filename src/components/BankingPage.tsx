@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Building2, Upload, RefreshCw, CheckCircle2, AlertCircle, Link2,
   FileText, Trash2, ArrowDownCircle, Settings, ExternalLink, Info,
-  ChevronDown, ChevronUp, Eye, EyeOff, Loader2,
+  ChevronDown, ChevronUp, Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,6 +29,39 @@ interface ImportResult {
   skipped: number;
   errors: string[];
 }
+
+interface PolishBank {
+  name: string;
+  logo: string | null;
+  bic: string | null;
+  beta: boolean;
+}
+
+interface BankConnection {
+  bank_name: string;
+  session_id: string;
+  last_sync_at: string;
+  accounts: Array<{ uid: string; iban: string; name: string }>;
+}
+
+// Well-known Polish banks (fallback if API list fails)
+const FALLBACK_POLISH_BANKS: PolishBank[] = [
+  { name: 'PKO Bank Polski SA', logo: null, bic: 'BPKOPLPW', beta: false },
+  { name: 'Bank Pekao SA', logo: null, bic: 'PKOPPLPW', beta: false },
+  { name: 'Santander Bank Polska SA', logo: null, bic: 'WBKPPLPP', beta: false },
+  { name: 'mBank SA', logo: null, bic: 'BREXPLPW', beta: false },
+  { name: 'ING Bank Śląski SA', logo: null, bic: 'INGBPLPW', beta: false },
+  { name: 'BNP Paribas Bank Polska SA', logo: null, bic: 'PPABPLPK', beta: false },
+  { name: 'Bank Millennium SA', logo: null, bic: 'BIGBPLPW', beta: false },
+  { name: 'Alior Bank SA', logo: null, bic: 'ALBPPLPW', beta: false },
+  { name: 'Credit Agricole Bank Polska SA', logo: null, bic: 'AGRIPLPR', beta: false },
+  { name: 'Citi Handlowy', logo: null, bic: 'CITIPLPX', beta: false },
+  { name: 'Bank Ochrony Środowiska SA', logo: null, bic: 'EBOSPLPW', beta: false },
+  { name: 'Nest Bank SA', logo: null, bic: 'NESBPLPW', beta: false },
+  { name: 'VeloBank SA', logo: null, bic: 'GBGCPLPK', beta: false },
+  { name: 'Toyota Bank Polska SA', logo: null, bic: null, beta: false },
+  { name: 'Inteligo', logo: null, bic: null, beta: false },
+];
 
 // ─── PKO BP CSV parser ─────────────────────────────────────────────────────────
 // PKO BP exports semicolon-separated CSV with header:
@@ -180,38 +213,64 @@ export const BankingPage = () => {
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
 
   // ── Enable Banking API state ──────────────────────────────────────────────
-  const [appId, setAppId] = useState(() => localStorage.getItem('eb_app_id') || '');
-  const [showAppId, setShowAppId] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
-  const [bankAccounts, setBankAccounts] = useState<Array<{ id: string; iban: string; name: string }>>([]);
-  const [isSyncingApi, setIsSyncingApi] = useState(false);
+  const [connectingBank, setConnectingBank] = useState<string | null>(null);
+  const [bankConnections, setBankConnections] = useState<BankConnection[]>([]);
+  const [syncingBank, setSyncingBank] = useState<string | null>(null);
   const [apiInfoOpen, setApiInfoOpen] = useState(false);
-  const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
+  const [availableBanks, setAvailableBanks] = useState<PolishBank[]>(FALLBACK_POLISH_BANKS);
+  const [loadingBanks, setLoadingBanks] = useState(false);
+  const [bankSearch, setBankSearch] = useState('');
 
-  // Load saved connection status on mount
+  // Load saved connections on mount
   useEffect(() => {
     if (!user) return;
     supabase
       .from('bank_connections')
-      .select('session_id, last_sync_at, accounts')
+      .select('bank_name, session_id, last_sync_at, accounts')
       .eq('user_id', user.id)
-      .eq('bank_name', 'PKO BP')
-      .maybeSingle()
       .then(({ data, error }) => {
-        if (error) console.error('[BankingPage] load connection:', error);
-        if (data?.session_id) {
-          setConnectionStatus('connected');
-          setLastSyncAt(new Date(data.last_sync_at));
-          if (data.accounts && Array.isArray(data.accounts)) {
-            setBankAccounts((data.accounts as any[]).map(a => ({
-              id: a.uid || a.id || '',
-              iban: a.iban || a.uid || '',
-              name: a.iban || a.uid || 'PKO BP',
-            })));
-          }
+        if (error) console.error('[BankingPage] load connections:', error);
+        if (data && data.length > 0) {
+          setBankConnections(data.map(d => ({
+            bank_name: d.bank_name,
+            session_id: d.session_id,
+            last_sync_at: d.last_sync_at,
+            accounts: (d.accounts as any[]) || [],
+          })));
         }
       });
   }, [user]);
+
+  // Fetch available banks from Enable Banking
+  useEffect(() => {
+    if (!user) return;
+    fetchAvailableBanks();
+  }, [user]);
+
+  const fetchAvailableBanks = async () => {
+    setLoadingBanks(true);
+    try {
+      const supabaseUrl = (supabase as any).supabaseUrl as string;
+      const supabaseKey = (supabase as any).supabaseKey as string;
+      const res = await fetch(`${supabaseUrl}/functions/v1/banking-auth-start`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({ list_banks: true }),
+      });
+      const json = await res.json();
+      if (json.banks && json.banks.length > 0) {
+        setAvailableBanks(json.banks);
+      }
+    } catch (e) {
+      console.error('[BankingPage] fetch banks:', e);
+    } finally {
+      setLoadingBanks(false);
+    }
+  };
 
   // ─── CSV Upload & Parse ────────────────────────────────────────────────────
 
@@ -318,13 +377,8 @@ export const BankingPage = () => {
 
   // ─── Enable Banking API ────────────────────────────────────────────────────
 
-  const handleSaveAppId = () => {
-    localStorage.setItem('eb_app_id', appId.trim());
-    toast({ title: 'Application ID сохранён' });
-  };
-
-  const handleConnectBank = async () => {
-    setConnectionStatus('connecting');
+  const handleConnectBank = async (bankName: string) => {
+    setConnectingBank(bankName);
 
     try {
       const redirectUri = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}/bank-callback`;
@@ -332,6 +386,11 @@ export const BankingPage = () => {
       // Use fetch directly so we always get the exact error body
       const supabaseUrl = (supabase as any).supabaseUrl as string;
       const supabaseKey = (supabase as any).supabaseKey as string;
+
+      const statePayload = JSON.stringify({
+        user_id: user?.id || crypto.randomUUID(),
+        bank_name: bankName,
+      });
 
       const res = await fetch(`${supabaseUrl}/functions/v1/banking-auth-start`, {
         method: 'POST',
@@ -342,7 +401,8 @@ export const BankingPage = () => {
         },
         body: JSON.stringify({
           redirect_uri: redirectUri,
-          state: user?.id || crypto.randomUUID(),
+          state: statePayload,
+          aspsp_name: bankName,
         }),
       });
 
@@ -351,27 +411,27 @@ export const BankingPage = () => {
       if (!res.ok) {
         const msg = json?.error || json?.message || `HTTP ${res.status}`;
         const detail = json?.detail ? `\n${json.detail}` : '';
-        setConnectionStatus('error');
+        setConnectingBank(null);
         toast({ title: 'Ошибка подключения', description: msg + detail, variant: 'destructive' });
         return;
       }
 
       if (!json?.url) {
-        setConnectionStatus('error');
+        setConnectingBank(null);
         toast({ title: 'Ошибка', description: 'Enable Banking не вернул URL', variant: 'destructive' });
         return;
       }
 
       window.location.href = json.url;
     } catch (e) {
-      setConnectionStatus('error');
+      setConnectingBank(null);
       toast({ title: 'Ошибка', description: String(e), variant: 'destructive' });
     }
   };
 
-  const handleApiSync = async () => {
+  const handleApiSync = async (bankName?: string) => {
     if (!user) return;
-    setIsSyncingApi(true);
+    setSyncingBank(bankName || '__all__');
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const supabaseUrl = (supabase as any).supabaseUrl as string;
@@ -385,7 +445,7 @@ export const BankingPage = () => {
           'apikey': supabaseKey,
           'Authorization': `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ user_id: user.id }),
+        body: JSON.stringify({ user_id: user.id, bank_name: bankName }),
       });
 
       const json = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
@@ -395,8 +455,20 @@ export const BankingPage = () => {
         return;
       }
 
-      const now = new Date();
-      setLastSyncAt(now);
+      // Reload connections
+      const { data } = await supabase
+        .from('bank_connections')
+        .select('bank_name, session_id, last_sync_at, accounts')
+        .eq('user_id', user.id);
+      if (data) {
+        setBankConnections(data.map(d => ({
+          bank_name: d.bank_name,
+          session_id: d.session_id,
+          last_sync_at: d.last_sync_at,
+          accounts: (d.accounts as any[]) || [],
+        })));
+      }
+
       toast({
         title: 'Синхронизация завершена',
         description: json.imported > 0
@@ -406,9 +478,30 @@ export const BankingPage = () => {
     } catch (e) {
       toast({ title: 'Ошибка синхронизации', description: String(e), variant: 'destructive' });
     } finally {
-      setIsSyncingApi(false);
+      setSyncingBank(null);
     }
   };
+
+  const handleDisconnectBank = async (bankName: string) => {
+    if (!user) return;
+    const { error } = await supabase
+      .from('bank_connections')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('bank_name', bankName);
+    if (error) {
+      toast({ title: 'Ошибка', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setBankConnections(prev => prev.filter(c => c.bank_name !== bankName));
+    toast({ title: 'Банк отключён', description: bankName });
+  };
+
+  const connectedBankNames = new Set(bankConnections.map(c => c.bank_name));
+
+  const filteredBanks = availableBanks.filter(b =>
+    b.name.toLowerCase().includes(bankSearch.toLowerCase())
+  );
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
@@ -417,7 +510,12 @@ export const BankingPage = () => {
       {/* Header */}
       <div className="flex items-center gap-3">
         <Building2 className="h-6 w-6 text-primary" />
-        <h3 className="text-lg font-semibold text-foreground">Банк PKO BP</h3>
+        <h3 className="text-lg font-semibold text-foreground">Банки Польши</h3>
+        {bankConnections.length > 0 && (
+          <Badge variant="secondary" className="text-xs">
+            {bankConnections.length} подключ.
+          </Badge>
+        )}
       </div>
 
       {/* Section tabs */}
@@ -669,7 +767,7 @@ export const BankingPage = () => {
               Требуется регистрация в Enable Banking
             </p>
             <p className="text-sm text-muted-foreground">
-              Enable Banking — бесплатный агрегатор PSD2 API с поддержкой PKO BP.
+              Enable Banking — бесплатный агрегатор PSD2 API с поддержкой польских банков.
               Не требует лицензии AISP — они уже имеют её.
             </p>
             <button
@@ -691,19 +789,19 @@ export const BankingPage = () => {
                 <li>Создайте новое приложение в Dashboard</li>
                 <li>Скопируйте <strong>Application ID</strong> и вставьте ниже</li>
                 <li>Добавьте Redirect URI: <code className="bg-muted px-1 rounded text-xs">{window.location.origin}{import.meta.env.BASE_URL?.replace(/\/$/, '')}/bank-callback</code></li>
-                <li>Нажмите «Подключить PKO BP» — откроется страница авторизации</li>
+                <li>Нажмите «Подключить» на любом банке — откроется страница авторизации</li>
               </ol>
             )}
           </div>
 
-{/* Setup instructions */}
+          {/* Setup instructions */}
           <div className="bg-card border border-border rounded-xl p-5 space-y-4">
             <div className="flex items-center gap-2 mb-1">
               <Settings className="h-4 w-4 text-muted-foreground" />
               <h4 className="font-semibold text-sm">Настройка Enable Banking</h4>
             </div>
             <p className="text-xs text-muted-foreground">
-              Для подключения PKO BP добавьте два секрета в{' '}
+              Для подключения банков добавьте два секрета в{' '}
               <a
                 href="https://supabase.com/dashboard/project/htepbcotdqrewbxmasbf/settings/vault"
                 target="_blank"
@@ -727,86 +825,169 @@ export const BankingPage = () => {
             </p>
           </div>
 
-          {/* Connect & status */}
-          <div className="bg-card border border-border rounded-xl p-5 space-y-4">
-            <h4 className="font-semibold text-sm flex items-center gap-2">
-              <Building2 className="h-4 w-4 text-muted-foreground" />
-              PKO BP — Powszechna Kasa Oszczędności
-            </h4>
-
-            <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-              <div className={cn(
-                'w-3 h-3 rounded-full flex-shrink-0',
-                connectionStatus === 'connected' ? 'bg-green-500' :
-                connectionStatus === 'error' ? 'bg-destructive' :
-                connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' :
-                'bg-muted-foreground'
-              )} />
-              <div className="flex-1 min-w-0">
-                <span className="text-sm">
-                  {connectionStatus === 'connected' ? 'Подключено' :
-                   connectionStatus === 'error' ? 'Ошибка подключения' :
-                   connectionStatus === 'connecting' ? 'Подключение...' :
-                   'Не подключено'}
-                </span>
-                {lastSyncAt && connectionStatus === 'connected' && (
-                  <p className="text-xs text-muted-foreground">
-                    Последняя синхронизация: {lastSyncAt.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                  </p>
+          {/* Connected banks */}
+          {bankConnections.length > 0 && (
+            <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="font-semibold text-sm flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  Подключённые банки ({bankConnections.length})
+                </h4>
+                {bankConnections.length > 1 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleApiSync()}
+                    disabled={syncingBank !== null}
+                    className="text-xs h-7"
+                  >
+                    {syncingBank === '__all__'
+                      ? <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      : <RefreshCw className="h-3 w-3 mr-1" />}
+                    Синхр. все
+                  </Button>
                 )}
               </div>
-            </div>
-
-            {bankAccounts.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
-                  Счета
-                </p>
-                {bankAccounts.map(acc => (
-                  <div key={acc.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg text-sm">
-                    <div>
-                      <p className="font-medium">{acc.name}</p>
-                      <p className="text-xs text-muted-foreground font-mono">{acc.iban}</p>
+              <div className="space-y-3">
+                {bankConnections.map(conn => (
+                  <div key={conn.bank_name} className="bg-muted/30 border border-border rounded-lg p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-green-500 flex-shrink-0" />
+                        <span className="font-medium text-sm">{conn.bank_name}</span>
+                        <Badge variant="outline" className="text-[10px]">Подключено</Badge>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleApiSync(conn.bank_name)}
+                          disabled={syncingBank !== null}
+                          title="Синхронизировать"
+                          className="h-7 w-7 p-0"
+                        >
+                          {syncingBank === conn.bank_name
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <RefreshCw className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleConnectBank(conn.bank_name)}
+                          disabled={connectingBank !== null}
+                          title="Переподключить"
+                          className="h-7 w-7 p-0"
+                        >
+                          <Link2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDisconnectBank(conn.bank_name)}
+                          title="Отключить"
+                          className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
-                    <Badge variant="outline" className="text-xs">PKO BP</Badge>
+                    {conn.last_sync_at && (
+                      <p className="text-xs text-muted-foreground">
+                        Последняя синхронизация: {new Date(conn.last_sync_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    )}
+                    {conn.accounts.length > 0 && (
+                      <div className="space-y-1">
+                        {conn.accounts.map(acc => (
+                          <div key={acc.uid} className="flex items-center justify-between text-xs px-2 py-1 bg-muted/50 rounded">
+                            <span className="font-mono text-muted-foreground">{acc.iban || acc.uid}</span>
+                            <Badge variant="outline" className="text-[10px]">{conn.bank_name}</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
-            )}
+            </div>
+          )}
 
-            <div className="flex gap-2">
-              <Button
-                onClick={handleConnectBank}
-                disabled={connectionStatus === 'connecting'}
-                className="flex-1"
-                variant={connectionStatus === 'connected' ? 'outline' : 'default'}
-              >
-                {connectionStatus === 'connecting' ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Link2 className="h-4 w-4 mr-2" />
-                )}
-                {connectionStatus === 'connected' ? 'Переподключить PKO BP' : 'Подключить PKO BP'}
-              </Button>
-              {connectionStatus === 'connected' && (
-                <Button
-                  variant="default"
-                  onClick={handleApiSync}
-                  disabled={isSyncingApi}
-                  title="Синхронизировать новые транзакции"
-                >
-                  {isSyncingApi
-                    ? <Loader2 className="h-4 w-4 animate-spin" />
-                    : <RefreshCw className="h-4 w-4" />}
-                </Button>
-              )}
+          {/* Available banks to connect */}
+          <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="font-semibold text-sm flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-muted-foreground" />
+                Доступные банки Польши
+              </h4>
+              {loadingBanks && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
             </div>
 
-            <p className="text-xs text-muted-foreground text-center">
-              {connectionStatus === 'connected'
-                ? 'Нажмите ↺ для синхронизации новых транзакций из банка.'
-                : 'После нажатия откроется страница PKO BP для авторизации. Вся история загрузится автоматически.'}
-            </p>
+            <Input
+              placeholder="Поиск банка..."
+              value={bankSearch}
+              onChange={(e) => setBankSearch(e.target.value)}
+              className="h-8 text-sm"
+            />
+
+            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+              {filteredBanks.map(bank => {
+                const isConnected = connectedBankNames.has(bank.name);
+                const isConnecting = connectingBank === bank.name;
+                return (
+                  <div
+                    key={bank.name}
+                    className={cn(
+                      'flex items-center justify-between p-3 rounded-lg border transition-colors',
+                      isConnected
+                        ? 'bg-green-500/5 border-green-500/20'
+                        : 'bg-muted/30 border-border hover:border-primary/30'
+                    )}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {bank.logo ? (
+                        <img
+                          src={`${bank.logo}-/resize/32x/`}
+                          alt={bank.name}
+                          className="w-8 h-8 rounded object-contain bg-white p-0.5"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded bg-muted flex items-center justify-center">
+                          <Building2 className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{bank.name}</p>
+                        {bank.bic && (
+                          <p className="text-[10px] text-muted-foreground font-mono">{bank.bic}</p>
+                        )}
+                      </div>
+                      {bank.beta && (
+                        <Badge variant="outline" className="text-[10px] border-yellow-500/40 text-yellow-500">beta</Badge>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant={isConnected ? 'outline' : 'default'}
+                      onClick={() => handleConnectBank(bank.name)}
+                      disabled={connectingBank !== null}
+                      className="text-xs h-7 flex-shrink-0"
+                    >
+                      {isConnecting ? (
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      ) : (
+                        <Link2 className="h-3 w-3 mr-1" />
+                      )}
+                      {isConnected ? 'Переподключить' : 'Подключить'}
+                    </Button>
+                  </div>
+                );
+              })}
+              {filteredBanks.length === 0 && (
+                <p className="text-center text-sm text-muted-foreground py-4">
+                  {bankSearch ? 'Банк не найден' : 'Загрузка списка банков...'}
+                </p>
+              )}
+            </div>
           </div>
 
           {/* Comparison note */}
@@ -814,7 +995,7 @@ export const BankingPage = () => {
             <p className="font-medium text-foreground">💡 Рекомендация</p>
             <p>
               Если API пока недоступен — используйте <strong>Вариант B (CSV)</strong>. 
-              Выписку из PKO BP можно скачать за любой период и загрузить за 10 секунд.
+              Выписку из банка можно скачать за любой период и загрузить за 10 секунд.
             </p>
           </div>
         </div>

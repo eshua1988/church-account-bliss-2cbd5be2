@@ -36,9 +36,10 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   try {
     const body = await req.json()
-    const { code, user_id } = body
+    const { code, user_id, bank_name } = body
     if (!code) return respond(400, { error: 'code обязателен' })
     if (!user_id) return respond(400, { error: 'user_id не передан — пользователь не авторизован' })
+    const resolvedBankName = bank_name || 'PKO BP'
 
     const privateKey = Deno.env.get('EB_PRIVATE_KEY')
     const appId = Deno.env.get('EB_APP_ID')
@@ -114,9 +115,9 @@ Deno.serve(async (req) => {
             amount: Math.abs(amount),
             description: Array.isArray(tx.remittance_information)
               ? tx.remittance_information.join(' ')
-              : (tx.remittance_information || tx.debtor?.name || tx.creditor?.name || 'PKO BP'),
+              : (tx.remittance_information || tx.debtor?.name || tx.creditor?.name || resolvedBankName),
             type: debit ? 'expense' : 'income',
-            source: 'pko_bp',
+            source: resolvedBankName.toLowerCase().replace(/\s+/g, '_'),
             external_id: tx.entry_reference || tx.transaction_id || null,
             iban,
           })
@@ -161,7 +162,7 @@ Deno.serve(async (req) => {
               amount: t.amount,
               description: t.description,
               type: t.type,
-              source: 'pko_bp',
+              source: resolvedBankName.toLowerCase().replace(/\s+/g, '_'),
               external_id: t.external_id || null,
             }))
           )
@@ -178,7 +179,7 @@ Deno.serve(async (req) => {
       }))
       await db.from('bank_connections').upsert({
         user_id,
-        bank_name: 'PKO BP',
+        bank_name: resolvedBankName,
         session_id: sessionId,
         accounts: accountsInfo,
         connected_at: new Date().toISOString(),

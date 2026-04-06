@@ -35,7 +35,7 @@ const respond = (status, body) => new Response(JSON.stringify(body), {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   try {
-    const { user_id } = await req.json()
+    const { user_id, bank_name } = await req.json()
     if (!user_id) return respond(400, { error: 'user_id обязателен' })
 
     const privateKey = Deno.env.get('EB_PRIVATE_KEY')
@@ -49,20 +49,30 @@ Deno.serve(async (req) => {
     const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2')
     const db = createClient(supabaseUrl, supabaseKey)
 
-    // Load saved connection
-    const { data: conn, error: connErr } = await db.from('bank_connections')
-      .select('session_id, accounts, last_sync_at')
+    // Load saved connections — single bank or all
+    let query = db.from('bank_connections')
+      .select('session_id, accounts, last_sync_at, bank_name')
       .eq('user_id', user_id)
-      .eq('bank_name', 'PKO BP')
-      .single()
+    if (bank_name) query = query.eq('bank_name', bank_name)
 
-    if (connErr || !conn) return respond(404, { error: 'Банк PKO BP не подключён. Сначала выполните подключение.' })
+    const { data: connections, error: connErr } = await query
 
-    const accounts = conn.accounts || []
-    if (accounts.length === 0) return respond(400, { error: 'Нет сохранённых счетов. Переподключитесь.' })
+    if (connErr || !connections || connections.length === 0) {
+      return respond(404, { error: bank_name ? `Банк ${bank_name} не подключён.` : 'Нет подключённых банков.' })
+    }
 
     const jwt = await createJWT(privateKey, appId)
     const ebHeaders = { 'Authorization': 'Bearer '+jwt, 'Content-Type': 'application/json' }
+
+    let totalImported = 0
+    let totalTx = 0
+    const allSyncDebug = []
+
+    for (const conn of connections) {
+      const connBankName = conn.bank_name || 'PKO BP'
+      const source = connBankName.toLowerCase().replace(/\s+/g, '_')
+      const accounts = conn.accounts || []
+      if (accounts.length === 0) continue
 
     // Fetch only new transactions since last sync
     const dateFrom = conn.last_sync_at
@@ -106,7 +116,7 @@ Deno.serve(async (req) => {
             amount: Math.abs(amount),
             description: Array.isArray(tx.remittance_information)
               ? tx.remittance_information.join(' ')
-              : (tx.remittance_information || tx.debtor?.name || tx.creditor?.name || 'PKO BP'),
+              : (tx.remittance_information || tx.debtor?.name || tx.creditor?.name || connBankName),
             type: debit ? 'expense' : 'income',
             external_id: tx.entry_reference || tx.transaction_id || null,
           })
@@ -141,7 +151,7 @@ Deno.serve(async (req) => {
             amount: t.amount,
             description: t.description,
             type: t.type,
-            source: 'pko_bp',
+            source,
             external_id: t.external_id || null,
           }))
         )
@@ -153,14 +163,19 @@ Deno.serve(async (req) => {
     // Update last_sync_at
     await db.from('bank_connections').update({
       last_sync_at: new Date().toISOString()
-    }).eq('user_id', user_id).eq('bank_name', 'PKO BP')
+    }).eq('user_id', user_id).eq('bank_name', connBankName)
+
+    totalImported += imported
+    totalTx += allTx.length
+    allSyncDebug.push({ bank: connBankName, imported, total: allTx.length, insert_error: insertError, debug: syncDebug })
+    } // end for each connection
 
     return respond(200, {
-      imported,
-      total: allTx.length,
-      date_from: dateFrom,
-      insert_error: insertError,
-      debug: syncDebug,
+      imported: totalImported,
+      total: totalTx,
+      date_from: connections.map(c => c.last_sync_at ? new Date(c.last_sync_at).toISOString().split('T')[0] : '2020-01-01').join(', '),
+      banks: connections.map(c => c.bank_name),
+      debug: allSyncDebug,
     })
   } catch(e) {
     return respond(500, { error: String(e) })
