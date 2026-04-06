@@ -61,6 +61,8 @@ export default function BankCallback() {
       const userId = session?.user?.id || fallbackUserId;
       console.log('[BankCallback] userId:', userId, 'bank:', resolvedBankName, 'hasSession:', !!session);
 
+      console.log('[BankCallback] calling banking-auth-complete with:', { code: code?.slice(0, 10) + '...', user_id: userId, bank_name: resolvedBankName });
+
       const res = await fetch(`${supabaseUrl}/functions/v1/banking-auth-complete`, {
         method: 'POST',
         headers: {
@@ -72,10 +74,12 @@ export default function BankCallback() {
       });
 
       const json = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      console.log('[BankCallback] response:', res.status, json);
 
       if (!res.ok) {
         setStatus('error');
         setMessage(json?.error || `HTTP ${res.status}`);
+        console.error('[BankCallback] error response:', json);
         return;
       }
 

@@ -46,21 +46,20 @@ interface BankConnection {
 
 // Well-known Polish banks (fallback if API list fails)
 const FALLBACK_POLISH_BANKS: PolishBank[] = [
-  { name: 'PKO Bank Polski SA', logo: null, bic: 'BPKOPLPW', beta: false },
-  { name: 'Bank Pekao SA', logo: null, bic: 'PKOPPLPW', beta: false },
-  { name: 'Santander Bank Polska SA', logo: null, bic: 'WBKPPLPP', beta: false },
-  { name: 'mBank SA', logo: null, bic: 'BREXPLPW', beta: false },
-  { name: 'ING Bank Śląski SA', logo: null, bic: 'INGBPLPW', beta: false },
-  { name: 'BNP Paribas Bank Polska SA', logo: null, bic: 'PPABPLPK', beta: false },
-  { name: 'Bank Millennium SA', logo: null, bic: 'BIGBPLPW', beta: false },
-  { name: 'Alior Bank SA', logo: null, bic: 'ALBPPLPW', beta: false },
-  { name: 'Credit Agricole Bank Polska SA', logo: null, bic: 'AGRIPLPR', beta: false },
+  { name: 'PKO Bank Polski', logo: null, bic: 'BPKOPLPW', beta: false },
+  { name: 'Bank Pekao', logo: null, bic: 'PKOPPLPW', beta: false },
+  { name: 'Santander Bank Polska', logo: null, bic: 'WBKPPLPP', beta: false },
+  { name: 'mBank', logo: null, bic: 'BREXPLPW', beta: false },
+  { name: 'ING Bank Śląski', logo: null, bic: 'INGBPLPW', beta: false },
+  { name: 'BNP Paribas', logo: null, bic: 'PPABPLPK', beta: false },
+  { name: 'Bank Millennium', logo: null, bic: 'BIGBPLPW', beta: false },
+  { name: 'Alior Bank', logo: null, bic: 'ALBPPLPW', beta: false },
+  { name: 'Credit Agricole', logo: null, bic: 'AGRIPLPR', beta: false },
   { name: 'Citi Handlowy', logo: null, bic: 'CITIPLPX', beta: false },
-  { name: 'Bank Ochrony Środowiska SA', logo: null, bic: 'EBOSPLPW', beta: false },
-  { name: 'Nest Bank SA', logo: null, bic: 'NESBPLPW', beta: false },
-  { name: 'VeloBank SA', logo: null, bic: 'GBGCPLPK', beta: false },
-  { name: 'Toyota Bank Polska SA', logo: null, bic: null, beta: false },
-  { name: 'Inteligo', logo: null, bic: null, beta: false },
+  { name: 'Nest Bank', logo: null, bic: 'NESBPLPW', beta: false },
+  { name: 'Revolut', logo: null, bic: null, beta: false },
+  { name: 'Wise', logo: null, bic: null, beta: false },
+  { name: 'N26', logo: null, bic: null, beta: false },
 ];
 
 // ─── PKO BP CSV parser ─────────────────────────────────────────────────────────
@@ -407,6 +406,7 @@ export const BankingPage = () => {
       });
 
       const json = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      console.log('[BankingPage] auth-start response:', { aspsp_name: json?.aspsp_name, url: json?.url?.slice(0, 50) });
 
       if (!res.ok) {
         const msg = json?.error || json?.message || `HTTP ${res.status}`;
