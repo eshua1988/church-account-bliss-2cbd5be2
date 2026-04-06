@@ -177,7 +177,7 @@ Deno.serve(async (req) => {
         iban: a.account_id?.iban || a.iban || '',
         name: a.account_id?.iban || a.uid,
       }))
-      await db.from('bank_connections').upsert({
+      const { error: upsertError } = await db.from('bank_connections').upsert({
         user_id,
         bank_name: resolvedBankName,
         session_id: sessionId,
@@ -185,6 +185,10 @@ Deno.serve(async (req) => {
         connected_at: new Date().toISOString(),
         last_sync_at: new Date().toISOString(),
       }, { onConflict: 'user_id,bank_name' })
+      if (upsertError) {
+        console.error('[banking-auth-complete] upsert error:', upsertError)
+        debug.upsert_error = upsertError.message
+      }
     }
 
     return respond(200, {

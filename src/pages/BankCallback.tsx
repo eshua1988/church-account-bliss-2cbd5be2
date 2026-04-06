@@ -88,6 +88,8 @@ export default function BankCallback() {
       const detail = json.total != null ? ` (найдено в банке: ${json.total})` : '';
       setMessage(`Импортировано транзакций: ${json.imported || 0}${detail}`);
       if (json.debug) console.log('[BankCallback] debug:', json.debug);
+      if (json.debug?.upsert_error) console.error('[BankCallback] upsert_error:', json.debug.upsert_error);
+      if (json.insert_error) console.error('[BankCallback] insert_error:', json.insert_error);
       toast({ title: `${resolvedBankName || 'Банк'} подключён`, description: `Импортировано ${json.imported || 0} транзакций${detail}` });
     } catch (e) {
       setStatus('error');
