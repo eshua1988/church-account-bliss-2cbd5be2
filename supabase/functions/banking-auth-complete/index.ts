@@ -61,7 +61,22 @@ Deno.serve(async (req) => {
     }
     const sessData = JSON.parse(sessText)
     const sessionId = sessData.session_id
-    const accounts = sessData.accounts || []
+    let accounts = sessData.accounts || []
+
+    // If POST /sessions returned no accounts, try GET /sessions/{id} as fallback
+    if (accounts.length === 0 && sessionId) {
+      try {
+        const sessGetRes = await fetch(`https://api.enablebanking.com/sessions/${sessionId}`, {
+          headers: ebHeaders
+        })
+        if (sessGetRes.ok) {
+          const sessGetData = await sessGetRes.json()
+          accounts = sessGetData.accounts || []
+        }
+      } catch (e) {
+        // ignore fallback error
+      }
+    }
 
     const debug = {
       session_id: sessionId,
@@ -70,8 +85,32 @@ Deno.serve(async (req) => {
       raw_accounts: accounts,
     }
 
-    if (accounts.length === 0) {
-      return respond(200, { imported: 0, total: 0, debug, note: 'Нет счетов в сессии' })
+    // Save bank connection even if no accounts (connection is valid for future syncs)
+    if (supabaseUrl && supabaseKey) {
+      const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2')
+      const db = createClient(supabaseUrl, supabaseKey)
+
+      const accountsInfo = accounts.map(a => ({
+        uid: a.uid,
+        iban: a.account_id?.iban || a.iban || '',
+        name: a.account_id?.iban || a.uid,
+      }))
+      const { error: upsertError } = await db.from('bank_connections').upsert({
+        user_id,
+        bank_name: resolvedBankName,
+        session_id: sessionId,
+        accounts: accountsInfo,
+        connected_at: new Date().toISOString(),
+        last_sync_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,bank_name' })
+      if (upsertError) {
+        console.error('[banking-auth-complete] upsert error:', upsertError)
+        debug.upsert_error = upsertError.message
+      }
+
+      if (accounts.length === 0) {
+        return respond(200, { imported: 0, total: 0, debug, note: 'Банк подключён, но счета пока недоступны. Попробуйте синхронизировать позже.' })
+      }
     }
 
     // 2. Fetch transactions from each account (all history from 2020-01-01)
@@ -169,25 +208,6 @@ Deno.serve(async (req) => {
           insertError = error ? String(error.message) : null
           if (!error) imported = newTx.length
         }
-      }
-
-      // Save session to bank_connections for future syncs (upsert)
-      const accountsInfo = accounts.map(a => ({
-        uid: a.uid,
-        iban: a.account_id?.iban || a.iban || '',
-        name: a.account_id?.iban || a.uid,
-      }))
-      const { error: upsertError } = await db.from('bank_connections').upsert({
-        user_id,
-        bank_name: resolvedBankName,
-        session_id: sessionId,
-        accounts: accountsInfo,
-        connected_at: new Date().toISOString(),
-        last_sync_at: new Date().toISOString(),
-      }, { onConflict: 'user_id,bank_name' })
-      if (upsertError) {
-        console.error('[banking-auth-complete] upsert error:', upsertError)
-        debug.upsert_error = upsertError.message
       }
     }
 
