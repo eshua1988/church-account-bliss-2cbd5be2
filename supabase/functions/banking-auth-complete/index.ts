@@ -113,8 +113,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 2. Fetch transactions from each account (all history from 2020-01-01)
-    const dateFrom = '2020-01-01'
+    // 2. Fetch transactions from each account (full history)
+    const dateFrom = '2015-01-01'
     const allTx = []
     const txDebug = []
 

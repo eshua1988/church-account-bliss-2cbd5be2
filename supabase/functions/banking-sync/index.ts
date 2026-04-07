@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
     // Fetch only new transactions since last sync
     const dateFrom = conn.last_sync_at
       ? new Date(conn.last_sync_at).toISOString().split('T')[0]
-      : '2020-01-01'
+      : '2015-01-01'
 
     const allTx = []
     const syncDebug = []

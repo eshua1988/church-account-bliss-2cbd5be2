@@ -135,7 +135,11 @@ Deno.serve(async (req) => {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + jwt, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        access: { valid_until: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString() },
+        access: {
+          valid_until: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+          balances_from: '2015-01-01T00:00:00.000Z',
+          transactions_from: '2015-01-01T00:00:00.000Z',
+        },
         aspsp: { name: aspspName, country: 'PL' },
         state: state || crypto.randomUUID(),
         redirect_url: redirect_uri,
