@@ -137,8 +137,6 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         access: {
           valid_until: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
-          balances_from: '2015-01-01T00:00:00.000Z',
-          transactions_from: '2015-01-01T00:00:00.000Z',
         },
         aspsp: { name: aspspName, country: 'PL' },
         state: state || crypto.randomUUID(),
