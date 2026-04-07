@@ -15,52 +15,53 @@ export default function BankCallback() {
   const [bankName, setBankName] = useState('');
 
   useEffect(() => {
+    const code  = searchParams.get('code');
     const error = searchParams.get('error');
-    const ref = searchParams.get('ref');
+    const stateParam = searchParams.get('state');
 
-    // GoCardless: ref = reference we set (JSON with user_id, bank_name)
-    // requisition_id stored in localStorage before redirect
+    // Decode bank_name and user_id from state (format: JSON { user_id, bank_name })
     let decodedBankName = '';
     let stateUserId = '';
-    if (ref) {
+    if (stateParam) {
       try {
-        const parsed = JSON.parse(ref);
+        const parsed = JSON.parse(stateParam);
         decodedBankName = parsed.bank_name || '';
         stateUserId = parsed.user_id || '';
       } catch {
-        stateUserId = ref;
+        // state is not JSON — legacy format (just user_id)
+        stateUserId = stateParam;
       }
     }
     setBankName(decodedBankName || 'Банк');
-
-    // Get requisition_id from localStorage
-    const requisitionId = localStorage.getItem('gc_requisition_id') || '';
-    localStorage.removeItem('gc_requisition_id');
 
     if (error) {
       setStatus('error');
       setMessage('Авторизация отклонена: ' + (searchParams.get('error_description') || error));
       return;
     }
-    if (!requisitionId) {
+    if (!code) {
       setStatus('error');
-      setMessage('requisition_id не найден. Попробуйте подключить банк заново.');
+      setMessage('Код авторизации не получен');
       return;
     }
 
-    completeAuth(requisitionId, decodedBankName, stateUserId);
+    completeAuth(code, decodedBankName, stateUserId);
   }, []);
 
-  async function completeAuth(requisitionId: string, resolvedBankName: string, fallbackUserId: string) {
+  async function completeAuth(code: string, resolvedBankName: string, fallbackUserId: string) {
     try {
-      setMessage('Получение данных из банка...');
+      setMessage('Получение токена доступа...');
       const supabaseUrl = (supabase as any).supabaseUrl as string;
       const supabaseKey = (supabase as any).supabaseKey as string;
 
+      // Get user session to pass user_id and real access token
       const { data: { session } } = await supabase.auth.getSession();
       const accessToken = session?.access_token || supabaseKey;
+      // Use session user_id, fallback to user_id from state parameter
       const userId = session?.user?.id || fallbackUserId;
-      console.log('[BankCallback] userId:', userId, 'bank:', resolvedBankName, 'requisitionId:', requisitionId);
+      console.log('[BankCallback] userId:', userId, 'bank:', resolvedBankName, 'hasSession:', !!session);
+
+      console.log('[BankCallback] calling banking-auth-complete with:', { code: code?.slice(0, 10) + '...', user_id: userId, bank_name: resolvedBankName });
 
       const res = await fetch(`${supabaseUrl}/functions/v1/banking-auth-complete`, {
         method: 'POST',
@@ -69,7 +70,7 @@ export default function BankCallback() {
           'apikey': supabaseKey,
           'Authorization': `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ requisition_id: requisitionId, user_id: userId, bank_name: resolvedBankName }),
+        body: JSON.stringify({ code, user_id: userId, bank_name: resolvedBankName }),
       });
 
       const json = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
@@ -78,6 +79,7 @@ export default function BankCallback() {
       if (!res.ok) {
         setStatus('error');
         setMessage(json?.error || `HTTP ${res.status}`);
+        console.error('[BankCallback] error response:', json);
         return;
       }
 
@@ -86,6 +88,8 @@ export default function BankCallback() {
       const detail = json.total != null ? ` (найдено в банке: ${json.total})` : '';
       setMessage(`Импортировано транзакций: ${json.imported || 0}${detail}`);
       if (json.debug) console.log('[BankCallback] debug:', json.debug);
+      if (json.debug?.upsert_error) console.error('[BankCallback] upsert_error:', json.debug.upsert_error);
+      if (json.insert_error) console.error('[BankCallback] insert_error:', json.insert_error);
       toast({ title: `${resolvedBankName || 'Банк'} подключён`, description: `Импортировано ${json.imported || 0} транзакций${detail}` });
     } catch (e) {
       setStatus('error');
