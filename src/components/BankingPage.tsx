@@ -31,10 +31,10 @@ interface ImportResult {
 }
 
 interface PolishBank {
+  id: string;
   name: string;
   logo: string | null;
   bic: string | null;
-  beta: boolean;
 }
 
 interface BankConnection {
@@ -46,20 +46,15 @@ interface BankConnection {
 
 // Well-known Polish banks (fallback if API list fails)
 const FALLBACK_POLISH_BANKS: PolishBank[] = [
-  { name: 'PKO Bank Polski', logo: null, bic: 'BPKOPLPW', beta: false },
-  { name: 'Bank Pekao', logo: null, bic: 'PKOPPLPW', beta: false },
-  { name: 'Santander Bank Polska', logo: null, bic: 'WBKPPLPP', beta: false },
-  { name: 'mBank', logo: null, bic: 'BREXPLPW', beta: false },
-  { name: 'ING Bank Śląski', logo: null, bic: 'INGBPLPW', beta: false },
-  { name: 'BNP Paribas', logo: null, bic: 'PPABPLPK', beta: false },
-  { name: 'Bank Millennium', logo: null, bic: 'BIGBPLPW', beta: false },
-  { name: 'Alior Bank', logo: null, bic: 'ALBPPLPW', beta: false },
-  { name: 'Credit Agricole', logo: null, bic: 'AGRIPLPR', beta: false },
-  { name: 'Citi Handlowy', logo: null, bic: 'CITIPLPX', beta: false },
-  { name: 'Nest Bank', logo: null, bic: 'NESBPLPW', beta: false },
-  { name: 'Revolut', logo: null, bic: null, beta: false },
-  { name: 'Wise', logo: null, bic: null, beta: false },
-  { name: 'N26', logo: null, bic: null, beta: false },
+  { id: 'PKO_BPKOPLPW', name: 'PKO Bank Polski', logo: null, bic: 'BPKOPLPW' },
+  { id: 'PEKAO_PKOPPLPW', name: 'Bank Pekao', logo: null, bic: 'PKOPPLPW' },
+  { id: 'SANTANDER_PL_WBKPPLPP', name: 'Santander Bank Polska', logo: null, bic: 'WBKPPLPP' },
+  { id: 'MBANK_RETAIL_BREXPLPW', name: 'mBank', logo: null, bic: 'BREXPLPW' },
+  { id: 'ING_PL_INGBPLPW', name: 'ING Bank Śląski', logo: null, bic: 'INGBPLPW' },
+  { id: 'BNP_PL_PPABPLPK', name: 'BNP Paribas', logo: null, bic: 'PPABPLPK' },
+  { id: 'MILLENNIUM_BIGBPLPW', name: 'Bank Millennium', logo: null, bic: 'BIGBPLPW' },
+  { id: 'ALIOR_ALBPPLPW', name: 'Alior Bank', logo: null, bic: 'ALBPPLPW' },
+  { id: 'CREDIT_AGRICOLE_AGRIPLPR', name: 'Credit Agricole', logo: null, bic: 'AGRIPLPR' },
 ];
 
 // ─── PKO BP CSV parser ─────────────────────────────────────────────────────────
@@ -211,7 +206,7 @@ export const BankingPage = () => {
   const [showPreview, setShowPreview] = useState(true);
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
 
-  // ── Enable Banking API state ──────────────────────────────────────────────
+  // ── GoCardless API state ───────────────────────────────────────────────
   const [connectingBank, setConnectingBank] = useState<string | null>(null);
   const [bankConnections, setBankConnections] = useState<BankConnection[]>([]);
   const [syncingBank, setSyncingBank] = useState<string | null>(null);
@@ -240,7 +235,7 @@ export const BankingPage = () => {
       });
   }, [user]);
 
-  // Fetch available banks from Enable Banking
+  // Fetch available banks from GoCardless
   useEffect(() => {
     if (!user) return;
     fetchAvailableBanks();
@@ -374,15 +369,14 @@ export const BankingPage = () => {
     }
   };
 
-  // ─── Enable Banking API ────────────────────────────────────────────────────
+  // ─── GoCardless Bank Account Data API ─────────────────────────────────────
 
-  const handleConnectBank = async (bankName: string) => {
+  const handleConnectBank = async (bankName: string, institutionId: string) => {
     setConnectingBank(bankName);
 
     try {
-      const redirectUri = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}/bank-callback`;
+      const redirectUri = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}/#/bank-callback`;
 
-      // Use fetch directly so we always get the exact error body
       const supabaseUrl = (supabase as any).supabaseUrl as string;
       const supabaseKey = (supabase as any).supabaseKey as string;
 
@@ -401,25 +395,29 @@ export const BankingPage = () => {
         body: JSON.stringify({
           redirect_uri: redirectUri,
           state: statePayload,
-          aspsp_name: bankName,
+          institution_id: institutionId,
         }),
       });
 
       const json = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      console.log('[BankingPage] auth-start response:', { aspsp_name: json?.aspsp_name, url: json?.url?.slice(0, 50) });
+      console.log('[BankingPage] auth-start response:', json);
 
       if (!res.ok) {
         const msg = json?.error || json?.message || `HTTP ${res.status}`;
-        const detail = json?.detail ? `\n${json.detail}` : '';
         setConnectingBank(null);
-        toast({ title: 'Ошибка подключения', description: msg + detail, variant: 'destructive' });
+        toast({ title: 'Ошибка подключения', description: msg, variant: 'destructive' });
         return;
       }
 
       if (!json?.url) {
         setConnectingBank(null);
-        toast({ title: 'Ошибка', description: 'Enable Banking не вернул URL', variant: 'destructive' });
+        toast({ title: 'Ошибка', description: 'GoCardless не вернул URL', variant: 'destructive' });
         return;
+      }
+
+      // Save requisition_id to localStorage so BankCallback can use it
+      if (json.requisition_id) {
+        localStorage.setItem('gc_requisition_id', json.requisition_id);
       }
 
       window.location.href = json.url;
@@ -544,7 +542,7 @@ export const BankingPage = () => {
           )}
         >
           <Link2 className="h-4 w-4" />
-          Вариант A — API (Enable Banking)
+          Вариант A — API (GoCardless)
         </button>
       </div>
 
@@ -759,18 +757,18 @@ export const BankingPage = () => {
         </div>
       )}
 
-      {/* ── SECTION A: Enable Banking API ─────────────────────────────────── */}
+      {/* ── SECTION A: GoCardless Bank Account Data API ────────────────── */}
       {activeSection === 'api' && (
         <div className="space-y-6">
           {/* Info banner */}
           <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 space-y-2">
             <p className="font-semibold text-sm text-yellow-400 flex items-center gap-2">
               <AlertCircle className="h-4 w-4" />
-              Требуется регистрация в Enable Banking
+              GoCardless Bank Account Data (бесплатно)
             </p>
             <p className="text-sm text-muted-foreground">
-              Enable Banking — бесплатный агрегатор PSD2 API с поддержкой польских банков.
-              Не требует лицензии AISP — они уже имеют её.
+              GoCardless — бесплатный PSD2 агрегатор для доступа к банковским счетам.
+              Поддерживает все основные польские банки без ограничений.
             </p>
             <button
               onClick={() => setApiInfoOpen(!apiInfoOpen)}
@@ -783,14 +781,14 @@ export const BankingPage = () => {
               <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside mt-2">
                 <li>
                   Зарегистрируйтесь на{' '}
-                  <a href="https://enablebanking.com/get-started" target="_blank" rel="noopener noreferrer"
+                  <a href="https://bankaccountdata.gocardless.com/signup" target="_blank" rel="noopener noreferrer"
                     className="text-primary underline inline-flex items-center gap-0.5">
-                    enablebanking.com <ExternalLink className="h-3 w-3" />
+                    bankaccountdata.gocardless.com <ExternalLink className="h-3 w-3" />
                   </a>
                 </li>
-                <li>Создайте новое приложение в Dashboard</li>
-                <li>Скопируйте <strong>Application ID</strong> и вставьте ниже</li>
-                <li>Добавьте Redirect URI: <code className="bg-muted px-1 rounded text-xs">{window.location.origin}{import.meta.env.BASE_URL?.replace(/\/$/, '')}/bank-callback</code></li>
+                <li>Перейдите в <strong>User secrets</strong> и создайте новый ключ</li>
+                <li>Скопируйте <strong>secret_id</strong> и <strong>secret_key</strong></li>
+                <li>Добавьте оба секрета в Supabase Edge Functions Secrets</li>
                 <li>Нажмите «Подключить» на любом банке — откроется страница авторизации</li>
               </ol>
             )}
@@ -800,7 +798,7 @@ export const BankingPage = () => {
           <div className="bg-card border border-border rounded-xl p-5 space-y-4">
             <div className="flex items-center gap-2 mb-1">
               <Settings className="h-4 w-4 text-muted-foreground" />
-              <h4 className="font-semibold text-sm">Настройка Enable Banking</h4>
+              <h4 className="font-semibold text-sm">Настройка GoCardless</h4>
             </div>
             <p className="text-xs text-muted-foreground">
               Для подключения банков добавьте два секрета в{' '}
@@ -815,15 +813,15 @@ export const BankingPage = () => {
               :
             </p>
             <div className="bg-muted/50 rounded-lg p-3 font-mono text-xs space-y-1 leading-relaxed">
-              <p><span className="text-yellow-500">EB_APP_ID</span> = ваш Application ID из <a href="https://enablebanking.com/cp/applications" target="_blank" rel="noopener noreferrer" className="underline text-primary">enablebanking.com/cp</a></p>
-              <p><span className="text-yellow-500">EB_PRIVATE_KEY</span> = содержимое private.key (RSA)</p>
+              <p><span className="text-yellow-500">GC_SECRET_ID</span> = ваш secret_id из <a href="https://bankaccountdata.gocardless.com/user-secrets/" target="_blank" rel="noopener noreferrer" className="underline text-primary">GoCardless User Secrets</a></p>
+              <p><span className="text-yellow-500">GC_SECRET_KEY</span> = ваш secret_key</p>
             </div>
             <p className="text-xs text-muted-foreground">
               Если ещё нет аккаунта:{' '}
-              <a href="https://enablebanking.com/sign-in/" target="_blank" rel="noopener noreferrer" className="underline text-primary">
+              <a href="https://bankaccountdata.gocardless.com/signup" target="_blank" rel="noopener noreferrer" className="underline text-primary">
                 зарегистрируйтесь
               </a>
-              , создайте application с типом <strong>SANDBOX</strong>, загрузите сертификат — и получите Application ID.
+              , создайте User secret — и скопируйте оба значения.
             </p>
           </div>
 
@@ -875,7 +873,10 @@ export const BankingPage = () => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleConnectBank(conn.bank_name)}
+                          onClick={() => {
+                            const bank = availableBanks.find(b => b.name === conn.bank_name);
+                            handleConnectBank(conn.bank_name, bank?.id || '');
+                          }}
                           disabled={connectingBank !== null}
                           title="Переподключить"
                           className="h-7 w-7 p-0"
@@ -948,7 +949,7 @@ export const BankingPage = () => {
                     <div className="flex items-center gap-3 min-w-0">
                       {bank.logo ? (
                         <img
-                          src={`${bank.logo}-/resize/32x/`}
+                          src={bank.logo}
                           alt={bank.name}
                           className="w-8 h-8 rounded object-contain bg-white p-0.5"
                         />
@@ -963,14 +964,11 @@ export const BankingPage = () => {
                           <p className="text-[10px] text-muted-foreground font-mono">{bank.bic}</p>
                         )}
                       </div>
-                      {bank.beta && (
-                        <Badge variant="outline" className="text-[10px] border-yellow-500/40 text-yellow-500">beta</Badge>
-                      )}
                     </div>
                     <Button
                       size="sm"
                       variant={isConnected ? 'outline' : 'default'}
-                      onClick={() => handleConnectBank(bank.name)}
+                      onClick={() => handleConnectBank(bank.name, bank.id)}
                       disabled={connectingBank !== null}
                       className="text-xs h-7 flex-shrink-0"
                     >
