@@ -239,6 +239,16 @@ const Index = () => {
       }
 
       // Write transaction_id back to notification metadata
+      // First, unlink any previously linked notification for this transaction
+      const prevLinked = notifications.find(n => n.metadata?.transaction_id === transactionId && n.id !== notificationId);
+      if (prevLinked && prevLinked.metadata) {
+        const { transaction_id, ...restMeta } = prevLinked.metadata;
+        await supabase
+          .from('notifications')
+          .update({ metadata: restMeta })
+          .eq('id', prevLinked.id);
+      }
+
       await supabase
         .from('notifications')
         .update({ metadata: { ...meta, transaction_id: transactionId } })
