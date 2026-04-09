@@ -28,11 +28,12 @@ interface StatisticsTableProps {
   categories?: { id: string; name: string; type: string }[];
   notifications?: Notification[];
   onLinkNotification?: (transactionId: string, notificationId: string) => void;
+  onUnlinkNotification?: (transactionId: string) => void;
 }
 
 type TimeRange = 'all' | 'thisMonth' | 'lastMonth' | 'last3Months' | 'last6Months' | 'thisYear';
 
-export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpdate, selectedCurrency, categories = [], notifications = [], onLinkNotification }: StatisticsTableProps) => {
+export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpdate, selectedCurrency, categories = [], notifications = [], onLinkNotification, onUnlinkNotification }: StatisticsTableProps) => {
   const { t, getDateLocale } = useTranslation();
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
@@ -445,7 +446,9 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                     <Select
                                       value={linked?.id || '__none__'}
                                       onValueChange={(val) => {
-                                        if (val !== '__none__') {
+                                        if (val === '__none__') {
+                                          if (linked && onUnlinkNotification) onUnlinkNotification(transaction.id);
+                                        } else {
                                           onLinkNotification(transaction.id, val);
                                         }
                                       }}
@@ -664,7 +667,9 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                           <Select
                                             value={linked?.id || '__none__'}
                                             onValueChange={(val) => {
-                                              if (val !== '__none__') {
+                                              if (val === '__none__') {
+                                                if (linked && onUnlinkNotification) onUnlinkNotification(transaction.id);
+                                              } else {
                                                 onLinkNotification(transaction.id, val);
                                               }
                                             }}

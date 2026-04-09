@@ -261,6 +261,23 @@ const Index = () => {
     }
   };
 
+  const handleUnlinkNotification = async (transactionId: string) => {
+    try {
+      const linked = notifications.find(n => n.metadata?.transaction_id === transactionId);
+      if (linked && linked.metadata) {
+        const { transaction_id, ...restMeta } = linked.metadata;
+        await supabase
+          .from('notifications')
+          .update({ metadata: restMeta })
+          .eq('id', linked.id);
+      }
+      refetchNotifications();
+      toast({ title: 'Уведомление отвязано' });
+    } catch (error) {
+      toast({ title: 'Ошибка отвязки', variant: 'destructive' });
+    }
+  };
+
   const isLoading = transactionsLoading || categoriesLoading;
 
   if (isLoading) {
@@ -351,6 +368,7 @@ const Index = () => {
                         categories={categories}
                         notifications={notifications}
                         onLinkNotification={handleLinkNotification}
+                        onUnlinkNotification={handleUnlinkNotification}
                       />
                     </div>
                   </div>
