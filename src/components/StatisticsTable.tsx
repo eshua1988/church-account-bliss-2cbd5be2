@@ -10,7 +10,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp, TrendingDown, Trash2, Download, ChevronDown, ChevronUp, FileText } from 'lucide-react';
+import { TrendingUp, TrendingDown, Trash2, Download, ChevronDown, ChevronUp, FileText, Settings } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import DateRangeFilter from '@/components/DateRangeFilter';
@@ -42,6 +48,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
   const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
   const [expandedTransactions, setExpandedTransactions] = useState<Set<string>>(new Set());
   const [internalCurrencyFilter, setInternalCurrencyFilter] = useState<string | null>(null);
+  const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
 
   const filteredTransactions = useMemo(() => {
     let filtered = transactions;
@@ -379,6 +386,11 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                         <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0" onClick={() => toggleExpand(transaction.id)}>
                           {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                         </Button>
+                        {onUpdate && (
+                          <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-primary" onClick={() => setEditingTransactionId(transaction.id)}>
+                            <Settings className="h-4 w-4" />
+                          </Button>
+                        )}
                         {onDelete && (
                           <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-destructive" onClick={() => onDelete(transaction.id)}>
                             <Trash2 className="h-4 w-4" />
@@ -433,94 +445,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                             <p className="font-medium">{transaction.issuedTo}</p>
                           </div>
                         )}
-                        {onUpdate && (
-                          <>
-                            {onLinkNotification && notifications.length > 0 && (() => {
-                              const linked = notifications.find(n => n.metadata?.transaction_id === transaction.id);
-                              const available = notifications.filter(n => !n.metadata?.transaction_id && n.metadata?.amount);
-                              if (!linked && available.length === 0) return null;
-                              return (
-                                <>
-                                  <div className="col-span-2">
-                                    <p className="text-muted-foreground text-xs mb-1">Привязать уведомление</p>
-                                    <Select
-                                      value={linked?.id || '__none__'}
-                                      onValueChange={(val) => {
-                                        if (val === '__none__') {
-                                          if (linked && onUnlinkNotification) onUnlinkNotification(transaction.id);
-                                        } else {
-                                          onLinkNotification(transaction.id, val);
-                                        }
-                                      }}
-                                    >
-                                      <SelectTrigger className="h-8 text-sm">
-                                        <SelectValue placeholder="Выберите уведомление..." />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="__none__">— Заполнить вручную —</SelectItem>
-                                        {linked && (
-                                          <SelectItem key={linked.id} value={linked.id}>
-                                            ✓ {linked.metadata?.issued_to || linked.title} — {linked.metadata?.amount} {linked.metadata?.currency || 'PLN'}
-                                          </SelectItem>
-                                        )}
-                                        {available.map(n => (
-                                          <SelectItem key={n.id} value={n.id}>
-                                            {n.metadata?.issued_to || n.title} — {n.metadata?.amount} {n.metadata?.currency || 'PLN'} ({n.metadata?.department_name || 'без отдела'})
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                </>
-                              );
-                            })()}
-                            {!notifications.find(n => n.metadata?.transaction_id === transaction.id) && (
-                              <>
-                                <div className="col-span-2">
-                                  <p className="text-muted-foreground text-xs mb-1">Название отдела</p>
-                                  <Select
-                                    value={transaction.category || '__none__'}
-                                    onValueChange={(val) => {
-                                      if (val === '__none__') {
-                                        onUpdate(transaction.id, { category: null as any, departmentName: null as any });
-                                      } else {
-                                        const cat = categories.find(c => c.id === val);
-                                        onUpdate(transaction.id, { category: val as any, departmentName: cat?.name });
-                                      }
-                                    }}
-                                  >
-                                    <SelectTrigger className="h-8 text-sm">
-                                      <SelectValue placeholder="Выберите отдел..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="__none__">— Без отдела —</SelectItem>
-                                      {(transaction.type === 'income'
-                                        ? categories.filter(c => c.type === 'income')
-                                        : categories.filter(c => c.type === 'expense')
-                                      ).map(c => (
-                                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <div className="col-span-2">
-                                  <p className="text-muted-foreground text-xs mb-1">Комментарий</p>
-                                  <Textarea
-                                    className="text-sm min-h-[60px]"
-                                    placeholder="Добавить комментарий..."
-                                    defaultValue={transaction.comment || ''}
-                                    onBlur={(e) => {
-                                      const val = e.target.value.trim();
-                                      if (val !== (transaction.comment || '')) {
-                                        onUpdate(transaction.id, { comment: val || null, description: val || null });
-                                      }
-                                    }}
-                                  />
-                                </div>
-                              </>
-                            )}
-                          </>
-                        )}
                       </div>
                     )}
                   </div>
@@ -555,13 +479,14 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                 <th className="h-12 px-3 text-left align-middle font-medium text-muted-foreground">{t('category')}</th>
                 <th className="h-12 px-2 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">{t('amount')}</th>
                 <th className="h-12 w-8 px-1"></th>
+                {onUpdate && <th className="h-12 w-8 px-1"></th>}
                 {onDelete && <th className="h-12 w-8 px-1"></th>}
               </tr>
             </thead>
             <tbody className="[&_tr:last-child]:border-0">
               {filteredTransactions.length === 0 ? (
                 <tr>
-                  <td colSpan={onDelete ? 6 : 5} className="text-center text-muted-foreground py-8 p-4">
+                  <td colSpan={99} className="text-center text-muted-foreground py-8 p-4">
                     {t('noTransactions')}
                   </td>
                 </tr>
@@ -591,6 +516,13 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                             {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                           </Button>
                         </td>
+                        {onUpdate && (
+                          <td className="p-4 w-8 px-1 align-middle">
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-primary" onClick={() => setEditingTransactionId(transaction.id)}>
+                              <Settings className="h-4 w-4" />
+                            </Button>
+                          </td>
+                        )}
                         {onDelete && (
                           <td className="p-4 w-8 px-1 align-middle">
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => onDelete(transaction.id)}>
@@ -601,7 +533,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                       </tr>
                       {isExpanded && (
                         <tr className="bg-muted/30 border-b">
-                          <td colSpan={onDelete ? 6 : 5} className="p-4 py-3">
+                          <td colSpan={99} className="p-4 py-3">
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                               <div>
                                 <p className="text-muted-foreground text-xs">{t('type')}</p>
@@ -654,94 +586,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                   <p className="font-medium">{transaction.cashierName}</p>
                                 </div>
                               )}
-                              {onUpdate && (
-                                <>
-                                  {onLinkNotification && notifications.length > 0 && (() => {
-                                    const linked = notifications.find(n => n.metadata?.transaction_id === transaction.id);
-                                    const available = notifications.filter(n => !n.metadata?.transaction_id && n.metadata?.amount);
-                                    if (!linked && available.length === 0) return null;
-                                    return (
-                                      <>
-                                        <div className="col-span-2">
-                                          <p className="text-muted-foreground text-xs mb-1">Привязать уведомление</p>
-                                          <Select
-                                            value={linked?.id || '__none__'}
-                                            onValueChange={(val) => {
-                                              if (val === '__none__') {
-                                                if (linked && onUnlinkNotification) onUnlinkNotification(transaction.id);
-                                              } else {
-                                                onLinkNotification(transaction.id, val);
-                                              }
-                                            }}
-                                          >
-                                            <SelectTrigger className="h-8 text-sm">
-                                              <SelectValue placeholder="Выберите уведомление..." />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="__none__">— Заполнить вручную —</SelectItem>
-                                              {linked && (
-                                                <SelectItem key={linked.id} value={linked.id}>
-                                                  ✓ {linked.metadata?.issued_to || linked.title} — {linked.metadata?.amount} {linked.metadata?.currency || 'PLN'}
-                                                </SelectItem>
-                                              )}
-                                              {available.map(n => (
-                                                <SelectItem key={n.id} value={n.id}>
-                                                  {n.metadata?.issued_to || n.title} — {n.metadata?.amount} {n.metadata?.currency || 'PLN'} ({n.metadata?.department_name || 'без отдела'})
-                                                </SelectItem>
-                                              ))}
-                                            </SelectContent>
-                                          </Select>
-                                        </div>
-                                      </>
-                                    );
-                                  })()}
-                                  {!notifications.find(n => n.metadata?.transaction_id === transaction.id) && (
-                                    <>
-                                      <div className="col-span-2">
-                                        <p className="text-muted-foreground text-xs mb-1">Название отдела</p>
-                                        <Select
-                                          value={transaction.category || '__none__'}
-                                          onValueChange={(val) => {
-                                            if (val === '__none__') {
-                                              onUpdate(transaction.id, { category: null as any, departmentName: null as any });
-                                            } else {
-                                              const cat = categories.find(c => c.id === val);
-                                              onUpdate(transaction.id, { category: val as any, departmentName: cat?.name });
-                                            }
-                                          }}
-                                        >
-                                          <SelectTrigger className="h-8 text-sm">
-                                            <SelectValue placeholder="Выберите отдел..." />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            <SelectItem value="__none__">— Без отдела —</SelectItem>
-                                            {(transaction.type === 'income'
-                                              ? categories.filter(c => c.type === 'income')
-                                              : categories.filter(c => c.type === 'expense')
-                                            ).map(c => (
-                                              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-                                      </div>
-                                      <div className="col-span-2">
-                                        <p className="text-muted-foreground text-xs mb-1">Комментарий</p>
-                                        <Textarea
-                                          className="text-sm min-h-[60px]"
-                                          placeholder="Добавить комментарий..."
-                                          defaultValue={transaction.comment || ''}
-                                          onBlur={(e) => {
-                                            const val = e.target.value.trim();
-                                            if (val !== (transaction.comment || '')) {
-                                              onUpdate(transaction.id, { comment: val || null, description: val || null });
-                                            }
-                                          }}
-                                        />
-                                      </div>
-                                    </>
-                                  )}
-                                </>
-                              )}
                             </div>
                           </td>
                         </tr>
@@ -792,6 +636,104 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
           {t('showingTransactions')}: {filteredTransactions.length}
         </p>
       </CardContent>
+
+      {/* Edit transaction dialog */}
+      {onUpdate && editingTransactionId && (() => {
+        const transaction = transactions.find(t => t.id === editingTransactionId);
+        if (!transaction) return null;
+        const linked = notifications.find(n => n.metadata?.transaction_id === transaction.id);
+        const available = notifications.filter(n => !n.metadata?.transaction_id && n.metadata?.amount);
+        const showNotificationSelect = onLinkNotification && (linked || available.length > 0);
+        return (
+          <Dialog open={true} onOpenChange={(open) => { if (!open) setEditingTransactionId(null); }}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Настройка транзакции</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                {showNotificationSelect && (
+                  <div>
+                    <p className="text-muted-foreground text-xs mb-1">Привязать уведомление (PDF)</p>
+                    <Select
+                      value={linked?.id || '__none__'}
+                      onValueChange={(val) => {
+                        if (val === '__none__') {
+                          if (linked && onUnlinkNotification) onUnlinkNotification(transaction.id);
+                        } else {
+                          onLinkNotification(transaction.id, val);
+                          setEditingTransactionId(null);
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue placeholder="Выберите уведомление..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">— Заполнить вручную —</SelectItem>
+                        {linked && (
+                          <SelectItem key={linked.id} value={linked.id}>
+                            ✓ {linked.metadata?.issued_to || linked.title} — {linked.metadata?.amount} {linked.metadata?.currency || 'PLN'}
+                          </SelectItem>
+                        )}
+                        {available.map(n => (
+                          <SelectItem key={n.id} value={n.id}>
+                            {n.metadata?.issued_to || n.title} — {n.metadata?.amount} {n.metadata?.currency || 'PLN'} ({n.metadata?.department_name || 'без отдела'})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {!linked && (
+                  <>
+                    <div>
+                      <p className="text-muted-foreground text-xs mb-1">Название отдела</p>
+                      <Select
+                        value={transaction.category || '__none__'}
+                        onValueChange={(val) => {
+                          if (val === '__none__') {
+                            onUpdate(transaction.id, { category: null as any, departmentName: null as any });
+                          } else {
+                            const cat = categories.find(c => c.id === val);
+                            onUpdate(transaction.id, { category: val as any, departmentName: cat?.name });
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="h-9 text-sm">
+                          <SelectValue placeholder="Выберите отдел..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">— Без отдела —</SelectItem>
+                          {(transaction.type === 'income'
+                            ? categories.filter(c => c.type === 'income')
+                            : categories.filter(c => c.type === 'expense')
+                          ).map(c => (
+                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs mb-1">Комментарий</p>
+                      <Textarea
+                        className="text-sm min-h-[80px]"
+                        placeholder="Добавить комментарий..."
+                        defaultValue={transaction.comment || ''}
+                        onBlur={(e) => {
+                          const val = e.target.value.trim();
+                          if (val !== (transaction.comment || '')) {
+                            onUpdate(transaction.id, { comment: val || null, description: val || null });
+                          }
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
     </Card>
   );
 };
