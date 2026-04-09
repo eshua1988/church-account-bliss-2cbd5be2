@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Transaction, CURRENCY_SYMBOLS } from '@/types/transaction';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { format, startOfMonth, endOfMonth, subMonths, isWithinInterval, startOfYear, endOfYear } from 'date-fns';
@@ -15,18 +15,21 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import DateRangeFilter from '@/components/DateRangeFilter';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 
 interface StatisticsTableProps {
   transactions: Transaction[];
   getCategoryName: (id: string) => string;
   onDelete?: (id: string) => void;
+  onUpdate?: (id: string, updates: Partial<Transaction>) => void;
   selectedCurrency?: string | null;
   categories?: { id: string; name: string; type: string }[];
 }
 
 type TimeRange = 'all' | 'thisMonth' | 'lastMonth' | 'last3Months' | 'last6Months' | 'thisYear';
 
-export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selectedCurrency, categories = [] }: StatisticsTableProps) => {
+export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpdate, selectedCurrency, categories = [] }: StatisticsTableProps) => {
   const { t, getDateLocale } = useTranslation();
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
@@ -396,11 +399,61 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
                             <p className="font-medium">{transaction.description}</p>
                           </div>
                         )}
+                        {transaction.bankTitle && (
+                          <div className="col-span-2">
+                            <p className="text-muted-foreground text-xs">Tytuł</p>
+                            <p className="font-medium">{transaction.bankTitle}</p>
+                          </div>
+                        )}
+                        {transaction.bankSender && (
+                          <div className="col-span-2">
+                            <p className="text-muted-foreground text-xs">Nadawca</p>
+                            <p className="font-medium">{transaction.bankSender}</p>
+                          </div>
+                        )}
+                        {transaction.bankRecipient && (
+                          <div className="col-span-2">
+                            <p className="text-muted-foreground text-xs">Odbiorca</p>
+                            <p className="font-medium">{transaction.bankRecipient}</p>
+                          </div>
+                        )}
                         {transaction.issuedTo && (
                           <div className="col-span-2">
                             <p className="text-muted-foreground text-xs">Wydano</p>
                             <p className="font-medium">{transaction.issuedTo}</p>
                           </div>
+                        )}
+                        {onUpdate && (
+                          <>
+                            <div className="col-span-2">
+                              <p className="text-muted-foreground text-xs mb-1">Название отдела</p>
+                              <Input
+                                className="h-8 text-sm"
+                                placeholder="Введите название отдела..."
+                                defaultValue={transaction.departmentName || ''}
+                                onBlur={(e) => {
+                                  const val = e.target.value.trim();
+                                  if (val !== (transaction.departmentName || '')) {
+                                    onUpdate(transaction.id, { departmentName: val || undefined });
+                                  }
+                                }}
+                              />
+                            </div>
+                            <div className="col-span-2">
+                              <p className="text-muted-foreground text-xs mb-1">Комментарий</p>
+                              <Textarea
+                                className="text-sm min-h-[60px]"
+                                placeholder="Добавить комментарий..."
+                                defaultValue={transaction.comment || ''}
+                                onBlur={(e) => {
+                                  const val = e.target.value.trim();
+                                  if (val !== (transaction.comment || '')) {
+                                    onUpdate(transaction.id, { comment: val || undefined });
+                                  }
+                                }}
+                              />
+                            </div>
+                          </>
                         )}
                       </div>
                     )}
@@ -499,6 +552,24 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
                                   <p className="font-medium">{transaction.description}</p>
                                 </div>
                               )}
+                              {transaction.bankTitle && (
+                                <div className="col-span-2">
+                                  <p className="text-muted-foreground text-xs">Tytuł</p>
+                                  <p className="font-medium">{transaction.bankTitle}</p>
+                                </div>
+                              )}
+                              {transaction.bankSender && (
+                                <div>
+                                  <p className="text-muted-foreground text-xs">Nadawca</p>
+                                  <p className="font-medium">{transaction.bankSender}</p>
+                                </div>
+                              )}
+                              {transaction.bankRecipient && (
+                                <div>
+                                  <p className="text-muted-foreground text-xs">Odbiorca</p>
+                                  <p className="font-medium">{transaction.bankRecipient}</p>
+                                </div>
+                              )}
                               {transaction.issuedTo && (
                                 <div>
                                   <p className="text-muted-foreground text-xs">{t('issuedTo') || 'Выдано'}</p>
@@ -522,6 +593,38 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, selec
                                   <p className="text-muted-foreground text-xs">{t('cashierName') || 'Кассир'}</p>
                                   <p className="font-medium">{transaction.cashierName}</p>
                                 </div>
+                              )}
+                              {onUpdate && (
+                                <>
+                                  <div className="col-span-2">
+                                    <p className="text-muted-foreground text-xs mb-1">Название отдела</p>
+                                    <Input
+                                      className="h-8 text-sm"
+                                      placeholder="Введите название отдела..."
+                                      defaultValue={transaction.departmentName || ''}
+                                      onBlur={(e) => {
+                                        const val = e.target.value.trim();
+                                        if (val !== (transaction.departmentName || '')) {
+                                          onUpdate(transaction.id, { departmentName: val || undefined });
+                                        }
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="col-span-2">
+                                    <p className="text-muted-foreground text-xs mb-1">Комментарий</p>
+                                    <Textarea
+                                      className="text-sm min-h-[60px]"
+                                      placeholder="Добавить комментарий..."
+                                      defaultValue={transaction.comment || ''}
+                                      onBlur={(e) => {
+                                        const val = e.target.value.trim();
+                                        if (val !== (transaction.comment || '')) {
+                                          onUpdate(transaction.id, { comment: val || undefined });
+                                        }
+                                      }}
+                                    />
+                                  </div>
+                                </>
                               )}
                             </div>
                           </td>

@@ -208,8 +208,16 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
           if (col !== -1) {
             row[col] = `${tx.amount} ${tx.currency}`;
             const noteParts: string[] = [];
-            if (tx.description) noteParts.push(`Описание: ${tx.description}`);
-            if (tx.type === 'expense' && tx.issuedTo) noteParts.push(`Кому: ${tx.issuedTo}`);
+            if (tx.departmentName) noteParts.push(`Отдел: ${tx.departmentName}`);
+            if (tx.comment) noteParts.push(`Комментарий: ${tx.comment}`);
+            if (noteParts.length === 0) {
+              // No user-set department/comment — use bank data
+              if (tx.bankTitle) noteParts.push(`Tytuł: ${tx.bankTitle}`);
+              if (tx.bankSender) noteParts.push(`Nadawca: ${tx.bankSender}`);
+              if (tx.bankRecipient) noteParts.push(`Odbiorca: ${tx.bankRecipient}`);
+              if (tx.description && !tx.bankTitle) noteParts.push(`Описание: ${tx.description}`);
+              if (tx.type === 'expense' && tx.issuedTo) noteParts.push(`Кому: ${tx.issuedTo}`);
+            }
             if (noteParts.length > 0) notes.push({ row: rowIndex + 1, col, note: noteParts.join('\n') });
           }
           rows.push(row);

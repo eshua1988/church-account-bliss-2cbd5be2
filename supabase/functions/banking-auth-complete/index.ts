@@ -150,16 +150,22 @@ Deno.serve(async (req) => {
         for (const tx of pageTxs) {
           const amount = parseFloat(tx.transaction_amount?.amount || tx.amount || '0')
           const debit = tx.credit_debit_indicator === 'DBIT' || amount < 0
+          const bankTitle = Array.isArray(tx.remittance_information)
+            ? tx.remittance_information.join(' ')
+            : (tx.remittance_information || '')
+          const bankSender = tx.debtor?.name || ''
+          const bankRecipient = tx.creditor?.name || ''
           allTx.push({
             date: tx.booking_date || tx.value_date || dateFrom,
             amount: Math.abs(amount),
-            description: Array.isArray(tx.remittance_information)
-              ? tx.remittance_information.join(' ')
-              : (tx.remittance_information || tx.debtor?.name || tx.creditor?.name || resolvedBankName),
+            description: bankTitle || bankSender || bankRecipient || resolvedBankName,
             type: debit ? 'expense' : 'income',
             source: resolvedBankName.toLowerCase().replace(/\s+/g, '_'),
             external_id: tx.entry_reference || tx.transaction_id || null,
             iban,
+            bank_title: bankTitle || null,
+            bank_sender: bankSender || null,
+            bank_recipient: bankRecipient || null,
           })
         }
 
@@ -204,6 +210,9 @@ Deno.serve(async (req) => {
               type: t.type,
               source: resolvedBankName.toLowerCase().replace(/\s+/g, '_'),
               external_id: t.external_id || null,
+              bank_title: t.bank_title || null,
+              bank_sender: t.bank_sender || null,
+              bank_recipient: t.bank_recipient || null,
             }))
           )
           insertError = error ? String(error.message) : null

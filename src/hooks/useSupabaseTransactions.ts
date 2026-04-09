@@ -19,6 +19,12 @@ interface DbTransaction {
   synced_to_sheets: boolean;
   created_at: string;
   updated_at: string;
+  bank_sender: string | null;
+  bank_recipient: string | null;
+  bank_title: string | null;
+  source: string | null;
+  department_name: string | null;
+  comment: string | null;
 }
 
 const mapDbToTransaction = (dbTx: DbTransaction): Transaction => ({
@@ -34,6 +40,12 @@ const mapDbToTransaction = (dbTx: DbTransaction): Transaction => ({
   decisionNumber: dbTx.decision_number || undefined,
   amountInWords: dbTx.amount_in_words || undefined,
   cashierName: dbTx.cashier_name || undefined,
+  bankTitle: dbTx.bank_title || undefined,
+  bankSender: dbTx.bank_sender || undefined,
+  bankRecipient: dbTx.bank_recipient || undefined,
+  source: dbTx.source || undefined,
+  departmentName: dbTx.department_name || undefined,
+  comment: dbTx.comment || undefined,
 });
 
 export const useSupabaseTransactions = () => {
@@ -160,6 +172,8 @@ export const useSupabaseTransactions = () => {
     if (updates.decisionNumber !== undefined) dbUpdates.decision_number = updates.decisionNumber;
     if (updates.amountInWords !== undefined) dbUpdates.amount_in_words = updates.amountInWords;
     if (updates.cashierName !== undefined) dbUpdates.cashier_name = updates.cashierName;
+    if (updates.departmentName !== undefined) dbUpdates.department_name = updates.departmentName;
+    if (updates.comment !== undefined) dbUpdates.comment = updates.comment;
 
     const { error } = await supabase
       .from('transactions')

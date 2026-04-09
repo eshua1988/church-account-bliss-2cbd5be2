@@ -52,6 +52,7 @@ const Index = () => {
     loading: transactionsLoading,
     addTransaction,
     deleteTransaction,
+    updateTransaction,
     getBalanceByCurrency,
     getTransactionsByCategory,
     getMonthlyData,
@@ -281,6 +282,13 @@ const Index = () => {
                         transactions={transactions} 
                         getCategoryName={getCategoryName} 
                         onDelete={handleDeleteTransaction}
+                        onUpdate={async (id, updates) => {
+                          try {
+                            await updateTransaction(id, updates);
+                          } catch (error) {
+                            toast({ title: 'Ошибка сохранения', variant: 'destructive' });
+                          }
+                        }}
                         categories={categories}
                       />
                     </div>

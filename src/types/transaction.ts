@@ -29,6 +29,14 @@ export interface Transaction {
   decisionNumber?: string; // Na podstawie decyzji rady prezbiterów Nr.
   amountInWords?: string; // Kwota słownie
   cashierName?: string; // Kasjer
+  // Bank transaction details
+  bankTitle?: string; // Tytuł przelewu
+  bankSender?: string; // Nadawca
+  bankRecipient?: string; // Odbiorca
+  source?: string; // Bank source name
+  // User-editable fields
+  departmentName?: string; // Отдел
+  comment?: string; // Комментарий
 }
 
 export const CURRENCY_SYMBOLS: Record<Currency, string> = {
