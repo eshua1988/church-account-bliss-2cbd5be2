@@ -396,6 +396,12 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                             {transaction.type === 'income' ? t('incomeType') : t('expense')}
                           </p>
                         </div>
+                        {transaction.departmentName && (
+                          <div>
+                            <p className="text-muted-foreground text-xs">Название отдела</p>
+                            <p className="font-medium">{transaction.departmentName}</p>
+                          </div>
+                        )}
                         {transaction.description && (
                           <div className="col-span-2">
                             <p className="text-muted-foreground text-xs">{t('description')}</p>
@@ -603,6 +609,12 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                   {transaction.type === 'income' ? t('incomeType') : t('expense')}
                                 </p>
                               </div>
+                              {transaction.departmentName && (
+                                <div>
+                                  <p className="text-muted-foreground text-xs">Название отдела</p>
+                                  <p className="font-medium">{transaction.departmentName}</p>
+                                </div>
+                              )}
                               {transaction.description && (
                                 <div className="col-span-2">
                                   <p className="text-muted-foreground text-xs">{t('description')}</p>
