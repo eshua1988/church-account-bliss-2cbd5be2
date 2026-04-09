@@ -428,82 +428,85 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                         )}
                         {onUpdate && (
                           <>
-                            <div className="col-span-2">
-                              <p className="text-muted-foreground text-xs mb-1">Название отдела</p>
-                              <Select
-                                value={transaction.category || '__none__'}
-                                onValueChange={(val) => {
-                                  if (val === '__none__') {
-                                    onUpdate(transaction.id, { category: undefined as any, departmentName: undefined });
-                                  } else {
-                                    const cat = categories.find(c => c.id === val);
-                                    onUpdate(transaction.id, { category: val as any, departmentName: cat?.name });
-                                  }
-                                }}
-                              >
-                                <SelectTrigger className="h-8 text-sm">
-                                  <SelectValue placeholder="Выберите отдел..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="__none__">— Без отдела —</SelectItem>
-                                  {(transaction.type === 'income'
-                                    ? categories.filter(c => c.type === 'income')
-                                    : categories.filter(c => c.type === 'expense')
-                                  ).map(c => (
-                                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="col-span-2">
-                              <p className="text-muted-foreground text-xs mb-1">Комментарий</p>
-                              <Textarea
-                                className="text-sm min-h-[60px]"
-                                placeholder="Добавить комментарий..."
-                                defaultValue={transaction.comment || ''}
-                                onBlur={(e) => {
-                                  const val = e.target.value.trim();
-                                  if (val !== (transaction.comment || '')) {
-                                    onUpdate(transaction.id, { comment: val || undefined });
-                                  }
-                                }}
-                              />
-                            </div>
-                            {onLinkNotification && notifications.length > 0 && (
-                              <div className="col-span-2">
-                                <p className="text-muted-foreground text-xs mb-1">Привязать уведомление</p>
-                                {(() => {
-                                  const linked = notifications.find(n => n.metadata?.transaction_id === transaction.id);
-                                  const available = notifications.filter(n => !n.metadata?.transaction_id && n.metadata?.amount);
-                                  return (
-                                    <Select
-                                      value={linked?.id || '__none__'}
-                                      onValueChange={(val) => {
-                                        if (val !== '__none__') {
-                                          onLinkNotification(transaction.id, val);
-                                        }
-                                      }}
-                                    >
-                                      <SelectTrigger className="h-8 text-sm">
-                                        <SelectValue placeholder="Выберите уведомление..." />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="__none__">— Нет —</SelectItem>
-                                        {linked && (
-                                          <SelectItem key={linked.id} value={linked.id}>
-                                            ✓ {linked.metadata?.issued_to || linked.title} — {linked.metadata?.amount} {linked.metadata?.currency || 'PLN'}
-                                          </SelectItem>
-                                        )}
-                                        {available.map(n => (
-                                          <SelectItem key={n.id} value={n.id}>
-                                            {n.metadata?.issued_to || n.title} — {n.metadata?.amount} {n.metadata?.currency || 'PLN'} ({n.metadata?.department_name || 'без отдела'})
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  );
-                                })()}
-                              </div>
+                            {onLinkNotification && notifications.length > 0 && (() => {
+                              const linked = notifications.find(n => n.metadata?.transaction_id === transaction.id);
+                              const available = notifications.filter(n => !n.metadata?.transaction_id && n.metadata?.amount);
+                              if (!linked && available.length === 0) return null;
+                              return (
+                                <div className="col-span-2">
+                                  <p className="text-muted-foreground text-xs mb-1">Привязать уведомление</p>
+                                  <Select
+                                    value={linked?.id || '__none__'}
+                                    onValueChange={(val) => {
+                                      if (val !== '__none__') {
+                                        onLinkNotification(transaction.id, val);
+                                      }
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-8 text-sm">
+                                      <SelectValue placeholder="Выберите уведомление..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="__none__">— Заполнить вручную —</SelectItem>
+                                      {linked && (
+                                        <SelectItem key={linked.id} value={linked.id}>
+                                          ✓ {linked.metadata?.issued_to || linked.title} — {linked.metadata?.amount} {linked.metadata?.currency || 'PLN'}
+                                        </SelectItem>
+                                      )}
+                                      {available.map(n => (
+                                        <SelectItem key={n.id} value={n.id}>
+                                          {n.metadata?.issued_to || n.title} — {n.metadata?.amount} {n.metadata?.currency || 'PLN'} ({n.metadata?.department_name || 'без отдела'})
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              );
+                            })()}
+                            {!notifications.find(n => n.metadata?.transaction_id === transaction.id) && (
+                              <>
+                                <div className="col-span-2">
+                                  <p className="text-muted-foreground text-xs mb-1">Название отдела</p>
+                                  <Select
+                                    value={transaction.category || '__none__'}
+                                    onValueChange={(val) => {
+                                      if (val === '__none__') {
+                                        onUpdate(transaction.id, { category: null as any, departmentName: null as any });
+                                      } else {
+                                        const cat = categories.find(c => c.id === val);
+                                        onUpdate(transaction.id, { category: val as any, departmentName: cat?.name });
+                                      }
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-8 text-sm">
+                                      <SelectValue placeholder="Выберите отдел..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="__none__">— Без отдела —</SelectItem>
+                                      {(transaction.type === 'income'
+                                        ? categories.filter(c => c.type === 'income')
+                                        : categories.filter(c => c.type === 'expense')
+                                      ).map(c => (
+                                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="col-span-2">
+                                  <p className="text-muted-foreground text-xs mb-1">Комментарий</p>
+                                  <Textarea
+                                    className="text-sm min-h-[60px]"
+                                    placeholder="Добавить комментарий..."
+                                    defaultValue={transaction.comment || ''}
+                                    onBlur={(e) => {
+                                      const val = e.target.value.trim();
+                                      if (val !== (transaction.comment || '')) {
+                                        onUpdate(transaction.id, { comment: val || null });
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              </>
                             )}
                           </>
                         )}
@@ -648,82 +651,85 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                               )}
                               {onUpdate && (
                                 <>
-                                  <div className="col-span-2">
-                                    <p className="text-muted-foreground text-xs mb-1">Название отдела</p>
-                                    <Select
-                                      value={transaction.category || '__none__'}
-                                      onValueChange={(val) => {
-                                        if (val === '__none__') {
-                                          onUpdate(transaction.id, { category: undefined as any, departmentName: undefined });
-                                        } else {
-                                          const cat = categories.find(c => c.id === val);
-                                          onUpdate(transaction.id, { category: val as any, departmentName: cat?.name });
-                                        }
-                                      }}
-                                    >
-                                      <SelectTrigger className="h-8 text-sm">
-                                        <SelectValue placeholder="Выберите отдел..." />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="__none__">— Без отдела —</SelectItem>
-                                        {(transaction.type === 'income'
-                                          ? categories.filter(c => c.type === 'income')
-                                          : categories.filter(c => c.type === 'expense')
-                                        ).map(c => (
-                                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  <div className="col-span-2">
-                                    <p className="text-muted-foreground text-xs mb-1">Комментарий</p>
-                                    <Textarea
-                                      className="text-sm min-h-[60px]"
-                                      placeholder="Добавить комментарий..."
-                                      defaultValue={transaction.comment || ''}
-                                      onBlur={(e) => {
-                                        const val = e.target.value.trim();
-                                        if (val !== (transaction.comment || '')) {
-                                          onUpdate(transaction.id, { comment: val || undefined });
-                                        }
-                                      }}
-                                    />
-                                  </div>
-                                  {onLinkNotification && notifications.length > 0 && (
-                                    <div className="col-span-2">
-                                      <p className="text-muted-foreground text-xs mb-1">Привязать уведомление</p>
-                                      {(() => {
-                                        const linked = notifications.find(n => n.metadata?.transaction_id === transaction.id);
-                                        const available = notifications.filter(n => !n.metadata?.transaction_id && n.metadata?.amount);
-                                        return (
-                                          <Select
-                                            value={linked?.id || '__none__'}
-                                            onValueChange={(val) => {
-                                              if (val !== '__none__') {
-                                                onLinkNotification(transaction.id, val);
-                                              }
-                                            }}
-                                          >
-                                            <SelectTrigger className="h-8 text-sm">
-                                              <SelectValue placeholder="Выберите уведомление..." />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="__none__">— Нет —</SelectItem>
-                                              {linked && (
-                                                <SelectItem key={linked.id} value={linked.id}>
-                                                  ✓ {linked.metadata?.issued_to || linked.title} — {linked.metadata?.amount} {linked.metadata?.currency || 'PLN'}
-                                                </SelectItem>
-                                              )}
-                                              {available.map(n => (
-                                                <SelectItem key={n.id} value={n.id}>
-                                                  {n.metadata?.issued_to || n.title} — {n.metadata?.amount} {n.metadata?.currency || 'PLN'} ({n.metadata?.department_name || 'без отдела'})
-                                                </SelectItem>
-                                              ))}
-                                            </SelectContent>
-                                          </Select>
-                                        );
-                                      })()}
-                                    </div>
+                                  {onLinkNotification && notifications.length > 0 && (() => {
+                                    const linked = notifications.find(n => n.metadata?.transaction_id === transaction.id);
+                                    const available = notifications.filter(n => !n.metadata?.transaction_id && n.metadata?.amount);
+                                    if (!linked && available.length === 0) return null;
+                                    return (
+                                      <div className="col-span-2">
+                                        <p className="text-muted-foreground text-xs mb-1">Привязать уведомление</p>
+                                        <Select
+                                          value={linked?.id || '__none__'}
+                                          onValueChange={(val) => {
+                                            if (val !== '__none__') {
+                                              onLinkNotification(transaction.id, val);
+                                            }
+                                          }}
+                                        >
+                                          <SelectTrigger className="h-8 text-sm">
+                                            <SelectValue placeholder="Выберите уведомление..." />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="__none__">— Заполнить вручную —</SelectItem>
+                                            {linked && (
+                                              <SelectItem key={linked.id} value={linked.id}>
+                                                ✓ {linked.metadata?.issued_to || linked.title} — {linked.metadata?.amount} {linked.metadata?.currency || 'PLN'}
+                                              </SelectItem>
+                                            )}
+                                            {available.map(n => (
+                                              <SelectItem key={n.id} value={n.id}>
+                                                {n.metadata?.issued_to || n.title} — {n.metadata?.amount} {n.metadata?.currency || 'PLN'} ({n.metadata?.department_name || 'без отдела'})
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    );
+                                  })()}
+                                  {!notifications.find(n => n.metadata?.transaction_id === transaction.id) && (
+                                    <>
+                                      <div className="col-span-2">
+                                        <p className="text-muted-foreground text-xs mb-1">Название отдела</p>
+                                        <Select
+                                          value={transaction.category || '__none__'}
+                                          onValueChange={(val) => {
+                                            if (val === '__none__') {
+                                              onUpdate(transaction.id, { category: null as any, departmentName: null as any });
+                                            } else {
+                                              const cat = categories.find(c => c.id === val);
+                                              onUpdate(transaction.id, { category: val as any, departmentName: cat?.name });
+                                            }
+                                          }}
+                                        >
+                                          <SelectTrigger className="h-8 text-sm">
+                                            <SelectValue placeholder="Выберите отдел..." />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="__none__">— Без отдела —</SelectItem>
+                                            {(transaction.type === 'income'
+                                              ? categories.filter(c => c.type === 'income')
+                                              : categories.filter(c => c.type === 'expense')
+                                            ).map(c => (
+                                              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <div className="col-span-2">
+                                        <p className="text-muted-foreground text-xs mb-1">Комментарий</p>
+                                        <Textarea
+                                          className="text-sm min-h-[60px]"
+                                          placeholder="Добавить комментарий..."
+                                          defaultValue={transaction.comment || ''}
+                                          onBlur={(e) => {
+                                            const val = e.target.value.trim();
+                                            if (val !== (transaction.comment || '')) {
+                                              onUpdate(transaction.id, { comment: val || null });
+                                            }
+                                          }}
+                                        />
+                                      </div>
+                                    </>
                                   )}
                                 </>
                               )}

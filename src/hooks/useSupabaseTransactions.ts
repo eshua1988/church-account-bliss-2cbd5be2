@@ -165,15 +165,15 @@ export const useSupabaseTransactions = () => {
     if (updates.type) dbUpdates.type = updates.type;
     if (updates.amount !== undefined) dbUpdates.amount = updates.amount;
     if (updates.currency) dbUpdates.currency = updates.currency;
-    if (updates.category !== undefined) dbUpdates.category_id = updates.category || null;
+    if ('category' in updates) dbUpdates.category_id = updates.category || null;
     if (updates.description !== undefined) dbUpdates.description = updates.description;
     if (updates.date) dbUpdates.date = updates.date.toISOString().split('T')[0];
-    if (updates.issuedTo !== undefined) dbUpdates.issued_to = updates.issuedTo;
-    if (updates.decisionNumber !== undefined) dbUpdates.decision_number = updates.decisionNumber;
-    if (updates.amountInWords !== undefined) dbUpdates.amount_in_words = updates.amountInWords;
-    if (updates.cashierName !== undefined) dbUpdates.cashier_name = updates.cashierName;
-    if (updates.departmentName !== undefined) dbUpdates.department_name = updates.departmentName || null;
-    if (updates.comment !== undefined) dbUpdates.comment = updates.comment || null;
+    if ('issuedTo' in updates) dbUpdates.issued_to = updates.issuedTo || null;
+    if ('decisionNumber' in updates) dbUpdates.decision_number = updates.decisionNumber || null;
+    if ('amountInWords' in updates) dbUpdates.amount_in_words = updates.amountInWords || null;
+    if ('cashierName' in updates) dbUpdates.cashier_name = updates.cashierName || null;
+    if ('departmentName' in updates) dbUpdates.department_name = updates.departmentName || null;
+    if ('comment' in updates) dbUpdates.comment = updates.comment || null;
 
     // Optimistic update: immediately update local state
     setTransactions(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
