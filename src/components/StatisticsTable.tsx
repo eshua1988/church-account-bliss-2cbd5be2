@@ -428,9 +428,14 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                             <div className="col-span-2">
                               <p className="text-muted-foreground text-xs mb-1">Название отдела</p>
                               <Select
-                                value={transaction.departmentName || '__none__'}
+                                value={transaction.category || '__none__'}
                                 onValueChange={(val) => {
-                                  onUpdate(transaction.id, { departmentName: val === '__none__' ? undefined : val });
+                                  if (val === '__none__') {
+                                    onUpdate(transaction.id, { category: undefined as any, departmentName: undefined });
+                                  } else {
+                                    const cat = categories.find(c => c.id === val);
+                                    onUpdate(transaction.id, { category: val as any, departmentName: cat?.name });
+                                  }
                                 }}
                               >
                                 <SelectTrigger className="h-8 text-sm">
@@ -442,7 +447,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                     ? categories.filter(c => c.type === 'income')
                                     : categories.filter(c => c.type === 'expense')
                                   ).map(c => (
-                                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
@@ -607,9 +612,14 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                   <div className="col-span-2">
                                     <p className="text-muted-foreground text-xs mb-1">Название отдела</p>
                                     <Select
-                                      value={transaction.departmentName || '__none__'}
+                                      value={transaction.category || '__none__'}
                                       onValueChange={(val) => {
-                                        onUpdate(transaction.id, { departmentName: val === '__none__' ? undefined : val });
+                                        if (val === '__none__') {
+                                          onUpdate(transaction.id, { category: undefined as any, departmentName: undefined });
+                                        } else {
+                                          const cat = categories.find(c => c.id === val);
+                                          onUpdate(transaction.id, { category: val as any, departmentName: cat?.name });
+                                        }
                                       }}
                                     >
                                       <SelectTrigger className="h-8 text-sm">
@@ -621,7 +631,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                           ? categories.filter(c => c.type === 'income')
                                           : categories.filter(c => c.type === 'expense')
                                         ).map(c => (
-                                          <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                                         ))}
                                       </SelectContent>
                                     </Select>

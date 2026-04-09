@@ -165,15 +165,15 @@ export const useSupabaseTransactions = () => {
     if (updates.type) dbUpdates.type = updates.type;
     if (updates.amount !== undefined) dbUpdates.amount = updates.amount;
     if (updates.currency) dbUpdates.currency = updates.currency;
-    if (updates.category) dbUpdates.category_id = updates.category;
+    if (updates.category !== undefined) dbUpdates.category_id = updates.category || null;
     if (updates.description !== undefined) dbUpdates.description = updates.description;
     if (updates.date) dbUpdates.date = updates.date.toISOString().split('T')[0];
     if (updates.issuedTo !== undefined) dbUpdates.issued_to = updates.issuedTo;
     if (updates.decisionNumber !== undefined) dbUpdates.decision_number = updates.decisionNumber;
     if (updates.amountInWords !== undefined) dbUpdates.amount_in_words = updates.amountInWords;
     if (updates.cashierName !== undefined) dbUpdates.cashier_name = updates.cashierName;
-    if (updates.departmentName !== undefined) dbUpdates.department_name = updates.departmentName;
-    if (updates.comment !== undefined) dbUpdates.comment = updates.comment;
+    if (updates.departmentName !== undefined) dbUpdates.department_name = updates.departmentName || null;
+    if (updates.comment !== undefined) dbUpdates.comment = updates.comment || null;
 
     const { error } = await supabase
       .from('transactions')
