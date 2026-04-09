@@ -172,7 +172,8 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
         .filter(cat => cat.type === 'expense')
         .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
-      const headers = ['Date', 'Income', ...sortedExpense.map(c => c.name)];
+      const headers = ['Date', 'Income', ...sortedExpense.map(c => c.name), 'Прочее'];
+      const fallbackCol = headers.length - 1;
 
       // Group by date, sort dates descending
       const dateMap = new Map<string, Transaction[]>();
@@ -199,7 +200,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
             col = 1;
           } else {
             const idx = sortedExpense.findIndex(c => c.id === tx.category);
-            col = idx !== -1 ? 2 + idx : -1;
+            col = idx !== -1 ? 2 + idx : fallbackCol;
           }
 
           const rowIndex = rows.length;

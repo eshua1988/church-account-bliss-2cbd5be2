@@ -99,9 +99,10 @@ export const useGoogleSheetsSync = ({
         .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
         .map(cat => [cat.id, cat.name] as [string, string]);
 
-      // Headers: Date | Income | [expense category columns...]
-      // col 0 = Date, col 1 = Income, col 2+ = expense categories
-      const headers = ['Date', 'Income', ...sortedCategories.map(([, name]) => name)];
+      // Headers: Date | Income | [expense category columns...] | Прочее (fallback)
+      // col 0 = Date, col 1 = Income, col 2+ = expense categories, last = fallback
+      const headers = ['Date', 'Income', ...sortedCategories.map(([, name]) => name), 'Прочее'];
+      const fallbackCol = headers.length - 1;
 
       // Group transactions by date
       const dateMap = new Map<string, Transaction[]>();
@@ -136,7 +137,7 @@ export const useGoogleSheetsSync = ({
             col = 1;
           } else {
             const idx = sortedCategories.findIndex(([id]) => id === tx.category);
-            col = idx !== -1 ? 2 + idx : -1;
+            col = idx !== -1 ? 2 + idx : fallbackCol;
           }
 
           // Try to find an existing row for this date where the target column is empty
@@ -163,8 +164,15 @@ export const useGoogleSheetsSync = ({
             rows[targetRowIndex][col] = `${tx.amount} ${tx.currency}`;
 
             const noteParts: string[] = [];
-            if (tx.description) noteParts.push(`Описание: ${tx.description}`);
-            if (tx.type === 'expense' && tx.issuedTo) noteParts.push(`Кому: ${tx.issuedTo}`);
+            if (tx.departmentName) noteParts.push(`Отдел: ${tx.departmentName}`);
+            if (tx.comment) noteParts.push(`Комментарий: ${tx.comment}`);
+            if (noteParts.length === 0) {
+              if (tx.bankTitle) noteParts.push(`Tytuł: ${tx.bankTitle}`);
+              if (tx.bankSender) noteParts.push(`Nadawca: ${tx.bankSender}`);
+              if (tx.bankRecipient) noteParts.push(`Odbiorca: ${tx.bankRecipient}`);
+              if (tx.description && !tx.bankTitle) noteParts.push(`Описание: ${tx.description}`);
+              if (tx.type === 'expense' && tx.issuedTo) noteParts.push(`Кому: ${tx.issuedTo}`);
+            }
             if (noteParts.length > 0) {
               notes.push({ row: targetRowIndex + 1, col, note: noteParts.join('\n') });
             }
