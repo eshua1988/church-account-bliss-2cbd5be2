@@ -175,13 +175,20 @@ export const useSupabaseTransactions = () => {
     if (updates.departmentName !== undefined) dbUpdates.department_name = updates.departmentName || null;
     if (updates.comment !== undefined) dbUpdates.comment = updates.comment || null;
 
+    // Optimistic update: immediately update local state
+    setTransactions(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+
     const { error } = await supabase
       .from('transactions')
       .update(dbUpdates)
       .eq('id', id);
 
-    if (error) throw error;
-  }, []);
+    if (error) {
+      // Revert on error
+      fetchTransactions();
+      throw error;
+    }
+  }, [fetchTransactions]);
 
   const getTotalByCurrency = useCallback((currency: Currency, type?: TransactionType) => {
     return transactions
