@@ -24,6 +24,7 @@ import { TelegramMenuPage } from '@/components/TelegramMenuPage';
 import { useGoogleSheetsSync } from '@/hooks/useGoogleSheetsSync';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useNotifications } from '@/hooks/useNotifications';
 
 const Index = () => {
   const { t, getDateLocale } = useTranslation();
@@ -71,6 +72,8 @@ const Index = () => {
   } = useSupabaseCategories();
 
   const expenseCategories = getExpenseCategories();
+
+  const { notifications, refetch: refetchNotifications } = useNotifications();
   
   const {
     isSyncing,
@@ -202,6 +205,52 @@ const Index = () => {
     reorderCategories(type, fromIndex, toIndex);
   };
 
+  const handleLinkNotification = async (transactionId: string, notificationId: string) => {
+    const notification = notifications.find(n => n.id === notificationId);
+    if (!notification) return;
+    const meta = notification.metadata;
+    if (!meta) return;
+
+    try {
+      // Find category by department_name or category_id from notification
+      const cats = getExpenseCategories();
+      const matchedCat = meta.category_id
+        ? cats.find(c => c.id === (meta.category_id as string))
+        : meta.department_name
+          ? cats.find(c => c.name === meta.department_name)
+          : undefined;
+
+      const updates: Partial<Transaction> = {};
+      if (matchedCat) {
+        updates.category = matchedCat.id as any;
+        updates.departmentName = matchedCat.name;
+      } else if (meta.department_name) {
+        updates.departmentName = meta.department_name;
+      }
+      if (meta.issued_to) updates.issuedTo = meta.issued_to;
+      if (meta.decision_number) updates.decisionNumber = meta.decision_number as string;
+      if (meta.amount_in_words) updates.amountInWords = meta.amount_in_words as string;
+
+      const descParts = [meta.issued_to, meta.basis as string].filter(Boolean);
+      if (descParts.length > 0) updates.description = descParts.join(' — ');
+
+      if (Object.keys(updates).length > 0) {
+        await updateTransaction(transactionId, updates);
+      }
+
+      // Write transaction_id back to notification metadata
+      await supabase
+        .from('notifications')
+        .update({ metadata: { ...meta, transaction_id: transactionId } })
+        .eq('id', notificationId);
+
+      refetchNotifications();
+      toast({ title: 'Уведомление привязано', description: meta.issued_to || notification.title });
+    } catch (error) {
+      toast({ title: 'Ошибка привязки', variant: 'destructive' });
+    }
+  };
+
   const isLoading = transactionsLoading || categoriesLoading;
 
   if (isLoading) {
@@ -290,6 +339,8 @@ const Index = () => {
                           }
                         }}
                         categories={categories}
+                        notifications={notifications}
+                        onLinkNotification={handleLinkNotification}
                       />
                     </div>
                   </div>

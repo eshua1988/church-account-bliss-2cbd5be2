@@ -10,13 +10,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp, TrendingDown, Trash2, Download, ChevronDown, ChevronUp } from 'lucide-react';
+import { TrendingUp, TrendingDown, Trash2, Download, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import DateRangeFilter from '@/components/DateRangeFilter';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import type { Notification } from '@/hooks/useNotifications';
 
 interface StatisticsTableProps {
   transactions: Transaction[];
@@ -25,11 +26,13 @@ interface StatisticsTableProps {
   onUpdate?: (id: string, updates: Partial<Transaction>) => void;
   selectedCurrency?: string | null;
   categories?: { id: string; name: string; type: string }[];
+  notifications?: Notification[];
+  onLinkNotification?: (transactionId: string, notificationId: string) => void;
 }
 
 type TimeRange = 'all' | 'thisMonth' | 'lastMonth' | 'last3Months' | 'last6Months' | 'thisYear';
 
-export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpdate, selectedCurrency, categories = [] }: StatisticsTableProps) => {
+export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpdate, selectedCurrency, categories = [], notifications = [], onLinkNotification }: StatisticsTableProps) => {
   const { t, getDateLocale } = useTranslation();
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
@@ -466,6 +469,42 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                 }}
                               />
                             </div>
+                            {onLinkNotification && notifications.length > 0 && (
+                              <div className="col-span-2">
+                                <p className="text-muted-foreground text-xs mb-1">Привязать уведомление</p>
+                                {(() => {
+                                  const linked = notifications.find(n => n.metadata?.transaction_id === transaction.id);
+                                  const available = notifications.filter(n => !n.metadata?.transaction_id && n.metadata?.amount);
+                                  return (
+                                    <Select
+                                      value={linked?.id || '__none__'}
+                                      onValueChange={(val) => {
+                                        if (val !== '__none__') {
+                                          onLinkNotification(transaction.id, val);
+                                        }
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-8 text-sm">
+                                        <SelectValue placeholder="Выберите уведомление..." />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="__none__">— Нет —</SelectItem>
+                                        {linked && (
+                                          <SelectItem key={linked.id} value={linked.id}>
+                                            ✓ {linked.metadata?.issued_to || linked.title} — {linked.metadata?.amount} {linked.metadata?.currency || 'PLN'}
+                                          </SelectItem>
+                                        )}
+                                        {available.map(n => (
+                                          <SelectItem key={n.id} value={n.id}>
+                                            {n.metadata?.issued_to || n.title} — {n.metadata?.amount} {n.metadata?.currency || 'PLN'} ({n.metadata?.department_name || 'без отдела'})
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  );
+                                })()}
+                              </div>
+                            )}
                           </>
                         )}
                       </div>
@@ -650,6 +689,42 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                       }}
                                     />
                                   </div>
+                                  {onLinkNotification && notifications.length > 0 && (
+                                    <div className="col-span-2">
+                                      <p className="text-muted-foreground text-xs mb-1">Привязать уведомление</p>
+                                      {(() => {
+                                        const linked = notifications.find(n => n.metadata?.transaction_id === transaction.id);
+                                        const available = notifications.filter(n => !n.metadata?.transaction_id && n.metadata?.amount);
+                                        return (
+                                          <Select
+                                            value={linked?.id || '__none__'}
+                                            onValueChange={(val) => {
+                                              if (val !== '__none__') {
+                                                onLinkNotification(transaction.id, val);
+                                              }
+                                            }}
+                                          >
+                                            <SelectTrigger className="h-8 text-sm">
+                                              <SelectValue placeholder="Выберите уведомление..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="__none__">— Нет —</SelectItem>
+                                              {linked && (
+                                                <SelectItem key={linked.id} value={linked.id}>
+                                                  ✓ {linked.metadata?.issued_to || linked.title} — {linked.metadata?.amount} {linked.metadata?.currency || 'PLN'}
+                                                </SelectItem>
+                                              )}
+                                              {available.map(n => (
+                                                <SelectItem key={n.id} value={n.id}>
+                                                  {n.metadata?.issued_to || n.title} — {n.metadata?.amount} {n.metadata?.currency || 'PLN'} ({n.metadata?.department_name || 'без отдела'})
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        );
+                                      })()}
+                                    </div>
+                                  )}
                                 </>
                               )}
                             </div>
