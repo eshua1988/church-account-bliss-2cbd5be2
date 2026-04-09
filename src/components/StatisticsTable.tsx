@@ -433,34 +433,71 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                               const available = notifications.filter(n => !n.metadata?.transaction_id && n.metadata?.amount);
                               if (!linked && available.length === 0) return null;
                               return (
-                                <div className="col-span-2">
-                                  <p className="text-muted-foreground text-xs mb-1">Привязать уведомление</p>
-                                  <Select
-                                    value={linked?.id || '__none__'}
-                                    onValueChange={(val) => {
-                                      if (val !== '__none__') {
-                                        onLinkNotification(transaction.id, val);
-                                      }
-                                    }}
-                                  >
-                                    <SelectTrigger className="h-8 text-sm">
-                                      <SelectValue placeholder="Выберите уведомление..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="__none__">— Заполнить вручную —</SelectItem>
-                                      {linked && (
-                                        <SelectItem key={linked.id} value={linked.id}>
-                                          ✓ {linked.metadata?.issued_to || linked.title} — {linked.metadata?.amount} {linked.metadata?.currency || 'PLN'}
-                                        </SelectItem>
+                                <>
+                                  <div className="col-span-2">
+                                    <p className="text-muted-foreground text-xs mb-1">Привязать уведомление</p>
+                                    <Select
+                                      value={linked?.id || '__none__'}
+                                      onValueChange={(val) => {
+                                        if (val !== '__none__') {
+                                          onLinkNotification(transaction.id, val);
+                                        }
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-8 text-sm">
+                                        <SelectValue placeholder="Выберите уведомление..." />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="__none__">— Заполнить вручную —</SelectItem>
+                                        {linked && (
+                                          <SelectItem key={linked.id} value={linked.id}>
+                                            ✓ {linked.metadata?.issued_to || linked.title} — {linked.metadata?.amount} {linked.metadata?.currency || 'PLN'}
+                                          </SelectItem>
+                                        )}
+                                        {available.map(n => (
+                                          <SelectItem key={n.id} value={n.id}>
+                                            {n.metadata?.issued_to || n.title} — {n.metadata?.amount} {n.metadata?.currency || 'PLN'} ({n.metadata?.department_name || 'без отдела'})
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  {linked && linked.metadata && (
+                                    <div className="col-span-2 grid grid-cols-2 gap-2 p-3 bg-muted/30 rounded-lg border border-border/50">
+                                      <p className="col-span-2 text-xs font-medium text-primary">Данные из уведомления (PDF)</p>
+                                      {linked.metadata.issued_to && (
+                                        <div>
+                                          <p className="text-muted-foreground text-xs">Wydano (ФИО)</p>
+                                          <p className="font-medium text-sm">{linked.metadata.issued_to}</p>
+                                        </div>
                                       )}
-                                      {available.map(n => (
-                                        <SelectItem key={n.id} value={n.id}>
-                                          {n.metadata?.issued_to || n.title} — {n.metadata?.amount} {n.metadata?.currency || 'PLN'} ({n.metadata?.department_name || 'без отдела'})
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
+                                      {linked.metadata.department_name && (
+                                        <div>
+                                          <p className="text-muted-foreground text-xs">Nazwa działu (Отдел)</p>
+                                          <p className="font-medium text-sm">{linked.metadata.department_name}</p>
+                                        </div>
+                                      )}
+                                      {linked.metadata.basis && (
+                                        <div className="col-span-2">
+                                          <p className="text-muted-foreground text-xs">Na podstawie (Основание)</p>
+                                          <p className="font-medium text-sm">{String(linked.metadata.basis)}</p>
+                                        </div>
+                                      )}
+                                      {linked.metadata.amount && (
+                                        <div>
+                                          <p className="text-muted-foreground text-xs">Kwota (Сумма)</p>
+                                          <p className="font-medium text-sm">{linked.metadata.amount} {linked.metadata.currency || 'PLN'}</p>
+                                        </div>
+                                      )}
+                                      {linked.metadata.bank_account && (
+                                        <div>
+                                          <p className="text-muted-foreground text-xs">Konto do przelewu</p>
+                                          <p className="font-medium text-sm">{String(linked.metadata.bank_account)}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </>
                               );
                             })()}
                             {!notifications.find(n => n.metadata?.transaction_id === transaction.id) && (
@@ -656,34 +693,71 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                     const available = notifications.filter(n => !n.metadata?.transaction_id && n.metadata?.amount);
                                     if (!linked && available.length === 0) return null;
                                     return (
-                                      <div className="col-span-2">
-                                        <p className="text-muted-foreground text-xs mb-1">Привязать уведомление</p>
-                                        <Select
-                                          value={linked?.id || '__none__'}
-                                          onValueChange={(val) => {
-                                            if (val !== '__none__') {
-                                              onLinkNotification(transaction.id, val);
-                                            }
-                                          }}
-                                        >
-                                          <SelectTrigger className="h-8 text-sm">
-                                            <SelectValue placeholder="Выберите уведомление..." />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            <SelectItem value="__none__">— Заполнить вручную —</SelectItem>
-                                            {linked && (
-                                              <SelectItem key={linked.id} value={linked.id}>
-                                                ✓ {linked.metadata?.issued_to || linked.title} — {linked.metadata?.amount} {linked.metadata?.currency || 'PLN'}
-                                              </SelectItem>
+                                      <>
+                                        <div className="col-span-2">
+                                          <p className="text-muted-foreground text-xs mb-1">Привязать уведомление</p>
+                                          <Select
+                                            value={linked?.id || '__none__'}
+                                            onValueChange={(val) => {
+                                              if (val !== '__none__') {
+                                                onLinkNotification(transaction.id, val);
+                                              }
+                                            }}
+                                          >
+                                            <SelectTrigger className="h-8 text-sm">
+                                              <SelectValue placeholder="Выберите уведомление..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="__none__">— Заполнить вручную —</SelectItem>
+                                              {linked && (
+                                                <SelectItem key={linked.id} value={linked.id}>
+                                                  ✓ {linked.metadata?.issued_to || linked.title} — {linked.metadata?.amount} {linked.metadata?.currency || 'PLN'}
+                                                </SelectItem>
+                                              )}
+                                              {available.map(n => (
+                                                <SelectItem key={n.id} value={n.id}>
+                                                  {n.metadata?.issued_to || n.title} — {n.metadata?.amount} {n.metadata?.currency || 'PLN'} ({n.metadata?.department_name || 'без отдела'})
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                        {linked && linked.metadata && (
+                                          <div className="col-span-2 grid grid-cols-2 gap-2 p-3 bg-muted/30 rounded-lg border border-border/50">
+                                            <p className="col-span-2 text-xs font-medium text-primary">Данные из уведомления (PDF)</p>
+                                            {linked.metadata.issued_to && (
+                                              <div>
+                                                <p className="text-muted-foreground text-xs">Wydano (ФИО)</p>
+                                                <p className="font-medium text-sm">{linked.metadata.issued_to}</p>
+                                              </div>
                                             )}
-                                            {available.map(n => (
-                                              <SelectItem key={n.id} value={n.id}>
-                                                {n.metadata?.issued_to || n.title} — {n.metadata?.amount} {n.metadata?.currency || 'PLN'} ({n.metadata?.department_name || 'без отдела'})
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-                                      </div>
+                                            {linked.metadata.department_name && (
+                                              <div>
+                                                <p className="text-muted-foreground text-xs">Nazwa działu (Отдел)</p>
+                                                <p className="font-medium text-sm">{linked.metadata.department_name}</p>
+                                              </div>
+                                            )}
+                                            {linked.metadata.basis && (
+                                              <div className="col-span-2">
+                                                <p className="text-muted-foreground text-xs">Na podstawie (Основание)</p>
+                                                <p className="font-medium text-sm">{String(linked.metadata.basis)}</p>
+                                              </div>
+                                            )}
+                                            {linked.metadata.amount && (
+                                              <div>
+                                                <p className="text-muted-foreground text-xs">Kwota (Сумма)</p>
+                                                <p className="font-medium text-sm">{linked.metadata.amount} {linked.metadata.currency || 'PLN'}</p>
+                                              </div>
+                                            )}
+                                            {linked.metadata.bank_account && (
+                                              <div>
+                                                <p className="text-muted-foreground text-xs">Konto do przelewu</p>
+                                                <p className="font-medium text-sm">{String(linked.metadata.bank_account)}</p>
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </>
                                     );
                                   })()}
                                   {!notifications.find(n => n.metadata?.transaction_id === transaction.id) && (
