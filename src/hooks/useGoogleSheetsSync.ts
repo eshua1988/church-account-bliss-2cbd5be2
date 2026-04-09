@@ -136,7 +136,10 @@ export const useGoogleSheetsSync = ({
           if (tx.type === 'income') {
             col = 1;
           } else {
-            const idx = sortedCategories.findIndex(([id]) => id === tx.category);
+            let idx = sortedCategories.findIndex(([id]) => id === tx.category);
+            if (idx === -1 && tx.departmentName) {
+              idx = sortedCategories.findIndex(([, name]) => name === tx.departmentName);
+            }
             col = idx !== -1 ? 2 + idx : fallbackCol;
           }
 
@@ -164,15 +167,13 @@ export const useGoogleSheetsSync = ({
             rows[targetRowIndex][col] = `${tx.amount} ${tx.currency}`;
 
             const noteParts: string[] = [];
+            if (tx.issuedTo) noteParts.push(`Кому: ${tx.issuedTo}`);
             if (tx.departmentName) noteParts.push(`Отдел: ${tx.departmentName}`);
-            if (tx.comment) noteParts.push(`Комментарий: ${tx.comment}`);
-            if (noteParts.length === 0) {
-              if (tx.bankTitle) noteParts.push(`Tytuł: ${tx.bankTitle}`);
-              if (tx.bankSender) noteParts.push(`Nadawca: ${tx.bankSender}`);
-              if (tx.bankRecipient) noteParts.push(`Odbiorca: ${tx.bankRecipient}`);
-              if (tx.description && !tx.bankTitle) noteParts.push(`Описание: ${tx.description}`);
-              if (tx.type === 'expense' && tx.issuedTo) noteParts.push(`Кому: ${tx.issuedTo}`);
-            }
+            if (tx.description) noteParts.push(`Описание: ${tx.description}`);
+            if (tx.comment && tx.comment !== tx.description) noteParts.push(`Комментарий: ${tx.comment}`);
+            if (tx.bankTitle) noteParts.push(`Tytuł: ${tx.bankTitle}`);
+            if (tx.bankSender) noteParts.push(`Nadawca: ${tx.bankSender}`);
+            if (tx.bankRecipient) noteParts.push(`Odbiorca: ${tx.bankRecipient}`);
             if (noteParts.length > 0) {
               notes.push({ row: targetRowIndex + 1, col, note: noteParts.join('\n') });
             }
