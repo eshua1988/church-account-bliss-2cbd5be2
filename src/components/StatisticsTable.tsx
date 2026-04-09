@@ -512,7 +512,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                     onBlur={(e) => {
                                       const val = e.target.value.trim();
                                       if (val !== (transaction.comment || '')) {
-                                        onUpdate(transaction.id, { comment: val || null });
+                                        onUpdate(transaction.id, { comment: val || null, description: val || null });
                                       }
                                     }}
                                   />
@@ -733,7 +733,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                           onBlur={(e) => {
                                             const val = e.target.value.trim();
                                             if (val !== (transaction.comment || '')) {
-                                              onUpdate(transaction.id, { comment: val || null });
+                                              onUpdate(transaction.id, { comment: val || null, description: val || null });
                                             }
                                           }}
                                         />
