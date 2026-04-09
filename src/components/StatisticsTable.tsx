@@ -462,41 +462,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                       </SelectContent>
                                     </Select>
                                   </div>
-                                  {linked && linked.metadata && (
-                                    <div className="col-span-2 grid grid-cols-2 gap-2 p-3 bg-muted/30 rounded-lg border border-border/50">
-                                      <p className="col-span-2 text-xs font-medium text-primary">Данные из уведомления (PDF)</p>
-                                      {linked.metadata.issued_to && (
-                                        <div>
-                                          <p className="text-muted-foreground text-xs">Wydano (ФИО)</p>
-                                          <p className="font-medium text-sm">{linked.metadata.issued_to}</p>
-                                        </div>
-                                      )}
-                                      {linked.metadata.department_name && (
-                                        <div>
-                                          <p className="text-muted-foreground text-xs">Nazwa działu (Отдел)</p>
-                                          <p className="font-medium text-sm">{linked.metadata.department_name}</p>
-                                        </div>
-                                      )}
-                                      {linked.metadata.basis && (
-                                        <div className="col-span-2">
-                                          <p className="text-muted-foreground text-xs">Na podstawie (Основание)</p>
-                                          <p className="font-medium text-sm">{String(linked.metadata.basis)}</p>
-                                        </div>
-                                      )}
-                                      {linked.metadata.amount && (
-                                        <div>
-                                          <p className="text-muted-foreground text-xs">Kwota (Сумма)</p>
-                                          <p className="font-medium text-sm">{linked.metadata.amount} {linked.metadata.currency || 'PLN'}</p>
-                                        </div>
-                                      )}
-                                      {linked.metadata.bank_account && (
-                                        <div>
-                                          <p className="text-muted-foreground text-xs">Konto do przelewu</p>
-                                          <p className="font-medium text-sm">{String(linked.metadata.bank_account)}</p>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
                                 </>
                               );
                             })()}
@@ -668,18 +633,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                   <p className="font-medium">{transaction.issuedTo}</p>
                                 </div>
                               )}
-                              {transaction.decisionNumber && (
-                                <div>
-                                  <p className="text-muted-foreground text-xs">{t('decisionNumber') || 'Номер решения'}</p>
-                                  <p className="font-medium">{transaction.decisionNumber}</p>
-                                </div>
-                              )}
-                              {transaction.amountInWords && (
-                                <div className="col-span-2">
-                                  <p className="text-muted-foreground text-xs">{t('amountInWords') || 'Сумма прописью'}</p>
-                                  <p className="font-medium">{transaction.amountInWords}</p>
-                                </div>
-                              )}
                               {transaction.cashierName && (
                                 <div>
                                   <p className="text-muted-foreground text-xs">{t('cashierName') || 'Кассир'}</p>
@@ -722,41 +675,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                             </SelectContent>
                                           </Select>
                                         </div>
-                                        {linked && linked.metadata && (
-                                          <div className="col-span-2 grid grid-cols-2 gap-2 p-3 bg-muted/30 rounded-lg border border-border/50">
-                                            <p className="col-span-2 text-xs font-medium text-primary">Данные из уведомления (PDF)</p>
-                                            {linked.metadata.issued_to && (
-                                              <div>
-                                                <p className="text-muted-foreground text-xs">Wydano (ФИО)</p>
-                                                <p className="font-medium text-sm">{linked.metadata.issued_to}</p>
-                                              </div>
-                                            )}
-                                            {linked.metadata.department_name && (
-                                              <div>
-                                                <p className="text-muted-foreground text-xs">Nazwa działu (Отдел)</p>
-                                                <p className="font-medium text-sm">{linked.metadata.department_name}</p>
-                                              </div>
-                                            )}
-                                            {linked.metadata.basis && (
-                                              <div className="col-span-2">
-                                                <p className="text-muted-foreground text-xs">Na podstawie (Основание)</p>
-                                                <p className="font-medium text-sm">{String(linked.metadata.basis)}</p>
-                                              </div>
-                                            )}
-                                            {linked.metadata.amount && (
-                                              <div>
-                                                <p className="text-muted-foreground text-xs">Kwota (Сумма)</p>
-                                                <p className="font-medium text-sm">{linked.metadata.amount} {linked.metadata.currency || 'PLN'}</p>
-                                              </div>
-                                            )}
-                                            {linked.metadata.bank_account && (
-                                              <div>
-                                                <p className="text-muted-foreground text-xs">Konto do przelewu</p>
-                                                <p className="font-medium text-sm">{String(linked.metadata.bank_account)}</p>
-                                              </div>
-                                            )}
-                                          </div>
-                                        )}
                                       </>
                                     );
                                   })()}
