@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { TransactionType } from '@/types/transaction';
+import { TransactionType, Transaction } from '@/types/transaction';
 import { Category } from '@/hooks/useSupabaseCategories';
 import { Plus, Trash2, Tag, Pencil, Check, X, GripVertical, ArrowUp, ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -14,9 +14,10 @@ interface CategoryManagerProps {
   onDelete: (id: string) => void;
   onUpdate?: (id: string, name: string) => void;
   onReorder?: (type: TransactionType, fromIndex: number, toIndex: number) => void;
+  transactions?: Transaction[];
 }
 
-export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReorder }: CategoryManagerProps) => {
+export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReorder, transactions = [] }: CategoryManagerProps) => {
   const { t } = useTranslation();
   const [activeType, setActiveType] = useState<TransactionType>('income');
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -24,6 +25,14 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
   const [editingName, setEditingName] = useState('');
 
   const filteredCategories = categories.filter(c => c.type === activeType);
+
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const t of transactions) {
+      counts[t.category] = (counts[t.category] || 0) + 1;
+    }
+    return counts;
+  }, [transactions]);
 
   const handleAdd = async () => {
     const names = newCategoryName
@@ -187,6 +196,7 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
                         activeType === 'income' ? 'text-success' : 'text-destructive'
                       )} />
                       <span className="font-medium text-foreground truncate">{category.name}</span>
+                      <span className="text-xs text-muted-foreground shrink-0">({categoryCounts[category.id] || 0})</span>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       {onReorder && (

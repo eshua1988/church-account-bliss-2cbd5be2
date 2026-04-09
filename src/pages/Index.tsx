@@ -323,6 +323,7 @@ const Index = () => {
                   onDelete={handleDeleteCategory} 
                   onUpdate={handleUpdateCategory}
                   onReorder={handleReorderCategories}
+                  transactions={transactions}
                 />
               </div>
               <Separator />

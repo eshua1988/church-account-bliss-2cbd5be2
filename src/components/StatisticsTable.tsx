@@ -427,17 +427,25 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                           <>
                             <div className="col-span-2">
                               <p className="text-muted-foreground text-xs mb-1">Название отдела</p>
-                              <Input
-                                className="h-8 text-sm"
-                                placeholder="Введите название отдела..."
-                                defaultValue={transaction.departmentName || ''}
-                                onBlur={(e) => {
-                                  const val = e.target.value.trim();
-                                  if (val !== (transaction.departmentName || '')) {
-                                    onUpdate(transaction.id, { departmentName: val || undefined });
-                                  }
+                              <Select
+                                value={transaction.departmentName || '__none__'}
+                                onValueChange={(val) => {
+                                  onUpdate(transaction.id, { departmentName: val === '__none__' ? undefined : val });
                                 }}
-                              />
+                              >
+                                <SelectTrigger className="h-8 text-sm">
+                                  <SelectValue placeholder="Выберите отдел..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__none__">— Без отдела —</SelectItem>
+                                  {(transaction.type === 'income'
+                                    ? categories.filter(c => c.type === 'income')
+                                    : categories.filter(c => c.type === 'expense')
+                                  ).map(c => (
+                                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </div>
                             <div className="col-span-2">
                               <p className="text-muted-foreground text-xs mb-1">Комментарий</p>
@@ -598,17 +606,25 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                 <>
                                   <div className="col-span-2">
                                     <p className="text-muted-foreground text-xs mb-1">Название отдела</p>
-                                    <Input
-                                      className="h-8 text-sm"
-                                      placeholder="Введите название отдела..."
-                                      defaultValue={transaction.departmentName || ''}
-                                      onBlur={(e) => {
-                                        const val = e.target.value.trim();
-                                        if (val !== (transaction.departmentName || '')) {
-                                          onUpdate(transaction.id, { departmentName: val || undefined });
-                                        }
+                                    <Select
+                                      value={transaction.departmentName || '__none__'}
+                                      onValueChange={(val) => {
+                                        onUpdate(transaction.id, { departmentName: val === '__none__' ? undefined : val });
                                       }}
-                                    />
+                                    >
+                                      <SelectTrigger className="h-8 text-sm">
+                                        <SelectValue placeholder="Выберите отдел..." />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="__none__">— Без отдела —</SelectItem>
+                                        {(transaction.type === 'income'
+                                          ? categories.filter(c => c.type === 'income')
+                                          : categories.filter(c => c.type === 'expense')
+                                        ).map(c => (
+                                          <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
                                   </div>
                                   <div className="col-span-2">
                                     <p className="text-muted-foreground text-xs mb-1">Комментарий</p>
