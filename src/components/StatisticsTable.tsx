@@ -366,7 +366,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                           'w-2 h-2 rounded-full flex-shrink-0',
                           transaction.type === 'income' ? 'bg-success' : 'bg-destructive'
                         )} />
-                        <span className="text-sm truncate">{getCategoryName(transaction.category)}</span>
+                        <span className="text-sm truncate">{getCategoryName(transaction.category) === 'Неизвестно' && transaction.type === 'income' ? 'Пожертвование Онлайн' : getCategoryName(transaction.category)}</span>
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <span className={cn(
@@ -566,7 +566,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                         <td className="p-4 px-3 align-middle">
                           <div className="flex items-center gap-2">
                             <span className={cn('w-2 h-2 rounded-full flex-shrink-0', transaction.type === 'income' ? 'bg-success' : 'bg-destructive')} />
-                            <span className="truncate">{getCategoryName(transaction.category)}</span>
+                            <span className="truncate">{getCategoryName(transaction.category) === 'Неизвестно' && transaction.type === 'income' ? 'Пожертвование Онлайн' : getCategoryName(transaction.category)}</span>
                           </div>
                         </td>
                         <td className={cn('p-4 px-2 text-right font-semibold whitespace-nowrap align-middle', transaction.type === 'income' ? 'text-success' : 'text-destructive')}>

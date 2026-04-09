@@ -201,6 +201,15 @@ Deno.serve(async (req) => {
         const newTx = allTx.filter(t => !t.external_id || !existingIds.has(t.external_id))
 
         if (newTx.length > 0) {
+          // Find default income category
+          const { data: incomeCats } = await db.from('categories')
+            .select('id')
+            .eq('user_id', user_id)
+            .eq('type', 'income')
+            .order('sort_order', { ascending: true })
+            .limit(1)
+          const defaultIncomeCatId = incomeCats?.[0]?.id || null
+
           const { error } = await db.from('transactions').insert(
             newTx.map(t => ({
               user_id,
@@ -208,6 +217,7 @@ Deno.serve(async (req) => {
               amount: t.amount,
               description: t.description,
               type: t.type,
+              category_id: t.type === 'income' ? defaultIncomeCatId : null,
               source: resolvedBankName.toLowerCase().replace(/\s+/g, '_'),
               external_id: t.external_id || null,
               bank_title: t.bank_title || null,
