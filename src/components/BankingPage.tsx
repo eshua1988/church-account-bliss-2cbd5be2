@@ -551,28 +551,6 @@ export const BankingPage = () => {
       {/* ── SECTION B: CSV Import ──────────────────────────────────────────── */}
       {activeSection === 'import' && (
         <div className="space-y-6">
-          {/* Instructions */}
-          <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 space-y-2">
-            <p className="font-semibold text-sm text-blue-400 flex items-center gap-2">
-              <Info className="h-4 w-4" />
-              Как скачать выписку из PKO BP
-            </p>
-            <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
-              <li>Войдите в <strong>iPKO</strong> (ipko.pl) или приложение PKO BP</li>
-              <li>Перейдите в раздел <strong>«Mój rachunek» → «Historia»</strong></li>
-              <li>Выберите период и нажмите <strong>«Eksportuj» → «CSV»</strong></li>
-              <li>Загрузите скачанный файл ниже</li>
-            </ol>
-            <a
-              href="https://www.ipko.pl"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 underline"
-            >
-              Открыть iPKO <ExternalLink className="h-3 w-3" />
-            </a>
-          </div>
-
           {/* Upload area */}
           <div
             className="border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all"
@@ -762,71 +740,6 @@ export const BankingPage = () => {
       {/* ── SECTION A: Enable Banking API ─────────────────────────────────── */}
       {activeSection === 'api' && (
         <div className="space-y-6">
-          {/* Info banner */}
-          <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 space-y-2">
-            <p className="font-semibold text-sm text-yellow-400 flex items-center gap-2">
-              <AlertCircle className="h-4 w-4" />
-              Требуется регистрация в Enable Banking
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Enable Banking — бесплатный агрегатор PSD2 API с поддержкой польских банков.
-              Не требует лицензии AISP — они уже имеют её.
-            </p>
-            <button
-              onClick={() => setApiInfoOpen(!apiInfoOpen)}
-              className="text-xs text-yellow-400 flex items-center gap-1 hover:text-yellow-300"
-            >
-              {apiInfoOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-              Инструкция по регистрации
-            </button>
-            {apiInfoOpen && (
-              <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside mt-2">
-                <li>
-                  Зарегистрируйтесь на{' '}
-                  <a href="https://enablebanking.com/get-started" target="_blank" rel="noopener noreferrer"
-                    className="text-primary underline inline-flex items-center gap-0.5">
-                    enablebanking.com <ExternalLink className="h-3 w-3" />
-                  </a>
-                </li>
-                <li>Создайте новое приложение в Dashboard</li>
-                <li>Скопируйте <strong>Application ID</strong> и вставьте ниже</li>
-                <li>Добавьте Redirect URI: <code className="bg-muted px-1 rounded text-xs">{window.location.origin}{import.meta.env.BASE_URL?.replace(/\/$/, '')}/bank-callback</code></li>
-                <li>Нажмите «Подключить» на любом банке — откроется страница авторизации</li>
-              </ol>
-            )}
-          </div>
-
-          {/* Setup instructions */}
-          <div className="bg-card border border-border rounded-xl p-5 space-y-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Settings className="h-4 w-4 text-muted-foreground" />
-              <h4 className="font-semibold text-sm">Настройка Enable Banking</h4>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Для подключения банков добавьте два секрета в{' '}
-              <a
-                href="https://supabase.com/dashboard/project/htepbcotdqrewbxmasbf/settings/vault"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline text-primary"
-              >
-                Supabase Vault → Secrets
-              </a>
-              :
-            </p>
-            <div className="bg-muted/50 rounded-lg p-3 font-mono text-xs space-y-1 leading-relaxed">
-              <p><span className="text-yellow-500">EB_APP_ID</span> = ваш Application ID из <a href="https://enablebanking.com/cp/applications" target="_blank" rel="noopener noreferrer" className="underline text-primary">enablebanking.com/cp</a></p>
-              <p><span className="text-yellow-500">EB_PRIVATE_KEY</span> = содержимое private.key (RSA)</p>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Если ещё нет аккаунта:{' '}
-              <a href="https://enablebanking.com/sign-in/" target="_blank" rel="noopener noreferrer" className="underline text-primary">
-                зарегистрируйтесь
-              </a>
-              , создайте application с типом <strong>SANDBOX</strong>, загрузите сертификат — и получите Application ID.
-            </p>
-          </div>
-
           {/* Connected banks */}
           {bankConnections.length > 0 && (
             <div className="bg-card border border-border rounded-xl p-5 space-y-4">
@@ -992,14 +905,6 @@ export const BankingPage = () => {
             </div>
           </div>
 
-          {/* Comparison note */}
-          <div className="bg-card border border-border rounded-xl p-4 text-sm text-muted-foreground space-y-2">
-            <p className="font-medium text-foreground">💡 Рекомендация</p>
-            <p>
-              Если API пока недоступен — используйте <strong>Вариант B (CSV)</strong>. 
-              Выписку из банка можно скачать за любой период и загрузить за 10 секунд.
-            </p>
-          </div>
         </div>
       )}
     </div>
