@@ -103,9 +103,13 @@ Deno.serve(async (req) => {
         continue
       }
 
-    // Fetch only new transactions since last sync
+    // Fetch transactions with 5-day overlap buffer to catch late-booked entries
     const dateFrom = conn.last_sync_at
-      ? new Date(conn.last_sync_at).toISOString().split('T')[0]
+      ? (() => {
+          const d = new Date(conn.last_sync_at)
+          d.setDate(d.getDate() - 5)
+          return d.toISOString().split('T')[0]
+        })()
       : '2015-01-01'
 
     const allTx = []
@@ -171,13 +175,23 @@ Deno.serve(async (req) => {
     let insertError = null
 
     if (allTx.length > 0) {
+      // Deduplicate by external_id
       const { data: existing } = await db.from('transactions')
-        .select('external_id')
+        .select('external_id, date, amount, description')
         .eq('user_id', user_id)
-        .not('external_id', 'is', null)
-      const existingIds = new Set((existing||[]).map(r => r.external_id))
+        .eq('source', source)
+        .gte('date', dateFrom)
+      const existingIds = new Set((existing||[]).filter(r => r.external_id).map(r => r.external_id))
+      // Also deduplicate by date+amount+description for transactions without external_id
+      const existingKeys = new Set((existing||[]).map(r => `${r.date}|${r.amount}|${r.description}`))
 
-      const newTx = allTx.filter(t => !t.external_id || !existingIds.has(t.external_id))
+      const newTx = allTx.filter(t => {
+        if (t.external_id && existingIds.has(t.external_id)) return false
+        const key = `${t.date}|${t.amount}|${t.description}`
+        if (existingKeys.has(key)) return false
+        existingKeys.add(key) // prevent duplicates within same batch
+        return true
+      })
 
       if (newTx.length > 0) {
         // Find default income category
