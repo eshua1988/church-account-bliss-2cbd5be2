@@ -216,6 +216,7 @@ export const BankingPage = () => {
   const [bankConnections, setBankConnections] = useState<BankConnection[]>([]);
   const [syncingBank, setSyncingBank] = useState<string | null>(null);
   const [apiInfoOpen, setApiInfoOpen] = useState(false);
+  const [banksListOpen, setBanksListOpen] = useState(false);
   const [availableBanks, setAvailableBanks] = useState<PolishBank[]>(FALLBACK_POLISH_BANKS);
   const [loadingBanks, setLoadingBanks] = useState(false);
   const [bankSearch, setBankSearch] = useState('');
@@ -829,14 +830,21 @@ export const BankingPage = () => {
 
           {/* Available banks to connect */}
           <div className="bg-card border border-border rounded-xl p-5 space-y-4">
-            <div className="flex items-center justify-between">
+            <button
+              onClick={() => setBanksListOpen(!banksListOpen)}
+              className="flex items-center justify-between w-full"
+            >
               <h4 className="font-semibold text-sm flex items-center gap-2">
                 <Building2 className="h-4 w-4 text-muted-foreground" />
                 Доступные банки Польши
               </h4>
-              {loadingBanks && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-            </div>
+              <div className="flex items-center gap-2">
+                {loadingBanks && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                {banksListOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+              </div>
+            </button>
 
+            {banksListOpen && <>
             <Input
               placeholder="Поиск банка..."
               value={bankSearch}
@@ -903,6 +911,7 @@ export const BankingPage = () => {
                 </p>
               )}
             </div>
+            </>}
           </div>
 
         </div>
