@@ -357,7 +357,6 @@ const Index = () => {
                       <StatisticsTable 
                         transactions={transactions} 
                         getCategoryName={getCategoryName} 
-                        onDelete={handleDeleteTransaction}
                         onUpdate={async (id, updates) => {
                           try {
                             await updateTransaction(id, updates);
