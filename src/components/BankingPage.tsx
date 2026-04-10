@@ -521,38 +521,9 @@ export const BankingPage = () => {
         )}
       </div>
 
-      {/* Section tabs */}
-      <div className="flex gap-1 border-b border-border">
-        <button
-          onClick={() => setActiveSection('import')}
-          className={cn(
-            'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-2',
-            activeSection === 'import'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          )}
-        >
-          <Upload className="h-4 w-4" />
-          Вариант B — Импорт CSV
-        </button>
-        <button
-          onClick={() => setActiveSection('api')}
-          className={cn(
-            'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-2',
-            activeSection === 'api'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          )}
-        >
-          <Link2 className="h-4 w-4" />
-          Вариант A — API (Enable Banking)
-        </button>
-      </div>
-
-      {/* ── SECTION B: CSV Import ──────────────────────────────────────────── */}
-      {activeSection === 'import' && (
-        <div className="space-y-6">
-          {/* Upload area */}
+      {/* ── CSV Import ──────────────────────────────────────────── */}
+      <div className="space-y-6">
+        {/* Upload area */}
           <div
             className="border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all"
             onClick={() => fileInputRef.current?.click()}
@@ -736,11 +707,8 @@ export const BankingPage = () => {
             </div>
           )}
         </div>
-      )}
 
-      {/* ── SECTION A: Enable Banking API ─────────────────────────────────── */}
-      {activeSection === 'api' && (
-        <div className="space-y-6">
+      {/* ── Connected & Available Banks ─────────────────────────────────── */}
           {/* Connected banks */}
           {bankConnections.length > 0 && (
             <div className="bg-card border border-border rounded-xl p-5 space-y-4">
@@ -914,8 +882,6 @@ export const BankingPage = () => {
             </>}
           </div>
 
-        </div>
-      )}
     </div>
   );
 };
