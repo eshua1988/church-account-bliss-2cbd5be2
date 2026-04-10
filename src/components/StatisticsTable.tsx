@@ -391,11 +391,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                             <Settings className="h-4 w-4" />
                           </Button>
                         )}
-                        {onDelete && (
-                          <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-destructive" onClick={() => onDelete(transaction.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1 ml-8">
@@ -480,7 +475,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                 <th className="h-12 px-2 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">{t('amount')}</th>
                 <th className="h-12 w-8 px-1"></th>
                 {onUpdate && <th className="h-12 w-8 px-1"></th>}
-                {onDelete && <th className="h-12 w-8 px-1"></th>}
               </tr>
             </thead>
             <tbody className="[&_tr:last-child]:border-0">
@@ -520,13 +514,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                           <td className="p-4 w-8 px-1 align-middle">
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-primary" onClick={() => setEditingTransactionId(transaction.id)}>
                               <Settings className="h-4 w-4" />
-                            </Button>
-                          </td>
-                        )}
-                        {onDelete && (
-                          <td className="p-4 w-8 px-1 align-middle">
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => onDelete(transaction.id)}>
-                              <Trash2 className="h-4 w-4" />
                             </Button>
                           </td>
                         )}
