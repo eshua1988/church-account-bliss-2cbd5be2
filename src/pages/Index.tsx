@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Header } from '@/components/Header';
 import { CurrencyBalanceCard } from '@/components/CurrencyBalanceCard';
@@ -76,14 +76,61 @@ const Index = () => {
   const { notifications, refetch: refetchNotifications } = useNotifications();
   
   const {
-    isSyncing,
-    handleSync,
+    isSyncing: isSheetSyncing,
+    handleSync: handleSheetSync,
     spreadsheetId,
   } = useGoogleSheetsSync({
     transactions,
     onDeleteTransaction: deleteTransaction,
     expenseCategories,
   });
+
+  const [isBankSyncing, setIsBankSyncing] = useState(false);
+
+  const handleBankSync = useCallback(async () => {
+    try {
+      setIsBankSyncing(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+      const supabaseUrl = (supabase as any).supabaseUrl as string;
+      const supabaseKey = (supabase as any).supabaseKey as string;
+      const accessToken = session.access_token || supabaseKey;
+
+      const res = await fetch(`${supabaseUrl}/functions/v1/banking-sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ user_id: session.user.id }),
+      });
+
+      const json = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+
+      if (!res.ok) {
+        toast({ title: 'Ошибка синхр. банка', description: json?.error || `HTTP ${res.status}`, variant: 'destructive' });
+        return;
+      }
+
+      if (json.imported > 0) {
+        toast({ title: 'Банк синхронизирован', description: `Добавлено ${json.imported} новых транзакций` });
+      }
+    } catch (e) {
+      toast({ title: 'Ошибка синхр. банка', description: String(e), variant: 'destructive' });
+    } finally {
+      setIsBankSyncing(false);
+    }
+  }, [toast]);
+
+  const isSyncing = isSheetSyncing || isBankSyncing;
+
+  const handleSync = useCallback(async () => {
+    await Promise.all([
+      handleSheetSync(),
+      handleBankSync(),
+    ]);
+  }, [handleSheetSync, handleBankSync]);
 
   // Track previous transaction count for auto-sync on realtime changes
   const prevTransactionCountRef = useRef<number>(transactions.length);
