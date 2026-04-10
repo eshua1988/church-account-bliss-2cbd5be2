@@ -462,7 +462,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                 <th className="h-12 px-2 text-left align-middle font-medium text-muted-foreground">
                   <div className="flex items-center gap-1.5">
                     <Checkbox checked={isAllSelected} onCheckedChange={toggleAllTransactions} aria-label="Select all" />
-                    {selectedTransactions.size > 1 && onDelete && (
+                    {selectedTransactions.size > 0 && onDelete && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -603,7 +603,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
             {/* Mobile: fixed bottom bar */}
             <div className="sm:hidden fixed bottom-0 left-0 right-0 z-50 flex items-center justify-between gap-2 px-4 py-3 bg-card border-t border-border shadow-lg">
               <p className="text-sm text-primary font-medium">Выбрано: {selectedTransactions.size}</p>
-              {selectedTransactions.size > 1 && onDelete && (
+              {selectedTransactions.size > 0 && onDelete && (
                 <Button
                   variant="destructive"
                   size="sm"
@@ -615,10 +615,10 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                 </Button>
               )}
             </div>
-            {/* Desktop: inline bar */}
-            <div className="hidden sm:flex items-center gap-2 mt-2">
-              <p className="text-xs text-primary">Выбрано: {selectedTransactions.size}</p>
-              {selectedTransactions.size > 1 && onDelete && (
+            {/* Desktop: bottom bar */}
+            <div className="hidden sm:flex items-center justify-between gap-2 mt-4 px-4 py-3 bg-card border rounded-lg">
+              <p className="text-sm text-primary font-medium">Выбрано: {selectedTransactions.size}</p>
+              {selectedTransactions.size > 0 && onDelete && (
                 <Button
                   variant="ghost"
                   size="sm"
