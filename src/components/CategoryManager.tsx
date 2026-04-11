@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,6 +8,15 @@ import { Plus, Trash2, Tag, Pencil, Check, X, GripVertical, ArrowUp, ArrowDown, 
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { supabase } from '@/integrations/supabase/client';
+
+interface DepartmentRule {
+  id: string;
+  search_text: string;
+  department_name: string;
+  transaction_type: string;
+  created_at: string;
+}
 
 interface CategoryManagerProps {
   categories: Category[];
@@ -30,6 +39,19 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
   const [extType, setExtType] = useState<'income' | 'expense'>('expense');
   const [extApplying, setExtApplying] = useState(false);
   const [extResult, setExtResult] = useState<string | null>(null);
+  const [rules, setRules] = useState<DepartmentRule[]>([]);
+
+  const loadRules = useCallback(async () => {
+    const { data } = await supabase.from('department_rules').select('*').order('created_at', { ascending: false });
+    if (data) setRules(data as unknown as DepartmentRule[]);
+  }, []);
+
+  useEffect(() => { loadRules(); }, [loadRules]);
+
+  const deleteRule = async (id: string) => {
+    await supabase.from('department_rules').delete().eq('id', id);
+    setRules(prev => prev.filter(r => r.id !== id));
+  };
 
   const filteredCategories = categories.filter(c => c.type === (activeType === 'extension' ? 'expense' : activeType));
 
@@ -51,6 +73,17 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
     setExtApplying(true);
     try {
       await onBulkUpdateDepartment(extMatches.map(t => t.id), extDepartment);
+      // Save rule to DB
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await supabase.from('department_rules').insert({
+          user_id: session.user.id,
+          search_text: extSearchText.trim(),
+          department_name: extDepartment,
+          transaction_type: extType,
+        } as any);
+        await loadRules();
+      }
       setExtResult(`Обновлено ${extMatches.length} транзакций → ${extDepartment}`);
       setExtSearchText('');
     } catch {
@@ -221,22 +254,27 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
             </div>
           )}
 
-          {extMatches.length > 0 && (
-            <div className="space-y-1 max-h-[200px] overflow-y-auto">
-              {extMatches.slice(0, 20).map(tx => (
-                <div key={tx.id} className="flex items-center justify-between text-xs p-2 bg-muted/50 rounded">
-                  <span className="truncate flex-1">{tx.bankTitle || tx.description || '—'}</span>
-                  <span className="text-muted-foreground ml-2 shrink-0">{tx.departmentName || 'Неизвестно'}</span>
-                </div>
-              ))}
-              {extMatches.length > 20 && (
-                <p className="text-xs text-muted-foreground text-center py-1">...и ещё {extMatches.length - 20}</p>
-              )}
-            </div>
-          )}
-
           {extResult && (
             <div className="text-sm font-medium text-success">{extResult}</div>
+          )}
+
+          {rules.length > 0 && (
+            <div className="space-y-1 mt-4">
+              <Label className="text-xs text-muted-foreground">Сохранённые правила (авто-применение)</Label>
+              <div className="space-y-1 max-h-[200px] overflow-y-auto">
+                {rules.map(rule => (
+                  <div key={rule.id} className="flex items-center justify-between text-xs p-2 bg-muted/50 rounded">
+                    <span className="truncate flex-1">
+                      «{rule.search_text}» → <span className="font-medium">{rule.department_name}</span>
+                      <span className="text-muted-foreground ml-1">({rule.transaction_type === 'income' ? 'доход' : 'расход'})</span>
+                    </span>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 ml-1" onClick={() => deleteRule(rule.id)}>
+                      <Trash2 className="w-3 h-3 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       ) : (
