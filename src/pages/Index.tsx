@@ -28,7 +28,7 @@ import { useNotifications } from '@/hooks/useNotifications';
 
 const Index = () => {
   const { t, getDateLocale } = useTranslation();
-  const [activeTab, setActiveTab] = useState<'balance' | 'statistics' | 'payout' | 'settings' | 'notifications' | 'banking' | 'telegram'>('balance');
+  const [activeTab, setActiveTab] = useState<'statistics' | 'payout' | 'settings' | 'notifications' | 'banking' | 'telegram'>('statistics');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { toast } = useToast();
@@ -362,41 +362,13 @@ const Index = () => {
         
         <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
 
-          {/* Balance Tab */}
-          {activeTab === 'balance' && (
-            <div className="animate-fade-in">
-              <h3 className="text-lg font-semibold text-foreground mb-4">{t('balanceByCurrency')}</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {([...new Set(transactions.map(tx => tx.currency))] as Currency[])
-                  .map((currency, index) => {
-                    const currencyBalance = getBalanceByCurrency(currency);
-                    return (
-                      <CurrencyBalanceCard
-                        key={currency}
-                        currency={currency}
-                        income={currencyBalance.income}
-                        expense={currencyBalance.expense}
-                        balance={currencyBalance.balance}
-                        delay={index * 100}
-                        transactions={transactions}
-                        getCategoryName={getCategoryName}
-                      />
-                    );
-                  })}
-              </div>
-              {transactions.length === 0 && (
-                <p className="text-muted-foreground text-center py-8">{t('noTransactions')}</p>
-              )}
-            </div>
-          )}
-
           {/* Statistics Tab */}
           {activeTab === 'statistics' && (
             <div className="animate-fade-in">
               <Tabs defaultValue="table" className="w-full">
                 <TabsList className="mb-4 flex-wrap h-auto gap-1 p-1">
                   <TabsTrigger value="table" className="text-xs sm:text-sm">{t('transactionsTable')}</TabsTrigger>
-                  <TabsTrigger value="pie" className="text-xs sm:text-sm">{t('categoryDistribution')}</TabsTrigger>
+                  <TabsTrigger value="balance" className="text-xs sm:text-sm">{t('balanceByCurrency')}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="table">
                   <div>
@@ -420,11 +392,28 @@ const Index = () => {
                     </div>
                   </div>
                 </TabsContent>
-                <TabsContent value="pie">
-                  <div className="grid grid-cols-1 gap-4">
-                    <CategoryPieChart data={incomeByCategory} getCategoryName={getCategoryName} type="income" />
-                    <CategoryPieChart data={expenseByCategory} getCategoryName={getCategoryName} type="expense" />
+                <TabsContent value="balance">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {([...new Set(transactions.map(tx => tx.currency))] as Currency[])
+                      .map((currency, index) => {
+                        const currencyBalance = getBalanceByCurrency(currency);
+                        return (
+                          <CurrencyBalanceCard
+                            key={currency}
+                            currency={currency}
+                            income={currencyBalance.income}
+                            expense={currencyBalance.expense}
+                            balance={currencyBalance.balance}
+                            delay={index * 100}
+                            transactions={transactions}
+                            getCategoryName={getCategoryName}
+                          />
+                        );
+                      })}
                   </div>
+                  {transactions.length === 0 && (
+                    <p className="text-muted-foreground text-center py-8">{t('noTransactions')}</p>
+                  )}
                 </TabsContent>
               </Tabs>
             </div>

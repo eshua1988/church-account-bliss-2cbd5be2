@@ -69,7 +69,6 @@ export const AppSidebar = ({
   const { unreadCount } = useNotifications();
 
   const menuItems = [
-    { id: 'balance' as const, icon: Wallet, label: t('balanceByCurrency') },
     { id: 'statistics' as const, icon: BarChart3, label: t('statistics') },
     { id: 'banking' as const, icon: Building2, label: 'Банкинг' },
     { id: 'settings' as const, icon: Settings, label: t('settings') },
