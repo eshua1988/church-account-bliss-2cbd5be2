@@ -10,7 +10,7 @@ import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { Currency, CURRENCY_SYMBOLS, Transaction, TransactionType } from '@/types/transaction';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
@@ -31,6 +31,9 @@ const Index = () => {
   const [activeTab, setActiveTab] = useState<'statistics' | 'payout' | 'settings' | 'notifications' | 'telegram'>('statistics');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [openSettings, setOpenSettings] = useState<Record<string, boolean>>({});
+  const toggleSetting = (key: string) => setOpenSettings(prev => ({ ...prev, [key]: !prev[key] }));
+
   const { toast } = useToast();
   const isMobile = useIsMobile();
 
@@ -428,33 +431,83 @@ const Index = () => {
 
           {/* Settings Tab */}
           {activeTab === 'settings' && (
-            <div className="animate-fade-in space-y-4 sm:space-y-6">
-              <div className="bg-card rounded-lg p-4 sm:p-6 shadow-card">
-                <h4 className="font-semibold text-base sm:text-lg mb-3 sm:mb-4">{t('categoryManagement')}</h4>
-                <CategoryManager 
-                  categories={categories} 
-                  onAdd={handleAddCategory} 
-                  onDelete={handleDeleteCategory} 
-                  onUpdate={handleUpdateCategory}
-                  onReorder={handleReorderCategories}
-                  transactions={transactions}
-                />
+            <div className="animate-fade-in space-y-3">
+              {/* Categories */}
+              <div className="bg-card rounded-lg shadow-card overflow-hidden">
+                <button onClick={() => toggleSetting('categories')} className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-muted/50 transition-colors">
+                  <h4 className="font-semibold text-base sm:text-lg">{t('categoryManagement')}</h4>
+                  {openSettings.categories ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
+                </button>
+                {openSettings.categories && (
+                  <div className="px-4 pb-4 sm:px-6 sm:pb-6">
+                    <CategoryManager 
+                      categories={categories} 
+                      onAdd={handleAddCategory} 
+                      onDelete={handleDeleteCategory} 
+                      onUpdate={handleUpdateCategory}
+                      onReorder={handleReorderCategories}
+                      transactions={transactions}
+                    />
+                  </div>
+                )}
               </div>
-              <Separator />
-              <div className="bg-card rounded-lg p-4 sm:p-6 shadow-card">
-                <GoogleSheetsSync 
-                  transactions={transactions} 
-                  getCategoryName={getCategoryName} 
-                  onDeleteTransaction={deleteTransaction}
-                  expenseCategories={expenseCategories}
-                />
+
+              {/* Google Sheets */}
+              <div className="bg-card rounded-lg shadow-card overflow-hidden">
+                <button onClick={() => toggleSetting('sheets')} className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-muted/50 transition-colors">
+                  <h4 className="font-semibold text-base sm:text-lg">Google Sheets</h4>
+                  {openSettings.sheets ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
+                </button>
+                {openSettings.sheets && (
+                  <div className="px-4 pb-4 sm:px-6 sm:pb-6">
+                    <GoogleSheetsSync 
+                      transactions={transactions} 
+                      getCategoryName={getCategoryName} 
+                      onDeleteTransaction={deleteTransaction}
+                      expenseCategories={expenseCategories}
+                    />
+                  </div>
+                )}
               </div>
-              <Separator />
-              <SharePayoutLink />
-              <Separator />
-              <TelegramBotSettings />
-              <Separator />
-              <BankingPage />
+
+              {/* Share Payout Link */}
+              <div className="bg-card rounded-lg shadow-card overflow-hidden">
+                <button onClick={() => toggleSetting('share')} className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-muted/50 transition-colors">
+                  <h4 className="font-semibold text-base sm:text-lg">Udostępnij formularz</h4>
+                  {openSettings.share ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
+                </button>
+                {openSettings.share && (
+                  <div className="px-4 pb-4 sm:px-6 sm:pb-6">
+                    <SharePayoutLink />
+                  </div>
+                )}
+              </div>
+
+              {/* Telegram Bot */}
+              <div className="bg-card rounded-lg shadow-card overflow-hidden">
+                <button onClick={() => toggleSetting('telegram')} className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-muted/50 transition-colors">
+                  <h4 className="font-semibold text-base sm:text-lg">Telegram-бот</h4>
+                  {openSettings.telegram ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
+                </button>
+                {openSettings.telegram && (
+                  <div className="px-4 pb-4 sm:px-6 sm:pb-6">
+                    <TelegramBotSettings />
+                  </div>
+                )}
+              </div>
+
+              {/* Banking */}
+              <div className="bg-card rounded-lg shadow-card overflow-hidden">
+                <button onClick={() => toggleSetting('banking')} className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-muted/50 transition-colors">
+                  <h4 className="font-semibold text-base sm:text-lg">Банки Польши</h4>
+                  {openSettings.banking ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
+                </button>
+                {openSettings.banking && (
+                  <div className="px-4 pb-4 sm:px-6 sm:pb-6">
+                    <BankingPage />
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
