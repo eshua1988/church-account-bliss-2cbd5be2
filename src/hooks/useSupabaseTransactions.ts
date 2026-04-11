@@ -141,6 +141,7 @@ export const useSupabaseTransactions = () => {
         decision_number: transaction.decisionNumber,
         amount_in_words: transaction.amountInWords,
         cashier_name: transaction.cashierName,
+        department_name: transaction.departmentName || null,
       })
       .select()
       .single();

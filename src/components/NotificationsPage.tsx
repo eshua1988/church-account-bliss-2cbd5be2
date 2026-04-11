@@ -482,10 +482,13 @@ export const NotificationsPage = () => {
     }
 
     const cats = getExpenseCategories();
-    // Try to match category from metadata, otherwise pick first expense category
+    // Try to match category: first by category_id, then by department_name, fallback to first
+    const deptName = meta?.department_name as string | undefined;
     const preselectedCat = meta?.category_id
       ? cats.find(c => c.id === (meta.category_id as string))
-      : undefined;
+      : deptName
+        ? cats.find(c => c.name === deptName)
+        : undefined;
     const categoryId = preselectedCat?.id ?? cats[0]?.id;
     if (!categoryId) {
       toast({ title: 'Нет категорий расходов', description: 'Добавьте категорию в настройках', variant: 'destructive' });
@@ -503,11 +506,12 @@ export const NotificationsPage = () => {
         amount: parseFloat(String(amount)),
         currency,
         category: categoryId as any,
-        description: [meta?.issued_to, meta?.basis].filter(Boolean).join(' — ') || undefined,
+        description: (meta?.basis as string) || undefined,
         date: txDate,
         issuedTo: (meta?.issued_to as string) || undefined,
         amountInWords: (meta?.amount_in_words as string) || undefined,
         decisionNumber: (meta?.decision_number as string) || undefined,
+        departmentName: (meta?.department_name as string) || undefined,
       });
 
       // Write transaction_id back to notification metadata
