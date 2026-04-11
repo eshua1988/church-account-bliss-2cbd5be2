@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp, TrendingDown, Trash2, Download, ChevronDown, ChevronUp, FileText, Settings } from 'lucide-react';
+import { TrendingUp, TrendingDown, Trash2, Download, ChevronDown, ChevronUp, FileText, Settings, Search } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -49,6 +49,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
   const [expandedTransactions, setExpandedTransactions] = useState<Set<string>>(new Set());
   const [internalCurrencyFilter, setInternalCurrencyFilter] = useState<string | null>(null);
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState('');
 
   const filteredTransactions = useMemo(() => {
     let filtered = transactions;
@@ -113,12 +114,31 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
       }
     }
 
+    // Apply text search
+    if (searchText.trim()) {
+      const q = searchText.trim().toLowerCase();
+      filtered = filtered.filter(t => {
+        const dateStr = format(new Date(t.date), 'dd.MM.yyyy');
+        const amountStr = String(t.amount);
+        return (
+          (t.description || '').toLowerCase().includes(q) ||
+          (t.bankTitle || '').toLowerCase().includes(q) ||
+          (t.departmentName || '').toLowerCase().includes(q) ||
+          (t.bankSender || '').toLowerCase().includes(q) ||
+          (t.bankRecipient || '').toLowerCase().includes(q) ||
+          dateStr.includes(q) ||
+          amountStr.includes(q) ||
+          getCategoryName(t.category).toLowerCase().includes(q)
+        );
+      });
+    }
+
     return filtered.sort((a, b) => {
       const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
       if (dateDiff !== 0) return dateDiff;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [transactions, timeRange, typeFilter, customDateRange, selectedCurrency, categoryFilter, internalCurrencyFilter]);
+  }, [transactions, timeRange, typeFilter, customDateRange, selectedCurrency, categoryFilter, internalCurrencyFilter, searchText, getCategoryName]);
 
   // Calculate totals from all transactions (unfiltered by currency) to always show all currency cards
   const totals = useMemo(() => {
@@ -318,6 +338,15 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
             <Download className="w-4 h-4 mr-2" />
             {t('export') || 'HTML'}
           </Button>
+          <div className="relative flex-1 min-w-[180px] max-w-[300px]">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Поиск..."
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              className="h-9 pl-8 text-sm"
+            />
+          </div>
         </div>
       </CardHeader>
       <CardContent>
