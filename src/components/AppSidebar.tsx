@@ -75,7 +75,6 @@ export const AppSidebar = ({
     { id: 'telegram' as const, icon: Bot, label: 'Telegram Бот' },
     { id: 'sync' as const, icon: RefreshCw, label: 'Синхронизация', isSync: true },
     { id: 'openSheet' as const, icon: ExternalLink, label: 'Google Таблица', isOpenSheet: true },
-    { id: 'payout' as const, icon: FileText, label: t('payoutGenerator') },
   ];
 
   const handleTabChange = (tab: TabType) => {
