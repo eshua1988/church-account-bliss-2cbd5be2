@@ -233,7 +233,7 @@ export const CurrencyBalanceCard = ({
                               <TrendingDown className="w-3 h-3 text-destructive flex-shrink-0" />
                             )}
                             <span className="truncate text-xs">
-                              {getCategoryName ? getCategoryName(transaction.category) : transaction.category}
+                              {transaction.departmentName || (getCategoryName ? getCategoryName(transaction.category) : transaction.category)}
                             </span>
                           </div>
                           <div className="flex items-center gap-2 flex-shrink-0">
