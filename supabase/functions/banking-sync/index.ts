@@ -203,20 +203,28 @@ Deno.serve(async (req) => {
           .limit(1)
         const defaultIncomeCatId = incomeCats?.[0]?.id || null
 
+        // Detect "Целевые пожертвования" — income with a 2-digit number in bank_title
+        // Patterns: "37 oleksandr", "37oleksandr", "PRZELEW NA TELEFON 48666***427. 37oleksandr"
+        const targetedDonationRegex = /(?:^|\.\s*)\d{2}(?:\s|\D)/i
+
         const { error } = await db.from('transactions').insert(
-          newTx.map(t => ({
-            user_id,
-            date: t.date,
-            amount: t.amount,
-            description: t.description,
-            type: t.type,
-            category_id: t.type === 'income' ? defaultIncomeCatId : null,
-            source,
-            external_id: t.external_id || null,
-            bank_title: t.bank_title || null,
-            bank_sender: t.bank_sender || null,
-            bank_recipient: t.bank_recipient || null,
-          }))
+          newTx.map(t => {
+            const isTargetedDonation = t.type === 'income' && t.bank_title && targetedDonationRegex.test(t.bank_title)
+            return {
+              user_id,
+              date: t.date,
+              amount: t.amount,
+              description: t.description,
+              type: t.type,
+              category_id: t.type === 'income' ? defaultIncomeCatId : null,
+              source,
+              external_id: t.external_id || null,
+              bank_title: t.bank_title || null,
+              bank_sender: t.bank_sender || null,
+              bank_recipient: t.bank_recipient || null,
+              department_name: isTargetedDonation ? 'Целевые пожертвования' : null,
+            }
+          })
         )
         insertError = error ? String(error.message) : null
         if (!error) imported = newTx.length
