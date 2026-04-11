@@ -365,10 +365,10 @@ const Index = () => {
           {/* Statistics Tab */}
           {activeTab === 'statistics' && (
             <div className="animate-fade-in">
-              <Tabs defaultValue="table" className="w-full">
+              <Tabs defaultValue="balance" className="w-full">
                 <TabsList className="mb-4 flex-wrap h-auto gap-1 p-1">
-                  <TabsTrigger value="table" className="text-xs sm:text-sm">{t('transactionsTable')}</TabsTrigger>
                   <TabsTrigger value="balance" className="text-xs sm:text-sm">{t('balanceByCurrency')}</TabsTrigger>
+                  <TabsTrigger value="table" className="text-xs sm:text-sm">{t('transactionsTable')}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="table">
                   <div>
