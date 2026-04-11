@@ -447,6 +447,11 @@ const Index = () => {
                       onUpdate={handleUpdateCategory}
                       onReorder={handleReorderCategories}
                       transactions={transactions}
+                      onBulkUpdateDepartment={async (ids, dept) => {
+                        for (const id of ids) {
+                          await updateTransaction(id, { departmentName: dept });
+                        }
+                      }}
                     />
                   </div>
                 )}

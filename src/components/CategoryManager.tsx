@@ -4,9 +4,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { TransactionType, Transaction } from '@/types/transaction';
 import { Category } from '@/hooks/useSupabaseCategories';
-import { Plus, Trash2, Tag, Pencil, Check, X, GripVertical, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Trash2, Tag, Pencil, Check, X, GripVertical, ArrowUp, ArrowDown, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/contexts/LanguageContext';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface CategoryManagerProps {
   categories: Category[];
@@ -15,16 +16,49 @@ interface CategoryManagerProps {
   onUpdate?: (id: string, name: string) => void;
   onReorder?: (type: TransactionType, fromIndex: number, toIndex: number) => void;
   transactions?: Transaction[];
+  onBulkUpdateDepartment?: (ids: string[], departmentName: string) => Promise<void>;
 }
 
-export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReorder, transactions = [] }: CategoryManagerProps) => {
+export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReorder, transactions = [], onBulkUpdateDepartment }: CategoryManagerProps) => {
   const { t } = useTranslation();
-  const [activeType, setActiveType] = useState<TransactionType>('income');
+  const [activeType, setActiveType] = useState<TransactionType | 'extension'>('income');
   const [newCategoryName, setNewCategoryName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [extDepartment, setExtDepartment] = useState('');
+  const [extSearchText, setExtSearchText] = useState('');
+  const [extType, setExtType] = useState<'income' | 'expense'>('expense');
+  const [extApplying, setExtApplying] = useState(false);
+  const [extResult, setExtResult] = useState<string | null>(null);
 
-  const filteredCategories = categories.filter(c => c.type === activeType);
+  const filteredCategories = categories.filter(c => c.type === (activeType === 'extension' ? 'expense' : activeType));
+
+  const allDepartments = categories.map(c => c.name);
+
+  const extMatches = useMemo(() => {
+    if (!extSearchText.trim()) return [];
+    const search = extSearchText.trim().toLowerCase();
+    return transactions.filter(tx => {
+      if (extType !== tx.type) return false;
+      const title = (tx.bankTitle || '').toLowerCase();
+      const desc = (tx.description || '').toLowerCase();
+      return title.includes(search) || desc.includes(search);
+    });
+  }, [extSearchText, extType, transactions]);
+
+  const handleExtApply = async () => {
+    if (!onBulkUpdateDepartment || !extDepartment || extMatches.length === 0) return;
+    setExtApplying(true);
+    try {
+      await onBulkUpdateDepartment(extMatches.map(t => t.id), extDepartment);
+      setExtResult(`Обновлено ${extMatches.length} транзакций → ${extDepartment}`);
+      setExtSearchText('');
+    } catch {
+      setExtResult('Ошибка при обновлении');
+    } finally {
+      setExtApplying(false);
+    }
+  };
 
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -119,7 +153,94 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
         >
           {t('expenses')}
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveType('extension')}
+          className={cn(
+            'flex-1 py-2.5 px-4 rounded-md font-semibold transition-all duration-200',
+            activeType === 'extension'
+              ? 'bg-primary text-primary-foreground shadow-md'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          Расширение
+        </button>
       </div>
+
+      {activeType === 'extension' ? (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Тип транзакции</Label>
+            <Select value={extType} onValueChange={(v) => setExtType(v as 'income' | 'expense')}>
+              <SelectTrigger className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="income">{t('income')}</SelectItem>
+                <SelectItem value="expense">{t('expenses')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Название отдела</Label>
+            <Select value={extDepartment} onValueChange={setExtDepartment}>
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="Выберите отдел..." />
+              </SelectTrigger>
+              <SelectContent>
+                {allDepartments.map(name => (
+                  <SelectItem key={name} value={name}>{name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Текст для поиска в титуле / описании</Label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Введите текст для поиска..."
+                value={extSearchText}
+                onChange={(e) => { setExtSearchText(e.target.value); setExtResult(null); }}
+                className="flex-1"
+              />
+              <Button
+                onClick={handleExtApply}
+                disabled={!extDepartment || !extSearchText.trim() || extMatches.length === 0 || extApplying}
+              >
+                <Search className="w-4 h-4 mr-1" />
+                Применить
+              </Button>
+            </div>
+          </div>
+
+          {extSearchText.trim() && (
+            <div className="text-sm text-muted-foreground">
+              Найдено: <span className="font-medium text-foreground">{extMatches.length}</span> транзакций
+            </div>
+          )}
+
+          {extMatches.length > 0 && (
+            <div className="space-y-1 max-h-[200px] overflow-y-auto">
+              {extMatches.slice(0, 20).map(tx => (
+                <div key={tx.id} className="flex items-center justify-between text-xs p-2 bg-muted/50 rounded">
+                  <span className="truncate flex-1">{tx.bankTitle || tx.description || '—'}</span>
+                  <span className="text-muted-foreground ml-2 shrink-0">{tx.departmentName || 'Неизвестно'}</span>
+                </div>
+              ))}
+              {extMatches.length > 20 && (
+                <p className="text-xs text-muted-foreground text-center py-1">...и ещё {extMatches.length - 20}</p>
+              )}
+            </div>
+          )}
+
+          {extResult && (
+            <div className="text-sm font-medium text-success">{extResult}</div>
+          )}
+        </div>
+      ) : (
+      <>
 
       {/* Add New Category */}
       <div className="space-y-2">
@@ -247,6 +368,8 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
           )}
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 };
