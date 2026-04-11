@@ -70,7 +70,6 @@ export const AppSidebar = ({
 
   const menuItems = [
     { id: 'statistics' as const, icon: BarChart3, label: t('statistics') },
-    { id: 'banking' as const, icon: Building2, label: 'Банкинг' },
     { id: 'settings' as const, icon: Settings, label: t('settings') },
     { id: 'notifications' as const, icon: Mail, label: 'Уведомления' },
     { id: 'telegram' as const, icon: Bot, label: 'Telegram Бот' },

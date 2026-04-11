@@ -28,7 +28,7 @@ import { useNotifications } from '@/hooks/useNotifications';
 
 const Index = () => {
   const { t, getDateLocale } = useTranslation();
-  const [activeTab, setActiveTab] = useState<'statistics' | 'payout' | 'settings' | 'notifications' | 'banking' | 'telegram'>('statistics');
+  const [activeTab, setActiveTab] = useState<'statistics' | 'payout' | 'settings' | 'notifications' | 'telegram'>('statistics');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { toast } = useToast();
@@ -453,17 +453,14 @@ const Index = () => {
               <SharePayoutLink />
               <Separator />
               <TelegramBotSettings />
+              <Separator />
+              <BankingPage />
             </div>
           )}
 
           {/* Notifications Tab */}
           {activeTab === 'notifications' && (
             <NotificationsPage />
-          )}
-
-          {/* Banking Tab */}
-          {activeTab === 'banking' && (
-            <BankingPage />
           )}
 
           {/* Telegram Bot Menu Tab */}
