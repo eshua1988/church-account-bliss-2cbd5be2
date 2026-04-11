@@ -423,7 +423,6 @@ const Index = () => {
           {activeTab === 'payout' && (
             <div className="animate-fade-in space-y-6">
               <PayoutGenerator />
-              <SharePayoutLink />
             </div>
           )}
 
@@ -450,6 +449,8 @@ const Index = () => {
                   expenseCategories={expenseCategories}
                 />
               </div>
+              <Separator />
+              <SharePayoutLink />
               <Separator />
               <TelegramBotSettings />
             </div>
