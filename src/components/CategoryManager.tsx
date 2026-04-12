@@ -66,12 +66,23 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
   };
 
   const saveRule = async () => {
-    if (!editingRuleId || !editRuleText.trim() || !editRuleDept) return;
+    if (!editingRuleId || !editRuleText.trim() || !editRuleDept || !onBulkUpdateDepartment) return;
     await supabase.from('department_rules').update({
       search_text: editRuleText.trim(),
       department_name: editRuleDept,
       transaction_type: editRuleType,
     } as any).eq('id', editingRuleId);
+    // Apply updated rule to matching transactions
+    const search = editRuleText.trim().toLowerCase();
+    const matching = transactions.filter(tx => {
+      if (editRuleType !== tx.type) return false;
+      const title = (tx.bankTitle || '').toLowerCase();
+      const desc = (tx.description || '').toLowerCase();
+      return title.includes(search) || desc.includes(search);
+    });
+    if (matching.length > 0) {
+      await onBulkUpdateDepartment(matching.map(tx => tx.id), editRuleDept);
+    }
     setEditingRuleId(null);
     await loadRules();
   };
