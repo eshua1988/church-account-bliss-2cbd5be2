@@ -48,9 +48,32 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
 
   useEffect(() => { loadRules(); }, [loadRules]);
 
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [editRuleText, setEditRuleText] = useState('');
+  const [editRuleDept, setEditRuleDept] = useState('');
+  const [editRuleType, setEditRuleType] = useState<'income' | 'expense'>('expense');
+
   const deleteRule = async (id: string) => {
     await supabase.from('department_rules').delete().eq('id', id);
     setRules(prev => prev.filter(r => r.id !== id));
+  };
+
+  const startEditRule = (rule: DepartmentRule) => {
+    setEditingRuleId(rule.id);
+    setEditRuleText(rule.search_text);
+    setEditRuleDept(rule.department_name);
+    setEditRuleType(rule.transaction_type as 'income' | 'expense');
+  };
+
+  const saveRule = async () => {
+    if (!editingRuleId || !editRuleText.trim() || !editRuleDept) return;
+    await supabase.from('department_rules').update({
+      search_text: editRuleText.trim(),
+      department_name: editRuleDept,
+      transaction_type: editRuleType,
+    } as any).eq('id', editingRuleId);
+    setEditingRuleId(null);
+    await loadRules();
   };
 
   const filteredCategories = categories.filter(c => c.type === (activeType === 'extension' ? 'expense' : activeType));
@@ -261,17 +284,58 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
           {rules.length > 0 && (
             <div className="space-y-1 mt-4">
               <Label className="text-xs text-muted-foreground">Сохранённые правила (авто-применение)</Label>
-              <div className="space-y-1 max-h-[200px] overflow-y-auto">
+              <div className="space-y-1 max-h-[300px] overflow-y-auto">
                 {rules.map(rule => (
-                  <div key={rule.id} className="flex items-center justify-between text-xs p-2 bg-muted/50 rounded">
-                    <span className="truncate flex-1">
-                      «{rule.search_text}» → <span className="font-medium">{rule.department_name}</span>
-                      <span className="text-muted-foreground ml-1">({rule.transaction_type === 'income' ? 'доход' : 'расход'})</span>
-                    </span>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 ml-1" onClick={() => deleteRule(rule.id)}>
-                      <Trash2 className="w-3 h-3 text-destructive" />
-                    </Button>
-                  </div>
+                  editingRuleId === rule.id ? (
+                    <div key={rule.id} className="space-y-2 p-2 bg-muted/50 rounded border border-primary/30">
+                      <Input
+                        value={editRuleText}
+                        onChange={(e) => setEditRuleText(e.target.value)}
+                        className="h-7 text-xs"
+                        placeholder="Текст поиска"
+                      />
+                      <Select value={editRuleDept} onValueChange={setEditRuleDept}>
+                        <SelectTrigger className="h-7 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {allDepartments.map(name => (
+                            <SelectItem key={name} value={name}>{name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="flex items-center gap-2">
+                        <Select value={editRuleType} onValueChange={(v) => setEditRuleType(v as 'income' | 'expense')}>
+                          <SelectTrigger className="h-7 text-xs flex-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="income">{t('income')}</SelectItem>
+                            <SelectItem value="expense">{t('expenses')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={saveRule}>
+                          <Check className="w-3 h-3 text-success" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setEditingRuleId(null)}>
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div key={rule.id} className="flex items-center justify-between text-xs p-2 bg-muted/50 rounded">
+                      <span className="truncate flex-1">
+                        «{rule.search_text}» → <span className="font-medium">{rule.department_name}</span>
+                        <span className="text-muted-foreground ml-1">({rule.transaction_type === 'income' ? 'доход' : 'расход'})</span>
+                      </span>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 ml-1" onClick={() => startEditRule(rule)}>
+                        <Pencil className="w-3 h-3" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => deleteRule(rule.id)}>
+                        <Trash2 className="w-3 h-3 text-destructive" />
+                      </Button>
+                    </div>
+                  )
                 ))}
               </div>
             </div>
