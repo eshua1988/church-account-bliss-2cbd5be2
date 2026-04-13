@@ -439,12 +439,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                             <p className="font-medium">{transaction.departmentName}</p>
                           </div>
                         )}
-                        {transaction.description && (
-                          <div className="col-span-2">
-                            <p className="text-muted-foreground text-xs">{t('description')}</p>
-                            <p className="font-medium">{transaction.description}</p>
-                          </div>
-                        )}
                         {transaction.bankTitle && (
                           <div className="col-span-2">
                             <p className="text-muted-foreground text-xs">Tytuł</p>
@@ -564,12 +558,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                 <div>
                                   <p className="text-muted-foreground text-xs">Название отдела</p>
                                   <p className="font-medium">{transaction.departmentName}</p>
-                                </div>
-                              )}
-                              {transaction.description && (
-                                <div className="col-span-2">
-                                  <p className="text-muted-foreground text-xs">{t('description')}</p>
-                                  <p className="font-medium">{transaction.description}</p>
                                 </div>
                               )}
                               {transaction.bankTitle && (
