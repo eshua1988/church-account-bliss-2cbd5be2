@@ -1285,8 +1285,8 @@ const PublicPayout = () => {
         image.src = originalDataUrl;
       });
 
-      // Resize to max 1200px on the longest side to keep PDF size reasonable
-      const MAX_PX = 1200;
+      // Resize to max 800px on the longest side to keep PDF size small
+      const MAX_PX = 800;
       let srcW = imgElement.naturalWidth;
       let srcH = imgElement.naturalHeight;
       if (srcW > MAX_PX || srcH > MAX_PX) {
@@ -1299,13 +1299,13 @@ const PublicPayout = () => {
         }
       }
 
-      // Draw to offscreen canvas and export as JPEG quality 0.72
+      // Draw to offscreen canvas and export as JPEG quality 0.55
       const canvas = document.createElement('canvas');
       canvas.width = srcW;
       canvas.height = srcH;
       const ctx2d = canvas.getContext('2d')!;
       ctx2d.drawImage(imgElement, 0, 0, srcW, srcH);
-      const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.72);
+      const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.55);
 
       // Fit into PDF page
       const imgMargin = 15;
@@ -1337,6 +1337,13 @@ const PublicPayout = () => {
 
     setIsSaving(true);
 
+    // Helper: wrap a promise with timeout for mobile reliability
+    const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> =>
+      Promise.race([
+        promise,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Превышено время ожидания. Проверьте интернет и попробуйте ещё раз.')), ms)),
+      ]);
+
     try {
       // If continuing an existing payout, update it instead of creating new
       if (continuingPayout) {
@@ -1351,7 +1358,7 @@ const PublicPayout = () => {
 
         const pdfResult = await generatePDF();
 
-        const updateResult = await supabase.functions.invoke('add-images-to-payout', {
+        const updateResult = await withTimeout(supabase.functions.invoke('add-images-to-payout', {
           body: {
             token,
             transactionId: continuingPayout.id,
@@ -1366,7 +1373,7 @@ const PublicPayout = () => {
             updatedDepartmentName: formData.departmentName,
             updatedCategoryId: selectedCategory?.id ?? null,
           },
-        });
+        }), 120000);
 
         if (updateResult.error) throw updateResult.error;
         if (updateResult.data?.error) throw new Error(updateResult.data.error);
@@ -1419,7 +1426,8 @@ const PublicPayout = () => {
       // Encode signature as base64 string (strip data: prefix)
       const signatureBase64 = signatureDataUrl ? signatureDataUrl.split(',')[1] : undefined;
 
-      // Compress and encode each image as JPEG base64 (max 1024px, quality 0.65)
+      // Compress and encode each image as JPEG base64 (max 600px, quality 0.45)
+      // Only needed as fallback — if clientPdfBase64 succeeds, images are already embedded
       const imagesBase64: string[] = [];
       if (attachedImages.length > 0 && !imagesOptional) {
         for (const img of attachedImages) {
@@ -1430,7 +1438,7 @@ const PublicPayout = () => {
               image.onload = () => resolve();
               image.src = img.preview;
             });
-            const MAX = 1024;
+            const MAX = 600;
             let w = image.naturalWidth || image.width;
             let h = image.naturalHeight || image.height;
             if (w > MAX || h > MAX) {
@@ -1440,7 +1448,7 @@ const PublicPayout = () => {
             canvas.width = w;
             canvas.height = h;
             canvas.getContext('2d')!.drawImage(image, 0, 0, w, h);
-            const b64 = canvas.toDataURL('image/jpeg', 0.65).split(',')[1];
+            const b64 = canvas.toDataURL('image/jpeg', 0.45).split(',')[1];
             imagesBase64.push(b64);
           } catch (e) {
             console.error('Image compress error:', e);
@@ -1459,7 +1467,8 @@ const PublicPayout = () => {
       }
 
       // 3. Submit transaction — server stores PDF (client-generated or server fallback)
-      const submitResult = await supabase.functions.invoke('submit-public-payout', {
+      //    When client PDF is available, skip sending imagesBase64 to reduce payload size
+      const submitResult = await withTimeout(supabase.functions.invoke('submit-public-payout', {
         body: {
           token,
           amount: parseFloat(formData.amount),
@@ -1475,11 +1484,11 @@ const PublicPayout = () => {
           decisionNumber: formData.bankAccount,
           bankAccount: formData.bankAccount,
           signatureBase64: signatureBase64 || undefined,
-          imagesBase64: imagesBase64.length > 0 ? imagesBase64 : undefined,
+          imagesBase64: !clientPdfBase64 && imagesBase64.length > 0 ? imagesBase64 : undefined,
           language: language,
           clientPdfBase64,
         }
-      });
+      }), 120000);
 
       if (submitResult.error) throw submitResult.error;
       if (submitResult.data?.error) throw new Error(submitResult.data.error);
