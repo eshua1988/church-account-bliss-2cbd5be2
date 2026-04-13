@@ -470,7 +470,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                         )}
                         {transaction.bankTitle && (
                           <div className="col-span-2">
-                            <p className="text-muted-foreground text-xs">Tytuł</p>
+                            <p className="text-muted-foreground text-xs">{transaction.source === 'enablebanking' ? 'Tytuł' : 'Na podstawie'}</p>
                             <p className="font-medium">{transaction.bankTitle}</p>
                           </div>
                         )}
@@ -478,12 +478,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                           <div className="col-span-2">
                             <p className="text-muted-foreground text-xs">Nadawca</p>
                             <p className="font-medium">{transaction.bankSender}</p>
-                          </div>
-                        )}
-                        {transaction.bankRecipient && (
-                          <div className="col-span-2">
-                            <p className="text-muted-foreground text-xs">Odbiorca</p>
-                            <p className="font-medium">{transaction.bankRecipient}</p>
                           </div>
                         )}
                         {transaction.issuedTo && (
@@ -591,7 +585,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                               )}
                               {transaction.bankTitle && (
                                 <div className="col-span-2">
-                                  <p className="text-muted-foreground text-xs">Tytuł</p>
+                                  <p className="text-muted-foreground text-xs">{transaction.source === 'enablebanking' ? 'Tytuł' : 'Na podstawie'}</p>
                                   <p className="font-medium">{transaction.bankTitle}</p>
                                 </div>
                               )}
@@ -599,12 +593,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                 <div>
                                   <p className="text-muted-foreground text-xs">Nadawca</p>
                                   <p className="font-medium">{transaction.bankSender}</p>
-                                </div>
-                              )}
-                              {transaction.bankRecipient && (
-                                <div>
-                                  <p className="text-muted-foreground text-xs">Odbiorca</p>
-                                  <p className="font-medium">{transaction.bankRecipient}</p>
                                 </div>
                               )}
                               {transaction.issuedTo && (
