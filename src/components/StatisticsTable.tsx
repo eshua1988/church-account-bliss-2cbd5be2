@@ -468,11 +468,20 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                             <p className="font-medium">{transaction.departmentName}</p>
                           </div>
                         )}
-                        {transaction.bankTitle && (
-                          <div className="col-span-2">
-                            <p className="text-muted-foreground text-xs">{transaction.source === 'enablebanking' ? 'Tytuł' : 'Na podstawie'}</p>
-                            <p className="font-medium">{transaction.bankTitle}</p>
-                          </div>
+                        {transaction.source === 'enablebanking' ? (
+                          transaction.bankTitle && (
+                            <div className="col-span-2">
+                              <p className="text-muted-foreground text-xs">Tytuł</p>
+                              <p className="font-medium">{transaction.bankTitle}</p>
+                            </div>
+                          )
+                        ) : (
+                          transaction.description && (
+                            <div className="col-span-2">
+                              <p className="text-muted-foreground text-xs">Na podstawie</p>
+                              <p className="font-medium">{transaction.description}</p>
+                            </div>
+                          )
                         )}
                         {transaction.bankSender && (
                           <div className="col-span-2">
@@ -583,11 +592,20 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                   <p className="font-medium">{transaction.departmentName}</p>
                                 </div>
                               )}
-                              {transaction.bankTitle && (
-                                <div className="col-span-2">
-                                  <p className="text-muted-foreground text-xs">{transaction.source === 'enablebanking' ? 'Tytuł' : 'Na podstawie'}</p>
-                                  <p className="font-medium">{transaction.bankTitle}</p>
-                                </div>
+                              {transaction.source === 'enablebanking' ? (
+                                transaction.bankTitle && (
+                                  <div className="col-span-2">
+                                    <p className="text-muted-foreground text-xs">Tytuł</p>
+                                    <p className="font-medium">{transaction.bankTitle}</p>
+                                  </div>
+                                )
+                              ) : (
+                                transaction.description && (
+                                  <div className="col-span-2">
+                                    <p className="text-muted-foreground text-xs">Na podstawie</p>
+                                    <p className="font-medium">{transaction.description}</p>
+                                  </div>
+                                )
                               )}
                               {transaction.bankSender && (
                                 <div>
