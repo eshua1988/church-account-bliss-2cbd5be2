@@ -23,9 +23,9 @@ export const LanguageSelector = () => {
 
   return (
     <Select value={language} onValueChange={(v) => setLanguage(v as Language)}>
-      <SelectTrigger className="w-[140px] bg-card border-border">
-        <Globe className="w-4 h-4 mr-2 text-muted-foreground" />
-        <SelectValue />
+      <SelectTrigger className="w-10 sm:w-[140px] bg-card border-border">
+        <Globe className="w-4 h-4 sm:mr-2 text-muted-foreground shrink-0" />
+        <span className="hidden sm:inline"><SelectValue /></span>
       </SelectTrigger>
       <SelectContent>
         {languages.map((lang) => (
