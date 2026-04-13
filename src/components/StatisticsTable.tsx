@@ -294,37 +294,35 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
     <Card>
       <CardHeader className="pb-4">
         <CardTitle className="text-base font-semibold mb-3">{t('transactionsTable')}</CardTitle>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant={typeFilter === 'all' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setTypeFilter('all')}
-            className="font-medium"
-          >
-            Все
-          </Button>
-          <Button
-            variant={typeFilter === 'income' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setTypeFilter('income')}
-            className="font-medium"
-          >
-            {t('income')}
-          </Button>
-          <Button
-            variant={typeFilter === 'expense' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setTypeFilter('expense')}
-            className="font-medium"
-          >
-            {t('expenses')}
-          </Button>
-          <Button variant="outline" size="sm" onClick={exportToPDF} className="font-medium">
-            <Download className="w-4 h-4 mr-2" />
-            {t('export') || 'HTML'}
-          </Button>
+
+        {/* Totals Summary */}
+        <div className="flex gap-3 mb-3 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
+          {Object.entries(totals).map(([currency, { income, expense }]) => (
+            <div 
+              key={currency} 
+              onClick={() => toggleCurrencyFilter(currency)}
+              className={cn(
+                "p-3 rounded-lg space-y-1 cursor-pointer transition-all flex-shrink-0 min-w-[110px]",
+                internalCurrencyFilter === currency 
+                  ? "bg-primary/20 ring-2 ring-primary" 
+                  : "bg-secondary/50 hover:bg-secondary/70"
+              )}
+            >
+              <p className="text-xs text-muted-foreground font-medium">{currency}</p>
+              <div className="flex items-center gap-1 text-success">
+                <TrendingUp className="w-3 h-3" />
+                <span className="text-sm font-semibold">+{income.toLocaleString(getDateLocale())}</span>
+              </div>
+              <div className="flex items-center gap-1 text-destructive">
+                <TrendingDown className="w-3 h-3" />
+                <span className="text-sm font-semibold">-{expense.toLocaleString(getDateLocale())}</span>
+              </div>
+            </div>
+          ))}
         </div>
-        <div className="flex items-center gap-2 mt-2">
+
+        {/* Search */}
+        <div className="flex items-center gap-2">
           <div className="relative flex-1 min-w-[180px]">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -378,35 +376,36 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
             )}
           </div>
         )}
+
+        {/* Type filter buttons */}
+        <div className="flex flex-wrap items-center gap-2 mt-2">
+          <Button
+            variant={typeFilter === 'all' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTypeFilter('all')}
+            className="font-medium"
+          >
+            Все
+          </Button>
+          <Button
+            variant={typeFilter === 'income' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTypeFilter('income')}
+            className="font-medium"
+          >
+            {t('income')}
+          </Button>
+          <Button
+            variant={typeFilter === 'expense' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTypeFilter('expense')}
+            className="font-medium"
+          >
+            {t('expenses')}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
-        {/* Totals Summary */}
-        <div className="flex gap-3 mb-4 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
-          {Object.entries(totals).map(([currency, { income, expense }]) => (
-            <div 
-              key={currency} 
-              onClick={() => toggleCurrencyFilter(currency)}
-              className={cn(
-                "p-3 rounded-lg space-y-1 cursor-pointer transition-all flex-shrink-0 min-w-[110px]",
-                internalCurrencyFilter === currency 
-                  ? "bg-primary/20 ring-2 ring-primary" 
-                  : "bg-secondary/50 hover:bg-secondary/70"
-              )}
-            >
-              <p className="text-xs text-muted-foreground font-medium">{currency}</p>
-              <div className="flex items-center gap-1 text-success">
-                <TrendingUp className="w-3 h-3" />
-                <span className="text-sm font-semibold">+{income.toLocaleString(getDateLocale())}</span>
-              </div>
-              <div className="flex items-center gap-1 text-destructive">
-                <TrendingDown className="w-3 h-3" />
-                <span className="text-sm font-semibold">-{expense.toLocaleString(getDateLocale())}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Transactions — mobile cards / desktop table */}
 
         {/* Mobile: card list */}
         <div className="sm:hidden space-y-2">
