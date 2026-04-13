@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp, TrendingDown, Trash2, Download, ChevronDown, ChevronUp, FileText, Settings, Search } from 'lucide-react';
+import { TrendingUp, TrendingDown, Trash2, Download, ChevronDown, ChevronUp, FileText, Settings, Search, SlidersHorizontal } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -50,6 +50,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
   const [internalCurrencyFilter, setInternalCurrencyFilter] = useState<string | null>(null);
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const filteredTransactions = useMemo(() => {
     let filtered = transactions;
@@ -318,27 +319,13 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
           >
             {t('expenses')}
           </Button>
-          <DateRangeFilter value={customDateRange} onChange={setCustomDateRange} />
-          {categories.length > 0 && (
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder={t('category')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Все категории</SelectItem>
-                {categories.map(cat => (
-                  <SelectItem key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
           <Button variant="outline" size="sm" onClick={exportToPDF} className="font-medium">
             <Download className="w-4 h-4 mr-2" />
             {t('export') || 'HTML'}
           </Button>
-          <div className="relative flex-1 min-w-[180px] max-w-[300px]">
+        </div>
+        <div className="flex items-center gap-2 mt-2">
+          <div className="relative flex-1 min-w-[180px]">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Поиск..."
@@ -347,7 +334,49 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
               className="h-9 pl-8 text-sm"
             />
           </div>
+          <Button
+            variant={filtersOpen ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setFiltersOpen(!filtersOpen)}
+            className="font-medium shrink-0"
+          >
+            <SlidersHorizontal className="w-4 h-4 mr-1" />
+            Фильтры
+            {(categoryFilter !== 'all' || customDateRange.from || customDateRange.to) && (
+              <span className="ml-1 w-2 h-2 rounded-full bg-primary inline-block" />
+            )}
+          </Button>
         </div>
+        {filtersOpen && (
+          <div className="flex flex-wrap items-center gap-2 mt-2 p-2 rounded-md bg-muted/30 border">
+            <DateRangeFilter value={customDateRange} onChange={setCustomDateRange} />
+            {categories.length > 0 && (
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="w-[180px] h-9">
+                  <SelectValue placeholder={t('category')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все категории</SelectItem>
+                  {categories.map(cat => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {(categoryFilter !== 'all' || customDateRange.from || customDateRange.to) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setCategoryFilter('all'); setCustomDateRange({}); }}
+                className="text-xs text-muted-foreground"
+              >
+                Сбросить
+              </Button>
+            )}
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         {/* Totals Summary */}
