@@ -512,6 +512,9 @@ export const NotificationsPage = () => {
         amountInWords: (meta?.amount_in_words as string) || undefined,
         decisionNumber: (meta?.decision_number as string) || undefined,
         departmentName: (meta?.department_name as string) || undefined,
+        bankTitle: (meta?.basis as string) || undefined,
+        bankSender: (meta?.submitter_name as string) || undefined,
+        bankRecipient: (meta?.issued_to as string) || undefined,
       });
 
       // Write transaction_id back to notification metadata
