@@ -7,7 +7,7 @@ import { Category } from '@/hooks/useSupabaseCategories';
 import { Plus, Trash2, Tag, Pencil, Check, X, GripVertical, ArrowUp, ArrowDown, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/contexts/LanguageContext';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 
 interface DepartmentRule {
@@ -90,6 +90,8 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
   const filteredCategories = categories.filter(c => c.type === (activeType === 'extension' ? 'expense' : activeType));
 
   const allDepartments = categories.map(c => c.name);
+  const incomeCategories = categories.filter(c => c.type === 'income');
+  const expenseCategories = categories.filter(c => c.type === 'expense');
 
   const extMatches = useMemo(() => {
     if (!extSearchText.trim()) return [];
@@ -256,9 +258,22 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
                 <SelectValue placeholder="Выберите отдел..." />
               </SelectTrigger>
               <SelectContent>
-                {allDepartments.map(name => (
-                  <SelectItem key={name} value={name}>{name}</SelectItem>
-                ))}
+                {incomeCategories.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Доходы</SelectLabel>
+                    {incomeCategories.map(c => (
+                      <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+                {expenseCategories.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Расходы</SelectLabel>
+                    {expenseCategories.map(c => (
+                      <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
               </SelectContent>
             </Select>
           </div>
