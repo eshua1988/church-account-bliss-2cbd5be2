@@ -260,7 +260,7 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
               <SelectContent>
                 {incomeCategories.length > 0 && (
                   <SelectGroup>
-                    <SelectLabel>Доходы</SelectLabel>
+                    <SelectLabel className="text-success font-semibold">Доходы</SelectLabel>
                     {incomeCategories.map(c => (
                       <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
                     ))}
@@ -268,7 +268,7 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
                 )}
                 {expenseCategories.length > 0 && (
                   <SelectGroup>
-                    <SelectLabel>Расходы</SelectLabel>
+                    <SelectLabel className="text-destructive font-semibold">Расходы</SelectLabel>
                     {expenseCategories.map(c => (
                       <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
                     ))}
