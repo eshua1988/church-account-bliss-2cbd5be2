@@ -331,21 +331,22 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
               placeholder="Поиск..."
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              className="h-9 pl-8 text-sm"
+              className="h-9 pl-8 pr-9 text-sm"
             />
+            <button
+              type="button"
+              onClick={() => setFiltersOpen(!filtersOpen)}
+              className={cn(
+                "absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded transition-colors",
+                filtersOpen ? "text-primary" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              {(categoryFilter !== 'all' || customDateRange.from || customDateRange.to) && (
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary" />
+              )}
+            </button>
           </div>
-          <Button
-            variant={filtersOpen ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setFiltersOpen(!filtersOpen)}
-            className="font-medium shrink-0"
-          >
-            <SlidersHorizontal className="w-4 h-4 mr-1" />
-            Фильтры
-            {(categoryFilter !== 'all' || customDateRange.from || customDateRange.to) && (
-              <span className="ml-1 w-2 h-2 rounded-full bg-primary inline-block" />
-            )}
-          </Button>
         </div>
         {filtersOpen && (
           <div className="flex flex-wrap items-center gap-2 mt-2 p-2 rounded-md bg-muted/30 border">
