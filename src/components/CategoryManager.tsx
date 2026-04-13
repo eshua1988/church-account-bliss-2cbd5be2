@@ -238,26 +238,14 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
 
       {activeType === 'extension' ? (
         <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>Тип транзакции</Label>
-            <Select value={extType} onValueChange={(v) => setExtType(v as 'income' | 'expense')}>
-              <SelectTrigger className="h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="income">{t('income')}</SelectItem>
-                <SelectItem value="expense">{t('expenses')}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Название отдела</Label>
-            <Select value={extDepartment} onValueChange={setExtDepartment}>
-              <SelectTrigger className="h-9">
-                <SelectValue placeholder="Выберите отдел..." />
-              </SelectTrigger>
-              <SelectContent>
+          <div className="flex gap-2 items-end">
+            <div className="flex-1 space-y-2">
+              <Label>Название отдела</Label>
+              <Select value={extDepartment} onValueChange={setExtDepartment}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Выберите отдел..." />
+                </SelectTrigger>
+                <SelectContent>
                 {incomeCategories.length > 0 && (
                   <SelectGroup>
                     <SelectLabel className="text-success font-semibold">Доходы</SelectLabel>
@@ -276,6 +264,19 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
                 )}
               </SelectContent>
             </Select>
+            </div>
+            <div className="w-[140px] space-y-2">
+              <Label>Тип</Label>
+              <Select value={extType} onValueChange={(v) => setExtType(v as 'income' | 'expense')}>
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="income">{t('income')}</SelectItem>
+                  <SelectItem value="expense">{t('expenses')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="space-y-2">
