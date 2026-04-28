@@ -22,6 +22,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
 import { CurrencyConverter } from '@/components/CurrencyConverter';
+import * as pdfjsLib from 'pdfjs-dist';
 
 type Language = 'pl' | 'ru' | 'en' | 'uk';
 type LinkType = 'standard' | 'stepwise';
@@ -343,6 +344,8 @@ const translations: Record<Language, Record<string, string>> = {
 interface AttachedImage {
   file: File;
   preview: string;
+  isFromPdf?: boolean;
+  pageNumber?: number;
 }
 
 interface PayoutFormData {
@@ -695,6 +698,9 @@ const PublicPayout = () => {
 
   // Load shared link and categories via secure edge function
   useEffect(() => {
+    // Initialize PDF.js worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    
     const loadData = async () => {
       if (!token) {
         setError('Nieprawidłowy link');
@@ -1051,18 +1057,61 @@ const PublicPayout = () => {
 
   const stopDrawingFull = () => setIsDrawingFull(false);
 
-  // Image attachment handlers
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Image attachment handlers with PDF support
+  const convertPdfToImages = async (file: File): Promise<AttachedImage[]> => {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const images: AttachedImage[] = [];
+      
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        const canvas = document.createElement('canvas');
+        const scale = 2;
+        const viewport = page.getViewport({ scale });
+        
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        
+        const context = canvas.getContext('2d');
+        if (!context) continue;
+        
+        await page.render({
+          canvasContext: context,
+          viewport: viewport,
+        }).promise;
+        
+        const preview = canvas.toDataURL('image/png');
+        images.push({
+          file,
+          preview,
+          isFromPdf: true,
+          pageNumber: pageNum,
+        });
+      }
+      
+      return images;
+    } catch (error) {
+      console.error('Error converting PDF to images:', error);
+      return [];
+    }
+  };
+
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
     const newImages: AttachedImage[] = [];
-    Array.from(files).forEach(file => {
+    
+    for (const file of Array.from(files)) {
       if (file.type.startsWith('image/')) {
         const preview = URL.createObjectURL(file);
         newImages.push({ file, preview });
+      } else if (file.type === 'application/pdf') {
+        const pdfImages = await convertPdfToImages(file);
+        newImages.push(...pdfImages);
       }
-    });
+    }
 
     setAttachedImages(prev => [...prev, ...newImages]);
     
@@ -2399,7 +2448,7 @@ const PublicPayout = () => {
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="image/*"
+                      accept="image/*,.pdf"
                       multiple
                       onChange={handleImageSelect}
                       className="hidden"
@@ -2423,6 +2472,11 @@ const PublicPayout = () => {
                               alt={`${t.attachments} ${index + 1}`}
                               className="w-full h-20 object-cover rounded-lg border border-border"
                             />
+                            {img.isFromPdf && (
+                              <div className="absolute top-1 left-1 bg-primary/80 text-white text-xs px-1.5 py-0.5 rounded">
+                                P{img.pageNumber}
+                              </div>
+                            )}
                             <button
                               type="button"
                               onClick={() => removeImage(index)}
