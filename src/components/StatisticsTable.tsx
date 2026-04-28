@@ -166,6 +166,24 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
     return result;
   }, [transactions, typeFilter, categoryFilter]);
 
+  // Calculate filtered totals (with search and all filters applied)
+  const filteredTotals = useMemo(() => {
+    const result: Record<string, { income: number; expense: number }> = {};
+    
+    filteredTransactions.forEach(t => {
+      if (!result[t.currency]) {
+        result[t.currency] = { income: 0, expense: 0 };
+      }
+      if (t.type === 'income') {
+        result[t.currency].income += t.amount;
+      } else {
+        result[t.currency].expense += t.amount;
+      }
+    });
+
+    return result;
+  }, [filteredTransactions]);
+
   const toggleCurrencyFilter = (currency: string) => {
     setInternalCurrencyFilter(prev => prev === currency ? null : currency);
   };
@@ -636,6 +654,28 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
             </tbody>
           </table>
         </div>
+
+        {/* Filtered totals summary - show when search or filters are active */}
+        {(searchText.trim() || customDateRange.from || customDateRange.to || categoryFilter !== 'all') && (
+          <div className="mt-4 p-3 rounded-lg bg-primary/5 border border-primary/20">
+            <p className="text-xs text-muted-foreground mb-2 font-medium">Итого по фильтрам:</p>
+            <div className="flex flex-wrap gap-3">
+              {Object.entries(filteredTotals).map(([currency, { income, expense }]) => (
+                <div key={currency} className="space-y-1">
+                  <p className="text-xs text-muted-foreground font-medium">{currency}</p>
+                  <div className="flex items-center gap-1 text-success">
+                    <TrendingUp className="w-3 h-3" />
+                    <span className="text-sm font-semibold">+{income.toLocaleString(getDateLocale())}</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-destructive">
+                    <TrendingDown className="w-3 h-3" />
+                    <span className="text-sm font-semibold">-{expense.toLocaleString(getDateLocale())}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         
         {selectedTransactions.size > 0 && (
           <>
