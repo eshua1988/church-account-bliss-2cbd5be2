@@ -18,6 +18,7 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { GoogleSheetsSync } from '@/components/GoogleSheetsSync';
 import { TelegramBotSettings } from '@/components/TelegramBotSettings';
 import { SharePayoutLink } from '@/components/SharePayoutLink';
+import { ShareTransactionsLink } from '@/components/ShareTransactionsLink';
 import { NotificationsPage } from '@/components/NotificationsPage';
 import { BankingPage } from '@/components/BankingPage';
 import { TelegramMenuPage } from '@/components/TelegramMenuPage';
@@ -482,8 +483,16 @@ const Index = () => {
                   {openSettings.share ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
                 </button>
                 {openSettings.share && (
-                  <div className="px-4 pb-4 sm:px-6 sm:pb-6">
-                    <SharePayoutLink />
+                  <div className="px-4 pb-4 sm:px-6 sm:pb-6 space-y-6">
+                    <div>
+                      <h5 className="font-semibold text-sm mb-3">Расходный ордер</h5>
+                      <SharePayoutLink />
+                    </div>
+                    <Separator />
+                    <div>
+                      <h5 className="font-semibold text-sm mb-3">Таблица транзакций</h5>
+                      <ShareTransactionsLink />
+                    </div>
                   </div>
                 )}
               </div>

@@ -11,6 +11,7 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import PublicPayout from "./pages/PublicPayout";
+import PublicTransactions from "./pages/PublicTransactions";
 import SignaturePad from "./pages/SignaturePad";
 import BankCallback from "./pages/BankCallback";
 
@@ -46,6 +47,7 @@ const App = () => (
             <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/payout/:token" element={<PublicPayout />} />
+              <Route path="/transactions/:token" element={<PublicTransactions />} />
               <Route path="/sign" element={<SignaturePad />} />
               <Route 
                 path="/" 
