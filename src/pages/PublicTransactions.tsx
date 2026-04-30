@@ -83,17 +83,24 @@ const PublicTransactions = () => {
 
         setLinkData(linkData);
 
-        // Load categories for this owner
-        const { data: categoriesData, error: categoriesError } = await supabase
-          .from('categories')
-          .select('*')
-          .eq('user_id', linkData.owner_user_id)
-          .order('order', { ascending: true });
+        // Load categories for this owner (optional - don't fail if not available)
+        try {
+          const { data: categoriesData, error: categoriesError } = await supabase
+            .from('categories')
+            .select('*')
+            .eq('user_id', linkData.owner_user_id)
+            .order('order', { ascending: true });
 
-        if (categoriesError) {
-          console.error('Categories error:', categoriesError);
+          if (categoriesError) {
+            console.warn('Categories not available:', categoriesError.message);
+            setCategories([]);
+          } else {
+            setCategories(categoriesData || []);
+          }
+        } catch (catErr) {
+          console.warn('Categories loading failed:', catErr);
+          setCategories([]);
         }
-        setCategories(categoriesData || []);
 
         // Load transactions for the link owner
         const { data: transactionsData, error: transactionsError } = await supabase
@@ -147,8 +154,10 @@ const PublicTransactions = () => {
 
     // Apply text search - exact word match in description, bankTitle, and names
     if (searchText.trim()) {
-      const searchWords = searchText.trim().toLowerCase().split(/[\s\-_.,;:'"«»()[\]{}]/g).filter(w => w.length > 0);
-      
+      const searchWords = searchText.trim().toLowerCase().split(/[\s\-_.,;:'"«»()[\]{}]/g).filter(w => w.length >= 2); // Minimum 2 characters
+
+      if (searchWords.length === 0) return false; // No valid search words
+
       // Combine all searchable text fields
       const fullSearchableText = [
         t.description || '',
@@ -159,14 +168,14 @@ const PublicTransactions = () => {
         t.cashierName || ''
       ].join(' ').toLowerCase();
 
-      // Split by word separators (spaces, punctuation, etc.) for all languages
+      // Split by word separators and filter out short words
       const allWords = fullSearchableText
         .split(/[\s\-_.,;:'"«»()[\]{}\/]+/)
-        .filter(w => w.length > 0);
+        .filter(w => w.length >= 2); // Only words with 2+ characters
 
       // Check if ALL search words are found as complete words in the text
-      const hasAllWords = searchWords.every(searchWord => 
-        allWords.includes(searchWord)
+      const hasAllWords = searchWords.every(searchWord =>
+        allWords.some(textWord => textWord === searchWord)
       );
 
       if (!hasAllWords) return false;
