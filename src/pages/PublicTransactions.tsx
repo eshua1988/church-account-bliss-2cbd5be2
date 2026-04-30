@@ -145,22 +145,24 @@ const PublicTransactions = () => {
       }
     }
 
-    // Apply text search
+    // Apply text search - exact word match in description, bankTitle, and names
     if (searchText.trim()) {
-      const q = searchText.trim().toLowerCase();
-      const dateStr = format(new Date(t.date), 'dd.MM.yyyy');
-      const amountStr = String(t.amount);
-      const matches = (
-        (t.description || '').toLowerCase().includes(q) ||
-        (t.bankTitle || '').toLowerCase().includes(q) ||
-        (t.departmentName || '').toLowerCase().includes(q) ||
-        (t.bankSender || '').toLowerCase().includes(q) ||
-        (t.bankRecipient || '').toLowerCase().includes(q) ||
-        dateStr.includes(q) ||
-        amountStr.includes(q) ||
-        getCategoryName(t.category).toLowerCase().includes(q)
+      const searchWords = searchText.trim().toLowerCase().split(/\s+/);
+      const searchableText = [
+        t.description || '',
+        t.bankTitle || '',
+        t.bankSender || '',
+        t.bankRecipient || '',
+        t.issuedTo || '',
+        t.cashierName || ''
+      ].join(' ').toLowerCase();
+
+      // Check if ALL search words are present in the searchable text
+      const hasAllWords = searchWords.every(word =>
+        searchableText.includes(word)
       );
-      if (!matches) return false;
+
+      if (!hasAllWords) return false;
     }
 
     return true;
@@ -238,7 +240,7 @@ const PublicTransactions = () => {
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Поиск по описанию, сумме, дате, отделу..."
+                placeholder="Поиск по словам в описании, названии и именах..."
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
                 className="h-10 pl-8 text-sm"
@@ -359,7 +361,7 @@ const PublicTransactions = () => {
                 <div className="text-center">
                   <p className="text-muted-foreground mb-2">Введите текст поиска для просмотра транзакций</p>
                   <p className="text-sm text-muted-foreground">
-                    Используйте поле поиска выше для поиска по описанию, сумме, дате или отделу
+                    Используйте поле поиска выше для поиска по словам в описании, названии или именах
                   </p>
                 </div>
               </CardContent>
