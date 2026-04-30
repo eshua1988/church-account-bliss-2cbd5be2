@@ -1,16 +1,23 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, ExternalLink } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Card, CardContent } from '@/components/ui/card';
+import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
-import { Currency, CURRENCY_SYMBOLS, Transaction } from '@/types/transaction';
+import { CURRENCY_SYMBOLS, Transaction } from '@/types/transaction';
+import DateRangeFilter from '@/components/DateRangeFilter';
 
 interface PublicLink {
   id: string;
@@ -32,9 +39,16 @@ const PublicTransactions = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [linkData, setLinkData] = useState<PublicLink | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  
+  // Filter states
   const [searchText, setSearchText] = useState('');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [currencyFilter, setCurrencyFilter] = useState<string>('all');
+  const [customDateRange, setCustomDateRange] = useState<{ from?: Date; to?: Date }>({});
+  
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -46,7 +60,7 @@ const PublicTransactions = () => {
       }
 
       try {
-        // Get shared link and owner user ID - directly query the table
+        // Get shared link and owner user ID
         const { data: linkData, error: linkError } = await supabase
           .from('shared_transaction_links')
           .select('*')
@@ -92,7 +106,7 @@ const PublicTransactions = () => {
           console.error('Transactions error:', transactionsError);
           throw transactionsError;
         }
-        setTransactions(transactionsData || []);
+        setAllTransactions(transactionsData || []);
       } catch (err) {
         console.error('Error loading data:', err);
         setError('Ошибка при загрузке данных');
@@ -109,34 +123,48 @@ const PublicTransactions = () => {
     return category?.name || 'Неизвестно';
   };
 
-  const filteredTransactions = transactions.filter(t => {
-    if (!searchText.trim()) return true;
-    const q = searchText.trim().toLowerCase();
-    const dateStr = format(new Date(t.date), 'dd.MM.yyyy');
-    const amountStr = String(t.amount);
-    return (
-      (t.description || '').toLowerCase().includes(q) ||
-      (t.bankTitle || '').toLowerCase().includes(q) ||
-      (t.departmentName || '').toLowerCase().includes(q) ||
-      (t.bankSender || '').toLowerCase().includes(q) ||
-      (t.bankRecipient || '').toLowerCase().includes(q) ||
-      dateStr.includes(q) ||
-      amountStr.includes(q) ||
-      getCategoryName(t.category).toLowerCase().includes(q)
-    );
-  });
+  // Filter transactions based on all filter criteria
+  const filteredTransactions = allTransactions.filter(t => {
+    // Apply type filter
+    if (typeFilter !== 'all' && t.type !== typeFilter) return false;
 
-  const toggleExpand = (id: string) => {
-    setExpandedIds(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(id)) {
-        newSet.delete(id);
-      } else {
-        newSet.add(id);
+    // Apply category filter
+    if (categoryFilter !== 'all' && t.category !== categoryFilter) return false;
+
+    // Apply currency filter
+    if (currencyFilter !== 'all' && t.currency !== currencyFilter) return false;
+
+    // Apply date range filter
+    if (customDateRange.from || customDateRange.to) {
+      const txDate = new Date(t.date);
+      if (customDateRange.from && txDate < customDateRange.from) return false;
+      if (customDateRange.to) {
+        const endDate = new Date(customDateRange.to);
+        endDate.setHours(23, 59, 59, 999);
+        if (txDate > endDate) return false;
       }
-      return newSet;
-    });
-  };
+    }
+
+    // Apply text search
+    if (searchText.trim()) {
+      const q = searchText.trim().toLowerCase();
+      const dateStr = format(new Date(t.date), 'dd.MM.yyyy');
+      const amountStr = String(t.amount);
+      const matches = (
+        (t.description || '').toLowerCase().includes(q) ||
+        (t.bankTitle || '').toLowerCase().includes(q) ||
+        (t.departmentName || '').toLowerCase().includes(q) ||
+        (t.bankSender || '').toLowerCase().includes(q) ||
+        (t.bankRecipient || '').toLowerCase().includes(q) ||
+        dateStr.includes(q) ||
+        amountStr.includes(q) ||
+        getCategoryName(t.category).toLowerCase().includes(q)
+      );
+      if (!matches) return false;
+    }
+
+    return true;
+  });
 
   // Calculate filtered totals
   const totals = filteredTransactions.reduce((acc, t) => {
@@ -150,6 +178,24 @@ const PublicTransactions = () => {
     }
     return acc;
   }, {} as Record<string, { income: number; expense: number }>);
+
+  // Get available currencies from all transactions
+  const availableCurrencies = Array.from(new Set(allTransactions.map(t => t.currency)));
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
+
+  const hasActiveFilters = searchText.trim() || customDateRange.from || customDateRange.to || 
+    typeFilter !== 'all' || categoryFilter !== 'all' || currencyFilter !== 'all';
 
   if (loading) {
     return (
@@ -181,7 +227,9 @@ const PublicTransactions = () => {
           <div className="mb-6">
             <h1 className="text-3xl font-bold mb-2">Таблица транзакций</h1>
             <p className="text-muted-foreground">
-              {filteredTransactions.length} транзакций
+              {hasActiveFilters 
+                ? `Найдено транзакций: ${filteredTransactions.length}` 
+                : 'Используйте поиск и фильтры для просмотра транзакций'}
             </p>
           </div>
 
@@ -198,8 +246,92 @@ const PublicTransactions = () => {
             </div>
           </div>
 
+          {/* Filters */}
+          <div className="mb-6 space-y-3 p-4 bg-muted/30 rounded-lg border">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Type Filter */}
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Тип</label>
+                <Select value={typeFilter} onValueChange={(val) => setTypeFilter(val as any)}>
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Все</SelectItem>
+                    <SelectItem value="income">Доход</SelectItem>
+                    <SelectItem value="expense">Расход</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Currency Filter */}
+              {availableCurrencies.length > 0 && (
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Валюта</label>
+                  <Select value={currencyFilter} onValueChange={setCurrencyFilter}>
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Все валюты</SelectItem>
+                      {availableCurrencies.map(currency => (
+                        <SelectItem key={currency} value={currency}>
+                          {currency}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Category Filter */}
+              {categories.length > 0 && (
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Категория</label>
+                  <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Все категории</SelectItem>
+                      {categories.map(cat => (
+                        <SelectItem key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Date Range */}
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Период</label>
+                <DateRangeFilter value={customDateRange} onChange={setCustomDateRange} />
+              </div>
+            </div>
+
+            {/* Reset Filters */}
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSearchText('');
+                  setTypeFilter('all');
+                  setCategoryFilter('all');
+                  setCurrencyFilter('all');
+                  setCustomDateRange({});
+                }}
+                className="text-xs text-muted-foreground"
+              >
+                Сбросить все фильтры
+              </Button>
+            )}
+          </div>
+
           {/* Filtered Totals */}
-          {searchText.trim() && (
+          {hasActiveFilters && filteredTransactions.length > 0 && (
             <div className="mb-6 p-4 rounded-lg bg-primary/5 border border-primary/20">
               <p className="text-xs text-muted-foreground mb-3 font-medium">Итого по результатам:</p>
               <div className="flex flex-wrap gap-4">
@@ -220,18 +352,34 @@ const PublicTransactions = () => {
             </div>
           )}
 
+          {/* No Data Message */}
+          {!hasActiveFilters && (
+            <Card>
+              <CardContent className="py-16">
+                <div className="text-center">
+                  <p className="text-muted-foreground mb-2">Используйте фильтры для просмотра транзакций</p>
+                  <p className="text-sm text-muted-foreground">
+                    Введите поисковый запрос или установите фильтры выше
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Transactions */}
-          {filteredTransactions.length === 0 ? (
+          {hasActiveFilters && filteredTransactions.length === 0 && (
             <Card>
               <CardContent className="py-12">
                 <p className="text-center text-muted-foreground">
-                  {searchText.trim() ? 'Нет результатов поиска' : 'Нет транзакций'}
+                  Нет результатов поиска
                 </p>
               </CardContent>
             </Card>
-          ) : (
+          )}
+
+          {hasActiveFilters && filteredTransactions.length > 0 && (
             <div className="space-y-2">
-              {filteredTransactions.map((transaction, index) => {
+              {filteredTransactions.map((transaction) => {
                 const isExpanded = expandedIds.has(transaction.id);
                 return (
                   <Card key={transaction.id} className="overflow-hidden">
@@ -346,9 +494,11 @@ const PublicTransactions = () => {
           )}
 
           {/* Footer info */}
-          <div className="mt-6 text-center text-xs text-muted-foreground">
-            <p>Показано транзакций: {filteredTransactions.length}</p>
-          </div>
+          {hasActiveFilters && (
+            <div className="mt-6 text-center text-xs text-muted-foreground">
+              <p>Показано транзакций: {filteredTransactions.length}</p>
+            </div>
+          )}
         </div>
       </div>
       <Toaster />
