@@ -194,8 +194,8 @@ const PublicTransactions = () => {
     });
   };
 
-  const hasActiveFilters = searchText.trim() || customDateRange.from || customDateRange.to || 
-    typeFilter !== 'all' || categoryFilter !== 'all' || currencyFilter !== 'all';
+  // Show transactions ONLY when search text is entered (filters apply only with search)
+  const hasActiveFilters = searchText.trim() !== '';
 
   if (loading) {
     return (
@@ -229,7 +229,7 @@ const PublicTransactions = () => {
             <p className="text-muted-foreground">
               {hasActiveFilters 
                 ? `Найдено транзакций: ${filteredTransactions.length}` 
-                : 'Используйте поиск и фильтры для просмотра транзакций'}
+                : 'Введите текст поиска для просмотра транзакций'}
             </p>
           </div>
 
@@ -357,9 +357,9 @@ const PublicTransactions = () => {
             <Card>
               <CardContent className="py-16">
                 <div className="text-center">
-                  <p className="text-muted-foreground mb-2">Используйте фильтры для просмотра транзакций</p>
+                  <p className="text-muted-foreground mb-2">Введите текст поиска для просмотра транзакций</p>
                   <p className="text-sm text-muted-foreground">
-                    Введите поисковый запрос или установите фильтры выше
+                    Используйте поле поиска выше для поиска по описанию, сумме, дате или отделу
                   </p>
                 </div>
               </CardContent>
