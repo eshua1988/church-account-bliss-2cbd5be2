@@ -441,7 +441,7 @@ const PublicTransactions = () => {
                       {/* Expanded Details */}
                       {isExpanded && (
                         <div className="p-4 bg-muted/30 border-t">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                             {transaction.type && (
                               <div>
                                 <p className="text-muted-foreground text-xs">Тип</p>
@@ -461,26 +461,47 @@ const PublicTransactions = () => {
                             )}
                             {transaction.departmentName && (
                               <div>
-                                <p className="text-muted-foreground text-xs">Отдел</p>
+                                <p className="text-muted-foreground text-xs">Название отдела</p>
                                 <p className="font-medium">{transaction.departmentName}</p>
                               </div>
                             )}
+                            {transaction.source === 'enablebanking' ? (
+                              transaction.bankTitle && (
+                                <div className="col-span-2 md:col-span-4">
+                                  <p className="text-muted-foreground text-xs">Назначение</p>
+                                  <p className="font-medium">{transaction.bankTitle}</p>
+                                </div>
+                              )
+                            ) : (
+                              transaction.description && (
+                                <div className="col-span-2 md:col-span-4">
+                                  <p className="text-muted-foreground text-xs">Описание</p>
+                                  <p className="font-medium">{transaction.description}</p>
+                                </div>
+                              )
+                            )}
                             {transaction.bankSender && (
-                              <div>
+                              <div className="col-span-2 md:col-span-2">
                                 <p className="text-muted-foreground text-xs">От кого</p>
                                 <p className="font-medium">{transaction.bankSender}</p>
                               </div>
                             )}
                             {transaction.bankRecipient && (
-                              <div>
+                              <div className="col-span-2 md:col-span-2">
                                 <p className="text-muted-foreground text-xs">Кому</p>
                                 <p className="font-medium">{transaction.bankRecipient}</p>
                               </div>
                             )}
-                            {transaction.bankTitle && (
-                              <div className="sm:col-span-2">
-                                <p className="text-muted-foreground text-xs">Назначение</p>
-                                <p className="font-medium">{transaction.bankTitle}</p>
+                            {transaction.issuedTo && (
+                              <div className="col-span-2 md:col-span-2">
+                                <p className="text-muted-foreground text-xs">Выдано</p>
+                                <p className="font-medium">{transaction.issuedTo}</p>
+                              </div>
+                            )}
+                            {transaction.cashierName && (
+                              <div className="col-span-2 md:col-span-2">
+                                <p className="text-muted-foreground text-xs">Кассир</p>
+                                <p className="font-medium">{transaction.cashierName}</p>
                               </div>
                             )}
                           </div>
