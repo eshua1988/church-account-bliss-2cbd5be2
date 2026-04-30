@@ -147,28 +147,26 @@ const PublicTransactions = () => {
 
     // Apply text search - exact word match in description, bankTitle, and names
     if (searchText.trim()) {
-      const searchWords = searchText.trim().toLowerCase().split(/\s+/).filter(w => w.length > 0);
+      const searchWords = searchText.trim().toLowerCase().split(/[\s\-_.,;:'"«»()[\]{}]/g).filter(w => w.length > 0);
       
-      // Split searchable text into words (split by space and special characters)
-      const searchableTexts = [
+      // Combine all searchable text fields
+      const fullSearchableText = [
         t.description || '',
         t.bankTitle || '',
         t.bankSender || '',
         t.bankRecipient || '',
         t.issuedTo || '',
         t.cashierName || ''
-      ];
-      
-      // Create array of all words from all fields
-      const allWords = searchableTexts
-        .join(' ')
-        .toLowerCase()
-        .split(/\s+/)
+      ].join(' ').toLowerCase();
+
+      // Split by word separators (spaces, punctuation, etc.) for all languages
+      const allWords = fullSearchableText
+        .split(/[\s\-_.,;:'"«»()[\]{}\/]+/)
         .filter(w => w.length > 0);
 
       // Check if ALL search words are found as complete words in the text
       const hasAllWords = searchWords.every(searchWord => 
-        allWords.some(textWord => textWord === searchWord)
+        allWords.includes(searchWord)
       );
 
       if (!hasAllWords) return false;
