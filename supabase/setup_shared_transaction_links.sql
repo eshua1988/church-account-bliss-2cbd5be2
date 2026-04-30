@@ -1,7 +1,11 @@
--- Create shared_transaction_links table for public transaction table access
+-- Execute this SQL directly in Supabase SQL Editor if migrations didn't run
+-- This creates the shared_transaction_links table
+
 BEGIN;
 
-CREATE TABLE IF NOT EXISTS public.shared_transaction_links (
+DROP TABLE IF EXISTS public.shared_transaction_links CASCADE;
+
+CREATE TABLE public.shared_transaction_links (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   token TEXT NOT NULL UNIQUE,
@@ -11,20 +15,14 @@ CREATE TABLE IF NOT EXISTS public.shared_transaction_links (
   expires_at TIMESTAMP WITH TIME ZONE
 );
 
--- Create index on token for fast lookups
-CREATE INDEX IF NOT EXISTS idx_shared_transaction_links_token ON public.shared_transaction_links(token);
-CREATE INDEX IF NOT EXISTS idx_shared_transaction_links_owner ON public.shared_transaction_links(owner_user_id);
+-- Create indexes
+CREATE INDEX idx_shared_transaction_links_token ON public.shared_transaction_links(token);
+CREATE INDEX idx_shared_transaction_links_owner ON public.shared_transaction_links(owner_user_id);
 
--- Enable row-level security
+-- Enable RLS
 ALTER TABLE public.shared_transaction_links ENABLE ROW LEVEL SECURITY;
 
--- Drop existing policies if they exist
-DROP POLICY IF EXISTS "Users can view their own shared transaction links" ON public.shared_transaction_links;
-DROP POLICY IF EXISTS "Users can create shared transaction links" ON public.shared_transaction_links;
-DROP POLICY IF EXISTS "Users can update their own shared transaction links" ON public.shared_transaction_links;
-DROP POLICY IF EXISTS "Users can delete their own shared transaction links" ON public.shared_transaction_links;
-
--- Create RLS policies
+-- RLS Policies
 CREATE POLICY "Users can view their own shared transaction links"
 ON public.shared_transaction_links
 FOR SELECT
@@ -45,7 +43,7 @@ ON public.shared_transaction_links
 FOR DELETE
 USING (auth.uid() = owner_user_id);
 
--- Grant permissions
+-- Permissions
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.shared_transaction_links TO authenticated;
 GRANT SELECT ON public.shared_transaction_links TO anon;
 

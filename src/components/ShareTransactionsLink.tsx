@@ -10,6 +10,7 @@ import { useTranslation } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { QRCodeSVG } from 'qrcode.react';
+import { cn } from '@/lib/utils';
 import {
   Dialog,
   DialogContent,
@@ -64,7 +65,17 @@ export const ShareTransactionsLink = () => {
         .eq('owner_user_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching links:', error);
+        if (error.code === 'PGRST205') {
+          toast({
+            title: 'Требуется инициализация',
+            description: 'Пожалуйста, выполните SQL скрипт из файла setup_shared_transaction_links.sql в Supabase SQL Editor',
+            variant: 'destructive',
+          });
+        }
+        return;
+      }
       setLinks(data || []);
     } catch (err) {
       console.error('Error fetching links:', err);
@@ -88,7 +99,19 @@ export const ShareTransactionsLink = () => {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error creating link:', error);
+        if (error.code === 'PGRST205') {
+          toast({
+            title: 'Требуется инициализация',
+            description: 'Таблица не инициализирована. Пожалуйста, выполните SQL скрипт из файла setup_shared_transaction_links.sql в Supabase SQL Editor',
+            variant: 'destructive',
+          });
+        } else {
+          throw error;
+        }
+        return;
+      }
       
       setLinks(prev => [data, ...prev]);
       setNewLinkName('');
