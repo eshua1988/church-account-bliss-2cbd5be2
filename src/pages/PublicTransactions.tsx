@@ -157,10 +157,12 @@ const PublicTransactions = () => {
         t.cashierName || ''
       ].join(' ').toLowerCase();
 
-      // Check if ALL search words are present in the searchable text
-      const hasAllWords = searchWords.every(word =>
-        searchableText.includes(word)
-      );
+      // Check if ALL search words match as complete words (word boundaries)
+      const hasAllWords = searchWords.every(word => {
+        // Use word boundary regex to match complete words only
+        const wordRegex = new RegExp(`\\b${word}\\b`, 'i');
+        return wordRegex.test(searchableText);
+      });
 
       if (!hasAllWords) return false;
     }
