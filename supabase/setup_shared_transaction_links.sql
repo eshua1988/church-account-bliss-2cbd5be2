@@ -23,25 +23,36 @@ CREATE INDEX idx_shared_transaction_links_owner ON public.shared_transaction_lin
 ALTER TABLE public.shared_transaction_links ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
+
+-- Allow authenticated users to view their own links
 CREATE POLICY "Users can view their own shared transaction links"
 ON public.shared_transaction_links
 FOR SELECT
 USING (auth.uid() = owner_user_id);
 
+-- Allow authenticated users to create links
 CREATE POLICY "Users can create shared transaction links"
 ON public.shared_transaction_links
 FOR INSERT
 WITH CHECK (auth.uid() = owner_user_id);
 
+-- Allow authenticated users to update their own links
 CREATE POLICY "Users can update their own shared transaction links"
 ON public.shared_transaction_links
 FOR UPDATE
 USING (auth.uid() = owner_user_id);
 
+-- Allow authenticated users to delete their own links
 CREATE POLICY "Users can delete their own shared transaction links"
 ON public.shared_transaction_links
 FOR DELETE
 USING (auth.uid() = owner_user_id);
+
+-- Allow anonymous users to read active links by token (for public access)
+CREATE POLICY "Anonymous users can view active links by token"
+ON public.shared_transaction_links
+FOR SELECT
+USING (is_active = true);
 
 -- Permissions
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.shared_transaction_links TO authenticated;

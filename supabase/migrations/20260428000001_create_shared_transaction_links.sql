@@ -23,6 +23,7 @@ DROP POLICY IF EXISTS "Users can view their own shared transaction links" ON pub
 DROP POLICY IF EXISTS "Users can create shared transaction links" ON public.shared_transaction_links;
 DROP POLICY IF EXISTS "Users can update their own shared transaction links" ON public.shared_transaction_links;
 DROP POLICY IF EXISTS "Users can delete their own shared transaction links" ON public.shared_transaction_links;
+DROP POLICY IF EXISTS "Anonymous users can view active links by token" ON public.shared_transaction_links;
 
 -- Create RLS policies
 CREATE POLICY "Users can view their own shared transaction links"
@@ -44,6 +45,12 @@ CREATE POLICY "Users can delete their own shared transaction links"
 ON public.shared_transaction_links
 FOR DELETE
 USING (auth.uid() = owner_user_id);
+
+-- Allow anonymous users to read active links by token
+CREATE POLICY "Anonymous users can view active links by token"
+ON public.shared_transaction_links
+FOR SELECT
+USING (is_active = true);
 
 -- Grant permissions
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.shared_transaction_links TO authenticated;

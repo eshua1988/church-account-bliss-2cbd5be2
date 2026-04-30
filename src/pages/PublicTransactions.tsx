@@ -46,20 +46,7 @@ const PublicTransactions = () => {
       }
 
       try {
-        // Validate token via secure edge function
-        const { data: validationData, error: validationError } = await supabase.functions.invoke('validate-payout-token', {
-          body: { token }
-        });
-
-        if (validationError) throw validationError;
-
-        if (!validationData?.valid) {
-          setError(validationData?.error || 'Ссылка неактивна или не существует');
-          setLoading(false);
-          return;
-        }
-
-        // Get shared link and owner user ID
+        // Get shared link and owner user ID - directly query the table
         const { data: linkData, error: linkError } = await supabase
           .from('shared_transaction_links')
           .select('*')
@@ -68,21 +55,30 @@ const PublicTransactions = () => {
           .single();
 
         if (linkError) {
-          setError('Ссылка не найдена');
+          console.error('Link error:', linkError);
+          setError('Ссылка не найдена или неактивна');
+          setLoading(false);
+          return;
+        }
+
+        if (!linkData) {
+          setError('Ссылка не существует');
           setLoading(false);
           return;
         }
 
         setLinkData(linkData);
 
-        // Load categories
+        // Load categories for this owner
         const { data: categoriesData, error: categoriesError } = await supabase
           .from('categories')
           .select('*')
           .eq('user_id', linkData.owner_user_id)
           .order('order', { ascending: true });
 
-        if (categoriesError) throw categoriesError;
+        if (categoriesError) {
+          console.error('Categories error:', categoriesError);
+        }
         setCategories(categoriesData || []);
 
         // Load transactions for the link owner
@@ -92,7 +88,10 @@ const PublicTransactions = () => {
           .eq('user_id', linkData.owner_user_id)
           .order('date', { ascending: false });
 
-        if (transactionsError) throw transactionsError;
+        if (transactionsError) {
+          console.error('Transactions error:', transactionsError);
+          throw transactionsError;
+        }
         setTransactions(transactionsData || []);
       } catch (err) {
         console.error('Error loading data:', err);
