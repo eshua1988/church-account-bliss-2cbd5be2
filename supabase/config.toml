@@ -9,6 +9,9 @@ verify_jwt = false
 [functions.submit-public-payout]
 verify_jwt = false
 
+[functions.public-transactions]
+verify_jwt = false
+
 [functions.check-pending-payouts]
 verify_jwt = false
 

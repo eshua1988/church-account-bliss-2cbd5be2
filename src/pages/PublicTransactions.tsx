@@ -14,17 +14,9 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { CURRENCY_SYMBOLS, Transaction } from '@/types/transaction';
 import DateRangeFilter from '@/components/DateRangeFilter';
-
-interface PublicLink {
-  id: string;
-  token: string;
-  owner_user_id: string;
-  is_active: boolean;
-}
 
 interface Category {
   id: string;
@@ -32,13 +24,18 @@ interface Category {
   type: string;
 }
 
+interface PublicTransactionsResponse {
+  valid: boolean;
+  error?: string;
+  categories?: Category[];
+  transactions?: Transaction[];
+}
+
 const PublicTransactions = () => {
   const { token } = useParams<{ token: string }>();
-  const { toast } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [linkData, setLinkData] = useState<PublicLink | null>(null);
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   
@@ -60,6 +57,26 @@ const PublicTransactions = () => {
       }
 
       try {
+        const { data, error: functionError } = await supabase.functions.invoke<PublicTransactionsResponse>(
+          'public-transactions',
+          { body: { token } },
+        );
+
+        if (functionError) {
+          console.error('Public transactions function error:', functionError);
+          throw functionError;
+        }
+
+        if (!data?.valid) {
+          console.warn('Public transactions link rejected:', data?.error);
+          setError('Ссылка не найдена или неактивна');
+          setLoading(false);
+          return;
+        }
+
+        setCategories(data.categories || []);
+        setAllTransactions(data.transactions || []);
+        /*
         // Get shared link and owner user ID
         const { data: linkData, error: linkError } = await supabase
           .from('shared_transaction_links')
@@ -114,6 +131,7 @@ const PublicTransactions = () => {
           throw transactionsError;
         }
         setAllTransactions(transactionsData || []);
+        */
       } catch (err) {
         console.error('Error loading data:', err);
         setError('Ошибка при загрузке данных');
