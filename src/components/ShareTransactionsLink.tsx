@@ -48,6 +48,8 @@ export const ShareTransactionsLink = () => {
   const [showQrDialog, setShowQrDialog] = useState(false);
 
   const baseUrl = window.location.origin + import.meta.env.BASE_URL.replace(/\/$/, '');
+  const getTransactionsUrl = (token: string) =>
+    `${baseUrl}/?/transactions/${encodeURIComponent(token)}`;
 
   useEffect(() => {
     if (user) {
@@ -151,7 +153,7 @@ export const ShareTransactionsLink = () => {
   };
 
   const copyLink = (token: string) => {
-    const fullLink = `${baseUrl}/transactions/${token}`;
+    const fullLink = getTransactionsUrl(token);
     navigator.clipboard.writeText(fullLink);
     setCopiedId(token);
     setTimeout(() => setCopiedId(null), 2000);
@@ -232,7 +234,7 @@ export const ShareTransactionsLink = () => {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">{link.name || 'Таблица транзакций'}</p>
                   <p className="text-xs text-muted-foreground truncate">
-                    {baseUrl}/transactions/{link.token.substring(0, 8)}...
+                    {getTransactionsUrl(link.token).replace(link.token, `${link.token.substring(0, 8)}...`)}
                   </p>
                   <div className="flex items-center gap-2 mt-1">
                     <Badge variant={link.is_active ? 'default' : 'secondary'} className="text-xs">
@@ -261,7 +263,7 @@ export const ShareTransactionsLink = () => {
                       </DialogHeader>
                       <div className="flex justify-center p-4 bg-white rounded-lg">
                         <QRCodeSVG
-                          value={`${baseUrl}/transactions/${link.token}`}
+                          value={getTransactionsUrl(link.token)}
                           size={256}
                           level="H"
                           includeMargin={true}
@@ -288,12 +290,10 @@ export const ShareTransactionsLink = () => {
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8"
-                    asChild
+                    onClick={() => window.open(getTransactionsUrl(link.token), '_blank', 'noopener,noreferrer')}
                     title="Открыть в новой вкладке"
                   >
-                    <a href={`${baseUrl}/transactions/${link.token}`} target="_blank" rel="noopener noreferrer">
-                      <ExternalLink className="w-4 h-4" />
-                    </a>
+                    <ExternalLink className="w-4 h-4" />
                   </Button>
 
                   <Button
