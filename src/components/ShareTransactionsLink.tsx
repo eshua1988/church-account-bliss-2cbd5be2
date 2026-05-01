@@ -49,7 +49,7 @@ export const ShareTransactionsLink = () => {
 
   const baseUrl = window.location.origin + import.meta.env.BASE_URL.replace(/\/$/, '');
   const getTransactionsUrl = (token: string) =>
-    `${baseUrl}/?/transactions/${encodeURIComponent(token)}`;
+    `${baseUrl}/#/transactions/${encodeURIComponent(token)}`;
 
   useEffect(() => {
     if (user) {
@@ -290,10 +290,12 @@ export const ShareTransactionsLink = () => {
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8"
-                    onClick={() => window.open(getTransactionsUrl(link.token), '_blank', 'noopener,noreferrer')}
+                    asChild
                     title="Открыть в новой вкладке"
                   >
-                    <ExternalLink className="w-4 h-4" />
+                    <a href={getTransactionsUrl(link.token)} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
                   </Button>
 
                   <Button

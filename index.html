@@ -27,6 +27,13 @@
     <!-- Single Page Apps for GitHub Pages -->
     <script>
       (function(l) {
+        if (l.hash.indexOf('#/') === 0) {
+          var hashPath = l.hash.slice(1);
+          var basePath = l.pathname.endsWith('/') ? l.pathname.slice(0, -1) : l.pathname;
+          window.history.replaceState(null, null, basePath + hashPath + l.search);
+          return;
+        }
+
         if (l.search[1] === '/' ) {
           var decoded = l.search.slice(1).split('&').map(function(s) { 
             return s.replace(/~and~/g, '&')
