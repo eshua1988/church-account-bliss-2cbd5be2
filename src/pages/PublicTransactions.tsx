@@ -148,6 +148,15 @@ const PublicTransactions = () => {
     return category?.name || 'Неизвестно';
   };
 
+  const getTransactionDepartmentName = (transaction: Transaction): string => {
+    if (transaction.departmentName) return transaction.departmentName;
+
+    const categoryName = getCategoryName(transaction.category);
+    if (categoryName !== 'Неизвестно') return categoryName;
+
+    return transaction.type === 'income' ? 'Прочее (доход)' : 'Прочее (расход)';
+  };
+
   // Filter transactions based on all filter criteria
   const filteredTransactions = allTransactions.filter(t => {
     // Apply type filter
@@ -183,7 +192,8 @@ const PublicTransactions = () => {
         t.bankSender || '',
         t.bankRecipient || '',
         t.issuedTo || '',
-        t.cashierName || ''
+        t.cashierName || '',
+        getTransactionDepartmentName(t)
       ].join(' ').toLowerCase();
 
       // Split by word separators and filter out short words
@@ -436,7 +446,7 @@ const PublicTransactions = () => {
                           </div>
                           <div className="min-w-0">
                             <p className="font-semibold text-sm">
-                              {transaction.departmentName || getCategoryName(transaction.category)}
+                              {getTransactionDepartmentName(transaction)}
                             </p>
                             {transaction.description && (
                               <p className="text-xs text-muted-foreground truncate">

@@ -9,7 +9,22 @@ interface PublicTransactionsRequest {
   token: string;
 }
 
-const mapTransaction = (tx: any) => ({
+const findRuleDepartment = (tx: any, rules: any[] = []) => {
+  if (tx.department_name) return tx.department_name;
+
+  const title = String(tx.bank_title || '').toLowerCase();
+  const desc = String(tx.description || '').toLowerCase();
+
+  const rule = rules.find((rule) => {
+    if (rule.transaction_type && rule.transaction_type !== tx.type) return false;
+    const search = String(rule.search_text || '').trim().toLowerCase();
+    return search && (title.includes(search) || desc.includes(search));
+  });
+
+  return rule?.department_name || null;
+};
+
+const mapTransaction = (tx: any, rules: any[] = []) => ({
   id: tx.id,
   type: tx.type,
   category: tx.category_id || 'other',
@@ -26,7 +41,7 @@ const mapTransaction = (tx: any) => ({
   bankSender: tx.bank_sender || undefined,
   bankRecipient: tx.bank_recipient || undefined,
   source: tx.source || undefined,
-  departmentName: tx.department_name || undefined,
+  departmentName: findRuleDepartment(tx, rules) || undefined,
   comment: tx.comment || undefined,
 });
 
@@ -87,6 +102,16 @@ Deno.serve(async (req) => {
       console.warn('Categories loading failed:', categoriesError.message);
     }
 
+    const { data: departmentRules, error: rulesError } = await supabase
+      .from('department_rules')
+      .select('search_text, department_name, transaction_type')
+      .eq('user_id', linkData.owner_user_id)
+      .order('created_at', { ascending: false });
+
+    if (rulesError) {
+      console.warn('Department rules loading failed:', rulesError.message);
+    }
+
     const { data: transactions, error: transactionsError } = await supabase
       .from('transactions')
       .select('*')
@@ -106,7 +131,7 @@ Deno.serve(async (req) => {
       JSON.stringify({
         valid: true,
         categories: categories || [],
-        transactions: (transactions || []).map(mapTransaction),
+        transactions: (transactions || []).map((tx) => mapTransaction(tx, departmentRules || [])),
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
