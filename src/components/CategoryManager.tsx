@@ -28,6 +28,19 @@ interface CategoryManagerProps {
   onBulkUpdateDepartment?: (ids: string[], departmentName: string) => Promise<void>;
 }
 
+const parseSearchTerms = (text: string) =>
+  text
+    .split(',')
+    .map(term => term.trim().toLowerCase())
+    .filter(Boolean);
+
+const matchesSearchTerms = (tx: Transaction, type: 'income' | 'expense', terms: string[]) => {
+  if (tx.type !== type || terms.length === 0) return false;
+  const title = (tx.bankTitle || '').toLowerCase();
+  const desc = (tx.description || '').toLowerCase();
+  return terms.some(term => title.includes(term) || desc.includes(term));
+};
+
 export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReorder, transactions = [], onBulkUpdateDepartment }: CategoryManagerProps) => {
   const { t } = useTranslation();
   const [activeType, setActiveType] = useState<TransactionType | 'extension'>('income');
@@ -73,13 +86,8 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
       transaction_type: editRuleType,
     } as any).eq('id', editingRuleId);
     // Apply updated rule to matching transactions
-    const search = editRuleText.trim().toLowerCase();
-    const matching = transactions.filter(tx => {
-      if (editRuleType !== tx.type) return false;
-      const title = (tx.bankTitle || '').toLowerCase();
-      const desc = (tx.description || '').toLowerCase();
-      return title.includes(search) || desc.includes(search);
-    });
+    const searchTerms = parseSearchTerms(editRuleText);
+    const matching = transactions.filter(tx => matchesSearchTerms(tx, editRuleType, searchTerms));
     if (matching.length > 0) {
       await onBulkUpdateDepartment(matching.map(tx => tx.id), editRuleDept);
     }
@@ -95,13 +103,8 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
 
   const extMatches = useMemo(() => {
     if (!extSearchText.trim()) return [];
-    const search = extSearchText.trim().toLowerCase();
-    return transactions.filter(tx => {
-      if (extType !== tx.type) return false;
-      const title = (tx.bankTitle || '').toLowerCase();
-      const desc = (tx.description || '').toLowerCase();
-      return title.includes(search) || desc.includes(search);
-    });
+    const searchTerms = parseSearchTerms(extSearchText);
+    return transactions.filter(tx => matchesSearchTerms(tx, extType, searchTerms));
   }, [extSearchText, extType, transactions]);
 
   const handleExtApply = async () => {
@@ -112,12 +115,21 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
       // Save rule to DB
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        await supabase.from('department_rules').insert({
-          user_id: session.user.id,
-          search_text: extSearchText.trim(),
-          department_name: extDepartment,
-          transaction_type: extType,
-        } as any);
+        const normalizedSearch = extSearchText.trim();
+        const alreadyExists = rules.some(rule =>
+          rule.search_text.trim().toLowerCase() === normalizedSearch.toLowerCase() &&
+          rule.department_name === extDepartment &&
+          rule.transaction_type === extType
+        );
+
+        if (!alreadyExists) {
+          await supabase.from('department_rules').insert({
+            user_id: session.user.id,
+            search_text: normalizedSearch,
+            department_name: extDepartment,
+            transaction_type: extType,
+          } as any);
+        }
         await loadRules();
       }
       setExtResult(`Обновлено ${extMatches.length} транзакций → ${extDepartment}`);

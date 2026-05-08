@@ -226,7 +226,35 @@ Deno.serve(async (req) => {
             }))
           )
           insertError = error ? String(error.message) : null
-          if (!error) imported = newTx.length
+          if (!error) {
+            imported = newTx.length
+
+            const { data: rules } = await db.from('department_rules').select('*').eq('user_id', user_id)
+            if (rules && rules.length > 0) {
+              for (const rule of rules) {
+                const matchingTx = newTx.filter(t => {
+                  if (rule.transaction_type && rule.transaction_type !== t.type) return false
+                  const searchTerms = String(rule.search_text || '')
+                    .split(',')
+                    .map(term => term.trim().toLowerCase())
+                    .filter(Boolean)
+                  const title = (t.bank_title || '').toLowerCase()
+                  const desc = (t.description || '').toLowerCase()
+                  return searchTerms.some(term => title.includes(term) || desc.includes(term))
+                })
+                if (matchingTx.length > 0) {
+                  const externalIds = matchingTx.map(t => t.external_id).filter(Boolean)
+                  if (externalIds.length > 0) {
+                    await db.from('transactions')
+                      .update({ department_name: rule.department_name })
+                      .eq('user_id', user_id)
+                      .in('external_id', externalIds)
+                      .is('department_name', null)
+                  }
+                }
+              }
+            }
+          }
         }
       }
     }

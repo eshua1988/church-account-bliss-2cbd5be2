@@ -237,10 +237,13 @@ Deno.serve(async (req) => {
               // Find newly inserted transactions matching this rule
               const matchingTx = newTx.filter(t => {
                 if (rule.transaction_type && rule.transaction_type !== t.type) return false
-                const search = rule.search_text.toLowerCase()
+                const searchTerms = String(rule.search_text || '')
+                  .split(',')
+                  .map(term => term.trim().toLowerCase())
+                  .filter(Boolean)
                 const title = (t.bank_title || '').toLowerCase()
                 const desc = (t.description || '').toLowerCase()
-                return title.includes(search) || desc.includes(search)
+                return searchTerms.some(term => title.includes(term) || desc.includes(term))
               })
               if (matchingTx.length > 0) {
                 const externalIds = matchingTx.map(t => t.external_id).filter(Boolean)

@@ -17,8 +17,11 @@ const findRuleDepartment = (tx: any, rules: any[] = []) => {
 
   const rule = rules.find((rule) => {
     if (rule.transaction_type && rule.transaction_type !== tx.type) return false;
-    const search = String(rule.search_text || '').trim().toLowerCase();
-    return search && (title.includes(search) || desc.includes(search));
+    const searchTerms = String(rule.search_text || '')
+      .split(',')
+      .map((term) => term.trim().toLowerCase())
+      .filter(Boolean);
+    return searchTerms.some((term) => title.includes(term) || desc.includes(term));
   });
 
   return rule?.department_name || null;

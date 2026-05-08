@@ -42,11 +42,64 @@ const mapDbToCategory = (dbCat: DbCategory): Category => ({
   sortOrder: dbCat.sort_order,
 });
 
+const normalizeCategoryName = (name: string) => name.trim().replace(/\s+/g, ' ').toLowerCase();
+
+const categoryKey = (category: Pick<Category, 'name' | 'type'>) =>
+  `${category.type}:${normalizeCategoryName(category.name)}`;
+
+const dedupeCategories = (items: Category[]) => {
+  const seen = new Set<string>();
+  return items.filter(category => {
+    const key = categoryKey(category);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 export const useSupabaseCategories = () => {
   const { user } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const initializedRef = useRef(false);
+
+  const removeDuplicateCategories = useCallback(async (items: Category[]) => {
+    if (!user) return items;
+
+    const grouped = new Map<string, Category[]>();
+    for (const category of items) {
+      const key = categoryKey(category);
+      grouped.set(key, [...(grouped.get(key) || []), category]);
+    }
+
+    const cleaned: Category[] = [];
+
+    for (const group of grouped.values()) {
+      const sorted = [...group].sort((a, b) => a.sortOrder - b.sortOrder);
+      const [keeper, ...duplicates] = sorted;
+      cleaned.push(keeper);
+
+      for (const duplicate of duplicates) {
+        await supabase
+          .from('transactions')
+          .update({ category_id: keeper.id })
+          .eq('user_id', user.id)
+          .eq('category_id', duplicate.id);
+
+        await supabase
+          .from('categories')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('id', duplicate.id);
+      }
+    }
+
+    return cleaned.sort((a, b) =>
+      a.type === b.type
+        ? a.sortOrder - b.sortOrder
+        : a.type.localeCompare(b.type)
+    );
+  }, [user]);
 
   const fetchCategories = useCallback(async () => {
     if (!user) {
@@ -82,9 +135,10 @@ export const useSupabaseCategories = () => {
 
         if (insertError) throw insertError;
 
-        setCategories((newData as DbCategory[]).map(mapDbToCategory));
+        setCategories(dedupeCategories((newData as DbCategory[]).map(mapDbToCategory)));
       } else {
-        setCategories((data as DbCategory[]).map(mapDbToCategory));
+        const mapped = (data as DbCategory[]).map(mapDbToCategory);
+        setCategories(await removeDuplicateCategories(mapped));
       }
       initializedRef.current = true;
     } catch (err) {
@@ -92,7 +146,7 @@ export const useSupabaseCategories = () => {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, removeDuplicateCategories]);
 
   useEffect(() => {
     fetchCategories();
@@ -103,6 +157,11 @@ export const useSupabaseCategories = () => {
 
     const trimmedName = name.trim();
     if (!trimmedName) return null;
+
+    const existing = categories.find(
+      c => c.type === type && normalizeCategoryName(c.name) === normalizeCategoryName(trimmedName)
+    );
+    if (existing) return existing;
 
     const maxOrder = categories
       .filter(c => c.type === type)
@@ -122,7 +181,7 @@ export const useSupabaseCategories = () => {
     if (error) throw error;
 
     const newCategory = mapDbToCategory(data as DbCategory);
-    setCategories(prev => [...prev, newCategory]);
+    setCategories(prev => dedupeCategories([...prev, newCategory]));
     
     return newCategory;
   }, [user, categories]);
@@ -142,6 +201,18 @@ export const useSupabaseCategories = () => {
     const trimmedName = name.trim();
     if (!trimmedName) return;
 
+    const current = categories.find(c => c.id === id);
+    if (
+      current &&
+      categories.some(c =>
+        c.id !== id &&
+        c.type === current.type &&
+        normalizeCategoryName(c.name) === normalizeCategoryName(trimmedName)
+      )
+    ) {
+      return;
+    }
+
     const { error } = await supabase
       .from('categories')
       .update({ name: trimmedName })
@@ -152,7 +223,7 @@ export const useSupabaseCategories = () => {
     setCategories(prev => prev.map(c => 
       c.id === id ? { ...c, name: trimmedName } : c
     ));
-  }, []);
+  }, [categories]);
 
   const reorderCategories = useCallback(async (type: TransactionType, fromIndex: number, toIndex: number) => {
     const typeCategories = categories.filter(c => c.type === type);

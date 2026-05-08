@@ -22,6 +22,21 @@ interface UseGoogleSheetsSyncProps {
   expenseCategories?: Category[];
 }
 
+const normalizeCategoryName = (name: string) => name.trim().replace(/\s+/g, ' ').toLowerCase();
+
+const uniqueExpenseCategories = (categories: Category[]) => {
+  const seen = new Set<string>();
+  return categories
+    .filter(cat => cat.type === 'expense')
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    .filter(cat => {
+      const key = normalizeCategoryName(cat.name);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+};
+
 export const useGoogleSheetsSync = ({
   transactions,
   onDeleteTransaction,
@@ -94,9 +109,7 @@ export const useGoogleSheetsSync = ({
 
     try {
       // Expense categories sorted by sortOrder (DB order)
-      const sortedCategories = expenseCategories
-        .filter(cat => cat.type === 'expense')
-        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+      const sortedCategories = uniqueExpenseCategories(expenseCategories)
         .map(cat => [cat.id, cat.name] as [string, string]);
 
       // Headers: Date | Income | [expense category columns...] | Прочее (fallback)

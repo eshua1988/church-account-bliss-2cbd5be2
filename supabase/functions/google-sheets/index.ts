@@ -346,7 +346,7 @@ serve(async (req) => {
     const notes = body.notes as NoteData[] | undefined;
 
     // Fetch spreadsheet metadata once — used for sheet name resolution and sheetId lookup
-    type SheetInfo = { properties: { title: string; sheetId: number } };
+    type SheetInfo = { properties: { title: string; sheetId: number; gridProperties?: { rowCount?: number; columnCount?: number } } };
     const metaResp = await fetch(`${baseUrl}?fields=sheets.properties`, {
       headers: { 'Authorization': `Bearer ${accessToken}` },
     });
@@ -382,7 +382,9 @@ serve(async (req) => {
 
     // Get sheetId for batchUpdate requests
     const resolvedSheetName = (resolvedRange.match(/^'?([^'!]+)'?!/) || [])[1] ?? firstSheetName;
-    const sheetIdNum = sheetsInfo.find(s => s.properties.title === resolvedSheetName)?.properties?.sheetId ?? 0;
+    const resolvedSheetInfo = sheetsInfo.find(s => s.properties.title === resolvedSheetName);
+    const sheetIdNum = resolvedSheetInfo?.properties?.sheetId ?? 0;
+    const existingColumnCount = resolvedSheetInfo?.properties?.gridProperties?.columnCount ?? 0;
 
     let response;
 
@@ -403,17 +405,19 @@ serve(async (req) => {
         console.log(`Write range expanded: ${resolvedRange} → ${writeRange} (${maxDataCols} columns)`);
 
         const sheetId = sheetIdNum;
+        const clearColumnCount = Math.max(maxDataCols, existingColumnCount, 1);
+        const clearRange = expandRangeColumns(`'${resolvedSheetName.replace(/'/g, "''")}'!A:A`, clearColumnCount);
         const clearNotesRequest = {
           requests: [
             {
-              // Clear all notes up to actual data width, rows 1-1000
+              // Clear all notes across the current sheet width so removed departments disappear.
               repeatCell: {
                 range: {
                   sheetId: sheetId,
                   startRowIndex: 0,
                   endRowIndex: 1000,
                   startColumnIndex: 0,
-                  endColumnIndex: maxDataCols,
+                  endColumnIndex: clearColumnCount,
                 },
                 cell: {
                   note: '',
@@ -441,9 +445,10 @@ serve(async (req) => {
           console.log('Cleared existing notes from sheet');
         }
         
-        // Then clear the values (use expanded write range so all columns are cleared)
+        // Then clear values across the current sheet width. This removes stale department
+        // columns left over from previous syncs when categories were renamed or deleted.
         const clearResponse = await fetch(
-          `${baseUrl}/values/${encodeURIComponent(writeRange)}:clear`,
+          `${baseUrl}/values/${encodeURIComponent(clearRange)}:clear`,
 
           {
             method: 'POST',

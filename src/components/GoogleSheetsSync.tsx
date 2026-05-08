@@ -29,6 +29,22 @@ interface GoogleSheetsSyncProps {
 const AUTO_SYNC_KEY = 'google_sheets_auto_sync';
 const AUTO_DELETE_CHECK_KEY = 'google_sheets_auto_delete_check';
 const DELETE_CHECK_INTERVAL = 60000; // 1 minute
+
+const normalizeCategoryName = (name: string) => name.trim().replace(/\s+/g, ' ').toLowerCase();
+
+const uniqueExpenseCategories = (categories: GoogleSheetsSyncProps['expenseCategories']) => {
+  const seen = new Set<string>();
+  return categories
+    .filter(cat => cat.type === 'expense')
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    .filter(cat => {
+      const key = normalizeCategoryName(cat.name);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+};
+
 export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransaction, expenseCategories = [] }: GoogleSheetsSyncProps) => {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -168,9 +184,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
     setSyncStatus('syncing');
     try {
       // Compact format: Date | Income | [expense categories sorted by sortOrder]
-      const sortedExpense = expenseCategories
-        .filter(cat => cat.type === 'expense')
-        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+      const sortedExpense = uniqueExpenseCategories(expenseCategories);
 
       const headers = ['Date', 'Income', ...sortedExpense.map(c => c.name), 'Прочее'];
       const fallbackCol = headers.length - 1;
