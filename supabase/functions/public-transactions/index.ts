@@ -7,7 +7,53 @@ const corsHeaders = {
 
 interface PublicTransactionsRequest {
   token: string;
+  action?: 'add-rule-terms';
+  terms?: string[];
+  transactionTypes?: Array<'income' | 'expense'>;
 }
+
+const OTHER_DEPARTMENT_BY_TYPE = {
+  income: 'Прочее (доход)',
+  expense: 'Прочее (расход)',
+} as const;
+
+const normalizeTerm = (term: string) => term.trim().replace(/\s+/g, ' ');
+
+const parseTerms = (terms: unknown) => {
+  const source = Array.isArray(terms) ? terms : [];
+  const seen = new Set<string>();
+
+  return source
+    .flatMap((term) => String(term || '').split(','))
+    .map(normalizeTerm)
+    .filter((term) => {
+      if (!term || term.length < 2) return false;
+      const key = term.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+};
+
+const mergeTerms = (existingText: string, newTerms: string[]) => {
+  const existingTerms = existingText
+    .split(',')
+    .map(normalizeTerm)
+    .filter(Boolean);
+
+  const seen = new Set(existingTerms.map((term) => term.toLowerCase()));
+  const merged = [...existingTerms];
+
+  for (const term of newTerms) {
+    const key = term.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      merged.push(term);
+    }
+  }
+
+  return merged.join(', ');
+};
 
 const findRuleDepartment = (tx: any, rules: any[] = []) => {
   if (tx.department_name) return tx.department_name;
@@ -91,6 +137,82 @@ Deno.serve(async (req) => {
     if (linkData.expires_at && new Date(linkData.expires_at) < new Date()) {
       return new Response(
         JSON.stringify({ valid: false, error: 'Link expired' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    if (body.action === 'add-rule-terms') {
+      const terms = parseTerms(body.terms);
+      const requestedTypes = Array.isArray(body.transactionTypes)
+        ? body.transactionTypes.filter((type) => type === 'income' || type === 'expense')
+        : [];
+      const transactionTypes = requestedTypes.length > 0 ? Array.from(new Set(requestedTypes)) : ['income', 'expense'];
+
+      if (terms.length === 0) {
+        return new Response(
+          JSON.stringify({ valid: true, success: false, error: 'No terms to add' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      for (const transactionType of transactionTypes) {
+        const departmentName = OTHER_DEPARTMENT_BY_TYPE[transactionType];
+
+        const { data: existingRules, error: existingError } = await supabase
+          .from('department_rules')
+          .select('id, search_text')
+          .eq('user_id', linkData.owner_user_id)
+          .eq('department_name', departmentName)
+          .eq('transaction_type', transactionType)
+          .order('created_at', { ascending: true });
+
+        if (existingError) {
+          console.error('Department rule lookup failed:', existingError);
+          return new Response(
+            JSON.stringify({ valid: true, success: false, error: 'Failed to load rules' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          );
+        }
+
+        const primaryRule = existingRules?.[0];
+        const mergedSearchText = mergeTerms(primaryRule?.search_text || '', terms);
+
+        if (primaryRule) {
+          const { error: updateError } = await supabase
+            .from('department_rules')
+            .update({ search_text: mergedSearchText })
+            .eq('id', primaryRule.id)
+            .eq('user_id', linkData.owner_user_id);
+
+          if (updateError) {
+            console.error('Department rule update failed:', updateError);
+            return new Response(
+              JSON.stringify({ valid: true, success: false, error: 'Failed to update rule' }),
+              { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+            );
+          }
+        } else {
+          const { error: insertError } = await supabase
+            .from('department_rules')
+            .insert({
+              user_id: linkData.owner_user_id,
+              search_text: mergedSearchText,
+              department_name: departmentName,
+              transaction_type: transactionType,
+            });
+
+          if (insertError) {
+            console.error('Department rule insert failed:', insertError);
+            return new Response(
+              JSON.stringify({ valid: true, success: false, error: 'Failed to create rule' }),
+              { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+            );
+          }
+        }
+      }
+
+      return new Response(
+        JSON.stringify({ valid: true, success: true, addedTerms: terms }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }

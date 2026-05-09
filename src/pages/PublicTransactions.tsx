@@ -15,6 +15,7 @@ import {
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { Toaster } from '@/components/ui/toaster';
+import { useToast } from '@/hooks/use-toast';
 import { CURRENCY_SYMBOLS, Transaction } from '@/types/transaction';
 import DateRangeFilter from '@/components/DateRangeFilter';
 
@@ -29,10 +30,13 @@ interface PublicTransactionsResponse {
   error?: string;
   categories?: Category[];
   transactions?: Transaction[];
+  success?: boolean;
+  addedTerms?: string[];
 }
 
 const PublicTransactions = () => {
   const { token } = useParams<{ token: string }>();
+  const { toast } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,9 +46,9 @@ const PublicTransactions = () => {
   // Filter states
   const [searchText, setSearchText] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [currencyFilter, setCurrencyFilter] = useState<string>('all');
   const [customDateRange, setCustomDateRange] = useState<{ from?: Date; to?: Date }>({});
+  const [addingRuleTerms, setAddingRuleTerms] = useState(false);
   
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
@@ -157,13 +161,59 @@ const PublicTransactions = () => {
     return transaction.type === 'income' ? 'Прочее (доход)' : 'Прочее (расход)';
   };
 
+  const isOtherTransaction = (transaction: Transaction): boolean => {
+    const department = getTransactionDepartmentName(transaction).toLowerCase();
+    return department.includes('прочее');
+  };
+
+  const parseSearchTerms = (text: string) =>
+    text
+      .split(/[,\n]/)
+      .map(term => term.trim())
+      .filter(Boolean);
+
+  const addSearchTermsToRules = async () => {
+    const terms = parseSearchTerms(searchText);
+    if (!token || terms.length === 0) return;
+
+    setAddingRuleTerms(true);
+    try {
+      const types = typeFilter === 'all' ? ['income', 'expense'] : [typeFilter];
+      const { data, error: functionError } = await supabase.functions.invoke<PublicTransactionsResponse>(
+        'public-transactions',
+        {
+          body: {
+            action: 'add-rule-terms',
+            token,
+            terms,
+            transactionTypes: types,
+          },
+        },
+      );
+
+      if (functionError) throw functionError;
+      if (!data?.success) throw new Error(data?.error || 'Failed to add words');
+
+      toast({
+        title: 'Слова добавлены',
+        description: terms.join(', '),
+      });
+    } catch (err) {
+      console.error('Error adding public rule terms:', err);
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось добавить слова в правила',
+        variant: 'destructive',
+      });
+    } finally {
+      setAddingRuleTerms(false);
+    }
+  };
+
   // Filter transactions based on all filter criteria
   const filteredTransactions = allTransactions.filter(t => {
     // Apply type filter
     if (typeFilter !== 'all' && t.type !== typeFilter) return false;
-
-    // Apply category filter
-    if (categoryFilter !== 'all' && t.category !== categoryFilter) return false;
 
     // Apply currency filter
     if (currencyFilter !== 'all' && t.currency !== currencyFilter) return false;
@@ -181,6 +231,8 @@ const PublicTransactions = () => {
 
     // Apply text search - exact word match in description, bankTitle, and names
     if (searchText.trim()) {
+      if (!isOtherTransaction(t)) return false;
+
       const searchWords = searchText.trim().toLowerCase().split(/[\s\-_.,;:'"«»()[\]{}]/g).filter(w => w.length >= 2); // Minimum 2 characters
 
       if (searchWords.length === 0) return false; // No valid search words
@@ -242,6 +294,7 @@ const PublicTransactions = () => {
 
   // Show transactions ONLY when search text is entered (filters apply only with search)
   const hasActiveFilters = searchText.trim() !== '';
+  const canAddSearchTerms = parseSearchTerms(searchText).length > 0;
 
   if (loading) {
     return (
@@ -279,25 +332,21 @@ const PublicTransactions = () => {
             </p>
           </div>
 
-          {/* Search */}
-          <div className="mb-6">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Поиск по словам в описании, названии и именах..."
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                className="h-10 pl-8 text-sm"
-              />
-            </div>
-          </div>
+          {/* Search and filters */}
+          <div className="mb-6 space-y-3">
+            <div className="flex flex-col lg:flex-row gap-3">
+              <div className="relative flex-1 min-w-0">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Поиск только в Прочее (доход) и Прочее (расход). Несколько слов можно через запятую..."
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  className="h-10 pl-8 text-sm"
+                />
+              </div>
 
-          {/* Filters */}
-          <div className="mb-6 space-y-3 p-4 bg-muted/30 rounded-lg border">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {/* Type Filter */}
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Тип</label>
+              <div className="lg:w-[150px]">
                 <Select value={typeFilter} onValueChange={(val) => setTypeFilter(val as any)}>
                   <SelectTrigger className="h-9 text-sm">
                     <SelectValue />
@@ -312,8 +361,7 @@ const PublicTransactions = () => {
 
               {/* Currency Filter */}
               {availableCurrencies.length > 0 && (
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Валюта</label>
+                <div className="lg:w-[170px]">
                   <Select value={currencyFilter} onValueChange={setCurrencyFilter}>
                     <SelectTrigger className="h-9 text-sm">
                       <SelectValue />
@@ -330,32 +378,21 @@ const PublicTransactions = () => {
                 </div>
               )}
 
-              {/* Category Filter */}
-              {categories.length > 0 && (
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Категория</label>
-                  <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                    <SelectTrigger className="h-9 text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Все категории</SelectItem>
-                      {categories.map(cat => (
-                        <SelectItem key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
               {/* Date Range */}
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Период</label>
+              <div className="lg:w-[190px]">
                 <DateRangeFilter value={customDateRange} onChange={setCustomDateRange} />
               </div>
             </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={addSearchTermsToRules}
+                disabled={!canAddSearchTerms || addingRuleTerms}
+              >
+                Добавить слова в Прочее
+              </Button>
 
             {/* Reset Filters */}
             {hasActiveFilters && (
@@ -365,7 +402,6 @@ const PublicTransactions = () => {
                 onClick={() => {
                   setSearchText('');
                   setTypeFilter('all');
-                  setCategoryFilter('all');
                   setCurrencyFilter('all');
                   setCustomDateRange({});
                 }}
@@ -374,6 +410,7 @@ const PublicTransactions = () => {
                 Сбросить все фильтры
               </Button>
             )}
+            </div>
           </div>
 
           {/* Filtered Totals */}
