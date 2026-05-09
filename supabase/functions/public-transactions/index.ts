@@ -55,6 +55,9 @@ const mergeTerms = (existingText: string, newTerms: string[]) => {
   return merged.join(', ');
 };
 
+const getOtherRuleCandidates = (rules: Array<{ id: string; search_text: string; department_name?: string | null }>) =>
+  rules.filter((rule) => String(rule.department_name || '').toLowerCase().includes('прочее'));
+
 const findRuleDepartment = (tx: any, rules: any[] = []) => {
   if (tx.department_name) return tx.department_name;
 
@@ -160,9 +163,8 @@ Deno.serve(async (req) => {
 
         const { data: existingRules, error: existingError } = await supabase
           .from('department_rules')
-          .select('id, search_text')
+          .select('id, search_text, department_name')
           .eq('user_id', linkData.owner_user_id)
-          .eq('department_name', departmentName)
           .eq('transaction_type', transactionType)
           .order('created_at', { ascending: true });
 
@@ -174,37 +176,60 @@ Deno.serve(async (req) => {
           );
         }
 
-        const primaryRule = existingRules?.[0];
-        const mergedSearchText = mergeTerms(primaryRule?.search_text || '', terms);
+        const otherRules = getOtherRuleCandidates(existingRules || []);
+        const primaryRule =
+          otherRules.find((rule) => rule.department_name === departmentName) ||
+          otherRules[0];
 
-        if (primaryRule) {
-          const { error: updateError } = await supabase
+        if (!primaryRule) {
+          return new Response(
+            JSON.stringify({
+              valid: true,
+              success: false,
+              error: `Нет существующего правила для ${departmentName}. Создайте его один раз в настройках "Расширение", потом публичная ссылка будет только дописывать слова.`,
+            }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          );
+        }
+
+        const duplicateRules = otherRules.filter((rule) => rule.id !== primaryRule.id);
+        const duplicateTerms = duplicateRules.flatMap((rule) =>
+          String(rule.search_text || '')
+            .split(',')
+            .map(normalizeTerm)
+            .filter(Boolean)
+        );
+        const mergedSearchText = mergeTerms(primaryRule.search_text || '', [...duplicateTerms, ...terms]);
+
+        const { error: updateError } = await supabase
+          .from('department_rules')
+          .update({
+            search_text: mergedSearchText,
+            department_name: departmentName,
+            transaction_type: transactionType,
+          })
+          .eq('id', primaryRule.id)
+          .eq('user_id', linkData.owner_user_id);
+
+        if (updateError) {
+          console.error('Department rule update failed:', updateError);
+          return new Response(
+            JSON.stringify({ valid: true, success: false, error: `Failed to update rule: ${updateError.message}` }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          );
+        }
+
+        if (duplicateRules.length > 0) {
+          const { error: deleteError } = await supabase
             .from('department_rules')
-            .update({ search_text: mergedSearchText })
-            .eq('id', primaryRule.id)
-            .eq('user_id', linkData.owner_user_id);
+            .delete()
+            .eq('user_id', linkData.owner_user_id)
+            .in('id', duplicateRules.map((rule) => rule.id));
 
-          if (updateError) {
-            console.error('Department rule update failed:', updateError);
+          if (deleteError) {
+            console.error('Department rule duplicate cleanup failed:', deleteError);
             return new Response(
-              JSON.stringify({ valid: true, success: false, error: `Failed to update rule: ${updateError.message}` }),
-              { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-            );
-          }
-        } else {
-          const { error: insertError } = await supabase
-            .from('department_rules')
-            .insert({
-              user_id: linkData.owner_user_id,
-              search_text: mergedSearchText,
-              department_name: departmentName,
-              transaction_type: transactionType,
-            });
-
-          if (insertError) {
-            console.error('Department rule insert failed:', insertError);
-            return new Response(
-              JSON.stringify({ valid: true, success: false, error: `Failed to create rule: ${insertError.message}` }),
+              JSON.stringify({ valid: true, success: false, error: `Failed to clean duplicate rules: ${deleteError.message}` }),
               { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
             );
           }

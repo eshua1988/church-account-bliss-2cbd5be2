@@ -399,7 +399,7 @@ const PublicTransactions = () => {
                 onClick={addSearchTermsToRules}
                 disabled={!canAddSearchTerms || addingRuleTerms}
               >
-                Добавить слова в Прочее
+                Добавить слово для поиска
               </Button>
 
             {/* Reset Filters */}
