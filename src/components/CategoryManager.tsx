@@ -28,6 +28,17 @@ interface CategoryManagerProps {
   onBulkUpdateDepartment?: (ids: string[], departmentName: string) => Promise<void>;
 }
 
+const DEFAULT_OTHER_RULES = [
+  { department_name: 'Прочее (доход)', transaction_type: 'income' as const },
+  { department_name: 'Прочее (расход)', transaction_type: 'expense' as const },
+];
+
+const isDefaultOtherRule = (rule: Pick<DepartmentRule, 'department_name' | 'transaction_type'>) =>
+  DEFAULT_OTHER_RULES.some(defaultRule =>
+    defaultRule.department_name === rule.department_name &&
+    defaultRule.transaction_type === rule.transaction_type
+  );
+
 const parseSearchTerms = (text: string) =>
   text
     .split(',')
@@ -55,8 +66,36 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
   const [rules, setRules] = useState<DepartmentRule[]>([]);
 
   const loadRules = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
     const { data } = await supabase.from('department_rules').select('*').order('created_at', { ascending: false });
-    if (data) setRules(data as unknown as DepartmentRule[]);
+    let nextRules = (data || []) as unknown as DepartmentRule[];
+
+    if (session?.user) {
+      const missingRules = DEFAULT_OTHER_RULES.filter(defaultRule =>
+        !nextRules.some(rule =>
+          rule.department_name === defaultRule.department_name &&
+          rule.transaction_type === defaultRule.transaction_type
+        )
+      );
+
+      if (missingRules.length > 0) {
+        const { data: inserted } = await supabase
+          .from('department_rules')
+          .insert(missingRules.map(rule => ({
+            user_id: session.user.id,
+            search_text: '',
+            department_name: rule.department_name,
+            transaction_type: rule.transaction_type,
+          })) as any)
+          .select('*');
+
+        if (inserted) {
+          nextRules = [...(inserted as unknown as DepartmentRule[]), ...nextRules];
+        }
+      }
+    }
+
+    setRules(nextRules);
   }, []);
 
   useEffect(() => { loadRules(); }, [loadRules]);
@@ -67,6 +106,9 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
   const [editRuleType, setEditRuleType] = useState<'income' | 'expense'>('expense');
 
   const deleteRule = async (id: string) => {
+    const rule = rules.find(r => r.id === id);
+    if (rule && isDefaultOtherRule(rule)) return;
+
     await supabase.from('department_rules').delete().eq('id', id);
     setRules(prev => prev.filter(r => r.id !== id));
   };
@@ -370,9 +412,11 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
                       <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 ml-1" onClick={() => startEditRule(rule)}>
                         <Pencil className="w-3 h-3" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => deleteRule(rule.id)}>
-                        <Trash2 className="w-3 h-3 text-destructive" />
-                      </Button>
+                      {!isDefaultOtherRule(rule) && (
+                        <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => deleteRule(rule.id)}>
+                          <Trash2 className="w-3 h-3 text-destructive" />
+                        </Button>
+                      )}
                     </div>
                   )
                 ))}

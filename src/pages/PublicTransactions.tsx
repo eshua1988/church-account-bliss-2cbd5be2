@@ -202,8 +202,8 @@ const PublicTransactions = () => {
       }
 
       toast({
-        title: 'Слова добавлены',
-        description: terms.join(', '),
+        title: 'Запрос отправлен',
+        description: 'Слова появятся в поиске после подтверждения',
       });
     } catch (err) {
       console.error('Error adding public rule terms:', err);

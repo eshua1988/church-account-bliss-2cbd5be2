@@ -35,29 +35,6 @@ const parseTerms = (terms: unknown) => {
     });
 };
 
-const mergeTerms = (existingText: string, newTerms: string[]) => {
-  const existingTerms = existingText
-    .split(',')
-    .map(normalizeTerm)
-    .filter(Boolean);
-
-  const seen = new Set(existingTerms.map((term) => term.toLowerCase()));
-  const merged = [...existingTerms];
-
-  for (const term of newTerms) {
-    const key = term.toLowerCase();
-    if (!seen.has(key)) {
-      seen.add(key);
-      merged.push(term);
-    }
-  }
-
-  return merged.join(', ');
-};
-
-const getOtherRuleCandidates = (rules: Array<{ id: string; search_text: string; department_name?: string | null }>) =>
-  rules.filter((rule) => String(rule.department_name || '').toLowerCase().includes('прочее'));
-
 const findRuleDepartment = (tx: any, rules: any[] = []) => {
   if (tx.department_name) return tx.department_name;
 
@@ -158,82 +135,30 @@ Deno.serve(async (req) => {
         );
       }
 
-      for (const transactionType of transactionTypes) {
-        const departmentName = OTHER_DEPARTMENT_BY_TYPE[transactionType];
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: linkData.owner_user_id,
+          title: 'Новые слова для поиска',
+          message: `Пользователь публичной ссылки предложил: ${terms.join(', ')}`,
+          type: 'rule_request',
+          is_read: false,
+          metadata: {
+            request_type: 'department_rule_terms',
+            terms,
+            transaction_types: transactionTypes,
+            departments: transactionTypes.map((type) => OTHER_DEPARTMENT_BY_TYPE[type]),
+            source: 'public_transactions',
+            token: linkData.token,
+          },
+        });
 
-        const { data: existingRules, error: existingError } = await supabase
-          .from('department_rules')
-          .select('id, search_text, department_name')
-          .eq('user_id', linkData.owner_user_id)
-          .eq('transaction_type', transactionType)
-          .order('created_at', { ascending: true });
-
-        if (existingError) {
-          console.error('Department rule lookup failed:', existingError);
-          return new Response(
-            JSON.stringify({ valid: true, success: false, error: `Failed to load rules: ${existingError.message}` }),
-            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-          );
-        }
-
-        const otherRules = getOtherRuleCandidates(existingRules || []);
-        const primaryRule =
-          otherRules.find((rule) => rule.department_name === departmentName) ||
-          otherRules[0];
-
-        if (!primaryRule) {
-          return new Response(
-            JSON.stringify({
-              valid: true,
-              success: false,
-              error: `Нет существующего правила для ${departmentName}. Создайте его один раз в настройках "Расширение", потом публичная ссылка будет только дописывать слова.`,
-            }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-          );
-        }
-
-        const duplicateRules = otherRules.filter((rule) => rule.id !== primaryRule.id);
-        const duplicateTerms = duplicateRules.flatMap((rule) =>
-          String(rule.search_text || '')
-            .split(',')
-            .map(normalizeTerm)
-            .filter(Boolean)
+      if (notificationError) {
+        console.error('Rule request notification insert failed:', notificationError);
+        return new Response(
+          JSON.stringify({ valid: true, success: false, error: `Failed to create notification: ${notificationError.message}` }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         );
-        const mergedSearchText = mergeTerms(primaryRule.search_text || '', [...duplicateTerms, ...terms]);
-
-        const { error: updateError } = await supabase
-          .from('department_rules')
-          .update({
-            search_text: mergedSearchText,
-            department_name: departmentName,
-            transaction_type: transactionType,
-          })
-          .eq('id', primaryRule.id)
-          .eq('user_id', linkData.owner_user_id);
-
-        if (updateError) {
-          console.error('Department rule update failed:', updateError);
-          return new Response(
-            JSON.stringify({ valid: true, success: false, error: `Failed to update rule: ${updateError.message}` }),
-            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-          );
-        }
-
-        if (duplicateRules.length > 0) {
-          const { error: deleteError } = await supabase
-            .from('department_rules')
-            .delete()
-            .eq('user_id', linkData.owner_user_id)
-            .in('id', duplicateRules.map((rule) => rule.id));
-
-          if (deleteError) {
-            console.error('Department rule duplicate cleanup failed:', deleteError);
-            return new Response(
-              JSON.stringify({ valid: true, success: false, error: `Failed to clean duplicate rules: ${deleteError.message}` }),
-              { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-            );
-          }
-        }
       }
 
       return new Response(

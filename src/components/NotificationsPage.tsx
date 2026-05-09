@@ -12,6 +12,34 @@ import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { Currency } from '@/types/transaction';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+
+const OTHER_DEPARTMENT_BY_TYPE = {
+  income: 'Прочее (доход)',
+  expense: 'Прочее (расход)',
+} as const;
+
+const normalizeRuleTerm = (term: string) => term.trim().replace(/\s+/g, ' ');
+
+const mergeRuleTerms = (existingText: string, newTerms: string[]) => {
+  const existingTerms = existingText.split(',').map(normalizeRuleTerm).filter(Boolean);
+  const seen = new Set(existingTerms.map(term => term.toLowerCase()));
+  const merged = [...existingTerms];
+
+  for (const term of newTerms.map(normalizeRuleTerm).filter(Boolean)) {
+    const key = term.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      merged.push(term);
+    }
+  }
+
+  return merged.join(', ');
+};
+
+const isRuleRequestNotification = (notification: Notification) =>
+  notification.type === 'rule_request' ||
+  notification.metadata?.request_type === 'department_rule_terms';
+
 // Detect account type and build QR string
 function buildPaymentQr(account: string, amount: number, currency: string, recipientName: string, title: string): { qrValue: string; type: 'blik' | 'iban' | 'phone' } {
   const clean = account.replace(/\s/g, '');
@@ -39,6 +67,8 @@ const NotificationCard = ({
   resolvedDepartment,
   payoutToken,
   onAddToTransaction,
+  onApproveRuleRequest,
+  onRejectRuleRequest,
   savingId,
   swipedId,
   onSwipe,
@@ -49,6 +79,8 @@ const NotificationCard = ({
   resolvedDepartment?: string;
   payoutToken?: string;
   onAddToTransaction?: (notification: Notification) => void;
+  onApproveRuleRequest?: (notification: Notification) => void;
+  onRejectRuleRequest?: (notification: Notification) => void;
   savingId?: string | null;
   swipedId?: string | null;
   onSwipe?: (id: string | null) => void;
@@ -62,6 +94,10 @@ const NotificationCard = ({
   const transactionId = notification.metadata?.transaction_id as string | undefined;
   const pdfPath = notification.metadata?.pdf_path as string | undefined;
   const isSaving = savingId === notification.id;
+  const isRuleRequest = isRuleRequestNotification(notification);
+  const requestedTerms = Array.isArray(notification.metadata?.terms)
+    ? (notification.metadata.terms as unknown[]).map(String).join(', ')
+    : '';
 
   const handleDownloadPdf = async () => {
     setIsDownloading(true);
@@ -127,6 +163,7 @@ const NotificationCard = ({
   const mobileButtonCount =
     1 + // delete — always
     (!notification.is_read ? 1 : 0) + // mark as read
+    (isRuleRequest ? 2 : 0) +
     (onAddToTransaction && !transactionId ? 1 : 0) +
     (imagesSkipped && payoutUrl ? 1 : 0) +
     ((pdfPath || transactionId) ? 1 : 0) +
@@ -183,7 +220,7 @@ const NotificationCard = ({
   // Action buttons — shared between desktop bottom row and mobile swipe tray
   const actionButtons = (
     <>
-      {onAddToTransaction && !transactionId && (
+      {onAddToTransaction && !transactionId && !isRuleRequest && (
         <Button
           variant="outline"
           size="sm"
@@ -193,6 +230,30 @@ const NotificationCard = ({
         >
           {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlusCircle className="h-3 w-3" />}
           {isSaving ? '...' : 'В расход'}
+        </Button>
+      )}
+      {isRuleRequest && onApproveRuleRequest && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5 h-8 px-2.5 text-xs border-green-500/50 text-green-600 hover:text-green-700 hover:bg-green-500/10"
+          onClick={() => { onApproveRuleRequest(notification); doClose(); }}
+          disabled={isSaving}
+        >
+          {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+          Подтвердить
+        </Button>
+      )}
+      {isRuleRequest && onRejectRuleRequest && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5 h-8 px-2.5 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
+          onClick={() => { onRejectRuleRequest(notification); doClose(); }}
+          disabled={isSaving}
+        >
+          <X className="h-3 w-3" />
+          Отклонить
         </Button>
       )}
       {imagesSkipped && payoutUrl && (
@@ -246,7 +307,7 @@ const NotificationCard = ({
         className="sm:hidden absolute right-0 top-0 bottom-0 flex rounded-r-xl overflow-hidden"
         style={{ width: `${SWIPE_MAX}px` }}
       >
-        {onAddToTransaction && !transactionId && (
+        {onAddToTransaction && !transactionId && !isRuleRequest && (
           <button
             className="flex flex-col items-center justify-center gap-1 text-white bg-blue-600 active:bg-blue-700"
             style={{ width: `${BTN_W}px` }}
@@ -255,6 +316,28 @@ const NotificationCard = ({
           >
             {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <PlusCircle className="h-5 w-5" />}
             <span className="text-[11px] font-medium leading-none">В расход</span>
+          </button>
+        )}
+        {isRuleRequest && onApproveRuleRequest && (
+          <button
+            className="flex flex-col items-center justify-center gap-1 text-white bg-green-600 active:bg-green-700"
+            style={{ width: `${BTN_W}px` }}
+            onClick={() => { onApproveRuleRequest(notification); doClose(); }}
+            disabled={isSaving}
+          >
+            {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
+            <span className="text-[11px] font-medium leading-none">Да</span>
+          </button>
+        )}
+        {isRuleRequest && onRejectRuleRequest && (
+          <button
+            className="flex flex-col items-center justify-center gap-1 text-white bg-red-600 active:bg-red-700"
+            style={{ width: `${BTN_W}px` }}
+            onClick={() => { onRejectRuleRequest(notification); doClose(); }}
+            disabled={isSaving}
+          >
+            <X className="h-5 w-5" />
+            <span className="text-[11px] font-medium leading-none">Нет</span>
           </button>
         )}
         {imagesSkipped && payoutUrl && (
@@ -327,9 +410,13 @@ const NotificationCard = ({
             )}
             <div className="min-w-0">
               <p className="font-semibold text-foreground truncate leading-snug">
-                {issuedTo || notification.title}
+                {isRuleRequest ? notification.title : issuedTo || notification.title}
               </p>
-              {departmentName && (
+              {isRuleRequest ? (
+                <p className="text-sm text-muted-foreground mt-0.5 truncate leading-snug">
+                  {requestedTerms || notification.message}
+                </p>
+              ) : departmentName && (
                 <p className="text-sm text-muted-foreground mt-0.5 truncate leading-snug">
                   {departmentName}
                 </p>
@@ -361,7 +448,7 @@ const NotificationCard = ({
           </div>
           {/* Mobile: swipe hint when no swipe yet and there are actions */}
           <div className="flex sm:hidden items-center gap-1 text-xs text-muted-foreground">
-            {(onAddToTransaction || imagesSkipped || pdfPath || transactionId || paymentQr) && !isSwiped && (
+            {(onAddToTransaction || isRuleRequest || imagesSkipped || pdfPath || transactionId || paymentQr) && !isSwiped && (
               <span className="flex items-center gap-0.5 opacity-50">← действия</span>
             )}
           </div>
@@ -458,6 +545,7 @@ export const NotificationsPage = () => {
     markAllAsRead,
     deleteNotification,
     clearAllNotifications,
+    refetch: refetchNotifications,
   } = useNotifications();
 
   const { user } = useAuth();
@@ -470,6 +558,106 @@ export const NotificationsPage = () => {
   const [fallbackToken, setFallbackToken] = useState<string | undefined>();
   const [savingId, setSavingId] = useState<string | null>(null);
   const [swipedId, setSwipedId] = useState<string | null>(null);
+
+  const upsertOtherRuleTerms = async (transactionType: 'income' | 'expense', terms: string[]) => {
+    if (!user) throw new Error('User not authenticated');
+    const departmentName = OTHER_DEPARTMENT_BY_TYPE[transactionType];
+
+    const { data: existingRules, error: loadError } = await supabase
+      .from('department_rules')
+      .select('id, search_text, department_name, transaction_type')
+      .eq('user_id', user.id)
+      .eq('transaction_type', transactionType)
+      .order('created_at', { ascending: true });
+
+    if (loadError) throw loadError;
+
+    const otherRules = (existingRules || []).filter(rule =>
+      String(rule.department_name || '').toLowerCase().includes('прочее')
+    );
+    const primaryRule =
+      otherRules.find(rule => rule.department_name === departmentName) ||
+      otherRules[0];
+
+    if (!primaryRule) {
+      const { error: insertError } = await supabase
+        .from('department_rules')
+        .insert({
+          user_id: user.id,
+          search_text: mergeRuleTerms('', terms),
+          department_name: departmentName,
+          transaction_type: transactionType,
+        } as any);
+      if (insertError) throw insertError;
+      return;
+    }
+
+    const duplicateRules = otherRules.filter(rule => rule.id !== primaryRule.id);
+    const duplicateTerms = duplicateRules.flatMap(rule =>
+      String(rule.search_text || '').split(',').map(normalizeRuleTerm).filter(Boolean)
+    );
+    const mergedText = mergeRuleTerms(String(primaryRule.search_text || ''), [...duplicateTerms, ...terms]);
+
+    const { error: updateError } = await supabase
+      .from('department_rules')
+      .update({
+        search_text: mergedText,
+        department_name: departmentName,
+        transaction_type: transactionType,
+      } as any)
+      .eq('id', primaryRule.id)
+      .eq('user_id', user.id);
+
+    if (updateError) throw updateError;
+
+    if (duplicateRules.length > 0) {
+      const { error: deleteError } = await supabase
+        .from('department_rules')
+        .delete()
+        .eq('user_id', user.id)
+        .in('id', duplicateRules.map(rule => rule.id));
+      if (deleteError) throw deleteError;
+    }
+  };
+
+  const handleApproveRuleRequest = async (notification: Notification) => {
+    const terms = Array.isArray(notification.metadata?.terms)
+      ? (notification.metadata.terms as unknown[]).map(String).map(normalizeRuleTerm).filter(Boolean)
+      : [];
+    const transactionTypes = Array.isArray(notification.metadata?.transaction_types)
+      ? (notification.metadata.transaction_types as unknown[]).filter((type): type is 'income' | 'expense' => type === 'income' || type === 'expense')
+      : [];
+
+    if (terms.length === 0 || transactionTypes.length === 0) {
+      toast({ title: 'Нет слов для добавления', variant: 'destructive' });
+      return;
+    }
+
+    setSavingId(notification.id);
+    try {
+      for (const transactionType of Array.from(new Set(transactionTypes))) {
+        await upsertOtherRuleTerms(transactionType, terms);
+      }
+
+      await deleteNotification(notification.id);
+      await refetchNotifications();
+      toast({ title: 'Слова добавлены в поиск', description: terms.join(', ') });
+    } catch (error) {
+      console.error('Failed to approve rule request:', error);
+      toast({
+        title: 'Ошибка',
+        description: error instanceof Error ? error.message : 'Не удалось добавить слова',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const handleRejectRuleRequest = async (notification: Notification) => {
+    await deleteNotification(notification.id);
+    toast({ title: 'Запрос отклонён' });
+  };
 
   // Directly save transaction from notification metadata — no dialog
   const handleAddToTransaction = async (notification: Notification) => {
@@ -677,6 +865,8 @@ export const NotificationsPage = () => {
               resolvedDepartment={deptMap[notification.metadata?.transaction_id as string] || undefined}
               payoutToken={notification.metadata?.link_token || fallbackToken}
               onAddToTransaction={handleAddToTransaction}
+              onApproveRuleRequest={handleApproveRuleRequest}
+              onRejectRuleRequest={handleRejectRuleRequest}
               savingId={savingId}
               swipedId={swipedId}
               onSwipe={setSwipedId}
