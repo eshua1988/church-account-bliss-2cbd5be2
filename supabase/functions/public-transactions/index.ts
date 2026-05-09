@@ -169,7 +169,7 @@ Deno.serve(async (req) => {
         if (existingError) {
           console.error('Department rule lookup failed:', existingError);
           return new Response(
-            JSON.stringify({ valid: true, success: false, error: 'Failed to load rules' }),
+            JSON.stringify({ valid: true, success: false, error: `Failed to load rules: ${existingError.message}` }),
             { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
           );
         }
@@ -187,7 +187,7 @@ Deno.serve(async (req) => {
           if (updateError) {
             console.error('Department rule update failed:', updateError);
             return new Response(
-              JSON.stringify({ valid: true, success: false, error: 'Failed to update rule' }),
+              JSON.stringify({ valid: true, success: false, error: `Failed to update rule: ${updateError.message}` }),
               { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
             );
           }
@@ -204,7 +204,7 @@ Deno.serve(async (req) => {
           if (insertError) {
             console.error('Department rule insert failed:', insertError);
             return new Response(
-              JSON.stringify({ valid: true, success: false, error: 'Failed to create rule' }),
+              JSON.stringify({ valid: true, success: false, error: `Failed to create rule: ${insertError.message}` }),
               { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
             );
           }
@@ -212,7 +212,7 @@ Deno.serve(async (req) => {
       }
 
       return new Response(
-        JSON.stringify({ valid: true, success: true, addedTerms: terms }),
+        JSON.stringify({ valid: true, success: true, action: body.action, addedTerms: terms }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }

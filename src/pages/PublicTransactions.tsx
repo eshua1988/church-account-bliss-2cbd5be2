@@ -192,7 +192,14 @@ const PublicTransactions = () => {
       );
 
       if (functionError) throw functionError;
-      if (!data?.success) throw new Error(data?.error || 'Failed to add words');
+      if (!data?.success) {
+        const looksLikeOldFunction = data?.valid && Array.isArray(data.transactions);
+        throw new Error(
+          looksLikeOldFunction
+            ? 'Supabase Function public-transactions еще не обновлена. Нужно дождаться или запустить деплой функций.'
+            : data?.error || 'Failed to add words'
+        );
+      }
 
       toast({
         title: 'Слова добавлены',
@@ -200,9 +207,10 @@ const PublicTransactions = () => {
       });
     } catch (err) {
       console.error('Error adding public rule terms:', err);
+      const message = err instanceof Error ? err.message : 'Не удалось добавить слова в правила';
       toast({
         title: 'Ошибка',
-        description: 'Не удалось добавить слова в правила',
+        description: message,
         variant: 'destructive',
       });
     } finally {
