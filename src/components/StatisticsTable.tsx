@@ -39,6 +39,21 @@ interface StatisticsTableProps {
 
 type TimeRange = 'all' | 'thisMonth' | 'lastMonth' | 'last3Months' | 'last6Months' | 'thisYear';
 
+const normalizeSearchText = (text: string) =>
+  text
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+const compactSearchText = (text: string) =>
+  normalizeSearchText(text).replace(/[^a-z0-9а-яёąćęłńóśźż]+/gi, '');
+
+const getSearchWords = (text: string) =>
+  normalizeSearchText(text)
+    .split(/[\s\-_.,;:'"«»()[\]{}\/]+/g)
+    .map(word => word.trim())
+    .filter(word => word.length >= 2);
+
 export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpdate, selectedCurrency, categories = [], notifications = [], onLinkNotification, onUnlinkNotification }: StatisticsTableProps) => {
   const { t, getDateLocale } = useTranslation();
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
@@ -117,19 +132,33 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
 
     // Apply text search
     if (searchText.trim()) {
-      const q = searchText.trim().toLowerCase();
+      const searchWords = getSearchWords(searchText);
       filtered = filtered.filter(t => {
+        if (searchWords.length === 0) return false;
         const dateStr = format(new Date(t.date), 'dd.MM.yyyy');
         const amountStr = String(t.amount);
-        return (
-          (t.description || '').toLowerCase().includes(q) ||
-          (t.bankTitle || '').toLowerCase().includes(q) ||
-          (t.departmentName || '').toLowerCase().includes(q) ||
-          (t.bankSender || '').toLowerCase().includes(q) ||
-          (t.bankRecipient || '').toLowerCase().includes(q) ||
-          dateStr.includes(q) ||
-          amountStr.includes(q) ||
-          getCategoryName(t.category).toLowerCase().includes(q)
+        const searchableText = [
+          t.description || '',
+          t.bankTitle || '',
+          t.departmentName || '',
+          t.bankSender || '',
+          t.bankRecipient || '',
+          t.issuedTo || '',
+          t.cashierName || '',
+          t.comment || '',
+          dateStr,
+          amountStr,
+          t.currency,
+          getCategoryName(t.category),
+        ].join(' ');
+        const normalizedSearchableText = normalizeSearchText(searchableText);
+        const searchablePieces = normalizedSearchableText
+          .split(/[\s\-_.,;:'"«»()[\]{}\/]+/)
+          .filter(word => word.length >= 2)
+          .concat(compactSearchText(searchableText));
+
+        return searchWords.every(searchWord =>
+          searchablePieces.some(textWord => textWord.includes(searchWord))
         );
       });
     }

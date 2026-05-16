@@ -448,15 +448,15 @@ const PublicTransactions = () => {
               <div className="flex flex-wrap gap-4">
                 {Object.entries(totals).map(([currency, { income, expense }]) => (
                   <div key={currency}>
-                    <p className="text-xs text-muted-foreground font-medium mb-1">{currency}</p>
+                    <p className="text-xs text-muted-foreground font-medium mb-1">
+                      {formatMoney(income - expense, currency)}
+                    </p>
                     <div className="flex items-center gap-1 text-success mb-1">
                       <TrendingUp className="w-3 h-3" />
-                      <span className="text-xs text-muted-foreground">Доход:</span>
                       <span className="text-sm font-semibold">+{formatMoney(income, currency)}</span>
                     </div>
                     <div className="flex items-center gap-1 text-destructive">
                       <TrendingDown className="w-3 h-3" />
-                      <span className="text-xs text-muted-foreground">Расход:</span>
                       <span className="text-sm font-semibold">-{formatMoney(expense, currency)}</span>
                     </div>
                   </div>
