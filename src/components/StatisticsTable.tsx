@@ -387,13 +387,30 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
     setSelectedTransactions(new Set());
   };
 
+  const hasCalculatorState =
+    selectedTransactions.size > 0 ||
+    searchText.trim() !== '' ||
+    typeFilter !== 'all' ||
+    categoryFilter !== 'all' ||
+    Boolean(customDateRange.from || customDateRange.to) ||
+    Boolean(internalCurrencyFilter);
+
+  const handleResetCalculator = () => {
+    setSelectedTransactions(new Set());
+    setSearchText('');
+    setTypeFilter('all');
+    setCategoryFilter('all');
+    setCustomDateRange({});
+    setInternalCurrencyFilter(null);
+  };
+
   return (
     <Card>
       <CardHeader className="pb-4">
         <CardTitle className="text-base font-semibold mb-3">{calculatorMode ? 'Калькулятор' : t('transactionsTable')}</CardTitle>
 
         {/* Totals Summary */}
-        <div className="flex gap-3 mb-3 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
+        <div className="hidden">
           {Object.entries(totals).map(([currency, { income, expense }]) => (
             <div 
               key={currency} 
@@ -449,6 +466,17 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
               )}
             </button>
           </div>
+          {calculatorMode && hasCalculatorState && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={handleResetCalculator}
+            >
+              Сбросить
+            </Button>
+          )}
         </div>
         {filtersOpen && (
           <div className="flex flex-wrap items-center gap-2 mt-2 p-2 rounded-md bg-muted/30 border">
