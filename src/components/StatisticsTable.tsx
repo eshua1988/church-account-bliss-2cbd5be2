@@ -35,6 +35,7 @@ interface StatisticsTableProps {
   notifications?: Notification[];
   onLinkNotification?: (transactionId: string, notificationId: string) => void;
   onUnlinkNotification?: (transactionId: string) => void;
+  calculatorMode?: boolean;
 }
 
 type TimeRange = 'all' | 'thisMonth' | 'lastMonth' | 'last3Months' | 'last6Months' | 'thisYear';
@@ -54,7 +55,7 @@ const getSearchWords = (text: string) =>
     .map(word => word.trim())
     .filter(word => word.length >= 2);
 
-export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpdate, selectedCurrency, categories = [], notifications = [], onLinkNotification, onUnlinkNotification }: StatisticsTableProps) => {
+export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpdate, selectedCurrency, categories = [], notifications = [], onLinkNotification, onUnlinkNotification, calculatorMode = false }: StatisticsTableProps) => {
   const { t, getDateLocale } = useTranslation();
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
@@ -213,6 +214,55 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
     return result;
   }, [filteredTransactions]);
 
+  const selectedTotals = useMemo(() => {
+    const result: Record<string, { income: number; expense: number }> = {};
+
+    transactions
+      .filter(t => selectedTransactions.has(t.id))
+      .forEach(t => {
+        if (!result[t.currency]) {
+          result[t.currency] = { income: 0, expense: 0 };
+        }
+        if (t.type === 'income') {
+          result[t.currency].income += t.amount;
+        } else {
+          result[t.currency].expense += t.amount;
+        }
+      });
+
+    return result;
+  }, [transactions, selectedTransactions]);
+
+  const formatMoney = useCallback((amount: number, currency: string) =>
+    `${amount.toLocaleString(getDateLocale())} ${CURRENCY_SYMBOLS[currency as keyof typeof CURRENCY_SYMBOLS] || currency}`,
+  [getDateLocale]);
+
+  const renderTotalsSummary = (title: string, data: Record<string, { income: number; expense: number }>) => {
+    const entries = Object.entries(data);
+    if (entries.length === 0) return null;
+
+    return (
+      <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+        <p className="text-xs text-muted-foreground mb-2 font-medium">{title}</p>
+        <div className="flex flex-wrap gap-3">
+          {entries.map(([currency, { income, expense }]) => (
+            <div key={currency} className="space-y-1">
+              <p className="text-xs text-muted-foreground font-medium">{formatMoney(income - expense, currency)}</p>
+              <div className="flex items-center gap-1 text-success">
+                <TrendingUp className="w-3 h-3" />
+                <span className="text-sm font-semibold">+{formatMoney(income, currency)}</span>
+              </div>
+              <div className="flex items-center gap-1 text-destructive">
+                <TrendingDown className="w-3 h-3" />
+                <span className="text-sm font-semibold">-{formatMoney(expense, currency)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   const toggleCurrencyFilter = (currency: string) => {
     setInternalCurrencyFilter(prev => prev === currency ? null : currency);
   };
@@ -340,7 +390,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
   return (
     <Card>
       <CardHeader className="pb-4">
-        <CardTitle className="text-base font-semibold mb-3">{t('transactionsTable')}</CardTitle>
+        <CardTitle className="text-base font-semibold mb-3">{calculatorMode ? 'Калькулятор' : t('transactionsTable')}</CardTitle>
 
         {/* Totals Summary */}
         <div className="flex gap-3 mb-3 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
@@ -355,21 +405,28 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                   : "bg-secondary/50 hover:bg-secondary/70"
               )}
             >
-              <p className="text-xs text-muted-foreground font-medium">{currency}</p>
+              <p className="text-xs text-muted-foreground font-medium">{formatMoney(income - expense, currency)}</p>
               <div className="flex items-center gap-1 text-success">
                 <TrendingUp className="w-3 h-3" />
-                <span className="text-sm font-semibold">+{income.toLocaleString(getDateLocale())}</span>
+                <span className="text-sm font-semibold">+{formatMoney(income, currency)}</span>
               </div>
               <div className="flex items-center gap-1 text-destructive">
                 <TrendingDown className="w-3 h-3" />
-                <span className="text-sm font-semibold">-{expense.toLocaleString(getDateLocale())}</span>
+                <span className="text-sm font-semibold">-{formatMoney(expense, currency)}</span>
               </div>
             </div>
           ))}
         </div>
 
+        {renderTotalsSummary('Итого по результатам:', filteredTotals)}
+        {calculatorMode && selectedTransactions.size > 0 && (
+          <div className="mt-3">
+            {renderTotalsSummary(`Итого подкрашенных транзакций: ${selectedTransactions.size}`, selectedTotals)}
+          </div>
+        )}
+
         {/* Search */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 mt-3">
           <div className="relative flex-1 min-w-[180px]">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -466,7 +523,9 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                   <div
                     className={cn(
                       'rounded-lg border p-3 transition-colors',
-                      selectedTransactions.has(transaction.id) ? 'bg-muted/50' : 'bg-card'
+                      selectedTransactions.has(transaction.id)
+                        ? (calculatorMode ? 'bg-primary/10 ring-1 ring-primary/40' : 'bg-muted/50')
+                        : 'bg-card'
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -559,7 +618,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                 <th className="h-12 px-2 text-left align-middle font-medium text-muted-foreground">
                   <div className="flex items-center gap-1.5">
                     <Checkbox checked={isAllSelected} onCheckedChange={toggleAllTransactions} aria-label="Select all" />
-                    {selectedTransactions.size > 0 && onDelete && (
+                    {selectedTransactions.size > 0 && onDelete && !calculatorMode && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -591,7 +650,10 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                   const isExpanded = expandedTransactions.has(transaction.id);
                   return (
                     <React.Fragment key={transaction.id}>
-                      <tr className={cn("border-b transition-colors hover:bg-muted/50", selectedTransactions.has(transaction.id) && "bg-muted/50")}>
+                      <tr className={cn(
+                        "border-b transition-colors hover:bg-muted/50",
+                        selectedTransactions.has(transaction.id) && (calculatorMode ? "bg-primary/10 ring-1 ring-inset ring-primary/40" : "bg-muted/50")
+                      )}>
                         <td className="p-4 w-10 px-2 align-middle">
                           <Checkbox checked={selectedTransactions.has(transaction.id)} onCheckedChange={() => toggleTransaction(transaction.id)} aria-label={`Select transaction ${transaction.id}`} />
                         </td>
@@ -684,34 +746,12 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
           </table>
         </div>
 
-        {/* Filtered totals summary - show when search or filters are active */}
-        {(searchText.trim() || customDateRange.from || customDateRange.to || categoryFilter !== 'all') && (
-          <div className="mt-4 p-3 rounded-lg bg-primary/5 border border-primary/20">
-            <p className="text-xs text-muted-foreground mb-2 font-medium">Итого по фильтрам:</p>
-            <div className="flex flex-wrap gap-3">
-              {Object.entries(filteredTotals).map(([currency, { income, expense }]) => (
-                <div key={currency} className="space-y-1">
-                  <p className="text-xs text-muted-foreground font-medium">{currency}</p>
-                  <div className="flex items-center gap-1 text-success">
-                    <TrendingUp className="w-3 h-3" />
-                    <span className="text-sm font-semibold">+{income.toLocaleString(getDateLocale())}</span>
-                  </div>
-                  <div className="flex items-center gap-1 text-destructive">
-                    <TrendingDown className="w-3 h-3" />
-                    <span className="text-sm font-semibold">-{expense.toLocaleString(getDateLocale())}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        
-        {selectedTransactions.size > 0 && (
+        {selectedTransactions.size > 0 && !calculatorMode && (
           <>
             {/* Mobile: fixed bottom bar */}
             <div className="sm:hidden fixed bottom-0 left-0 right-0 z-50 flex items-center justify-between gap-2 px-4 py-3 bg-card border-t border-border shadow-lg">
               <p className="text-sm text-primary font-medium">Выбрано: {selectedTransactions.size}</p>
-              {selectedTransactions.size > 0 && onDelete && (
+              {selectedTransactions.size > 0 && onDelete && !calculatorMode && (
                 <Button
                   variant="destructive"
                   size="sm"
@@ -726,7 +766,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
             {/* Desktop: bottom bar */}
             <div className="hidden sm:flex items-center justify-between gap-2 mt-4 px-4 py-3 bg-card border rounded-lg">
               <p className="text-sm text-primary font-medium">Выбрано: {selectedTransactions.size}</p>
-              {selectedTransactions.size > 0 && onDelete && (
+              {selectedTransactions.size > 0 && onDelete && !calculatorMode && (
                 <Button
                   variant="ghost"
                   size="sm"

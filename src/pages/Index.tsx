@@ -373,7 +373,17 @@ const Index = () => {
                 <TabsList className="mb-4 flex-wrap h-auto gap-1 p-1">
                   <TabsTrigger value="balance" className="text-xs sm:text-sm">{t('balanceByCurrency')}</TabsTrigger>
                   <TabsTrigger value="table" className="text-xs sm:text-sm">{t('transactionsTable')}</TabsTrigger>
+                  <TabsTrigger value="calculator" className="text-xs sm:text-sm">Калькулятор</TabsTrigger>
                 </TabsList>
+                <TabsContent value="calculator">
+                  <StatisticsTable
+                    transactions={transactions}
+                    getCategoryName={getCategoryName}
+                    selectedCurrency={null}
+                    categories={categories}
+                    calculatorMode
+                  />
+                </TabsContent>
                 <TabsContent value="table">
                   <div>
                     <div>
