@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Transaction, Currency, TransactionType, TransactionCategory } from '@/types/transaction';
+import { DepartmentRule, findMatchingDepartment } from '@/lib/departmentRules';
 
 interface DbTransaction {
   id: string;
@@ -127,6 +128,20 @@ export const useSupabaseTransactions = () => {
   const addTransaction = useCallback(async (transaction: Omit<Transaction, 'id' | 'createdAt'>) => {
     if (!user) throw new Error('User not authenticated');
 
+    let departmentName = transaction.departmentName || null;
+    if (!departmentName) {
+      const { data: rules } = await supabase
+        .from('department_rules')
+        .select('search_text, department_name, transaction_type')
+        .eq('user_id', user.id);
+
+      departmentName = findMatchingDepartment({
+        type: transaction.type,
+        description: transaction.description,
+        bankTitle: transaction.bankTitle,
+      }, (rules || []) as DepartmentRule[]);
+    }
+
     const { data, error } = await supabase
       .from('transactions')
       .insert({
@@ -141,7 +156,7 @@ export const useSupabaseTransactions = () => {
         decision_number: transaction.decisionNumber,
         amount_in_words: transaction.amountInWords,
         cashier_name: transaction.cashierName,
-        department_name: transaction.departmentName || null,
+        department_name: departmentName,
         bank_title: transaction.bankTitle || null,
         bank_sender: transaction.bankSender || null,
         bank_recipient: transaction.bankRecipient || null,

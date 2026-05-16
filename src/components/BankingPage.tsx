@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+import { DepartmentRule, findMatchingDepartment } from '@/lib/departmentRules';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -338,9 +339,19 @@ export const BankingPage = () => {
 
     const incomeDefaultId = cats?.find(c => c.type === 'income')?.id || null;
     const expenseDefaultId = cats?.find(c => c.type === 'expense')?.id || null;
+    const { data: rules } = await supabase
+      .from('department_rules')
+      .select('search_text, department_name, transaction_type')
+      .eq('user_id', user.id);
+    const departmentRules = (rules || []) as DepartmentRule[];
 
     for (const row of toImport) {
       try {
+        const departmentName = findMatchingDepartment({
+          type: row.type,
+          description: row.description,
+        }, departmentRules);
+
         const { error } = await supabase.from('transactions').insert({
           user_id: user.id,
           type: row.type,
@@ -349,6 +360,7 @@ export const BankingPage = () => {
           date: row.date,
           description: row.description || 'Импорт PKO BP',
           category_id: row.type === 'income' ? incomeDefaultId : expenseDefaultId,
+          department_name: departmentName,
         });
         if (error) {
           errors.push(`${row.date}: ${error.message}`);

@@ -172,6 +172,24 @@ const PublicTransactions = () => {
       .map(term => term.trim())
       .filter(Boolean);
 
+  const normalizeSearchText = (text: string) =>
+    text
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+
+  const compactSearchText = (text: string) =>
+    normalizeSearchText(text).replace(/[^a-z0-9а-яёąćęłńóśźż]+/gi, '');
+
+  const getSearchWords = (text: string) =>
+    normalizeSearchText(text)
+      .split(/[\s\-_.,;:'"«»()[\]{}\/]+/g)
+      .map(word => word.trim())
+      .filter(word => word.length >= 2);
+
+  const formatMoney = (amount: number, currency: string) =>
+    `${amount.toLocaleString()} ${CURRENCY_SYMBOLS[currency as keyof typeof CURRENCY_SYMBOLS] || currency}`;
+
   const addSearchTermsToRules = async () => {
     const terms = parseSearchTerms(searchText);
     if (!token || terms.length === 0) return;
@@ -241,7 +259,7 @@ const PublicTransactions = () => {
     if (searchText.trim()) {
       if (!isOtherTransaction(t)) return false;
 
-      const searchWords = searchText.trim().toLowerCase().split(/[\s\-_.,;:'"«»()[\]{}]/g).filter(w => w.length >= 2); // Minimum 2 characters
+      const searchWords = getSearchWords(searchText); // Minimum 2 characters
 
       if (searchWords.length === 0) return false; // No valid search words
 
@@ -254,16 +272,18 @@ const PublicTransactions = () => {
         t.issuedTo || '',
         t.cashierName || '',
         getTransactionDepartmentName(t)
-      ].join(' ').toLowerCase();
+      ].join(' ');
+      const normalizedSearchableText = normalizeSearchText(fullSearchableText);
 
       // Split by word separators and filter out short words
-      const allWords = fullSearchableText
+      const allWords = normalizedSearchableText
         .split(/[\s\-_.,;:'"«»()[\]{}\/]+/)
-        .filter(w => w.length >= 2); // Only words with 2+ characters
+        .filter(w => w.length >= 2)
+        .concat(compactSearchText(fullSearchableText)); // Also search joined words
 
       // Check if ALL search words are found as complete words in the text
       const hasAllWords = searchWords.every(searchWord =>
-        allWords.some(textWord => textWord === searchWord)
+        allWords.some(textWord => textWord.includes(searchWord))
       );
 
       if (!hasAllWords) return false;
@@ -431,11 +451,13 @@ const PublicTransactions = () => {
                     <p className="text-xs text-muted-foreground font-medium mb-1">{currency}</p>
                     <div className="flex items-center gap-1 text-success mb-1">
                       <TrendingUp className="w-3 h-3" />
-                      <span className="text-sm font-semibold">+{income.toLocaleString()}</span>
+                      <span className="text-xs text-muted-foreground">Доход:</span>
+                      <span className="text-sm font-semibold">+{formatMoney(income, currency)}</span>
                     </div>
                     <div className="flex items-center gap-1 text-destructive">
                       <TrendingDown className="w-3 h-3" />
-                      <span className="text-sm font-semibold">-{expense.toLocaleString()}</span>
+                      <span className="text-xs text-muted-foreground">Расход:</span>
+                      <span className="text-sm font-semibold">-{formatMoney(expense, currency)}</span>
                     </div>
                   </div>
                 ))}
