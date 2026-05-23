@@ -35,6 +35,25 @@ const parseTerms = (terms: unknown) => {
     });
 };
 
+const sendPushNotification = async (supabaseUrl: string, serviceKey: string, notificationId: string) => {
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/send-push-notification`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ notification_id: notificationId, url: '/church-account-bliss-2cbd5be2/' }),
+    });
+
+    if (!response.ok) {
+      console.warn('Push notification request failed:', response.status, await response.text());
+    }
+  } catch (error) {
+    console.warn('Push notification request failed:', error);
+  }
+};
+
 const findRuleDepartment = (tx: any, rules: any[] = []) => {
   if (tx.department_name) return tx.department_name;
 
@@ -135,7 +154,7 @@ Deno.serve(async (req) => {
         );
       }
 
-      const { error: notificationError } = await supabase
+      const { data: notification, error: notificationError } = await supabase
         .from('notifications')
         .insert({
           user_id: linkData.owner_user_id,
@@ -151,7 +170,9 @@ Deno.serve(async (req) => {
             source: 'public_transactions',
             token: linkData.token,
           },
-        });
+        })
+        .select('id')
+        .single();
 
       if (notificationError) {
         console.error('Rule request notification insert failed:', notificationError);
@@ -159,6 +180,10 @@ Deno.serve(async (req) => {
           JSON.stringify({ valid: true, success: false, error: `Failed to create notification: ${notificationError.message}` }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         );
+      }
+
+      if (notification?.id) {
+        await sendPushNotification(supabaseUrl, supabaseServiceKey, notification.id);
       }
 
       return new Response(

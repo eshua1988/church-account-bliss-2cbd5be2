@@ -27,10 +27,24 @@ export interface Notification {
   created_at: string;
 }
 
+const urlBase64ToUint8Array = (base64String: string) => {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+
+  return outputArray;
+};
+
 export const useNotifications = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasPushSubscription, setHasPushSubscription] = useState(false);
   const [pushPermission, setPushPermission] = useState<NotificationPermission>(
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'denied'
   );
@@ -64,6 +78,82 @@ export const useNotifications = () => {
   }, []);
 
   const enablePushNotifications = useCallback(async () => {
+    {
+      if (!user) return 'denied' as NotificationPermission;
+
+      if (typeof window === 'undefined' || !('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+        toast({
+          title: 'Push недоступен',
+          description: 'Этот браузер не поддерживает push-уведомления.',
+          variant: 'destructive',
+        });
+        return 'denied' as NotificationPermission;
+      }
+
+      const permission = await Notification.requestPermission();
+      setPushPermission(permission);
+
+      if (permission !== 'granted') {
+        toast({
+          title: 'Push уведомления не включены',
+          description: 'Разрешите уведомления в настройках браузера.',
+          variant: 'destructive',
+        });
+        return permission;
+      }
+
+      try {
+        const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+        if (!vapidPublicKey) {
+          toast({
+            title: 'Push разрешен',
+            description: 'Нужно добавить VAPID ключ для отправки push на устройство.',
+            variant: 'destructive',
+          });
+          return permission;
+        }
+
+        const registration = await navigator.serviceWorker.ready;
+        const existingSubscription = await registration.pushManager.getSubscription();
+        const subscription = existingSubscription || await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+        });
+        const subscriptionJson = subscription.toJSON();
+
+        await supabase
+          .from('notifications')
+          .insert({
+            user_id: user.id,
+            title: 'Push subscription',
+            message: subscription.endpoint,
+            type: 'push_subscription',
+            is_read: true,
+            metadata: {
+              endpoint: subscription.endpoint,
+              p256dh: subscriptionJson.keys?.p256dh,
+              auth: subscriptionJson.keys?.auth,
+              user_agent: navigator.userAgent,
+            },
+          });
+
+        setHasPushSubscription(true);
+        toast({
+          title: 'Push уведомления включены',
+          description: 'Новые уведомления будут приходить на это устройство.',
+        });
+      } catch (error) {
+        console.error('Push subscription failed:', error);
+        toast({
+          title: 'Push не включился',
+          description: 'Не удалось сохранить подписку устройства. Попробуйте еще раз.',
+          variant: 'destructive',
+        });
+      }
+
+      return permission;
+    }
+
     if (typeof window === 'undefined' || !('Notification' in window)) {
       toast({
         title: 'Push недоступен',
@@ -90,7 +180,16 @@ export const useNotifications = () => {
     }
 
     return permission;
-  }, [toast]);
+  }, [toast, user]);
+
+  useEffect(() => {
+    if (!user || typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+
+    navigator.serviceWorker.ready
+      .then((registration) => registration.pushManager.getSubscription())
+      .then((subscription) => setHasPushSubscription(Boolean(subscription)))
+      .catch(() => setHasPushSubscription(false));
+  }, [user]);
 
   const fetchNotifications = useCallback(async () => {
     if (!user) {
@@ -105,6 +204,7 @@ export const useNotifications = () => {
         .from('notifications')
         .select('*')
         .eq('user_id', user.id)
+        .neq('type', 'push_subscription')
         .order('created_at', { ascending: false })
         .limit(25);
 
@@ -150,7 +250,8 @@ export const useNotifications = () => {
         .from('notifications')
         .update({ is_read: true })
         .eq('user_id', user.id)
-        .eq('is_read', false);
+        .eq('is_read', false)
+        .neq('type', 'push_subscription');
 
       if (error) throw error;
 
@@ -188,7 +289,8 @@ export const useNotifications = () => {
       const { error } = await supabase
         .from('notifications')
         .delete()
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .neq('type', 'push_subscription');
 
       if (error) throw error;
 
@@ -228,6 +330,7 @@ export const useNotifications = () => {
             .single();
 
           const newNotification = (fullNotif || payload.new) as Notification;
+          if (newNotification.type === 'push_subscription') return;
           setNotifications(prev => [newNotification, ...prev.filter(n => n.id !== newNotification.id)]);
           setUnreadCount(prev => prev + 1);
           
@@ -236,7 +339,9 @@ export const useNotifications = () => {
             title: newNotification.title,
             description: newNotification.message,
           });
-          showBrowserNotification(newNotification);
+          if (!hasPushSubscription) {
+            showBrowserNotification(newNotification);
+          }
         }
       )
       .on(
@@ -293,7 +398,7 @@ export const useNotifications = () => {
       supabase.removeChannel(channel);
       clearInterval(poll);
     };
-  }, [user, toast, fetchNotifications, showBrowserNotification]);
+  }, [user, toast, fetchNotifications, showBrowserNotification, hasPushSubscription]);
 
   return {
     notifications,
@@ -305,6 +410,7 @@ export const useNotifications = () => {
     clearAllNotifications,
     refetch: fetchNotifications,
     pushPermission,
+    hasPushSubscription,
     enablePushNotifications,
   };
 };

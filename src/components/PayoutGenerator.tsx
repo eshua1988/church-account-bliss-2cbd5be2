@@ -585,6 +585,7 @@ export const PayoutGenerator = () => {
           .from('notifications')
           .select('id, created_at')
           .eq('user_id', user.id)
+          .neq('type', 'push_subscription')
           .order('created_at', { ascending: true });
 
         if (existingNotifs && existingNotifs.length >= 25) {
@@ -604,13 +605,19 @@ export const PayoutGenerator = () => {
         };
         if (pdfPath) notifMeta.pdf_path = pdfPath;
 
-        await supabase.from('notifications').insert({
+        const { data: notification } = await supabase.from('notifications').insert({
           user_id: user.id,
           title: 'Новый расходный ордер',
           message: `Расходный ордер на ${formData.amount} ${formData.currency} — ${formData.issuedTo}`,
           type: 'payout',
           metadata: notifMeta,
-        });
+        }).select('id').single();
+
+        if (notification?.id) {
+          await supabase.functions.invoke('send-push-notification', {
+            body: { notification_id: notification.id },
+          });
+        }
       } catch (notifErr) {
         console.error('Notification error:', notifErr);
       }

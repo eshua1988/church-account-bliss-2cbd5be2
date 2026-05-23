@@ -547,6 +547,7 @@ export const NotificationsPage = () => {
     clearAllNotifications,
     refetch: refetchNotifications,
     pushPermission,
+    hasPushSubscription,
     enablePushNotifications,
   } = useNotifications();
 
@@ -781,7 +782,7 @@ export const NotificationsPage = () => {
           </h3>
         </div>
         <div className="flex items-center gap-2">
-          {pushPermission !== 'granted' && (
+          {(pushPermission !== 'granted' || !hasPushSubscription) && (
             <Button variant="outline" size="sm" onClick={enablePushNotifications}>
               Включить push
             </Button>

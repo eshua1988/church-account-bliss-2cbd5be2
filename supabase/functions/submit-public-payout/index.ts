@@ -84,6 +84,25 @@ function validateInput(data: SubmitPayoutRequest): { valid: boolean; error?: str
   return { valid: true };
 }
 
+async function sendPushNotification(supabaseUrl: string, serviceKey: string, notificationId: string) {
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/send-push-notification`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ notification_id: notificationId, url: '/church-account-bliss-2cbd5be2/' }),
+    });
+
+    if (!response.ok) {
+      console.warn('Push notification request failed:', response.status, await response.text());
+    }
+  } catch (error) {
+    console.warn('Push notification request failed:', error);
+  }
+}
+
 // PDF labels for each language
 const pdfLabels: Record<string, Record<string, string>> = {
   pl: {
@@ -616,6 +635,7 @@ Deno.serve(async (req) => {
     const { data: existingNotifs } = await supabase
       .from('notifications').select('id')
       .eq('user_id', linkData.owner_user_id)
+      .neq('type', 'push_subscription')
       .order('created_at', { ascending: true });
 
     if (existingNotifs && existingNotifs.length >= 25) {
@@ -693,7 +713,7 @@ Deno.serve(async (req) => {
     };
     if (pdfPath) notificationMetadata.pdf_path = pdfPath;
 
-    const { error: notifError } = await supabase
+    const { data: notification, error: notifError } = await supabase
       .from('notifications')
       .insert({
         user_id: linkData.owner_user_id,
@@ -701,9 +721,14 @@ Deno.serve(async (req) => {
         message: `${submitterInfo} заполнил расходный ордер на ${body.amount} ${body.currency}`,
         type: 'payout',
         metadata: notificationMetadata,
-      });
+      })
+      .select('id')
+      .single();
 
     if (notifError) console.error('Failed to create notification:', notifError);
+    if (notification?.id) {
+      await sendPushNotification(supabaseUrl, supabaseServiceKey, notification.id);
+    }
 
     console.log('Payout saved (no transaction), folderKey:', folderKey, 'pdfPath:', pdfPath);
 
