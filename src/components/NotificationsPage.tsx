@@ -546,6 +546,8 @@ export const NotificationsPage = () => {
     deleteNotification,
     clearAllNotifications,
     refetch: refetchNotifications,
+    pushPermission,
+    enablePushNotifications,
   } = useNotifications();
 
   const { user } = useAuth();
@@ -553,7 +555,7 @@ export const NotificationsPage = () => {
   const { addTransaction } = useSupabaseTransactions();
   const { getExpenseCategories } = useSupabaseCategories();
 
-  const [activeTab, setActiveTab] = useState<'all' | 'no_photos'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'no_photos' | 'extension'>('all');
   const [deptMap, setDeptMap] = useState<Record<string, string>>({});
   const [fallbackToken, setFallbackToken] = useState<string | undefined>();
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -752,10 +754,17 @@ export const NotificationsPage = () => {
       });
   }, [notifications]);
 
-  const withPhotos = notifications.filter(n => !n.metadata?.images_skipped);
-  const withoutPhotos = notifications.filter(n => n.metadata?.images_skipped);
-  const displayed = activeTab === 'all' ? withPhotos : withoutPhotos;
+  const ruleRequests = notifications.filter(isRuleRequestNotification);
+  const payoutNotifications = notifications.filter(n => !isRuleRequestNotification(n));
+  const withoutPhotos = payoutNotifications.filter(n => n.metadata?.images_skipped);
+  const displayed =
+    activeTab === 'extension'
+      ? ruleRequests
+      : activeTab === 'all'
+        ? notifications
+        : withoutPhotos;
   const noPhotosUnread = withoutPhotos.filter(n => !n.is_read).length;
+  const ruleRequestsUnread = ruleRequests.filter(n => !n.is_read).length;
 
   return (
     <div className="animate-fade-in">
@@ -772,6 +781,11 @@ export const NotificationsPage = () => {
           </h3>
         </div>
         <div className="flex items-center gap-2">
+          {pushPermission !== 'granted' && (
+            <Button variant="outline" size="sm" onClick={enablePushNotifications}>
+              Включить push
+            </Button>
+          )}
           {unreadCount > 0 && (
             <Button variant="outline" size="sm" onClick={markAllAsRead}>
               <CheckCheck className="h-4 w-4 mr-2" />
@@ -804,9 +818,9 @@ export const NotificationsPage = () => {
           )}
         >
           Все
-          {withPhotos.length > 0 && (
+          {notifications.length > 0 && (
             <span className="ml-2 text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5">
-              {withPhotos.length}
+              {notifications.length}
             </span>
           )}
         </button>
@@ -832,6 +846,27 @@ export const NotificationsPage = () => {
             </span>
           )}
         </button>
+        <button
+          onClick={() => setActiveTab('extension')}
+          className={cn(
+            'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+            activeTab === 'extension'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          )}
+        >
+          Расширение
+          {ruleRequests.length > 0 && (
+            <span className={cn(
+              'ml-2 text-xs rounded-full px-1.5 py-0.5',
+              ruleRequestsUnread > 0
+                ? 'bg-yellow-500/20 text-yellow-500 font-semibold'
+                : 'bg-muted text-muted-foreground'
+            )}>
+              {ruleRequests.length}
+            </span>
+          )}
+        </button>
       </div>
 
       {isLoading ? (
@@ -845,6 +880,11 @@ export const NotificationsPage = () => {
             <>
               <p className="text-lg">Нет уведомлений</p>
               <p className="text-sm mt-1">Здесь будут отображаться расходные ордера с фото</p>
+            </>
+          ) : activeTab === 'extension' ? (
+            <>
+              <p className="text-lg">Нет запросов расширения</p>
+              <p className="text-sm mt-1">Здесь будут заявки с внешней ссылки, которые нужно подтвердить</p>
             </>
           ) : (
             <>

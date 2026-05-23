@@ -448,7 +448,10 @@ const PublicTransactions = () => {
               <div className="flex flex-wrap gap-4">
                 {Object.entries(totals).map(([currency, { income, expense }]) => (
                   <div key={currency}>
-                    <p className="text-xs text-muted-foreground font-medium mb-1">
+                    <p className={cn(
+                      "text-sm font-bold mb-1",
+                      income - expense >= 0 ? "text-success" : "text-destructive"
+                    )}>
                       {formatMoney(income - expense, currency)}
                     </p>
                     <div className="flex items-center gap-1 text-success mb-1">

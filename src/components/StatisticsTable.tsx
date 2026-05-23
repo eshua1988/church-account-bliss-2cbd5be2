@@ -247,7 +247,12 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
         <div className="flex flex-wrap gap-3">
           {entries.map(([currency, { income, expense }]) => (
             <div key={currency} className="space-y-1">
-              <p className="text-xs text-muted-foreground font-medium">{formatMoney(income - expense, currency)}</p>
+              <p className={cn(
+                "text-sm font-bold",
+                income - expense >= 0 ? "text-success" : "text-destructive"
+              )}>
+                {formatMoney(income - expense, currency)}
+              </p>
               <div className="flex items-center gap-1 text-success">
                 <TrendingUp className="w-3 h-3" />
                 <span className="text-sm font-semibold">+{formatMoney(income, currency)}</span>

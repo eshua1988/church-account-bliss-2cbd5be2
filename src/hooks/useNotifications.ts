@@ -31,8 +31,66 @@ export const useNotifications = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission>(
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'denied'
+  );
   const { user } = useAuth();
   const { toast } = useToast();
+
+  const showBrowserNotification = useCallback(async (notification: Notification) => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+
+    const title = notification.title || 'Новое уведомление';
+    const body = notification.message || '';
+    const options: NotificationOptions = {
+      body,
+      tag: notification.id,
+      icon: `${import.meta.env.BASE_URL}Kosciol.ico.png`,
+      badge: `${import.meta.env.BASE_URL}Kosciol.ico.png`,
+      data: { notificationId: notification.id, url: window.location.href },
+    };
+
+    try {
+      if ('serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.ready;
+        await registration.showNotification(title, options);
+      } else {
+        new Notification(title, options);
+      }
+    } catch (error) {
+      console.warn('Browser notification failed:', error);
+    }
+  }, []);
+
+  const enablePushNotifications = useCallback(async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      toast({
+        title: 'Push недоступен',
+        description: 'Этот браузер не поддерживает уведомления.',
+        variant: 'destructive',
+      });
+      return 'denied' as NotificationPermission;
+    }
+
+    const permission = await Notification.requestPermission();
+    setPushPermission(permission);
+
+    if (permission === 'granted') {
+      toast({
+        title: 'Push уведомления включены',
+        description: 'Новые уведомления будут показываться на этом устройстве.',
+      });
+    } else {
+      toast({
+        title: 'Push уведомления не включены',
+        description: 'Разрешите уведомления в настройках браузера.',
+        variant: 'destructive',
+      });
+    }
+
+    return permission;
+  }, [toast]);
 
   const fetchNotifications = useCallback(async () => {
     if (!user) {
@@ -178,6 +236,7 @@ export const useNotifications = () => {
             title: newNotification.title,
             description: newNotification.message,
           });
+          showBrowserNotification(newNotification);
         }
       )
       .on(
@@ -234,7 +293,7 @@ export const useNotifications = () => {
       supabase.removeChannel(channel);
       clearInterval(poll);
     };
-  }, [user, toast, fetchNotifications]);
+  }, [user, toast, fetchNotifications, showBrowserNotification]);
 
   return {
     notifications,
@@ -245,5 +304,7 @@ export const useNotifications = () => {
     deleteNotification,
     clearAllNotifications,
     refetch: fetchNotifications,
+    pushPermission,
+    enablePushNotifications,
   };
 };
