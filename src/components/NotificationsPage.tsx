@@ -761,7 +761,7 @@ export const NotificationsPage = () => {
     activeTab === 'extension'
       ? ruleRequests
       : activeTab === 'all'
-        ? notifications
+        ? payoutNotifications
         : withoutPhotos;
   const noPhotosUnread = withoutPhotos.filter(n => !n.is_read).length;
   const ruleRequestsUnread = ruleRequests.filter(n => !n.is_read).length;
@@ -818,9 +818,9 @@ export const NotificationsPage = () => {
           )}
         >
           Все
-          {notifications.length > 0 && (
+          {payoutNotifications.length > 0 && (
             <span className="ml-2 text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5">
-              {notifications.length}
+              {payoutNotifications.length}
             </span>
           )}
         </button>
