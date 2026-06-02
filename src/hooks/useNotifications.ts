@@ -40,6 +40,18 @@ const urlBase64ToUint8Array = (base64String: string) => {
   return outputArray;
 };
 
+const ensurePushServiceWorker = async () => {
+  const scope = import.meta.env.BASE_URL || '/';
+  const swUrl = `${scope.replace(/\/$/, '')}/sw.js`.replace('//', '/');
+  const existingRegistration = await navigator.serviceWorker.getRegistration(scope);
+
+  if (existingRegistration) {
+    return existingRegistration;
+  }
+
+  return navigator.serviceWorker.register(swUrl, { scope });
+};
+
 export const useNotifications = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -157,7 +169,7 @@ export const useNotifications = () => {
           return permission;
         }
 
-        const registration = await navigator.serviceWorker.ready;
+        const registration = await ensurePushServiceWorker();
         const existingSubscription = await registration.pushManager.getSubscription();
         const subscription = existingSubscription || await registration.pushManager.subscribe({
           userVisibleOnly: true,
@@ -214,7 +226,7 @@ export const useNotifications = () => {
   useEffect(() => {
     if (!user || typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
 
-    navigator.serviceWorker.ready
+    ensurePushServiceWorker()
       .then((registration) => registration.pushManager.getSubscription())
       .then(async (subscription) => {
         setHasPushSubscription(Boolean(subscription));
