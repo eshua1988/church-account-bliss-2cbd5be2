@@ -758,11 +758,12 @@ export const NotificationsPage = () => {
   const ruleRequests = notifications.filter(isRuleRequestNotification);
   const payoutNotifications = notifications.filter(n => !isRuleRequestNotification(n));
   const withoutPhotos = payoutNotifications.filter(n => n.metadata?.images_skipped);
+  const withPhotos = payoutNotifications.filter(n => !n.metadata?.images_skipped);
   const displayed =
     activeTab === 'extension'
       ? ruleRequests
       : activeTab === 'all'
-        ? payoutNotifications
+        ? withPhotos
         : withoutPhotos;
   const noPhotosUnread = withoutPhotos.filter(n => !n.is_read).length;
   const ruleRequestsUnread = ruleRequests.filter(n => !n.is_read).length;
@@ -819,9 +820,9 @@ export const NotificationsPage = () => {
           )}
         >
           Все
-          {payoutNotifications.length > 0 && (
+          {withPhotos.length > 0 && (
             <span className="ml-2 text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5">
-              {payoutNotifications.length}
+              {withPhotos.length}
             </span>
           )}
         </button>

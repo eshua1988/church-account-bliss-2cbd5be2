@@ -14,6 +14,14 @@ type PushRequest = {
   url?: string;
 };
 
+type NotificationTarget = {
+  id: string;
+  user_id: string;
+  title: string;
+  message: string;
+  metadata?: Record<string, unknown> | null;
+};
+
 const getAuthUserId = async (req: Request, supabaseUrl: string, anonKey: string) => {
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) return null;
@@ -56,17 +64,18 @@ Deno.serve(async (req) => {
     const body = await req.json() as PushRequest;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    let target = {
+    let target: NotificationTarget = {
       id: body.notification_id || crypto.randomUUID(),
       user_id: body.user_id || '',
       title: body.title || 'Новое уведомление',
       message: body.message || '',
+      metadata: null,
     };
 
     if (body.notification_id) {
       const { data: notification, error } = await supabase
         .from('notifications')
-        .select('id, user_id, title, message')
+        .select('id, user_id, title, message, metadata')
         .eq('id', body.notification_id)
         .single();
 
@@ -90,6 +99,13 @@ Deno.serve(async (req) => {
       }
 
       target = notification;
+
+      if (target.metadata?.push_sent_at) {
+        return new Response(JSON.stringify({ sent: 0, skipped: 'already_sent' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     if (!target.user_id) {
@@ -160,6 +176,19 @@ Deno.serve(async (req) => {
 
     if (expiredIds.length > 0) {
       await supabase.from('notifications').delete().in('id', expiredIds);
+    }
+
+    if (body.notification_id && sent > 0) {
+      await supabase
+        .from('notifications')
+        .update({
+          metadata: {
+            ...(target.metadata || {}),
+            push_sent_at: new Date().toISOString(),
+            push_sent_count: sent,
+          },
+        })
+        .eq('id', target.id);
     }
 
     return new Response(JSON.stringify({ sent, removed: expiredIds.length }), {

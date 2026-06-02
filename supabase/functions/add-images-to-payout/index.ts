@@ -21,6 +21,25 @@ interface AddImagesRequest {
   updatedCategoryId?: string | null;
 }
 
+async function sendPushNotification(supabaseUrl: string, serviceKey: string, notificationId: string) {
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/send-push-notification`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ notification_id: notificationId, url: '/church-account-bliss-2cbd5be2/' }),
+    });
+
+    if (!response.ok) {
+      console.warn('Push notification request failed:', response.status, await response.text());
+    }
+  } catch (error) {
+    console.warn('Push notification request failed:', error);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -86,10 +105,13 @@ Deno.serve(async (req) => {
       }
 
       const meta = notif.metadata as Record<string, unknown>;
+      const metaWithoutPushState = { ...meta };
+      delete metaWithoutPushState.push_sent_at;
+      delete metaWithoutPushState.push_sent_count;
 
       // Update metadata fields from the form (amount, date, etc.) — user may have edited them
       const updatedMeta: Record<string, unknown> = {
-        ...meta,
+        ...metaWithoutPushState,
         images_skipped: false,
       };
       if (body.updatedBasis !== undefined) updatedMeta['basis'] = body.updatedBasis;
@@ -114,6 +136,8 @@ Deno.serve(async (req) => {
         is_read: false,
         created_at: new Date().toISOString(),
       }).eq('id', notif.id);
+
+      await sendPushNotification(supabaseUrl, supabaseServiceKey, notif.id);
 
       console.log(`Marked folder_key ${body.transactionId} as images added (no auto-transaction), uploadPdfPath=${uploadPdfPath}`);
       return new Response(
@@ -154,19 +178,23 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (notif) {
+        const metaWithoutPushState = { ...(notif.metadata as Record<string, unknown> || {}) };
+        delete metaWithoutPushState.push_sent_at;
+        delete metaWithoutPushState.push_sent_count;
         // Build PDF path server-side so the anonymous client doesn't need owner_user_id
         const pdfDate = body.updatedDate || new Date().toISOString().split('T')[0];
         const pdfFileName = `dowod_wyplaty_${pdfDate}_${body.transactionId.substring(0, 8)}.pdf`;
         const uploadPdfPath = `${linkData.owner_user_id}/${body.transactionId}/${pdfFileName}`;
         await supabase.from('notifications').update({
           metadata: {
-            ...(notif.metadata as Record<string, unknown> || {}),
+            ...metaWithoutPushState,
             images_skipped: false,
             pdf_path: uploadPdfPath,
           },
           created_at: new Date().toISOString(),
           is_read: false,
         }).eq('id', notif.id);
+        await sendPushNotification(supabaseUrl, supabaseServiceKey, notif.id);
         console.log(`Notification ${notif.id} updated: images_skipped=false, pdf_path=${uploadPdfPath}`);
         return new Response(
           JSON.stringify({ success: true, uploadPdfPath }),
