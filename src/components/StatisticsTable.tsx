@@ -68,6 +68,21 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
   const [searchText, setSearchText] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  const matchesCategoryFilter = useCallback((transaction: Transaction, filterValue: string) => {
+    if (filterValue === 'all') return true;
+
+    const selectedCategory = categories.find(category => category.id === filterValue);
+    const selectedName = selectedCategory?.name || '';
+    const transactionCategoryName = getCategoryName(transaction.category);
+    const normalize = (value: string | null | undefined) => normalizeSearchText(value || '').trim();
+
+    return (
+      transaction.category === filterValue ||
+      normalize(transaction.departmentName) === normalize(selectedName) ||
+      normalize(transactionCategoryName) === normalize(selectedName)
+    );
+  }, [categories, getCategoryName]);
+
   const filteredTransactions = useMemo(() => {
     let filtered = transactions;
 
@@ -82,7 +97,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
 
     // Apply category filter
     if (categoryFilter !== 'all') {
-      filtered = filtered.filter(t => t.category === categoryFilter);
+      filtered = filtered.filter(t => matchesCategoryFilter(t, categoryFilter));
     }
 
     // Apply date filter (custom range takes precedence over timeRange)
@@ -169,7 +184,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
       if (dateDiff !== 0) return dateDiff;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [transactions, timeRange, typeFilter, customDateRange, selectedCurrency, categoryFilter, internalCurrencyFilter, searchText, getCategoryName]);
+  }, [transactions, timeRange, typeFilter, customDateRange, selectedCurrency, categoryFilter, internalCurrencyFilter, searchText, getCategoryName, matchesCategoryFilter]);
 
   // Calculate totals from all transactions (unfiltered by currency) to always show all currency cards
   const totals = useMemo(() => {
@@ -179,7 +194,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
     let filtered = transactions;
     filtered = filtered.filter(t => typeFilter === 'all' || t.type === typeFilter);
     if (categoryFilter !== 'all') {
-      filtered = filtered.filter(t => t.category === categoryFilter);
+      filtered = filtered.filter(t => matchesCategoryFilter(t, categoryFilter));
     }
     
     filtered.forEach(t => {
@@ -194,7 +209,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
     });
 
     return result;
-  }, [transactions, typeFilter, categoryFilter]);
+  }, [transactions, typeFilter, categoryFilter, matchesCategoryFilter]);
 
   // Calculate filtered totals (with search and all filters applied)
   const filteredTotals = useMemo(() => {
