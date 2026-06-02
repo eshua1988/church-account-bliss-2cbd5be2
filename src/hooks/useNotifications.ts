@@ -51,6 +51,50 @@ export const useNotifications = () => {
   const { user } = useAuth();
   const { toast } = useToast();
 
+  const savePushSubscription = useCallback(async (subscription: PushSubscription) => {
+    if (!user) return false;
+
+    const subscriptionJson = subscription.toJSON();
+    const endpoint = subscription.endpoint;
+    const p256dh = subscriptionJson.keys?.p256dh;
+    const auth = subscriptionJson.keys?.auth;
+
+    if (!endpoint || !p256dh || !auth) return false;
+
+    const { data: existing } = await supabase
+      .from('notifications')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('type', 'push_subscription')
+      .eq('message', endpoint)
+      .limit(1);
+
+    if (existing && existing.length > 0) return true;
+
+    const { error } = await supabase
+      .from('notifications')
+      .insert({
+        user_id: user.id,
+        title: 'Push subscription',
+        message: endpoint,
+        type: 'push_subscription',
+        is_read: true,
+        metadata: {
+          endpoint,
+          p256dh,
+          auth,
+          user_agent: navigator.userAgent,
+        },
+      });
+
+    if (error) {
+      console.error('Push subscription save failed:', error);
+      return false;
+    }
+
+    return true;
+  }, [user]);
+
   const showBrowserNotification = useCallback(async (notification: Notification) => {
     if (typeof window === 'undefined' || !('Notification' in window)) return;
     if (Notification.permission !== 'granted') return;
@@ -119,23 +163,8 @@ export const useNotifications = () => {
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
         });
-        const subscriptionJson = subscription.toJSON();
-
-        await supabase
-          .from('notifications')
-          .insert({
-            user_id: user.id,
-            title: 'Push subscription',
-            message: subscription.endpoint,
-            type: 'push_subscription',
-            is_read: true,
-            metadata: {
-              endpoint: subscription.endpoint,
-              p256dh: subscriptionJson.keys?.p256dh,
-              auth: subscriptionJson.keys?.auth,
-              user_agent: navigator.userAgent,
-            },
-          });
+        const saved = await savePushSubscription(subscription);
+        if (!saved) throw new Error('Could not save push subscription');
 
         setHasPushSubscription(true);
         toast({
@@ -180,16 +209,22 @@ export const useNotifications = () => {
     }
 
     return permission;
-  }, [toast, user]);
+  }, [toast, user, savePushSubscription]);
 
   useEffect(() => {
     if (!user || typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
 
     navigator.serviceWorker.ready
       .then((registration) => registration.pushManager.getSubscription())
-      .then((subscription) => setHasPushSubscription(Boolean(subscription)))
+      .then(async (subscription) => {
+        setHasPushSubscription(Boolean(subscription));
+        if (subscription) {
+          const saved = await savePushSubscription(subscription);
+          setHasPushSubscription(saved);
+        }
+      })
       .catch(() => setHasPushSubscription(false));
-  }, [user]);
+  }, [user, savePushSubscription]);
 
   const fetchNotifications = useCallback(async () => {
     if (!user) {
@@ -339,9 +374,7 @@ export const useNotifications = () => {
             title: newNotification.title,
             description: newNotification.message,
           });
-          if (!hasPushSubscription) {
-            showBrowserNotification(newNotification);
-          }
+          showBrowserNotification(newNotification);
         }
       )
       .on(
