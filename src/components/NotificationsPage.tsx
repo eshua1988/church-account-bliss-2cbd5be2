@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, QrCode, Copy, Banknote, ExternalLink } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, QrCode, Copy, Banknote, ExternalLink, BellRing } from 'lucide-react';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -784,7 +784,19 @@ export const NotificationsPage = () => {
         </div>
         <div className="flex items-center gap-2">
           {(pushPermission !== 'granted' || !hasPushSubscription) && (
-            <Button variant="outline" size="sm" onClick={enablePushNotifications}>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-10 w-10 sm:hidden"
+              onClick={enablePushNotifications}
+              aria-label="Включить push"
+              title="Включить push"
+            >
+              <BellRing className="h-5 w-5" />
+            </Button>
+          )}
+          {(pushPermission !== 'granted' || !hasPushSubscription) && (
+            <Button variant="outline" size="sm" className="hidden sm:inline-flex" onClick={enablePushNotifications}>
               Включить push
             </Button>
           )}
