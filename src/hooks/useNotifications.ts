@@ -40,16 +40,21 @@ const urlBase64ToUint8Array = (base64String: string) => {
   return outputArray;
 };
 
+const getPushBasePath = () => import.meta.env.BASE_URL || '/';
+
+const getPushAppUrl = () => new URL(getPushBasePath(), window.location.origin).toString();
+
 const ensurePushServiceWorker = async () => {
-  const scope = import.meta.env.BASE_URL || '/';
-  const swUrl = `${scope.replace(/\/$/, '')}/sw.js`.replace('//', '/');
-  const existingRegistration = await navigator.serviceWorker.getRegistration(scope);
+  const scopePath = getPushBasePath();
+  const scopeUrl = getPushAppUrl();
+  const swUrl = new URL(`${scopePath.replace(/\/$/, '')}/sw.js`, window.location.origin).toString();
+  const existingRegistration = await navigator.serviceWorker.getRegistration(scopeUrl);
 
   if (existingRegistration) {
     return existingRegistration;
   }
 
-  return navigator.serviceWorker.register(swUrl, { scope });
+  return navigator.serviceWorker.register(swUrl, { scope: scopePath });
 };
 
 export const useNotifications = () => {
@@ -64,14 +69,24 @@ export const useNotifications = () => {
   const { toast } = useToast();
 
   const savePushSubscription = useCallback(async (subscription: PushSubscription) => {
-    if (!user) return false;
+    if (!user) return { ok: false, error: 'Пользователь не авторизован' };
 
     const subscriptionJson = subscription.toJSON();
     const endpoint = subscription.endpoint;
     const p256dh = subscriptionJson.keys?.p256dh;
     const auth = subscriptionJson.keys?.auth;
 
-    if (!endpoint || !p256dh || !auth) return false;
+    if (!endpoint || !p256dh || !auth) {
+      return { ok: false, error: 'Браузер не вернул ключи push-подписки' };
+    }
+
+    const metadata = {
+      endpoint,
+      p256dh,
+      auth,
+      user_agent: navigator.userAgent,
+      saved_at: new Date().toISOString(),
+    };
 
     const { data: existing } = await supabase
       .from('notifications')
@@ -79,9 +94,32 @@ export const useNotifications = () => {
       .eq('user_id', user.id)
       .eq('type', 'push_subscription')
       .eq('message', endpoint)
-      .limit(1);
+      .limit(10);
 
-    if (existing && existing.length > 0) return true;
+    if (existing && existing.length > 0) {
+      const [primary, ...duplicates] = existing;
+      const { error: updateError } = await supabase
+        .from('notifications')
+        .update({
+          is_read: true,
+          metadata,
+        })
+        .eq('id', primary.id);
+
+      if (duplicates.length > 0) {
+        await supabase
+          .from('notifications')
+          .delete()
+          .in('id', duplicates.map((row) => row.id));
+      }
+
+      if (updateError) {
+        console.error('Push subscription update failed:', updateError);
+        return { ok: false, error: updateError.message };
+      }
+
+      return { ok: true };
+    }
 
     const { error } = await supabase
       .from('notifications')
@@ -91,20 +129,37 @@ export const useNotifications = () => {
         message: endpoint,
         type: 'push_subscription',
         is_read: true,
-        metadata: {
-          endpoint,
-          p256dh,
-          auth,
-          user_agent: navigator.userAgent,
-        },
+        metadata,
       });
 
     if (error) {
       console.error('Push subscription save failed:', error);
-      return false;
+      return { ok: false, error: error.message };
     }
 
-    return true;
+    return { ok: true };
+  }, [user]);
+
+  const sendTestPushNotification = useCallback(async (subscription: PushSubscription) => {
+    if (!user) return;
+
+    const { data, error } = await supabase.functions.invoke('send-push-notification', {
+      body: {
+        user_id: user.id,
+        title: 'Push включён',
+        message: 'Тестовое уведомление Church Accounting',
+        url: getPushAppUrl(),
+        endpoint: subscription.endpoint,
+      },
+    });
+
+    if (error) {
+      throw new Error(error.message || 'Тестовый push не отправлен');
+    }
+
+    if (!data || Number(data.sent || 0) < 1) {
+      throw new Error('Сервер не нашёл активную push-подписку для этого устройства');
+    }
   }, [user]);
 
   const showBrowserNotification = useCallback(async (notification: Notification) => {
@@ -123,7 +178,7 @@ export const useNotifications = () => {
 
     try {
       if ('serviceWorker' in navigator) {
-        const registration = await navigator.serviceWorker.ready;
+        const registration = await ensurePushServiceWorker();
         await registration.showNotification(title, options);
       } else {
         new Notification(title, options);
@@ -176,9 +231,10 @@ export const useNotifications = () => {
           applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
         });
         const saved = await savePushSubscription(subscription);
-        if (!saved) throw new Error('Could not save push subscription');
+        if (!saved.ok) throw new Error(saved.error || 'Could not save push subscription');
 
         setHasPushSubscription(true);
+        await sendTestPushNotification(subscription);
         toast({
           title: 'Push уведомления включены',
           description: 'Новые уведомления будут приходить на это устройство.',
@@ -221,7 +277,7 @@ export const useNotifications = () => {
     }
 
     return permission;
-  }, [toast, user, savePushSubscription]);
+  }, [toast, user, savePushSubscription, sendTestPushNotification]);
 
   useEffect(() => {
     if (!user || typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
@@ -232,7 +288,7 @@ export const useNotifications = () => {
         setHasPushSubscription(Boolean(subscription));
         if (subscription) {
           const saved = await savePushSubscription(subscription);
-          setHasPushSubscription(saved);
+          setHasPushSubscription(saved.ok);
         }
       })
       .catch(() => setHasPushSubscription(false));

@@ -12,6 +12,7 @@ type PushRequest = {
   title?: string;
   message?: string;
   url?: string;
+  endpoint?: string;
 };
 
 type NotificationTarget = {
@@ -63,6 +64,11 @@ Deno.serve(async (req) => {
 
     const body = await req.json() as PushRequest;
     const supabase = createClient(supabaseUrl, serviceKey);
+    const authHeader = req.headers.get('Authorization') || '';
+    const calledWithServiceRole = authHeader === `Bearer ${serviceKey}`;
+    const authUserId = !calledWithServiceRole && anonKey
+      ? await getAuthUserId(req, supabaseUrl, anonKey)
+      : null;
 
     let target: NotificationTarget = {
       id: body.notification_id || crypto.randomUUID(),
@@ -86,10 +92,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      const authHeader = req.headers.get('Authorization') || '';
-      const calledWithServiceRole = authHeader === `Bearer ${serviceKey}`;
       if (!calledWithServiceRole && anonKey) {
-        const authUserId = await getAuthUserId(req, supabaseUrl, anonKey);
         if (authUserId !== notification.user_id) {
           return new Response(JSON.stringify({ error: 'Forbidden' }), {
             status: 403,
@@ -106,6 +109,13 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+    }
+
+    if (!body.notification_id && !calledWithServiceRole && anonKey && authUserId !== target.user_id) {
+      return new Response(JSON.stringify({ error: 'Forbidden' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     if (!target.user_id) {
@@ -133,10 +143,10 @@ Deno.serve(async (req) => {
         .filter((row: any) => row.endpoint && row.p256dh && row.auth)
         .map((row: any) => [row.endpoint, row]))
         .values(),
-    );
+    ).filter((subscription: any) => !body.endpoint || subscription.endpoint === body.endpoint);
 
     if (!subscriptions || subscriptions.length === 0) {
-      return new Response(JSON.stringify({ sent: 0 }), {
+      return new Response(JSON.stringify({ sent: 0, subscriptions: 0 }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -163,7 +173,7 @@ Deno.serve(async (req) => {
             p256dh: subscription.p256dh,
             auth: subscription.auth,
           },
-        }, payload);
+        }, payload, { TTL: 24 * 60 * 60, urgency: 'high' });
         sent += 1;
       } catch (error: any) {
         const statusCode = error?.statusCode || error?.status;
@@ -191,7 +201,7 @@ Deno.serve(async (req) => {
         .eq('id', target.id);
     }
 
-    return new Response(JSON.stringify({ sent, removed: expiredIds.length }), {
+    return new Response(JSON.stringify({ sent, removed: expiredIds.length, subscriptions: subscriptions.length }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
