@@ -1393,6 +1393,23 @@ const PublicPayout = () => {
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Превышено время ожидания. Проверьте интернет и попробуйте ещё раз.')), ms)),
       ]);
 
+    const verifyRecentSubmission = async (submitterName: string) => {
+      try {
+        const { data } = await supabase.functions.invoke('check-pending-payouts', {
+          body: {
+            token,
+            submitterName,
+            amount: parseFloat(formData.amount),
+            date: format(formData.date, 'yyyy-MM-dd'),
+          },
+        });
+        return Boolean(data?.recentSubmissionExists);
+      } catch (verifyError) {
+        console.warn('Recent payout verification failed:', verifyError);
+        return false;
+      }
+    };
+
     try {
       // If continuing an existing payout, update it instead of creating new
       if (continuingPayout) {
@@ -1553,6 +1570,15 @@ const PublicPayout = () => {
       toast({ title: t.success, description: t.successMessage });
     } catch (err) {
       console.error('Save error:', err);
+      const submitterName = `${submitterFirstName.trim()} ${submitterLastName.trim()}`.trim();
+      if (err instanceof Error && err.message.includes('Превышено время ожидания') && submitterName) {
+        const saved = await verifyRecentSubmission(submitterName);
+        if (saved) {
+          setIsSuccess(true);
+          toast({ title: t.success, description: t.successMessage });
+          return;
+        }
+      }
       const errorMessage = err instanceof Error ? err.message : t.cannotLoad;
       toast({
         title: 'Błąd',

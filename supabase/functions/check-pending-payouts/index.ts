@@ -9,6 +9,8 @@ interface CheckPendingRequest {
   token: string;
   submitterName: string;
   transactionId?: string; // Optional: fetch a specific transaction by ID directly
+  amount?: number;
+  date?: string;
 }
 
 Deno.serve(async (req) => {
@@ -168,6 +170,23 @@ Deno.serve(async (req) => {
       .order('created_at', { ascending: false })
       .limit(50);
 
+    const amountForVerification = typeof body.amount === 'number' && !Number.isNaN(body.amount) ? body.amount : null;
+    const recentSubmissionExists = amountForVerification !== null
+      ? (pendingNotifs || []).some(n => {
+          const meta = n.metadata as Record<string, unknown>;
+          const createdAt = new Date(n.created_at).getTime();
+          const isRecent = Number.isFinite(createdAt) && Date.now() - createdAt < 10 * 60 * 1000;
+          const submitterLower = ((meta?.submitter_name as string) || (meta?.issued_to as string) || '').toLowerCase();
+          const nameLower = normalizedName.toLowerCase();
+          const nameMatch = nameParts.length >= 2
+            ? submitterLower.includes(firstNameLower) && submitterLower.includes(lastNameLower)
+            : submitterLower.includes(nameLower);
+          const amountMatch = Number(meta?.amount) === amountForVerification;
+          const dateMatch = !body.date || meta?.date === body.date;
+          return isRecent && nameMatch && amountMatch && dateMatch;
+        })
+      : false;
+
     // Filter: images_skipped=true, no transaction_id, name matches
     const notifPayouts = (pendingNotifs || [])
       .filter(n => {
@@ -236,7 +255,8 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true, 
-        pendingPayouts: [...enrichedPayouts, ...notifPayouts]
+        pendingPayouts: [...enrichedPayouts, ...notifPayouts],
+        recentSubmissionExists,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
