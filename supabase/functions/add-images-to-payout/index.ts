@@ -32,11 +32,15 @@ async function sendPushNotification(supabaseUrl: string, serviceKey: string, not
       body: JSON.stringify({ notification_id: notificationId, url: '/church-account-bliss-2cbd5be2/' }),
     });
 
+    const result = await response.json().catch(() => null);
     if (!response.ok) {
-      console.warn('Push notification request failed:', response.status, await response.text());
+      console.warn('Push notification request failed:', response.status, result);
+      return { sent: 0, error: `HTTP ${response.status}`, result };
     }
+    return result || { sent: 0 };
   } catch (error) {
     console.warn('Push notification request failed:', error);
+    return { sent: 0, error: String(error) };
   }
 }
 
@@ -137,7 +141,16 @@ Deno.serve(async (req) => {
         created_at: new Date().toISOString(),
       }).eq('id', notif.id);
 
-      await sendPushNotification(supabaseUrl, supabaseServiceKey, notif.id);
+      const pushResult = await sendPushNotification(supabaseUrl, supabaseServiceKey, notif.id);
+      if (!pushResult || Number(pushResult.sent || 0) < 1) {
+        await supabase.from('notifications').update({
+          metadata: {
+            ...updatedMeta,
+            push_last_result: pushResult,
+            push_last_checked_at: new Date().toISOString(),
+          },
+        }).eq('id', notif.id);
+      }
 
       console.log(`Marked folder_key ${body.transactionId} as images added (no auto-transaction), uploadPdfPath=${uploadPdfPath}`);
       return new Response(
@@ -185,16 +198,28 @@ Deno.serve(async (req) => {
         const pdfDate = body.updatedDate || new Date().toISOString().split('T')[0];
         const pdfFileName = `dowod_wyplaty_${pdfDate}_${body.transactionId.substring(0, 8)}.pdf`;
         const uploadPdfPath = `${linkData.owner_user_id}/${body.transactionId}/${pdfFileName}`;
+        const updatedMetadata = {
+          ...metaWithoutPushState,
+          images_skipped: false,
+          pdf_path: uploadPdfPath,
+        };
         await supabase.from('notifications').update({
           metadata: {
-            ...metaWithoutPushState,
-            images_skipped: false,
-            pdf_path: uploadPdfPath,
+            ...updatedMetadata,
           },
           created_at: new Date().toISOString(),
           is_read: false,
         }).eq('id', notif.id);
-        await sendPushNotification(supabaseUrl, supabaseServiceKey, notif.id);
+        const pushResult = await sendPushNotification(supabaseUrl, supabaseServiceKey, notif.id);
+        if (!pushResult || Number(pushResult.sent || 0) < 1) {
+          await supabase.from('notifications').update({
+            metadata: {
+              ...updatedMetadata,
+              push_last_result: pushResult,
+              push_last_checked_at: new Date().toISOString(),
+            },
+          }).eq('id', notif.id);
+        }
         console.log(`Notification ${notif.id} updated: images_skipped=false, pdf_path=${uploadPdfPath}`);
         return new Response(
           JSON.stringify({ success: true, uploadPdfPath }),
