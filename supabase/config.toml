@@ -12,6 +12,9 @@ verify_jwt = false
 [functions.public-transactions]
 verify_jwt = false
 
+[functions.send-push-notification]
+verify_jwt = false
+
 [functions.check-pending-payouts]
 verify_jwt = false
 
