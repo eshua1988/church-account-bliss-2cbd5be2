@@ -2,7 +2,7 @@
 import { LanguageSelector } from './LanguageSelector';
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
-  Church, ChevronLeft, ChevronRight, Menu, Plus,
+  Church, ChevronLeft, ChevronRight, Menu, Plus, RefreshCw,
   Building2, Cross, Heart, Star, Book, Home, Shield, Crown, Landmark,
   Users, Globe, Sun, Moon, Flame, ImagePlus, Trash2, type LucideIcon
 } from 'lucide-react';
@@ -91,6 +91,8 @@ interface HeaderProps {
   onToggleSidebar?: () => void;
   onOpenMobileMenu?: () => void;
   onAddTransaction?: (transaction: Omit<Transaction, 'id' | 'createdAt'>) => Promise<void>;
+  onSync?: () => void;
+  isSyncing?: boolean;
   incomeCategories?: Category[];
   expenseCategories?: Category[];
 }
@@ -100,6 +102,8 @@ export const Header = ({
   onToggleSidebar,
   onOpenMobileMenu,
   onAddTransaction,
+  onSync,
+  isSyncing = false,
   incomeCategories = [],
   expenseCategories = [],
 }: HeaderProps) => {
@@ -310,6 +314,20 @@ export const Header = ({
           </div>
 
           <div className="flex items-center gap-1 sm:gap-2">
+            {onSync && (
+              <Button
+                variant="outline"
+                size={isMobile ? 'icon' : 'default'}
+                onClick={onSync}
+                disabled={isSyncing}
+                aria-label="Синхронизация"
+                title={isSyncing ? 'Синхронизация...' : 'Синхронизация'}
+                className="flex-shrink-0"
+              >
+                <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''} ${isMobile ? '' : 'sm:mr-2'}`} />
+                <span className="hidden sm:inline">{isSyncing ? 'Синхронизация...' : 'Синхронизация'}</span>
+              </Button>
+            )}
             {onAddTransaction && (
               <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
                 <DialogTrigger asChild>

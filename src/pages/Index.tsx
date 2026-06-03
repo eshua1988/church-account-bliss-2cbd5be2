@@ -346,6 +346,8 @@ const Index = () => {
         onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
         onOpenMobileMenu={() => setMobileMenuOpen(true)}
         onAddTransaction={handleAddTransaction}
+        onSync={handleSync}
+        isSyncing={isSyncing}
         incomeCategories={getIncomeCategories()}
         expenseCategories={getExpenseCategories()}
       />
@@ -357,8 +359,6 @@ const Index = () => {
           collapsed={sidebarCollapsed}
           mobileOpen={mobileMenuOpen}
           onMobileOpenChange={setMobileMenuOpen}
-          onSync={handleSync}
-          isSyncing={isSyncing}
           spreadsheetId={spreadsheetId}
         />
         

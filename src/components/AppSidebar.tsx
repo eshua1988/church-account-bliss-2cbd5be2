@@ -1,4 +1,4 @@
-import { BarChart3, Settings, FileText, Wallet, LogOut, RefreshCw, Key, Mail, ExternalLink, Building2, Bot } from 'lucide-react';
+import { BarChart3, Settings, FileText, Wallet, LogOut, Key, Mail, ExternalLink, Building2, Bot } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
@@ -42,8 +42,6 @@ interface AppSidebarProps {
   collapsed: boolean;
   mobileOpen: boolean;
   onMobileOpenChange: (open: boolean) => void;
-  onSync?: () => void;
-  isSyncing?: boolean;
   spreadsheetId?: string;
 }
 
@@ -53,8 +51,6 @@ export const AppSidebar = ({
   collapsed, 
   mobileOpen, 
   onMobileOpenChange, 
-  onSync,
-  isSyncing,
   spreadsheetId,
 }: AppSidebarProps) => {
   const { t } = useTranslation();
@@ -73,7 +69,6 @@ export const AppSidebar = ({
     { id: 'settings' as const, icon: Settings, label: t('settings') },
     { id: 'notifications' as const, icon: Mail, label: 'Уведомления' },
     { id: 'telegram' as const, icon: Bot, label: 'Telegram Бот' },
-    { id: 'sync' as const, icon: RefreshCw, label: 'Синхронизация', isSync: true },
     { id: 'openSheet' as const, icon: ExternalLink, label: 'Google Таблица', isOpenSheet: true },
   ];
 
@@ -139,15 +134,6 @@ export const AppSidebar = ({
     return email.substring(0, 2).toUpperCase();
   };
 
-  const handleSyncClick = () => {
-    if (onSync && !isSyncing) {
-      onSync();
-    }
-    if (isMobile) {
-      onMobileOpenChange(false);
-    }
-  };
-
   const handleOpenSheet = () => {
     if (spreadsheetId) {
       window.open(`https://docs.google.com/spreadsheets/d/${spreadsheetId}`, '_blank');
@@ -164,23 +150,6 @@ export const AppSidebar = ({
   };
 
   const MenuButton = ({ item, isSheet = false }: { item: typeof menuItems[0]; isSheet?: boolean }) => {
-    if (item.isSync) {
-      return (
-        <button
-          onClick={handleSyncClick}
-          disabled={isSyncing}
-          className={cn(
-            'w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200',
-            'hover:bg-primary/10 text-foreground',
-            isSyncing && 'opacity-50 cursor-not-allowed'
-          )}
-        >
-          <item.icon className={cn("w-5 h-5 flex-shrink-0", isSyncing && "animate-spin")} />
-          <span className="font-medium">{isSyncing ? 'Синхронизация...' : item.label}</span>
-        </button>
-      );
-    }
-
     if (item.isOpenSheet) {
       return (
         <button
@@ -325,42 +294,28 @@ export const AppSidebar = ({
               ) : (
                 <Tooltip delayDuration={0}>
                   <TooltipTrigger asChild>
-                    {item.isSync ? (
-                      <button
-                        onClick={handleSyncClick}
-                        disabled={isSyncing}
-                        className={cn(
-                          'w-full flex items-center justify-center p-3 rounded-lg transition-all duration-200',
-                          'hover:bg-primary/10 text-foreground',
-                          isSyncing && 'opacity-50 cursor-not-allowed'
+                    <button
+                      onClick={() => handleTabChange(item.id as TabType)}
+                      className={cn(
+                        'w-full flex items-center justify-center p-3 rounded-lg transition-all duration-200',
+                        'hover:bg-primary/10',
+                        activeTab === item.id
+                          ? 'bg-primary text-primary-foreground shadow-glow'
+                          : 'text-foreground'
+                      )}
+                    >
+                      <div className="relative">
+                        <item.icon className="w-5 h-5" />
+                        {item.id === 'notifications' && unreadCount > 0 && activeTab !== 'notifications' && (
+                          <span className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
+                            {unreadCount > 99 ? '99+' : unreadCount}
+                          </span>
                         )}
-                      >
-                        <item.icon className={cn("w-5 h-5", isSyncing && "animate-spin")} />
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handleTabChange(item.id as TabType)}
-                        className={cn(
-                          'w-full flex items-center justify-center p-3 rounded-lg transition-all duration-200',
-                          'hover:bg-primary/10',
-                          activeTab === item.id
-                            ? 'bg-primary text-primary-foreground shadow-glow'
-                            : 'text-foreground'
-                        )}
-                      >
-                        <div className="relative">
-                          <item.icon className="w-5 h-5" />
-                          {item.id === 'notifications' && unreadCount > 0 && activeTab !== 'notifications' && (
-                            <span className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
-                              {unreadCount > 99 ? '99+' : unreadCount}
-                            </span>
-                          )}
-                        </div>
-                      </button>
-                    )}
+                      </div>
+                    </button>
                   </TooltipTrigger>
                   <TooltipContent side="right" sideOffset={10}>
-                    {item.isSync ? (isSyncing ? 'Синхронизация...' : item.label) : item.label}
+                    {item.label}
                   </TooltipContent>
                 </Tooltip>
               )}
