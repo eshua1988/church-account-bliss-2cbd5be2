@@ -29,7 +29,7 @@ import { useNotifications } from '@/hooks/useNotifications';
 
 const Index = () => {
   const { t, getDateLocale } = useTranslation();
-  const [activeTab, setActiveTab] = useState<'statistics' | 'payout' | 'settings' | 'notifications' | 'telegram'>('statistics');
+  const [activeTab, setActiveTab] = useState<'statistics' | 'payout' | 'settings' | 'notifications'>('statistics');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openSettings, setOpenSettings] = useState<Record<string, boolean>>({});
@@ -514,8 +514,10 @@ const Index = () => {
                   {openSettings.telegram ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
                 </button>
                 {openSettings.telegram && (
-                  <div className="px-4 pb-4 sm:px-6 sm:pb-6">
+                  <div className="px-4 pb-4 sm:px-6 sm:pb-6 space-y-6">
                     <TelegramBotSettings />
+                    <Separator />
+                    <TelegramMenuPage />
                   </div>
                 )}
               </div>
@@ -540,12 +542,6 @@ const Index = () => {
             <NotificationsPage />
           )}
 
-          {/* Telegram Bot Menu Tab */}
-          {activeTab === 'telegram' && (
-            <div className="animate-fade-in">
-              <TelegramMenuPage />
-            </div>
-          )}
         </main>
         </div>
       </div>
