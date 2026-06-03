@@ -46,11 +46,15 @@ const sendPushNotification = async (supabaseUrl: string, serviceKey: string, not
       body: JSON.stringify({ notification_id: notificationId, url: '/church-account-bliss-2cbd5be2/' }),
     });
 
+    const result = await response.json().catch(() => null);
     if (!response.ok) {
-      console.warn('Push notification request failed:', response.status, await response.text());
+      console.warn('Push notification request failed:', response.status, result);
+      return { sent: 0, error: `HTTP ${response.status}`, result };
     }
+    return result || { sent: 0 };
   } catch (error) {
     console.warn('Push notification request failed:', error);
+    return { sent: 0, error: String(error) };
   }
 };
 
@@ -183,7 +187,24 @@ Deno.serve(async (req) => {
       }
 
       if (notification?.id) {
-        await sendPushNotification(supabaseUrl, supabaseServiceKey, notification.id);
+        const pushResult = await sendPushNotification(supabaseUrl, supabaseServiceKey, notification.id);
+        if (!pushResult || Number(pushResult.sent || 0) < 1) {
+          await supabase
+            .from('notifications')
+            .update({
+              metadata: {
+                request_type: 'department_rule_terms',
+                terms,
+                transaction_types: transactionTypes,
+                departments: transactionTypes.map((type) => OTHER_DEPARTMENT_BY_TYPE[type]),
+                source: 'public_transactions',
+                token: linkData.token,
+                push_last_result: pushResult,
+                push_last_checked_at: new Date().toISOString(),
+              },
+            })
+            .eq('id', notification.id);
+        }
       }
 
       return new Response(

@@ -188,6 +188,33 @@ export const useNotifications = () => {
     }
   }, []);
 
+  const queueServerPushFallback = useCallback((notification: Notification) => {
+    if (!user || typeof window === 'undefined') return;
+    if (notification.metadata?.push_sent_at) return;
+
+    window.setTimeout(async () => {
+      try {
+        const { data: latestNotification } = await supabase
+          .from('notifications')
+          .select('id, metadata')
+          .eq('id', notification.id)
+          .single();
+
+        const metadata = latestNotification?.metadata as NotificationMetadata | null | undefined;
+        if (metadata?.push_sent_at) return;
+
+        await supabase.functions.invoke('send-push-notification', {
+          body: {
+            notification_id: notification.id,
+            url: getPushAppUrl(),
+          },
+        });
+      } catch (error) {
+        console.warn('Push fallback failed:', error);
+      }
+    }, 2500);
+  }, [user]);
+
   const enablePushNotifications = useCallback(async () => {
     {
       if (!user) return 'denied' as NotificationPermission;
@@ -443,6 +470,7 @@ export const useNotifications = () => {
             description: newNotification.message,
           });
           showBrowserNotification(newNotification);
+          queueServerPushFallback(newNotification);
         }
       )
       .on(
@@ -499,7 +527,7 @@ export const useNotifications = () => {
       supabase.removeChannel(channel);
       clearInterval(poll);
     };
-  }, [user, toast, fetchNotifications, showBrowserNotification, hasPushSubscription]);
+  }, [user, toast, fetchNotifications, showBrowserNotification, queueServerPushFallback, hasPushSubscription]);
 
   return {
     notifications,
