@@ -150,6 +150,7 @@ export const useNotifications = () => {
         message: 'Тестовое уведомление Church Accounting',
         url: getPushAppUrl(),
         endpoint: subscription.endpoint,
+        force: true,
       },
     });
 
@@ -158,7 +159,9 @@ export const useNotifications = () => {
     }
 
     if (!data || Number(data.sent || 0) < 1) {
-      throw new Error('Сервер не нашёл активную push-подписку для этого устройства');
+      const firstFailure = Array.isArray(data?.failures) ? data.failures[0] : null;
+      const details = firstFailure?.message ? `: ${firstFailure.message}` : '';
+      throw new Error(`Сервер не отправил push на это устройство${details}`);
     }
   }, [user]);
 
@@ -270,40 +273,13 @@ export const useNotifications = () => {
         console.error('Push subscription failed:', error);
         toast({
           title: 'Push не включился',
-          description: 'Не удалось сохранить подписку устройства. Попробуйте еще раз.',
+          description: error instanceof Error ? error.message : 'Не удалось сохранить подписку устройства. Попробуйте еще раз.',
           variant: 'destructive',
         });
       }
 
       return permission;
     }
-
-    if (typeof window === 'undefined' || !('Notification' in window)) {
-      toast({
-        title: 'Push недоступен',
-        description: 'Этот браузер не поддерживает уведомления.',
-        variant: 'destructive',
-      });
-      return 'denied' as NotificationPermission;
-    }
-
-    const permission = await Notification.requestPermission();
-    setPushPermission(permission);
-
-    if (permission === 'granted') {
-      toast({
-        title: 'Push уведомления включены',
-        description: 'Новые уведомления будут показываться на этом устройстве.',
-      });
-    } else {
-      toast({
-        title: 'Push уведомления не включены',
-        description: 'Разрешите уведомления в настройках браузера.',
-        variant: 'destructive',
-      });
-    }
-
-    return permission;
   }, [toast, user, savePushSubscription, sendTestPushNotification]);
 
   useEffect(() => {

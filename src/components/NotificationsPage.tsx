@@ -759,6 +759,8 @@ export const NotificationsPage = () => {
   const payoutNotifications = notifications.filter(n => !isRuleRequestNotification(n));
   const withoutPhotos = payoutNotifications.filter(n => n.metadata?.images_skipped);
   const withPhotos = payoutNotifications.filter(n => !n.metadata?.images_skipped);
+  const pushEnabled = pushPermission === 'granted' && hasPushSubscription;
+  const pushActionLabel = pushEnabled ? 'Проверить push' : 'Включить push';
   const displayed =
     activeTab === 'extension'
       ? ruleRequests
@@ -783,23 +785,20 @@ export const NotificationsPage = () => {
           </h3>
         </div>
         <div className="flex items-center gap-2">
-          {(pushPermission !== 'granted' || !hasPushSubscription) && (
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-10 w-10 sm:hidden"
-              onClick={enablePushNotifications}
-              aria-label="Включить push"
-              title="Включить push"
-            >
-              <BellRing className="h-5 w-5" />
-            </Button>
-          )}
-          {(pushPermission !== 'granted' || !hasPushSubscription) && (
-            <Button variant="outline" size="sm" className="hidden sm:inline-flex" onClick={enablePushNotifications}>
-              Включить push
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-10 w-10 sm:hidden"
+            onClick={enablePushNotifications}
+            aria-label={pushActionLabel}
+            title={pushActionLabel}
+          >
+            <BellRing className="h-5 w-5" />
+          </Button>
+          <Button variant="outline" size="sm" className="hidden sm:inline-flex" onClick={enablePushNotifications}>
+            <BellRing className="h-4 w-4 mr-2" />
+            {pushActionLabel}
+          </Button>
           {unreadCount > 0 && (
             <Button variant="outline" size="sm" onClick={markAllAsRead}>
               <CheckCheck className="h-4 w-4 mr-2" />

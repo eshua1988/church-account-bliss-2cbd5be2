@@ -13,6 +13,7 @@ type PushRequest = {
   message?: string;
   url?: string;
   endpoint?: string;
+  force?: boolean;
 };
 
 type NotificationTarget = {
@@ -103,7 +104,7 @@ Deno.serve(async (req) => {
 
       target = notification;
 
-      if (target.metadata?.push_sent_at) {
+      if (target.metadata?.push_sent_at && !body.force) {
         return new Response(JSON.stringify({ sent: 0, skipped: 'already_sent' }), {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -164,6 +165,7 @@ Deno.serve(async (req) => {
 
     let sent = 0;
     const expiredIds: string[] = [];
+    const failed: Array<{ id: string; status?: number; message: string }> = [];
 
     await Promise.all(subscriptions.map(async (subscription: any) => {
       try {
@@ -178,6 +180,11 @@ Deno.serve(async (req) => {
       } catch (error: any) {
         const statusCode = error?.statusCode || error?.status;
         console.error('Push send failed:', statusCode, error?.message || error);
+        failed.push({
+          id: subscription.id,
+          status: statusCode,
+          message: error?.message || String(error),
+        });
         if (statusCode === 404 || statusCode === 410) {
           expiredIds.push(subscription.id);
         }
@@ -196,12 +203,25 @@ Deno.serve(async (req) => {
             ...(target.metadata || {}),
             push_sent_at: new Date().toISOString(),
             push_sent_count: sent,
+            push_failed_count: failed.length,
+            push_last_result: {
+              sent,
+              failed: failed.length,
+              removed: expiredIds.length,
+              subscriptions: subscriptions.length,
+            },
           },
         })
         .eq('id', target.id);
     }
 
-    return new Response(JSON.stringify({ sent, removed: expiredIds.length, subscriptions: subscriptions.length }), {
+    return new Response(JSON.stringify({
+      sent,
+      removed: expiredIds.length,
+      subscriptions: subscriptions.length,
+      failed: failed.length,
+      failures: failed.slice(0, 10),
+    }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
