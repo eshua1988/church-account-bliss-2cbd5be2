@@ -76,6 +76,36 @@ const findRuleDepartment = (tx: any, rules: any[] = []) => {
   return rule?.department_name || null;
 };
 
+const getOtherRuleSearchTerms = (rules: any[] = []) => {
+  const result = {
+    income: [] as string[],
+    expense: [] as string[],
+  };
+
+  for (const type of ['income', 'expense'] as const) {
+    const departmentName = OTHER_DEPARTMENT_BY_TYPE[type];
+    const seen = new Set<string>();
+
+    for (const rule of rules) {
+      if (rule.transaction_type !== type || rule.department_name !== departmentName) continue;
+
+      String(rule.search_text || '')
+        .split(',')
+        .map((term) => normalizeTerm(term))
+        .filter(Boolean)
+        .forEach((term) => {
+          const key = term.toLowerCase();
+          if (!seen.has(key)) {
+            seen.add(key);
+            result[type].push(term);
+          }
+        });
+    }
+  }
+
+  return result;
+};
+
 const mapTransaction = (tx: any, rules: any[] = []) => ({
   id: tx.id,
   type: tx.type,
@@ -252,6 +282,7 @@ Deno.serve(async (req) => {
       JSON.stringify({
         valid: true,
         categories: categories || [],
+        otherRuleSearchTerms: getOtherRuleSearchTerms(departmentRules || []),
         transactions: (transactions || []).map((tx) => mapTransaction(tx, departmentRules || [])),
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },

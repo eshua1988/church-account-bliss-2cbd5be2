@@ -30,6 +30,10 @@ interface PublicTransactionsResponse {
   error?: string;
   categories?: Category[];
   transactions?: Transaction[];
+  otherRuleSearchTerms?: {
+    income?: string[];
+    expense?: string[];
+  };
   success?: boolean;
   addedTerms?: string[];
 }
@@ -42,6 +46,10 @@ const PublicTransactions = () => {
   const [error, setError] = useState<string | null>(null);
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [otherRuleSearchTerms, setOtherRuleSearchTerms] = useState<{ income: string[]; expense: string[] }>({
+    income: [],
+    expense: [],
+  });
   
   // Filter states
   const [searchText, setSearchText] = useState('');
@@ -79,6 +87,10 @@ const PublicTransactions = () => {
         }
 
         setCategories(data.categories || []);
+        setOtherRuleSearchTerms({
+          income: data.otherRuleSearchTerms?.income || [],
+          expense: data.otherRuleSearchTerms?.expense || [],
+        });
         setAllTransactions(data.transactions || []);
         /*
         // Get shared link and owner user ID
@@ -187,6 +199,19 @@ const PublicTransactions = () => {
       .map(word => word.trim())
       .filter(word => word.length >= 2);
 
+  const getAllowedRuleWords = (type: 'income' | 'expense') => {
+    const words = new Set<string>();
+
+    for (const term of otherRuleSearchTerms[type]) {
+      const normalizedTerm = normalizeSearchText(term);
+      getSearchWords(term).forEach(word => words.add(word));
+      const compactTerm = compactSearchText(normalizedTerm);
+      if (compactTerm.length >= 2) words.add(compactTerm);
+    }
+
+    return words;
+  };
+
   const formatMoney = (amount: number, currency: string) =>
     `${amount.toLocaleString()} ${CURRENCY_SYMBOLS[currency as keyof typeof CURRENCY_SYMBOLS] || currency}`;
 
@@ -262,6 +287,10 @@ const PublicTransactions = () => {
       const searchWords = getSearchWords(searchText); // Minimum 2 characters
 
       if (searchWords.length === 0) return false; // No valid search words
+
+      const allowedRuleWords = getAllowedRuleWords(t.type);
+      if (allowedRuleWords.size === 0) return false;
+      if (!searchWords.every(searchWord => allowedRuleWords.has(searchWord))) return false;
 
       // Combine all searchable text fields
       const fullSearchableText = [
