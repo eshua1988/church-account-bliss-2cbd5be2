@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -57,6 +57,7 @@ const PublicTransactions = () => {
   const [currencyFilter, setCurrencyFilter] = useState<string>('all');
   const [customDateRange, setCustomDateRange] = useState<{ from?: Date; to?: Date }>({});
   const [addingRuleTerms, setAddingRuleTerms] = useState(false);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
@@ -391,36 +392,57 @@ const PublicTransactions = () => {
 
           {/* Search and filters */}
           <div className="mb-6 space-y-3">
-            <div className="flex flex-col lg:flex-row gap-3">
-              <div className="relative flex-1 min-w-0">
+            <div className="relative">
+              <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   placeholder="Поиск только в Прочее (доход) и Прочее (расход). Несколько слов можно через запятую..."
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
-                  className="h-10 pl-8 text-sm"
+                  className="h-12 pl-10 pr-12 text-base"
                 />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowAdvancedFilters(prev => !prev)}
+                  className={cn(
+                    "absolute right-1 top-1/2 h-10 w-10 -translate-y-1/2 text-muted-foreground hover:text-foreground",
+                    showAdvancedFilters && "text-primary"
+                  )}
+                  aria-label="Фильтры"
+                >
+                  <SlidersHorizontal className="h-5 w-5" />
+                </Button>
               </div>
+            </div>
 
-              {/* Type Filter */}
-              <div className="lg:w-[150px]">
-                <Select value={typeFilter} onValueChange={(val) => setTypeFilter(val as any)}>
-                  <SelectTrigger className="h-9 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Все</SelectItem>
-                    <SelectItem value="income">Доход</SelectItem>
-                    <SelectItem value="expense">Расход</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { value: 'all', label: 'Все' },
+                { value: 'income', label: 'Доходы' },
+                { value: 'expense', label: 'Расходы' },
+              ].map(filter => (
+                <Button
+                  key={filter.value}
+                  type="button"
+                  variant={typeFilter === filter.value ? 'default' : 'outline'}
+                  onClick={() => setTypeFilter(filter.value as 'all' | 'income' | 'expense')}
+                  className="h-11 rounded-lg px-5 text-base font-semibold"
+                >
+                  {filter.label}
+                </Button>
+              ))}
+            </div>
+
+            {showAdvancedFilters && (
+              <div className="grid gap-3 rounded-lg border border-border bg-card/60 p-3 sm:grid-cols-2 lg:grid-cols-[170px_190px_auto]">
 
               {/* Currency Filter */}
               {availableCurrencies.length > 0 && (
-                <div className="lg:w-[170px]">
+                <div>
                   <Select value={currencyFilter} onValueChange={setCurrencyFilter}>
-                    <SelectTrigger className="h-9 text-sm">
+                    <SelectTrigger className="h-10 text-sm">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -436,10 +458,27 @@ const PublicTransactions = () => {
               )}
 
               {/* Date Range */}
-              <div className="lg:w-[190px]">
+              <div>
                 <DateRangeFilter value={customDateRange} onChange={setCustomDateRange} />
               </div>
-            </div>
+
+              {hasActiveFilters && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSearchText('');
+                    setTypeFilter('all');
+                    setCurrencyFilter('all');
+                    setCustomDateRange({});
+                  }}
+                  className="h-10 justify-self-start text-xs text-muted-foreground"
+                >
+                  Сбросить все фильтры
+                </Button>
+              )}
+              </div>
+            )}
 
             <div className="flex flex-wrap gap-2">
               <Button
@@ -451,22 +490,6 @@ const PublicTransactions = () => {
                 Добавить слово для поиска
               </Button>
 
-            {/* Reset Filters */}
-            {hasActiveFilters && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSearchText('');
-                  setTypeFilter('all');
-                  setCurrencyFilter('all');
-                  setCustomDateRange({});
-                }}
-                className="text-xs text-muted-foreground"
-              >
-                Сбросить все фильтры
-              </Button>
-            )}
             </div>
           </div>
 
