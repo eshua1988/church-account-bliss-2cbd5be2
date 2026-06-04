@@ -417,7 +417,7 @@ const PublicTransactions = () => {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {[
                 { value: 'all', label: 'Все' },
                 { value: 'income', label: 'Доходы' },
@@ -433,6 +433,29 @@ const PublicTransactions = () => {
                   {filter.label}
                 </Button>
               ))}
+
+              <Button
+                variant="outline"
+                onClick={addSearchTermsToRules}
+                disabled={!canAddSearchTerms || addingRuleTerms}
+                className="h-11 rounded-lg px-5 text-base font-semibold"
+              >
+                Добавить слово для поиска
+              </Button>
+
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setSearchText('');
+                  setTypeFilter('all');
+                  setCurrencyFilter('all');
+                  setCustomDateRange({});
+                  setShowAdvancedFilters(false);
+                }}
+                className="h-11 rounded-lg px-5 text-base font-semibold text-muted-foreground"
+              >
+                Сбросить все настройки
+              </Button>
             </div>
 
             {showAdvancedFilters && (
@@ -462,35 +485,8 @@ const PublicTransactions = () => {
                 <DateRangeFilter value={customDateRange} onChange={setCustomDateRange} />
               </div>
 
-              {hasActiveFilters && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setSearchText('');
-                    setTypeFilter('all');
-                    setCurrencyFilter('all');
-                    setCustomDateRange({});
-                  }}
-                  className="h-10 justify-self-start text-xs text-muted-foreground"
-                >
-                  Сбросить все фильтры
-                </Button>
-              )}
               </div>
             )}
-
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={addSearchTermsToRules}
-                disabled={!canAddSearchTerms || addingRuleTerms}
-              >
-                Добавить слово для поиска
-              </Button>
-
-            </div>
           </div>
 
           {/* Filtered Totals */}
