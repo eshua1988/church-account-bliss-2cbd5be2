@@ -36,6 +36,9 @@ const mergeRuleTerms = (existingText: string, newTerms: string[]) => {
   return merged.join(', ');
 };
 
+const splitRuleTerms = (text: string) =>
+  String(text || '').split(',').map(normalizeRuleTerm).filter(Boolean);
+
 const isRuleRequestNotification = (notification: Notification) =>
   notification.type === 'rule_request' ||
   notification.metadata?.request_type === 'department_rule_terms';
@@ -575,12 +578,8 @@ export const NotificationsPage = () => {
 
     if (loadError) throw loadError;
 
-    const otherRules = (existingRules || []).filter(rule =>
-      String(rule.department_name || '').toLowerCase().includes('прочее')
-    );
-    const primaryRule =
-      otherRules.find(rule => rule.department_name === departmentName) ||
-      otherRules[0];
+    const otherRules = (existingRules || []).filter(rule => rule.department_name === departmentName);
+    const primaryRule = otherRules[0];
 
     if (!primaryRule) {
       const { error: insertError } = await supabase
@@ -596,9 +595,7 @@ export const NotificationsPage = () => {
     }
 
     const duplicateRules = otherRules.filter(rule => rule.id !== primaryRule.id);
-    const duplicateTerms = duplicateRules.flatMap(rule =>
-      String(rule.search_text || '').split(',').map(normalizeRuleTerm).filter(Boolean)
-    );
+    const duplicateTerms = duplicateRules.flatMap(rule => splitRuleTerms(String(rule.search_text || '')));
     const mergedText = mergeRuleTerms(String(primaryRule.search_text || ''), [...duplicateTerms, ...terms]);
 
     const { error: updateError } = await supabase

@@ -45,6 +45,25 @@ const parseSearchTerms = (text: string) =>
     .map(term => term.trim().toLowerCase())
     .filter(Boolean);
 
+const normalizeRuleTerm = (term: string) => term.trim().replace(/\s+/g, ' ');
+
+const mergeRuleTexts = (...texts: string[]) => {
+  const seen = new Set<string>();
+  const merged: string[] = [];
+
+  for (const text of texts) {
+    for (const term of String(text || '').split(',').map(normalizeRuleTerm).filter(Boolean)) {
+      const key = term.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push(term);
+      }
+    }
+  }
+
+  return merged.join(', ');
+};
+
 const matchesSearchTerms = (tx: Transaction, type: 'income' | 'expense', terms: string[]) => {
   if (tx.type !== type || terms.length === 0) return false;
   const title = (tx.bankTitle || '').toLowerCase();
@@ -71,6 +90,36 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
     let nextRules = (data || []) as unknown as DepartmentRule[];
 
     if (session?.user) {
+      for (const defaultRule of DEFAULT_OTHER_RULES) {
+        const duplicateRules = nextRules.filter(rule =>
+          rule.department_name === defaultRule.department_name &&
+          rule.transaction_type === defaultRule.transaction_type
+        );
+
+        if (duplicateRules.length > 1) {
+          const [primaryRule, ...extraRules] = duplicateRules;
+          const mergedText = mergeRuleTexts(...duplicateRules.map(rule => rule.search_text));
+
+          const { data: updated } = await supabase
+            .from('department_rules')
+            .update({ search_text: mergedText } as any)
+            .eq('id', primaryRule.id)
+            .eq('user_id', session.user.id)
+            .select('*')
+            .single();
+
+          await supabase
+            .from('department_rules')
+            .delete()
+            .eq('user_id', session.user.id)
+            .in('id', extraRules.map(rule => rule.id));
+
+          nextRules = nextRules
+            .filter(rule => !extraRules.some(extraRule => extraRule.id === rule.id))
+            .map(rule => rule.id === primaryRule.id && updated ? updated as unknown as DepartmentRule : rule);
+        }
+      }
+
       const missingRules = DEFAULT_OTHER_RULES.filter(defaultRule =>
         !nextRules.some(rule =>
           rule.department_name === defaultRule.department_name &&
