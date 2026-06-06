@@ -22,6 +22,7 @@ import { ShareTransactionsLink } from '@/components/ShareTransactionsLink';
 import { NotificationsPage } from '@/components/NotificationsPage';
 import { BankingPage } from '@/components/BankingPage';
 import { TelegramMenuPage } from '@/components/TelegramMenuPage';
+import { HeaderBrandingSettings } from '@/components/HeaderBrandingSettings';
 import { useGoogleSheetsSync } from '@/hooks/useGoogleSheetsSync';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -443,6 +444,19 @@ const Index = () => {
           {/* Settings Tab */}
           {activeTab === 'settings' && (
             <div className="animate-fade-in space-y-3">
+              {/* Extension */}
+              <div className="bg-card rounded-lg shadow-card overflow-hidden">
+                <button onClick={() => toggleSetting('extension')} className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-muted/50 transition-colors">
+                  <h4 className="font-semibold text-base sm:text-lg">Расширение</h4>
+                  {openSettings.extension ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
+                </button>
+                {openSettings.extension && (
+                  <div className="px-4 pb-4 sm:px-6 sm:pb-6">
+                    <HeaderBrandingSettings />
+                  </div>
+                )}
+              </div>
+
               {/* Categories */}
               <div className="bg-card rounded-lg shadow-card overflow-hidden">
                 <button onClick={() => toggleSetting('categories')} className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-muted/50 transition-colors">
