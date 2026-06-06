@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useTranslation } from '@/contexts/LanguageContext';
+import { supabase } from '@/integrations/supabase/client';
 import {
   HEADER_ICON_OPTIONS,
   HeaderSettings,
@@ -57,6 +58,20 @@ export const HeaderBrandingSettings = () => {
   const [editSubtitle, setEditSubtitle] = useState(savedSettings?.subtitle || '');
   const [editCustomImage, setEditCustomImage] = useState<string | undefined>(savedSettings?.customImage);
 
+  const syncPayoutLinksOrganizationName = async (organizationName: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { error } = await supabase
+      .from('shared_payout_links')
+      .update({ organization_name: organizationName })
+      .eq('owner_user_id', user.id);
+
+    if (error) {
+      console.error('Failed to sync payout link organization name:', error);
+    }
+  };
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -81,7 +96,7 @@ export const HeaderBrandingSettings = () => {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const customImage = editIcon === 'custom' ? editCustomImage : undefined;
     const settings: HeaderSettings | null =
       !editTitle && !editSubtitle && editIcon === 'Church' && !customImage
@@ -94,14 +109,16 @@ export const HeaderBrandingSettings = () => {
           };
 
     saveHeaderSettings(settings);
+    await syncPayoutLinksOrganizationName((editSubtitle || t('appSubtitle')).trim());
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     setEditIcon('Church');
     setEditTitle('');
     setEditSubtitle('');
     setEditCustomImage(undefined);
     saveHeaderSettings(null);
+    await syncPayoutLinksOrganizationName(t('appSubtitle'));
   };
 
   return (

@@ -6,6 +6,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const DEFAULT_ORG_NAME = 'ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE';
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -40,6 +42,16 @@ Deno.serve(async (req) => {
       );
     }
 
+    const { data: brandingLink } = await supabase
+      .from('shared_payout_links')
+      .select('organization_name')
+      .eq('owner_user_id', ownerUserId)
+      .not('organization_name', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const organizationName = brandingLink?.organization_name || DEFAULT_ORG_NAME;
+
     // Generate PDF
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -65,7 +77,7 @@ Deno.serve(async (req) => {
     };
 
     doc.setFontSize(11);
-    doc.text('ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE', pageWidth / 2, 20, { align: 'center' });
+    doc.text(organizationName, pageWidth / 2, 20, { align: 'center' });
     doc.setFontSize(16);
     doc.text('Dowód wypłaty', pageWidth / 2, 32, { align: 'center' });
 

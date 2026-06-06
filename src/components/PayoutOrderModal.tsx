@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import jsPDF from 'jspdf';
 import { ROBOTO_FONT_BASE64 } from '@/lib/robotoFont';
+import { loadHeaderSettings } from '@/components/Header';
 
 interface PayoutOrderData {
   id: string;
@@ -38,6 +39,7 @@ interface PayoutOrderModalProps {
 }
 
 export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLabel, pdfPath }: PayoutOrderModalProps) => {
+  const organizationName = loadHeaderSettings()?.subtitle || 'ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE';
   const [data, setData] = useState<PayoutOrderData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -226,7 +228,7 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
     };
 
     doc.setFontSize(11);
-    doc.text('ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE', pageWidth / 2, 20, { align: 'center' });
+    doc.text(organizationName, pageWidth / 2, 20, { align: 'center' });
     doc.setFontSize(16);
     doc.setFont('Roboto', 'normal');
     doc.text('Dowód wypłaty', pageWidth / 2, 32, { align: 'center' });
@@ -306,7 +308,7 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
     const fileName = `dowod_wyplaty_${dateForFile}_${issuedTo}.pdf`;
 
     return { blob: doc.output('blob'), fileName };
-  }, [fontBase64, hasSignature]);
+  }, [fontBase64, hasSignature, organizationName]);
 
   const handleDownload = async () => {
     if (!editData) return;
@@ -383,7 +385,7 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
           <div className="space-y-5">
             {/* Header info */}
             <div className="text-center border-b border-border pb-4">
-              <p className="text-xs text-muted-foreground">ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE</p>
+              <p className="text-xs text-muted-foreground">{organizationName}</p>
               <p className="font-bold text-lg text-foreground mt-1">Dowód wypłaty</p>
             </div>
 

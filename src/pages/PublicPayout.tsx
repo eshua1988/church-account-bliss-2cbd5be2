@@ -22,6 +22,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
 import { CurrencyConverter } from '@/components/CurrencyConverter';
+import { loadHeaderSettings } from '@/components/Header';
 import * as pdfjsLib from 'pdfjs-dist';
 
 type Language = 'pl' | 'ru' | 'en' | 'uk';
@@ -371,6 +372,7 @@ interface SharedLink {
   token: string;
   name: string | null;
   is_active: boolean;
+  organizationName?: string | null;
 }
 
 // Helper function to load font as base64
@@ -675,6 +677,14 @@ const PublicPayout = () => {
   
   // Translation helper
   const t = translations[language];
+  const getLocalOrganizationName = () => loadHeaderSettings()?.subtitle?.trim() || t.subtitle;
+  const [organizationName, setOrganizationName] = useState(() => getLocalOrganizationName());
+
+  useEffect(() => {
+    if (!sharedLink?.organizationName) {
+      setOrganizationName(getLocalOrganizationName());
+    }
+  }, [language, sharedLink?.organizationName, t.subtitle]);
 
   const [formData, setFormData] = useState<PayoutFormData>({
     date: new Date(),
@@ -729,7 +739,9 @@ const PublicPayout = () => {
           token: token,
           name: validationData.linkName,
           is_active: true,
+          organizationName: validationData.organizationName || null,
         });
+        setOrganizationName(validationData.organizationName || getLocalOrganizationName());
 
         // Set link type
         setLinkType((validationData.linkType || 'standard') as LinkType);
@@ -1219,7 +1231,7 @@ const PublicPayout = () => {
     
     // Header
     doc.setFontSize(11);
-    doc.text('ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE', pageWidth / 2, 20, { align: 'center' });
+    doc.text(organizationName, pageWidth / 2, 20, { align: 'center' });
     
     // Title
     doc.setFontSize(16);
@@ -1552,6 +1564,7 @@ const PublicPayout = () => {
           signatureBase64: signatureBase64 || undefined,
           imagesBase64: !clientPdfBase64 && imagesBase64.length > 0 ? imagesBase64 : undefined,
           language: language,
+          organizationName,
           clientPdfBase64,
         }
       }), 120000);
@@ -1892,7 +1905,7 @@ const PublicPayout = () => {
                 {t.title}
               </CardTitle>
               <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                {t.subtitle}
+                {organizationName}
               </p>
             </CardHeader>
             <CardContent className="pt-6 space-y-4">
@@ -1985,7 +1998,7 @@ const PublicPayout = () => {
                 {t.title}
               </CardTitle>
               <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                {t.subtitle}
+                {organizationName}
               </p>
             </CardHeader>
             <CardContent className="pt-6 space-y-4">
@@ -2106,7 +2119,7 @@ const PublicPayout = () => {
               {t.title}
             </CardTitle>
             <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-              {t.subtitle}
+              {organizationName}
             </p>
           </CardHeader>
           <CardContent className="pt-6 space-y-4">
@@ -2243,7 +2256,7 @@ const PublicPayout = () => {
                   {continuingPayout ? t.addPhotosTitle : t.title}
                 </CardTitle>
                 <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                  {t.subtitle}
+                  {organizationName}
                 </p>
               </div>
               <div className="flex-1 flex justify-end">

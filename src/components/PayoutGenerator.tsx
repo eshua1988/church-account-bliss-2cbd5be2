@@ -23,6 +23,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
 import { CurrencyConverter } from '@/components/CurrencyConverter';
+import { loadHeaderSettings } from '@/components/Header';
 
 interface AttachedImage {
   file: File;
@@ -177,6 +178,7 @@ const numberToWords = (num: number, currency: string, lang: string): string => {
 
 export const PayoutGenerator = () => {
   const { t, language } = useTranslation();
+  const organizationName = loadHeaderSettings()?.subtitle || t('appSubtitle');
   const { toast } = useToast();
   const { user } = useAuth();
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -389,7 +391,7 @@ export const PayoutGenerator = () => {
     
     // Header
     doc.setFontSize(11);
-    doc.text('ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE', pageWidth / 2, 20, { align: 'center' });
+    doc.text(organizationName, pageWidth / 2, 20, { align: 'center' });
     
     // Title
     doc.setFontSize(16);
@@ -658,7 +660,7 @@ export const PayoutGenerator = () => {
             {t('payoutGeneratorTitle')}
           </CardTitle>
           <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-            ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE
+            {organizationName}
           </p>
         </CardHeader>
         

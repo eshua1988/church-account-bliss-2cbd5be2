@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { loadHeaderSettings } from '@/components/Header';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   Dialog,
@@ -32,6 +33,7 @@ interface SharedLink {
   created_at: string;
   expires_at: string | null;
   link_type: LinkType;
+  organization_name?: string | null;
 }
 
 const generateToken = () => {
@@ -92,6 +94,7 @@ export const SharePayoutLink = () => {
 
     try {
       const token = generateToken();
+      const organizationName = (loadHeaderSettings()?.subtitle || t('appSubtitle')).trim();
       const { data, error } = await supabase
         .from('shared_payout_links')
         .insert({
@@ -99,6 +102,7 @@ export const SharePayoutLink = () => {
           token,
           name: newLinkName || null,
           link_type: newLinkType,
+          organization_name: organizationName || null,
         })
         .select()
         .single();

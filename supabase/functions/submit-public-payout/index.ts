@@ -10,6 +10,7 @@ const VALID_CURRENCIES = ['PLN', 'EUR', 'USD', 'UAH', 'RUB', 'BYN'];
 const MAX_SUBMISSIONS_PER_HOUR = 10;
 const MAX_TEXT_LENGTH = 500;
 const MAX_AMOUNT = 10000000;
+const DEFAULT_ORG_NAME = 'ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE';
 
 interface SubmitPayoutRequest {
   token: string;
@@ -32,6 +33,7 @@ interface SubmitPayoutRequest {
   signatureBase64?: string;
   imagesBase64?: string[];
   language?: string;
+  organizationName?: string;
   // Client-generated PDF base64 (prevents Cyrillic transliteration from missing font)
   clientPdfBase64?: string;
 }
@@ -227,6 +229,7 @@ async function generateAndUploadPdf(
     signatureBase64?: string;
     imagesBase64?: string[];
     language?: string;
+    organizationName?: string;
   }
 ): Promise<string | null> {
   try {
@@ -304,7 +307,7 @@ async function generateAndUploadPdf(
 
     // Header
     doc.setFontSize(10);
-    const orgText = safeText(L.org);
+    const orgText = safeText(data.organizationName || L.org);
     doc.text(orgText, pageWidth / 2, 18, { align: 'center' });
 
     doc.setFontSize(15);
@@ -599,7 +602,7 @@ Deno.serve(async (req) => {
 
     const { data: linkData, error: linkError } = await supabase
       .from('shared_payout_links')
-      .select('id, owner_user_id, is_active, expires_at')
+      .select('id, owner_user_id, is_active, expires_at, organization_name')
       .eq('token', body.token)
       .single();
 
@@ -615,6 +618,10 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'This link has expired' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
+
+    const organizationName = String(body.organizationName || linkData.organization_name || DEFAULT_ORG_NAME)
+      .trim()
+      .slice(0, MAX_TEXT_LENGTH) || DEFAULT_ORG_NAME;
 
     if (body.categoryId) {
       const { data: categoryData, error: categoryError } = await supabase
@@ -672,6 +679,7 @@ Deno.serve(async (req) => {
             description: finalDescription || body.description, amountInWords: body.amountInWords,
             decisionNumber: body.decisionNumber, tempSigPath: body.tempSigPath, tempImgPaths,
             signatureBase64: body.signatureBase64, imagesBase64: body.imagesBase64,
+            organizationName,
           });
         } else {
           pdfPath = storagePath;
@@ -685,6 +693,7 @@ Deno.serve(async (req) => {
           description: finalDescription || body.description, amountInWords: body.amountInWords,
           decisionNumber: body.decisionNumber, tempSigPath: body.tempSigPath, tempImgPaths,
           signatureBase64: body.signatureBase64, imagesBase64: body.imagesBase64,
+          organizationName,
         });
       }
     } else {
@@ -694,6 +703,7 @@ Deno.serve(async (req) => {
         description: finalDescription || body.description, amountInWords: body.amountInWords,
         decisionNumber: body.decisionNumber, tempSigPath: body.tempSigPath, tempImgPaths,
         signatureBase64: body.signatureBase64, imagesBase64: body.imagesBase64,
+        organizationName,
       });
     }
 
@@ -714,6 +724,7 @@ Deno.serve(async (req) => {
       category_id: body.categoryId || null,
       images_skipped: body.imagesSkipped || false,
       bank_account: body.bankAccount || body.decisionNumber || null,
+      organization_name: organizationName,
     };
     if (pdfPath) notificationMetadata.pdf_path = pdfPath;
 
