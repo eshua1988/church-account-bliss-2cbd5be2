@@ -45,7 +45,7 @@ const languageFlags: Record<Language, string> = {
 const translations: Record<Language, Record<string, string>> = {
   pl: {
     title: 'Dowód wypłaty',
-    subtitle: 'ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE',
+    subtitle: 'ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE',
     requiredFields: '* Pola obowiązkowe do wypełnienia',
     date: 'Data',
     amount: 'Suma',
@@ -119,7 +119,7 @@ const translations: Record<Language, Record<string, string>> = {
   },
   ru: {
     title: 'Расходный ордер',
-    subtitle: 'ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE',
+    subtitle: 'ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE',
     requiredFields: '* Обязательные поля для заполнения',
     date: 'Дата',
     amount: 'Сумма',
@@ -193,7 +193,7 @@ const translations: Record<Language, Record<string, string>> = {
   },
   en: {
     title: 'Payment Voucher',
-    subtitle: 'ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE',
+    subtitle: 'ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE',
     requiredFields: '* Required fields',
     date: 'Date',
     amount: 'Amount',
@@ -267,7 +267,7 @@ const translations: Record<Language, Record<string, string>> = {
   },
   uk: {
     title: 'Видатковий ордер',
-    subtitle: 'ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE',
+    subtitle: 'ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE',
     requiredFields: '* Обов\'язкові поля для заповнення',
     date: 'Дата',
     amount: 'Сума',
@@ -1219,7 +1219,7 @@ const PublicPayout = () => {
     
     // Header
     doc.setFontSize(11);
-    doc.text('ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE', pageWidth / 2, 20, { align: 'center' });
+    doc.text('ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE', pageWidth / 2, 20, { align: 'center' });
     
     // Title
     doc.setFontSize(16);

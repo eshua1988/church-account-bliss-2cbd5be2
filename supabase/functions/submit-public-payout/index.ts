@@ -110,7 +110,7 @@ async function sendPushNotification(supabaseUrl: string, serviceKey: string, not
 // PDF labels for each language
 const pdfLabels: Record<string, Record<string, string>> = {
   pl: {
-    org: 'ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE',
+    org: 'ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE',
     title: 'Dowód wypłaty',
     date: 'Data',
     amount: 'Kwota',

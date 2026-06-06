@@ -226,7 +226,7 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
     };
 
     doc.setFontSize(11);
-    doc.text('ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE', pageWidth / 2, 20, { align: 'center' });
+    doc.text('ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE', pageWidth / 2, 20, { align: 'center' });
     doc.setFontSize(16);
     doc.setFont('Roboto', 'normal');
     doc.text('Dowód wypłaty', pageWidth / 2, 32, { align: 'center' });
@@ -383,7 +383,7 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
           <div className="space-y-5">
             {/* Header info */}
             <div className="text-center border-b border-border pb-4">
-              <p className="text-xs text-muted-foreground">ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE</p>
+              <p className="text-xs text-muted-foreground">ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE</p>
               <p className="font-bold text-lg text-foreground mt-1">Dowód wypłaty</p>
             </div>
 

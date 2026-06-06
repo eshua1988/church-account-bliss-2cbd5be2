@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
     };
 
     doc.setFontSize(11);
-    doc.text('ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE', pageWidth / 2, 20, { align: 'center' });
+    doc.text('ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE', pageWidth / 2, 20, { align: 'center' });
     doc.setFontSize(16);
     doc.text('Dowód wypłaty', pageWidth / 2, 32, { align: 'center' });
 

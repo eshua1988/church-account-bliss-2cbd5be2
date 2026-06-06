@@ -389,7 +389,7 @@ export const PayoutGenerator = () => {
     
     // Header
     doc.setFontSize(11);
-    doc.text('ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE', pageWidth / 2, 20, { align: 'center' });
+    doc.text('ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE', pageWidth / 2, 20, { align: 'center' });
     
     // Title
     doc.setFontSize(16);
@@ -658,7 +658,7 @@ export const PayoutGenerator = () => {
             {t('payoutGeneratorTitle')}
           </CardTitle>
           <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-            ZBÓR CHRZEŚCIJAN BAPTYSTÓW «BOŻA ŁASKA» W WARSZAWIE
+            ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE
           </p>
         </CardHeader>
         
