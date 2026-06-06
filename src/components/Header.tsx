@@ -44,6 +44,7 @@ export interface HeaderSettings {
   iconName: string;
   title: string;
   subtitle: string;
+  shortcutName?: string;
   customImage?: string;
 }
 
@@ -83,6 +84,69 @@ export const saveHeaderSettings = (settings: HeaderSettings | null) => {
   window.dispatchEvent(new Event(HEADER_SETTINGS_UPDATED_EVENT));
 };
 
+let currentManifestUrl: string | null = null;
+
+const setMetaContent = (selector: string, content: string) => {
+  const meta = document.head.querySelector<HTMLMetaElement>(selector);
+  if (meta) meta.content = content;
+};
+
+const setLinkHref = (selector: string, href: string, attrs: Record<string, string> = {}) => {
+  let link = document.head.querySelector<HTMLLinkElement>(selector);
+  if (!link) {
+    link = document.createElement('link');
+    Object.entries(attrs).forEach(([key, value]) => link?.setAttribute(key, value));
+    document.head.appendChild(link);
+  }
+  link.href = href;
+};
+
+export const getAppBranding = (t: (key: string) => string) => {
+  const settings = loadHeaderSettings();
+  const title = (settings?.title || t('appTitle')).trim();
+  const subtitle = (settings?.subtitle || t('appSubtitle')).trim();
+  const shortcutName = (settings?.shortcutName || title).trim();
+  const icon = settings?.iconName === 'custom' && settings.customImage
+    ? settings.customImage
+    : `${import.meta.env.BASE_URL}Kosciol.ico.png`;
+
+  return { title, subtitle, shortcutName, icon };
+};
+
+export const applyAppBranding = (t: (key: string) => string) => {
+  const { title, subtitle, shortcutName, icon } = getAppBranding(t);
+  const fullTitle = subtitle ? `${title} - ${subtitle}` : title;
+
+  document.title = title;
+  setMetaContent('meta[name="description"]', subtitle);
+  setMetaContent('meta[name="apple-mobile-web-app-title"]', shortcutName);
+  setMetaContent('meta[property="og:title"]', title);
+  setMetaContent('meta[property="og:description"]', subtitle);
+
+  setLinkHref('link[rel="icon"]', icon, { rel: 'icon', type: 'image/png' });
+  setLinkHref('link[rel="apple-touch-icon"]', icon, { rel: 'apple-touch-icon' });
+
+  if (currentManifestUrl) URL.revokeObjectURL(currentManifestUrl);
+  const manifest = {
+    name: shortcutName,
+    short_name: shortcutName,
+    description: subtitle || fullTitle,
+    theme_color: '#3b82f6',
+    background_color: '#ffffff',
+    display: 'standalone',
+    orientation: 'portrait',
+    scope: import.meta.env.BASE_URL,
+    start_url: import.meta.env.BASE_URL,
+    icons: [
+      { src: icon, sizes: '192x192', type: 'image/png' },
+      { src: icon, sizes: '512x512', type: 'image/png' },
+      { src: icon, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  };
+  currentManifestUrl = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' }));
+  setLinkHref('link[rel="manifest"]', currentManifestUrl, { rel: 'manifest' });
+};
+
 interface HeaderProps {
   collapsed?: boolean;
   onToggleSidebar?: () => void;
@@ -110,7 +174,11 @@ export const Header = ({
   const [headerSettings, setHeaderSettings] = useState<HeaderSettings | null>(loadHeaderSettings);
 
   useEffect(() => {
-    const syncSettings = () => setHeaderSettings(loadHeaderSettings());
+    const syncSettings = () => {
+      setHeaderSettings(loadHeaderSettings());
+      applyAppBranding(t);
+    };
+    applyAppBranding(t);
     window.addEventListener('storage', syncSettings);
     window.addEventListener(HEADER_SETTINGS_UPDATED_EVENT, syncSettings);
     return () => {

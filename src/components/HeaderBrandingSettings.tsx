@@ -12,7 +12,7 @@ import {
   saveHeaderSettings,
 } from '@/components/Header';
 
-const ICON_SIZE = 80;
+const ICON_SIZE = 512;
 
 const resizeImageToIcon = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -29,10 +29,8 @@ const resizeImageToIcon = (file: File): Promise<string> => {
           return;
         }
 
-        ctx.beginPath();
-        ctx.arc(ICON_SIZE / 2, ICON_SIZE / 2, ICON_SIZE / 2, 0, Math.PI * 2);
-        ctx.closePath();
-        ctx.clip();
+        ctx.fillStyle = '#3b82f6';
+        ctx.fillRect(0, 0, ICON_SIZE, ICON_SIZE);
 
         const size = Math.min(img.width, img.height);
         const sx = (img.width - size) / 2;
@@ -56,6 +54,7 @@ export const HeaderBrandingSettings = () => {
   const [editIcon, setEditIcon] = useState(savedSettings?.iconName || 'Church');
   const [editTitle, setEditTitle] = useState(savedSettings?.title || '');
   const [editSubtitle, setEditSubtitle] = useState(savedSettings?.subtitle || '');
+  const [editShortcutName, setEditShortcutName] = useState(savedSettings?.shortcutName || '');
   const [editCustomImage, setEditCustomImage] = useState<string | undefined>(savedSettings?.customImage);
 
   const syncPayoutLinksOrganizationName = async (organizationName: string) => {
@@ -99,12 +98,13 @@ export const HeaderBrandingSettings = () => {
   const handleSave = async () => {
     const customImage = editIcon === 'custom' ? editCustomImage : undefined;
     const settings: HeaderSettings | null =
-      !editTitle && !editSubtitle && editIcon === 'Church' && !customImage
+      !editTitle && !editSubtitle && !editShortcutName && editIcon === 'Church' && !customImage
         ? null
         : {
             iconName: editIcon,
             title: editTitle,
             subtitle: editSubtitle,
+            shortcutName: editShortcutName,
             customImage,
           };
 
@@ -116,6 +116,7 @@ export const HeaderBrandingSettings = () => {
     setEditIcon('Church');
     setEditTitle('');
     setEditSubtitle('');
+    setEditShortcutName('');
     setEditCustomImage(undefined);
     saveHeaderSettings(null);
     await syncPayoutLinksOrganizationName(t('appSubtitle'));
@@ -211,6 +212,18 @@ export const HeaderBrandingSettings = () => {
             value={editTitle}
             onChange={(e) => setEditTitle(e.target.value)}
             placeholder={t('appTitle')}
+          />
+        </div>
+
+        <div>
+          <Label htmlFor="shortcut-name" className="mb-1 block">
+            Название ярлыка
+          </Label>
+          <Input
+            id="shortcut-name"
+            value={editShortcutName}
+            onChange={(e) => setEditShortcutName(e.target.value)}
+            placeholder={editTitle || t('appTitle')}
           />
         </div>
 
