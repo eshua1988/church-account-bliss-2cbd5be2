@@ -36,6 +36,8 @@ import {
 import { TransactionForm } from './TransactionForm';
 import { Transaction } from '@/types/transaction';
 import { Category } from '@/hooks/useSupabaseCategories';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 
 export const HEADER_SETTINGS_UPDATED_EVENT = 'church-header-settings-updated';
 const HEADER_SETTINGS_KEY = 'church_header_settings';
@@ -46,6 +48,7 @@ export interface HeaderSettings {
   subtitle: string;
   shortcutName?: string;
   customImage?: string;
+  updatedAt?: string;
 }
 
 export const HEADER_ICON_OPTIONS: { name: string; icon: LucideIcon }[] = [
@@ -82,6 +85,63 @@ export const saveHeaderSettings = (settings: HeaderSettings | null) => {
     localStorage.removeItem(HEADER_SETTINGS_KEY);
   }
   window.dispatchEvent(new Event(HEADER_SETTINGS_UPDATED_EVENT));
+};
+
+const normalizeHeaderSettings = (settings: HeaderSettings | null): HeaderSettings | null => {
+  if (!settings) return null;
+  return {
+    iconName: settings.iconName || 'Church',
+    title: settings.title || '',
+    subtitle: settings.subtitle || '',
+    shortcutName: settings.shortcutName || '',
+    customImage: settings.customImage,
+    updatedAt: settings.updatedAt,
+  };
+};
+
+const getSettingsTime = (settings: HeaderSettings | null) => {
+  if (!settings?.updatedAt) return 0;
+  const time = new Date(settings.updatedAt).getTime();
+  return Number.isFinite(time) ? time : 0;
+};
+
+export const loadRemoteHeaderSettings = async (): Promise<HeaderSettings | null> => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('header_settings')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Failed to load header settings:', error);
+    return null;
+  }
+
+  return normalizeHeaderSettings(data?.header_settings as HeaderSettings | null);
+};
+
+export const saveRemoteHeaderSettings = async (settings: HeaderSettings | null) => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { error } = await supabase
+    .from('profiles')
+    .upsert(
+      {
+        user_id: user.id,
+        email: user.email ?? null,
+        display_name: user.user_metadata?.display_name ?? user.email ?? null,
+        header_settings: normalizeHeaderSettings(settings),
+      },
+      { onConflict: 'user_id' },
+    );
+
+  if (error) {
+    console.error('Failed to save header settings:', error);
+  }
 };
 
 let currentManifestUrl: string | null = null;
@@ -170,6 +230,7 @@ export const Header = ({
 }: HeaderProps) => {
   const isMobile = useIsMobile();
   const { t } = useTranslation();
+  const { user } = useAuth();
   const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState(false);
   const [headerSettings, setHeaderSettings] = useState<HeaderSettings | null>(loadHeaderSettings);
 
@@ -185,7 +246,57 @@ export const Header = ({
       window.removeEventListener('storage', syncSettings);
       window.removeEventListener(HEADER_SETTINGS_UPDATED_EVENT, syncSettings);
     };
-  }, []);
+  }, [t]);
+
+  useEffect(() => {
+    if (!user) {
+      applyAppBranding(t);
+      return;
+    }
+
+    let cancelled = false;
+    const syncRemoteSettings = async () => {
+      const localSettings = loadHeaderSettings();
+      const remoteSettings = await loadRemoteHeaderSettings();
+      if (cancelled) return;
+
+      if (remoteSettings && localSettings && getSettingsTime(localSettings) > getSettingsTime(remoteSettings)) {
+        await saveRemoteHeaderSettings(localSettings);
+        if (cancelled) return;
+        setHeaderSettings(localSettings);
+        applyAppBranding(t);
+        return;
+      }
+
+      if (remoteSettings) {
+        saveHeaderSettings(remoteSettings);
+        setHeaderSettings(remoteSettings);
+        applyAppBranding(t);
+        return;
+      }
+
+      if (localSettings) {
+        await saveRemoteHeaderSettings(localSettings);
+        if (cancelled) return;
+        setHeaderSettings(localSettings);
+        applyAppBranding(t);
+      }
+    };
+
+    syncRemoteSettings();
+    const syncOnFocus = () => {
+      if (document.visibilityState !== 'hidden') {
+        syncRemoteSettings();
+      }
+    };
+    window.addEventListener('focus', syncOnFocus);
+    document.addEventListener('visibilitychange', syncOnFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', syncOnFocus);
+      document.removeEventListener('visibilitychange', syncOnFocus);
+    };
+  }, [user?.id, t]);
 
   const currentIconName = headerSettings?.iconName || 'Church';
   const currentCustomImage = headerSettings?.customImage;

@@ -10,6 +10,7 @@ import {
   HeaderSettings,
   loadHeaderSettings,
   saveHeaderSettings,
+  saveRemoteHeaderSettings,
 } from '@/components/Header';
 
 const ICON_SIZE = 512;
@@ -106,9 +107,11 @@ export const HeaderBrandingSettings = () => {
             subtitle: editSubtitle,
             shortcutName: editShortcutName,
             customImage,
+            updatedAt: new Date().toISOString(),
           };
 
     saveHeaderSettings(settings);
+    await saveRemoteHeaderSettings(settings);
     await syncPayoutLinksOrganizationName((editSubtitle || t('appSubtitle')).trim());
   };
 
@@ -119,6 +122,7 @@ export const HeaderBrandingSettings = () => {
     setEditShortcutName('');
     setEditCustomImage(undefined);
     saveHeaderSettings(null);
+    await saveRemoteHeaderSettings(null);
     await syncPayoutLinksOrganizationName(t('appSubtitle'));
   };
 
