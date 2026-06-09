@@ -59,6 +59,7 @@ const Index = () => {
     addTransaction,
     deleteTransaction,
     updateTransaction,
+    refetch: refetchTransactions,
     getBalanceByCurrency,
     getTransactionsByCategory,
     getMonthlyData,
@@ -121,12 +122,13 @@ const Index = () => {
       if (json.imported > 0) {
         toast({ title: 'Банк синхронизирован', description: `Добавлено ${json.imported} новых транзакций` });
       }
+      await refetchTransactions();
     } catch (e) {
       toast({ title: 'Ошибка синхр. банка', description: String(e), variant: 'destructive' });
     } finally {
       setIsBankSyncing(false);
     }
-  }, [toast]);
+  }, [refetchTransactions, toast]);
 
   const isSyncing = isSheetSyncing || isBankSyncing;
 

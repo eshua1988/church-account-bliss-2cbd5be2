@@ -32,6 +32,8 @@ const respond = (status, body) => new Response(JSON.stringify(body), {
   status, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
 })
 
+const SYNC_LOOKBACK_DAYS = 45
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   try {
@@ -103,17 +105,19 @@ Deno.serve(async (req) => {
         continue
       }
 
-    // Fetch transactions with 5-day overlap buffer to catch late-booked entries
+    // Fetch with a wider overlap so late-booked bank operations are not skipped
+    // if last_sync_at was moved forward by a previous zero-result sync.
     const dateFrom = conn.last_sync_at
       ? (() => {
           const d = new Date(conn.last_sync_at)
-          d.setDate(d.getDate() - 5)
+          d.setDate(d.getDate() - SYNC_LOOKBACK_DAYS)
           return d.toISOString().split('T')[0]
         })()
       : '2015-01-01'
 
     const allTx = []
     const syncDebug = []
+    let accountFetchSuccesses = 0
 
     for (const acc of accounts) {
       const uid = acc.uid
@@ -138,6 +142,8 @@ Deno.serve(async (req) => {
           syncDebug.push({ uid, page: pageCount, status: txRes.status, error: txText.slice(0,200) })
           break
         }
+
+        accountFetchSuccesses++
 
         const pageTxs = txData.transactions || []
         totalForAcc += pageTxs.length
@@ -261,14 +267,23 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Update last_sync_at
-    await db.from('bank_connections').update({
-      last_sync_at: new Date().toISOString()
-    }).eq('user_id', user_id).eq('bank_name', connBankName)
+    if (accountFetchSuccesses > 0) {
+      await db.from('bank_connections').update({
+        last_sync_at: new Date().toISOString()
+      }).eq('user_id', user_id).eq('bank_name', connBankName)
+    }
 
     totalImported += imported
     totalTx += allTx.length
-    allSyncDebug.push({ bank: connBankName, imported, total: allTx.length, insert_error: insertError, debug: syncDebug })
+    allSyncDebug.push({
+      bank: connBankName,
+      imported,
+      total: allTx.length,
+      date_from: dateFrom,
+      insert_error: insertError,
+      fetch_successes: accountFetchSuccesses,
+      debug: syncDebug,
+    })
     } // end for each connection
 
     return respond(200, {
