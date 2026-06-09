@@ -47,6 +47,11 @@ const resizeImageToIcon = (file: File): Promise<string> => {
   });
 };
 
+const dataUrlToBlob = async (dataUrl: string) => {
+  const response = await fetch(dataUrl);
+  return response.blob();
+};
+
 export const HeaderBrandingSettings = () => {
   const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -57,6 +62,8 @@ export const HeaderBrandingSettings = () => {
   const [editSubtitle, setEditSubtitle] = useState(savedSettings?.subtitle || '');
   const [editShortcutName, setEditShortcutName] = useState(savedSettings?.shortcutName || '');
   const [editCustomImage, setEditCustomImage] = useState<string | undefined>(savedSettings?.customImage);
+  const [editCustomImagePath, setEditCustomImagePath] = useState<string | undefined>(savedSettings?.customImagePath);
+  const [isIconUploading, setIsIconUploading] = useState(false);
 
   const syncPayoutLinksOrganizationName = async (organizationName: string) => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -76,12 +83,36 @@ export const HeaderBrandingSettings = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setIsIconUploading(true);
     try {
       const dataUrl = await resizeImageToIcon(file);
-      setEditCustomImage(dataUrl);
+      let iconUrl = dataUrl;
+      let iconPath: string | undefined;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const blob = await dataUrlToBlob(dataUrl);
+        const path = `${user.id}/app-icon.png`;
+        const { error } = await supabase.storage
+          .from('app-branding')
+          .upload(path, blob, { contentType: 'image/png', upsert: true });
+
+        if (!error) {
+          const { data } = supabase.storage.from('app-branding').getPublicUrl(path);
+          iconUrl = `${data.publicUrl}?v=${Date.now()}`;
+          iconPath = path;
+        } else {
+          console.error('Failed to upload shortcut icon:', error);
+        }
+      }
+
+      setEditCustomImage(iconUrl);
+      setEditCustomImagePath(iconPath);
       setEditIcon('custom');
     } catch {
       console.error('Failed to process image');
+    } finally {
+      setIsIconUploading(false);
     }
 
     if (fileInputRef.current) {
@@ -89,8 +120,13 @@ export const HeaderBrandingSettings = () => {
     }
   };
 
-  const handleRemoveCustomImage = () => {
+  const handleRemoveCustomImage = async () => {
+    if (editCustomImagePath) {
+      const { error } = await supabase.storage.from('app-branding').remove([editCustomImagePath]);
+      if (error) console.error('Failed to remove shortcut icon:', error);
+    }
     setEditCustomImage(undefined);
+    setEditCustomImagePath(undefined);
     if (editIcon === 'custom') {
       setEditIcon('Church');
     }
@@ -107,6 +143,7 @@ export const HeaderBrandingSettings = () => {
             subtitle: editSubtitle,
             shortcutName: editShortcutName,
             customImage,
+            customImagePath: editIcon === 'custom' ? editCustomImagePath : undefined,
             updatedAt: new Date().toISOString(),
           };
 
@@ -121,6 +158,7 @@ export const HeaderBrandingSettings = () => {
     setEditSubtitle('');
     setEditShortcutName('');
     setEditCustomImage(undefined);
+    setEditCustomImagePath(undefined);
     saveHeaderSettings(null);
     await saveRemoteHeaderSettings(null);
     await syncPayoutLinksOrganizationName(t('appSubtitle'));
@@ -204,6 +242,51 @@ export const HeaderBrandingSettings = () => {
           onChange={handleImageUpload}
           className="hidden"
         />
+      </div>
+
+      <div className="rounded-lg border border-border bg-muted/20 p-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <Label className="block">Изображение ярлыка</Label>
+            <p className="text-sm text-muted-foreground">
+              Используется для иконки приложения, ярлыка на компьютере и PWA на телефоне.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {editCustomImage && (
+              <button
+                type="button"
+                onClick={() => setEditIcon('custom')}
+                className={`h-14 w-14 overflow-hidden rounded-xl border-2 p-1 transition-colors ${
+                  editIcon === 'custom'
+                    ? 'border-primary bg-primary/10'
+                    : 'border-border hover:border-primary/50'
+                }`}
+                title="Использовать загруженное изображение"
+              >
+                <img src={editCustomImage} alt="" className="h-full w-full rounded-lg object-cover" />
+              </button>
+            )}
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isIconUploading}
+            >
+              <ImagePlus className="mr-2 h-4 w-4" />
+              {isIconUploading ? 'Загрузка...' : 'Загрузить'}
+            </Button>
+
+            {editCustomImage && (
+              <Button type="button" variant="outline" onClick={handleRemoveCustomImage}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Убрать
+              </Button>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">

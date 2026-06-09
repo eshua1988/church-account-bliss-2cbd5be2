@@ -48,6 +48,7 @@ export interface HeaderSettings {
   subtitle: string;
   shortcutName?: string;
   customImage?: string;
+  customImagePath?: string;
   updatedAt?: string;
 }
 
@@ -95,6 +96,7 @@ const normalizeHeaderSettings = (settings: HeaderSettings | null): HeaderSetting
     subtitle: settings.subtitle || '',
     shortcutName: settings.shortcutName || '',
     customImage: settings.customImage,
+    customImagePath: settings.customImagePath,
     updatedAt: settings.updatedAt,
   };
 };
