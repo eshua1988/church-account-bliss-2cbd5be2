@@ -34,6 +34,10 @@ interface PublicTransactionsResponse {
     income?: string[];
     expense?: string[];
   };
+  pendingRuleSearchTerms?: {
+    income?: string[];
+    expense?: string[];
+  };
   success?: boolean;
   addedTerms?: string[];
 }
@@ -47,6 +51,10 @@ const PublicTransactions = () => {
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [otherRuleSearchTerms, setOtherRuleSearchTerms] = useState<{ income: string[]; expense: string[] }>({
+    income: [],
+    expense: [],
+  });
+  const [pendingRuleSearchTerms, setPendingRuleSearchTerms] = useState<{ income: string[]; expense: string[] }>({
     income: [],
     expense: [],
   });
@@ -91,6 +99,10 @@ const PublicTransactions = () => {
         setOtherRuleSearchTerms({
           income: data.otherRuleSearchTerms?.income || [],
           expense: data.otherRuleSearchTerms?.expense || [],
+        });
+        setPendingRuleSearchTerms({
+          income: data.pendingRuleSearchTerms?.income || [],
+          expense: data.pendingRuleSearchTerms?.expense || [],
         });
         setAllTransactions(data.transactions || []);
         /*
@@ -213,6 +225,42 @@ const PublicTransactions = () => {
     return words;
   };
 
+  const getUnavailableRuleWords = (type: 'income' | 'expense') => {
+    const words = getAllowedRuleWords(type);
+
+    for (const term of pendingRuleSearchTerms[type]) {
+      const normalizedTerm = normalizeSearchText(term);
+      getSearchWords(term).forEach(word => words.add(word));
+      const compactTerm = compactSearchText(normalizedTerm);
+      if (compactTerm.length >= 2) words.add(compactTerm);
+    }
+
+    return words;
+  };
+
+  const appendPendingRuleTerms = (terms: string[], types: Array<'income' | 'expense'>) => {
+    setPendingRuleSearchTerms(prev => {
+      const next = {
+        income: [...prev.income],
+        expense: [...prev.expense],
+      };
+
+      for (const type of types) {
+        const seen = new Set(next[type].map(term => normalizeSearchText(term)));
+        for (const term of terms) {
+          const normalizedTerm = term.trim();
+          if (!normalizedTerm) continue;
+          const key = normalizeSearchText(normalizedTerm);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          next[type].push(normalizedTerm);
+        }
+      }
+
+      return next;
+    });
+  };
+
   const formatMoney = (amount: number, currency: string) =>
     `${amount.toLocaleString()} ${CURRENCY_SYMBOLS[currency as keyof typeof CURRENCY_SYMBOLS] || currency}`;
 
@@ -249,6 +297,7 @@ const PublicTransactions = () => {
         title: 'Запрос отправлен',
         description: 'Слова появятся в поиске после подтверждения',
       });
+      appendPendingRuleTerms(data.addedTerms || terms, types as Array<'income' | 'expense'>);
     } catch (err) {
       console.error('Error adding public rule terms:', err);
       const message = err instanceof Error ? err.message : 'Не удалось добавить слова в правила';
@@ -352,7 +401,13 @@ const PublicTransactions = () => {
 
   // Show transactions ONLY when search text is entered (filters apply only with search)
   const hasActiveFilters = searchText.trim() !== '';
-  const canAddSearchTerms = parseSearchTerms(searchText).length > 0;
+  const allRuleTypes: Array<'income' | 'expense'> = ['income', 'expense'];
+  const searchWordsForRules = getSearchWords(searchText);
+  const canAddSearchTerms =
+    searchWordsForRules.length > 0 &&
+    searchWordsForRules.some(word =>
+      allRuleTypes.every(type => !getUnavailableRuleWords(type).has(word))
+    );
 
   if (loading) {
     return (

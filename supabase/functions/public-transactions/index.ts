@@ -106,6 +106,39 @@ const getOtherRuleSearchTerms = (rules: any[] = []) => {
   return result;
 };
 
+const getPendingRuleSearchTerms = (notifications: any[] = []) => {
+  const result = {
+    income: [] as string[],
+    expense: [] as string[],
+  };
+  const seen = {
+    income: new Set<string>(),
+    expense: new Set<string>(),
+  };
+
+  for (const notification of notifications) {
+    const metadata = notification?.metadata || {};
+    if (metadata.request_type !== 'department_rule_terms') continue;
+
+    const terms = parseTerms(metadata.terms);
+    const requestedTypes = Array.isArray(metadata.transaction_types)
+      ? metadata.transaction_types.filter((type: unknown) => type === 'income' || type === 'expense')
+      : [];
+    const transactionTypes = requestedTypes.length > 0 ? Array.from(new Set(requestedTypes)) : ['income', 'expense'];
+
+    for (const type of transactionTypes as Array<'income' | 'expense'>) {
+      for (const term of terms) {
+        const key = term.toLowerCase();
+        if (seen[type].has(key)) continue;
+        seen[type].add(key);
+        result[type].push(term);
+      }
+    }
+  }
+
+  return result;
+};
+
 const mapTransaction = (tx: any, rules: any[] = []) => ({
   id: tx.id,
   type: tx.type,
@@ -263,6 +296,17 @@ Deno.serve(async (req) => {
       console.warn('Department rules loading failed:', rulesError.message);
     }
 
+    const { data: pendingRuleNotifications, error: pendingRulesError } = await supabase
+      .from('notifications')
+      .select('metadata')
+      .eq('user_id', linkData.owner_user_id)
+      .eq('type', 'rule_request')
+      .order('created_at', { ascending: false });
+
+    if (pendingRulesError) {
+      console.warn('Pending rule notifications loading failed:', pendingRulesError.message);
+    }
+
     const { data: transactions, error: transactionsError } = await supabase
       .from('transactions')
       .select('*')
@@ -283,6 +327,7 @@ Deno.serve(async (req) => {
         valid: true,
         categories: categories || [],
         otherRuleSearchTerms: getOtherRuleSearchTerms(departmentRules || []),
+        pendingRuleSearchTerms: getPendingRuleSearchTerms(pendingRuleNotifications || []),
         transactions: (transactions || []).map((tx) => mapTransaction(tx, departmentRules || [])),
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
