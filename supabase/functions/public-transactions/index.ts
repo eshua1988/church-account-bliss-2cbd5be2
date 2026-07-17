@@ -7,7 +7,7 @@ const corsHeaders = {
 
 interface PublicTransactionsRequest {
   token: string;
-  action?: 'add-rule-terms';
+  action?: 'add-rule-terms' | 'sync-bank';
   terms?: string[];
   transactionTypes?: Array<'income' | 'expense'>;
 }
@@ -203,6 +203,59 @@ Deno.serve(async (req) => {
     if (linkData.expires_at && new Date(linkData.expires_at) < new Date()) {
       return new Response(
         JSON.stringify({ valid: false, error: 'Link expired' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    if (body.action === 'sync-bank') {
+      const { data: latestConnection } = await supabase
+        .from('bank_connections')
+        .select('last_sync_at')
+        .eq('user_id', linkData.owner_user_id)
+        .order('last_sync_at', { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+
+      const lastSyncAt = latestConnection?.last_sync_at
+        ? new Date(latestConnection.last_sync_at).getTime()
+        : 0;
+
+      if (lastSyncAt && Date.now() - lastSyncAt < 30_000) {
+        return new Response(
+          JSON.stringify({ valid: true, success: true, action: body.action, imported: 0, throttled: true }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      const syncResponse = await fetch(`${supabaseUrl}/functions/v1/banking-sync`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ user_id: linkData.owner_user_id }),
+      });
+      const syncResult = await syncResponse.json().catch(() => ({ error: `HTTP ${syncResponse.status}` }));
+
+      if (!syncResponse.ok) {
+        console.error('Public bank sync failed:', syncResponse.status, syncResult);
+        return new Response(
+          JSON.stringify({
+            valid: true,
+            success: false,
+            error: syncResult?.error || `Bank sync failed: HTTP ${syncResponse.status}`,
+          }),
+          { status: syncResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          valid: true,
+          success: true,
+          action: body.action,
+          imported: Number(syncResult?.imported || 0),
+        }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }

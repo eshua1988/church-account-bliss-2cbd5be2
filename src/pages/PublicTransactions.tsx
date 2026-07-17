@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal, RefreshCw, Landmark } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal, RefreshCw, Landmark, ListPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -40,6 +40,7 @@ interface PublicTransactionsResponse {
   };
   success?: boolean;
   addedTerms?: string[];
+  imported?: number;
 }
 
 const PublicTransactions = () => {
@@ -177,38 +178,19 @@ const PublicTransactions = () => {
   const handleBankSync = async () => {
     setIsBankSyncing(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      if (!token) throw new Error('Неправильная ссылка');
+      const { data: result, error: syncError } = await supabase.functions.invoke<PublicTransactionsResponse>(
+        'public-transactions',
+        { body: { action: 'sync-bank', token } },
+      );
 
-      if (!session?.user) {
-        toast({
-          title: 'Требуется авторизация',
-          description: 'Синхронизация банков доступна владельцу после входа в приложение',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      const supabaseUrl = (supabase as any).supabaseUrl as string;
-      const supabaseKey = (supabase as any).supabaseKey as string;
-      const response = await fetch(`${supabaseUrl}/functions/v1/banking-sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: supabaseKey,
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ user_id: session.user.id }),
-      });
-      const result = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
-
-      if (!response.ok) {
-        throw new Error(result?.error || `HTTP ${response.status}`);
-      }
+      if (syncError) throw syncError;
+      if (!result?.success) throw new Error(result?.error || 'Не удалось синхронизировать банк');
 
       await loadData(false);
       toast({
         title: 'Синхронизация завершена',
-        description: result.imported > 0
+        description: (result.imported || 0) > 0
           ? `Добавлено новых транзакций: ${result.imported}`
           : 'Новых банковских транзакций нет',
       });
@@ -504,12 +486,28 @@ const PublicTransactions = () => {
                   variant="outline"
                   onClick={handleBankSync}
                   disabled={isBankSyncing}
-                  className="h-11 gap-2 whitespace-nowrap"
+                  className="h-11 gap-1.5 whitespace-nowrap px-3 sm:px-4"
+                  aria-label="Синхронизировать банки Польши"
+                  title="Синхронизировать банки Польши"
                 >
-                  {isBankSyncing
-                    ? <RefreshCw className="h-4 w-4 animate-spin" />
-                    : <Landmark className="h-4 w-4" />}
-                  {isBankSyncing ? 'Синхронизация...' : 'Синхронизировать банки Польши'}
+                  <Landmark className="h-4 w-4" />
+                  <RefreshCw className={cn("h-4 w-4", isBankSyncing && "animate-spin")} />
+                  <span className="hidden sm:inline">
+                    {isBankSyncing ? 'Синхронизация...' : 'Синхронизировать банки Польши'}
+                  </span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={addSearchTermsToRules}
+                  disabled={!canAddSearchTerms || addingRuleTerms}
+                  className="h-11 gap-2 whitespace-nowrap px-3 sm:px-4"
+                  aria-label="Добавить слово для поиска"
+                  title="Добавить слово для поиска"
+                >
+                  <ListPlus className={cn("h-4 w-4", addingRuleTerms && "animate-pulse")} />
+                  <span className="hidden sm:inline">Добавить слово для поиска</span>
                 </Button>
               </div>
             </div>
@@ -558,15 +556,6 @@ const PublicTransactions = () => {
                   {filter.label}
                 </Button>
               ))}
-
-              <Button
-                variant="outline"
-                onClick={addSearchTermsToRules}
-                disabled={!canAddSearchTerms || addingRuleTerms}
-                className="h-11 rounded-lg px-5 text-base font-semibold"
-              >
-                Добавить слово для поиска
-              </Button>
 
               <Button
                 variant="ghost"
