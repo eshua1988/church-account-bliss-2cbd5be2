@@ -312,7 +312,7 @@ export const useNotifications = () => {
         .eq('user_id', user.id)
         .neq('type', 'push_subscription')
         .order('created_at', { ascending: false })
-        .limit(25);
+        .limit(500);
 
       if (error) throw error;
 
@@ -322,7 +322,7 @@ export const useNotifications = () => {
         metadata: n.metadata as NotificationMetadata | null,
       }));
       setNotifications(typedNotifications);
-      setUnreadCount(typedNotifications.filter(n => !n.is_read).length);
+      setUnreadCount(typedNotifications.filter(n => !n.is_read && !n.metadata?.archived_at).length);
     } catch (error) {
       console.error('Error fetching notifications:', error);
     } finally {
@@ -392,20 +392,25 @@ export const useNotifications = () => {
     if (!user) return;
 
     try {
+      const activeIds = notifications
+        .filter(notification => !notification.metadata?.archived_at)
+        .map(notification => notification.id);
+      if (activeIds.length === 0) return;
+
       const { error } = await supabase
         .from('notifications')
         .delete()
         .eq('user_id', user.id)
-        .neq('type', 'push_subscription');
+        .in('id', activeIds);
 
       if (error) throw error;
 
-      setNotifications([]);
+      setNotifications(prev => prev.filter(notification => notification.metadata?.archived_at));
       setUnreadCount(0);
     } catch (error) {
       console.error('Error clearing notifications:', error);
     }
-  }, [user]);
+  }, [notifications, user]);
 
   // Initial fetch
   useEffect(() => {

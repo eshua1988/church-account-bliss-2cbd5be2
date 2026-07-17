@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, QrCode, Copy, Banknote, ExternalLink, BellRing } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, QrCode, Copy, Banknote, ExternalLink, BellRing, Archive, FolderArchive } from 'lucide-react';
+import JSZip from 'jszip';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -72,6 +73,7 @@ const NotificationCard = ({
   onAddToTransaction,
   onApproveRuleRequest,
   onRejectRuleRequest,
+  onArchive,
   savingId,
   swipedId,
   onSwipe,
@@ -84,6 +86,7 @@ const NotificationCard = ({
   onAddToTransaction?: (notification: Notification) => void;
   onApproveRuleRequest?: (notification: Notification) => void;
   onRejectRuleRequest?: (notification: Notification) => void;
+  onArchive?: (notification: Notification) => void;
   savingId?: string | null;
   swipedId?: string | null;
   onSwipe?: (id: string | null) => void;
@@ -170,6 +173,7 @@ const NotificationCard = ({
     (onAddToTransaction && !transactionId ? 1 : 0) +
     (imagesSkipped && payoutUrl ? 1 : 0) +
     ((pdfPath || transactionId) ? 1 : 0) +
+    (onArchive && (pdfPath || transactionId) ? 1 : 0) +
     (paymentQr ? 1 : 0);
   const SWIPE_MAX = mobileButtonCount * BTN_W;
   const SWIPE_THRESHOLD = 50;
@@ -282,6 +286,17 @@ const NotificationCard = ({
           {isDownloading ? '...' : 'PDF'}
         </Button>
       )}
+      {onArchive && (pdfPath || transactionId) && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5 h-8 px-2.5 text-xs border-amber-500/50 text-amber-500 hover:bg-amber-500/10"
+          onClick={() => { onArchive(notification); doClose(); }}
+        >
+          <Archive className="h-3 w-3" />
+          В архив
+        </Button>
+      )}
       {paymentQr && (
         <Button
           variant="outline"
@@ -362,6 +377,16 @@ const NotificationCard = ({
           >
             {isDownloading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
             <span className="text-[11px] font-medium leading-none">PDF</span>
+          </button>
+        )}
+        {onArchive && (pdfPath || transactionId) && (
+          <button
+            className="flex flex-col items-center justify-center gap-1 text-white bg-amber-600 active:bg-amber-700"
+            style={{ width: `${BTN_W}px` }}
+            onClick={() => { onArchive(notification); doClose(); }}
+          >
+            <Archive className="h-5 w-5" />
+            <span className="text-[11px] font-medium leading-none">Архив</span>
           </button>
         )}
         {paymentQr && (
@@ -564,6 +589,80 @@ export const NotificationsPage = () => {
   const [fallbackToken, setFallbackToken] = useState<string | undefined>();
   const [savingId, setSavingId] = useState<string | null>(null);
   const [swipedId, setSwipedId] = useState<string | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<Notification | null>(null);
+  const [downloadingArchive, setDownloadingArchive] = useState<string | null>(null);
+
+  const archiveNotification = async (archiveType: 'income' | 'expense') => {
+    if (!archiveTarget) return;
+    const year = new Date(
+      (archiveTarget.metadata?.date as string | undefined) || archiveTarget.created_at,
+    ).getFullYear();
+
+    setSavingId(archiveTarget.id);
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({
+          metadata: {
+            ...(archiveTarget.metadata || {}),
+            archive_type: archiveType,
+            archive_year: year,
+            archived_at: new Date().toISOString(),
+          },
+        })
+        .eq('id', archiveTarget.id);
+      if (error) throw error;
+      setArchiveTarget(null);
+      await refetchNotifications();
+      toast({
+        title: 'Добавлено в архив',
+        description: `${year} ${archiveType === 'income' ? 'доход' : 'расход'}`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Ошибка архивации',
+        description: error instanceof Error ? error.message : String(error),
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const getNotificationPdf = async (notification: Notification) => {
+    let filePath = notification.metadata?.pdf_path as string | undefined;
+    const transactionId = notification.metadata?.transaction_id as string | undefined;
+
+    if (!filePath && transactionId) {
+      const { data: files } = await supabase.storage
+        .from('documents')
+        .list(`${notification.user_id}/${transactionId}`);
+      const pdfFile = files?.find(file => file.name.toLowerCase().endsWith('.pdf'));
+      if (pdfFile) filePath = `${notification.user_id}/${transactionId}/${pdfFile.name}`;
+    }
+    if (!filePath) throw new Error('PDF не найден');
+
+    const supabaseUrl = (supabase as any).supabaseUrl as string;
+    const supabaseKey = (supabase as any).supabaseKey as string;
+    const params = new URLSearchParams({
+      action: 'sign',
+      filePath,
+      userId: notification.user_id,
+    });
+    const signResponse = await fetch(
+      `${supabaseUrl}/functions/v1/upload-payout-pdf?${params}`,
+      { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } },
+    );
+    const signResult = await signResponse.json();
+    if (!signResult.signedUrl) throw new Error(signResult.error || 'Не удалось получить PDF');
+
+    const pdfResponse = await fetch(signResult.signedUrl);
+    if (!pdfResponse.ok) throw new Error(`Ошибка загрузки PDF: HTTP ${pdfResponse.status}`);
+    return {
+      blob: await pdfResponse.blob(),
+      name: filePath.split('/').pop() || `${notification.id}.pdf`,
+    };
+  };
 
   const upsertOtherRuleTerms = async (transactionType: 'income' | 'expense', terms: string[]) => {
     if (!user) throw new Error('User not authenticated');
@@ -753,7 +852,10 @@ export const NotificationsPage = () => {
   }, [notifications]);
 
   const ruleRequests = notifications.filter(isRuleRequestNotification);
-  const payoutNotifications = notifications.filter(n => !isRuleRequestNotification(n));
+  const archivedNotifications = notifications.filter(n => Boolean(n.metadata?.archived_at));
+  const payoutNotifications = notifications.filter(
+    n => !isRuleRequestNotification(n) && !n.metadata?.archived_at,
+  );
   const withoutPhotos = payoutNotifications.filter(n => n.metadata?.images_skipped);
   const withPhotos = payoutNotifications.filter(n => !n.metadata?.images_skipped);
   const pushEnabled = pushPermission === 'granted' && hasPushSubscription;
@@ -766,6 +868,46 @@ export const NotificationsPage = () => {
         : withoutPhotos;
   const noPhotosUnread = withoutPhotos.filter(n => !n.is_read).length;
   const ruleRequestsUnread = ruleRequests.filter(n => !n.is_read).length;
+  const archiveGroups = archivedNotifications.reduce<Record<string, Notification[]>>((groups, notification) => {
+    const type = notification.metadata?.archive_type === 'income' ? 'income' : 'expense';
+    const year = Number(notification.metadata?.archive_year) ||
+      new Date((notification.metadata?.date as string | undefined) || notification.created_at).getFullYear();
+    const key = `${year}-${type}`;
+    (groups[key] ||= []).push(notification);
+    return groups;
+  }, {});
+
+  const downloadArchive = async (key: string, items: Notification[]) => {
+    setDownloadingArchive(key);
+    try {
+      const zip = new JSZip();
+      const [year, type] = key.split('-');
+      const folderName = `${year} ${type === 'income' ? 'доход' : 'расход'}`;
+      const folder = zip.folder(folderName);
+      if (!folder) throw new Error('Не удалось создать архив');
+
+      for (const notification of items) {
+        const { blob, name } = await getNotificationPdf(notification);
+        folder.file(`${notification.id.slice(0, 8)}-${name}`, blob);
+      }
+
+      const archiveBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+      const url = URL.createObjectURL(archiveBlob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${folderName}.zip`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast({
+        title: 'Ошибка создания архива',
+        description: error instanceof Error ? error.message : String(error),
+        variant: 'destructive',
+      });
+    } finally {
+      setDownloadingArchive(null);
+    }
+  };
 
   return (
     <div className="animate-fade-in">
@@ -866,14 +1008,14 @@ export const NotificationsPage = () => {
           )}
         >
           Расширение
-          {ruleRequests.length > 0 && (
+          {(ruleRequests.length + archivedNotifications.length) > 0 && (
             <span className={cn(
               'ml-2 text-xs rounded-full px-1.5 py-0.5',
               ruleRequestsUnread > 0
                 ? 'bg-yellow-500/20 text-yellow-500 font-semibold'
                 : 'bg-muted text-muted-foreground'
             )}>
-              {ruleRequests.length}
+              {ruleRequests.length + archivedNotifications.length}
             </span>
           )}
         </button>
@@ -883,7 +1025,7 @@ export const NotificationsPage = () => {
         <div className="p-12 text-center text-muted-foreground">
           Загрузка...
         </div>
-      ) : displayed.length === 0 ? (
+      ) : displayed.length === 0 && !(activeTab === 'extension' && archivedNotifications.length > 0) ? (
         <div className="p-12 text-center text-muted-foreground">
           <Mail className="h-16 w-16 mx-auto mb-4 opacity-30" />
           {activeTab === 'all' ? (
@@ -893,8 +1035,8 @@ export const NotificationsPage = () => {
             </>
           ) : activeTab === 'extension' ? (
             <>
-              <p className="text-lg">Нет запросов расширения</p>
-              <p className="text-sm mt-1">Здесь будут заявки с внешней ссылки, которые нужно подтвердить</p>
+              <p className="text-lg">Нет архивов и запросов расширения</p>
+              <p className="text-sm mt-1">Добавьте PDF уведомления в архив доходов или расходов</p>
             </>
           ) : (
             <>
@@ -906,6 +1048,35 @@ export const NotificationsPage = () => {
         </div>
       ) : (
         <div className="space-y-3">
+          {activeTab === 'extension' && Object.entries(archiveGroups).map(([key, items]) => {
+            const [year, type] = key.split('-');
+            const label = `${year} ${type === 'income' ? 'доход' : 'расход'}`;
+            return (
+              <div key={key} className="rounded-xl border border-border bg-card p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <FolderArchive className="h-6 w-6 text-primary" />
+                    <div>
+                      <p className="font-semibold">{label}</p>
+                      <p className="text-xs text-muted-foreground">PDF-файлов: {items.length}</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => downloadArchive(key, items)}
+                    disabled={downloadingArchive === key}
+                  >
+                    {downloadingArchive === key
+                      ? <Loader2 className="h-4 w-4 animate-spin" />
+                      : <Download className="h-4 w-4" />}
+                    Скачать ZIP
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
           {displayed.map((notification) => (
             <NotificationCard
               key={notification.id}
@@ -917,6 +1088,7 @@ export const NotificationsPage = () => {
               onAddToTransaction={handleAddToTransaction}
               onApproveRuleRequest={handleApproveRuleRequest}
               onRejectRuleRequest={handleRejectRuleRequest}
+              onArchive={activeTab === 'extension' ? undefined : setArchiveTarget}
               savingId={savingId}
               swipedId={swipedId}
               onSwipe={setSwipedId}
@@ -927,6 +1099,35 @@ export const NotificationsPage = () => {
           </p>
         </div>
       )}
+
+      <Dialog open={Boolean(archiveTarget)} onOpenChange={(open) => !open && setArchiveTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Добавить PDF в архив</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Выберите тип документа. Год будет определён по дате уведомления.
+          </p>
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <Button
+              variant="outline"
+              className="h-12 border-green-500/50 text-green-600"
+              onClick={() => archiveNotification('income')}
+              disabled={Boolean(savingId)}
+            >
+              Доход
+            </Button>
+            <Button
+              variant="outline"
+              className="h-12 border-red-500/50 text-red-600"
+              onClick={() => archiveNotification('expense')}
+              disabled={Boolean(savingId)}
+            >
+              Расход
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
