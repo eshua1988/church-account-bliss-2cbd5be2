@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal, RefreshCw, Landmark, ListPlus } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal, RefreshCw, Landmark, ListPlus, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -442,6 +442,14 @@ const PublicTransactions = () => {
       allRuleTypes.every(type => !getUnavailableRuleWords(type).has(word))
     );
 
+  const resetAllFilters = () => {
+    setSearchText('');
+    setTypeFilter('all');
+    setCurrencyFilter('all');
+    setCustomDateRange({});
+    setShowAdvancedFilters(false);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -471,14 +479,7 @@ const PublicTransactions = () => {
           {/* Header actions */}
           <div className="mb-6 rounded-xl border border-border bg-card p-4 shadow-sm sm:p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h1 className="text-3xl font-bold mb-2">Таблица транзакций</h1>
-                <p className="text-muted-foreground">
-                  {hasActiveFilters
-                    ? `Найдено транзакций: ${filteredTransactions.length}`
-                    : 'Введите текст поиска для просмотра транзакций'}
-                </p>
-              </div>
+              <h1 className="text-3xl font-bold">Таблица транзакций</h1>
 
               <div className="flex flex-wrap items-center gap-2">
                 <Button
@@ -487,13 +488,13 @@ const PublicTransactions = () => {
                   onClick={handleBankSync}
                   disabled={isBankSyncing}
                   className="h-11 gap-1.5 whitespace-nowrap px-3 sm:px-4"
-                  aria-label="Синхронизировать банки Польши"
-                  title="Синхронизировать банки Польши"
+                  aria-label="Поиск новых транзакций"
+                  title="Поиск новых транзакций"
                 >
                   <Landmark className="h-4 w-4" />
                   <RefreshCw className={cn("h-4 w-4", isBankSyncing && "animate-spin")} />
                   <span className="hidden sm:inline">
-                    {isBankSyncing ? 'Синхронизация...' : 'Синхронизировать банки Польши'}
+                    {isBankSyncing ? 'Поиск...' : 'Поиск новых транзакций'}
                   </span>
                 </Button>
 
@@ -508,6 +509,18 @@ const PublicTransactions = () => {
                 >
                   <ListPlus className={cn("h-4 w-4", addingRuleTerms && "animate-pulse")} />
                   <span className="hidden sm:inline">Добавить слово для поиска</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={resetAllFilters}
+                  className="h-11 gap-2 whitespace-nowrap px-3 text-muted-foreground sm:px-4"
+                  aria-label="Сбросить все настройки"
+                  title="Сбросить все настройки"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  <span className="hidden sm:inline">Сбросить все настройки</span>
                 </Button>
               </div>
             </div>
@@ -557,19 +570,6 @@ const PublicTransactions = () => {
                 </Button>
               ))}
 
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setSearchText('');
-                  setTypeFilter('all');
-                  setCurrencyFilter('all');
-                  setCustomDateRange({});
-                  setShowAdvancedFilters(false);
-                }}
-                className="h-11 rounded-lg px-5 text-base font-semibold text-muted-foreground"
-              >
-                Сбросить все настройки
-              </Button>
             </div>
 
             {showAdvancedFilters && (
@@ -606,7 +606,9 @@ const PublicTransactions = () => {
           {/* Filtered Totals */}
           {hasActiveFilters && filteredTransactions.length > 0 && (
             <div className="mb-6 p-4 rounded-lg bg-primary/5 border border-primary/20">
-              <p className="text-xs text-muted-foreground mb-3 font-medium">Итого по результатам:</p>
+              <p className="text-xs text-muted-foreground mb-3 font-medium">
+                Итого по результатам · Транзакций: {filteredTransactions.length}
+              </p>
               <div className="flex flex-wrap gap-4">
                 {Object.entries(totals).map(([currency, { income, expense }]) => (
                   <div key={currency}>
