@@ -7,6 +7,7 @@ export interface CloudConnection {
   enabled: boolean;
   accessToken?: string;
   folderId?: string;
+  folderUrl?: string;
   folderPath?: string;
   baseUrl?: string;
   username?: string;
@@ -39,10 +40,22 @@ export const saveCloudConnections = (connections: CloudConnection[]) => {
 const joinPath = (...parts: Array<string | undefined>) =>
   parts.filter(Boolean).map(part => String(part).replace(/^\/+|\/+$/g, '')).filter(Boolean).join('/');
 
+const getGoogleFolderId = (connection: CloudConnection) => {
+  if (connection.folderId?.trim()) return connection.folderId.trim();
+  const url = connection.folderUrl?.trim();
+  if (!url) return '';
+  return url.match(/\/folders\/([a-zA-Z0-9_-]+)/)?.[1] ||
+    new URL(url).searchParams.get('id') ||
+    '';
+};
+
+const getOneDriveShareId = (url: string) =>
+  `u!${btoa(unescape(encodeURIComponent(url))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')}`;
+
 const uploadGoogleDrive = async (connection: CloudConnection, fileName: string, blob: Blob) => {
   const token = connection.accessToken?.trim();
   if (!token) throw new Error('Не указан Google Drive access token');
-  const folderId = connection.folderId?.trim();
+  const folderId = getGoogleFolderId(connection);
   const escapedName = fileName.replace(/'/g, "\\'");
   const folderQuery = folderId ? ` and '${folderId}' in parents` : '';
   const query = encodeURIComponent(`name='${escapedName}' and trashed=false${folderQuery}`);
@@ -84,8 +97,12 @@ const uploadGoogleDrive = async (connection: CloudConnection, fileName: string, 
 
 const uploadOneDrive = async (connection: CloudConnection, fileName: string, blob: Blob) => {
   if (!connection.accessToken?.trim()) throw new Error('Не указан OneDrive access token');
+  const sharedUrl = connection.folderUrl?.trim();
   const path = joinPath(connection.folderPath, fileName);
-  const response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:/${encodeURI(path)}:/content`, {
+  const endpoint = sharedUrl
+    ? `https://graph.microsoft.com/v1.0/shares/${getOneDriveShareId(sharedUrl)}/driveItem:/${encodeURI(fileName)}:/content`
+    : `https://graph.microsoft.com/v1.0/me/drive/root:/${encodeURI(path)}:/content`;
+  const response = await fetch(endpoint, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${connection.accessToken}`, 'Content-Type': 'application/zip' },
     body: blob,

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Cloud, Plus, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { Cloud, Plus, Save, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -17,6 +17,7 @@ import {
   loadCloudConnections,
   saveCloudConnections,
 } from '@/lib/cloudStorage';
+import { useToast } from '@/hooks/use-toast';
 
 const createConnection = (provider: CloudProvider): CloudConnection => ({
   id: crypto.randomUUID(),
@@ -29,13 +30,22 @@ const createConnection = (provider: CloudProvider): CloudConnection => ({
 export const CloudStorageSettings = () => {
   const [connections, setConnections] = useState<CloudConnection[]>(loadCloudConnections);
   const [newProvider, setNewProvider] = useState<CloudProvider>('google_drive');
-
-  useEffect(() => {
-    saveCloudConnections(connections);
-  }, [connections]);
+  const { toast } = useToast();
 
   const update = (id: string, patch: Partial<CloudConnection>) =>
     setConnections(prev => prev.map(connection => connection.id === id ? { ...connection, ...patch } : connection));
+
+  const persist = (message = 'Настройки облака сохранены') => {
+    saveCloudConnections(connections);
+    toast({ title: message });
+  };
+
+  const remove = (id: string) => {
+    const next = connections.filter(item => item.id !== id);
+    setConnections(next);
+    saveCloudConnections(next);
+    toast({ title: 'Облако удалено' });
+  };
 
   return (
     <div className="space-y-4">
@@ -75,10 +85,20 @@ export const CloudStorageSettings = () => {
             <Switch checked={connection.enabled} onCheckedChange={(enabled) => update(connection.id, { enabled })} />
             <Button
               type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => persist()}
+              aria-label="Сохранить облако"
+              title="Сохранить"
+            >
+              <Save className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
               variant="ghost"
               size="icon"
               className="text-destructive hover:text-destructive"
-              onClick={() => setConnections(prev => prev.filter(item => item.id !== connection.id))}
+              onClick={() => remove(connection.id)}
               aria-label="Удалить облако"
             >
               <Trash2 className="h-4 w-4" />
@@ -89,11 +109,19 @@ export const CloudStorageSettings = () => {
 
           {connection.provider === 'google_drive' && (
             <div className="grid gap-3 sm:grid-cols-2">
+              <Input className="sm:col-span-2" value={connection.folderUrl || ''} onChange={(e) => update(connection.id, { folderUrl: e.target.value })} placeholder="Ссылка на папку Google Drive" />
               <Input type="password" value={connection.accessToken || ''} onChange={(e) => update(connection.id, { accessToken: e.target.value })} placeholder="OAuth access token" />
-              <Input value={connection.folderId || ''} onChange={(e) => update(connection.id, { folderId: e.target.value })} placeholder="ID папки Google Drive (необязательно)" />
+              <Input value={connection.folderId || ''} onChange={(e) => update(connection.id, { folderId: e.target.value })} placeholder="ID папки (извлекается из ссылки)" />
             </div>
           )}
-          {(connection.provider === 'onedrive' || connection.provider === 'dropbox') && (
+          {connection.provider === 'onedrive' && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input className="sm:col-span-2" value={connection.folderUrl || ''} onChange={(e) => update(connection.id, { folderUrl: e.target.value })} placeholder="Ссылка на папку OneDrive" />
+              <Input type="password" value={connection.accessToken || ''} onChange={(e) => update(connection.id, { accessToken: e.target.value })} placeholder="OAuth access token" />
+              <Input value={connection.folderPath || ''} onChange={(e) => update(connection.id, { folderPath: e.target.value })} placeholder="Путь к папке, если ссылка не указана" />
+            </div>
+          )}
+          {connection.provider === 'dropbox' && (
             <div className="grid gap-3 sm:grid-cols-2">
               <Input type="password" value={connection.accessToken || ''} onChange={(e) => update(connection.id, { accessToken: e.target.value })} placeholder="OAuth access token" />
               <Input value={connection.folderPath || ''} onChange={(e) => update(connection.id, { folderPath: e.target.value })} placeholder="Путь к папке" />
