@@ -917,7 +917,11 @@ export const NotificationsPage = () => {
         folder.file(`${notification.id.slice(0, 8)}-${name}`, blob);
       }
 
-      const archiveBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+      const archiveBlob = await zip.generateAsync({
+        type: 'blob',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 9 },
+      });
       const url = URL.createObjectURL(archiveBlob);
       const anchor = document.createElement('a');
       anchor.href = url;

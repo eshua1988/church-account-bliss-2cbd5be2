@@ -27,6 +27,8 @@ import { useGoogleSheetsSync } from '@/hooks/useGoogleSheetsSync';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useNotifications } from '@/hooks/useNotifications';
+import { CloudStorageSettings } from '@/components/CloudStorageSettings';
+import { syncNotificationArchivesToCloud } from '@/lib/cloudArchiveSync';
 
 const Index = () => {
   const { t, getDateLocale } = useTranslation();
@@ -133,11 +135,25 @@ const Index = () => {
   const isSyncing = isSheetSyncing || isBankSyncing;
 
   const handleSync = useCallback(async () => {
-    await Promise.all([
+    const [, , cloudResult] = await Promise.all([
       handleSheetSync(),
       handleBankSync(),
+      syncNotificationArchivesToCloud(notifications),
     ]);
-  }, [handleSheetSync, handleBankSync]);
+    if (cloudResult.uploaded > 0) {
+      toast({
+        title: 'Облачные архивы обновлены',
+        description: `Загружено файлов: ${cloudResult.uploaded}`,
+      });
+    }
+    if (cloudResult.errors.length > 0) {
+      toast({
+        title: 'Ошибка синхронизации облака',
+        description: cloudResult.errors.join('; '),
+        variant: 'destructive',
+      });
+    }
+  }, [handleSheetSync, handleBankSync, notifications, toast]);
 
   // Track previous transaction count for auto-sync on realtime changes
   const prevTransactionCountRef = useRef<number>(transactions.length);
@@ -498,6 +514,19 @@ const Index = () => {
                       onDeleteTransaction={deleteTransaction}
                       expenseCategories={expenseCategories}
                     />
+                  </div>
+                )}
+              </div>
+
+              {/* Cloud archives */}
+              <div className="bg-card rounded-lg shadow-card overflow-hidden">
+                <button onClick={() => toggleSetting('cloud')} className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-muted/50 transition-colors">
+                  <h4 className="font-semibold text-base sm:text-lg">Облако</h4>
+                  {openSettings.cloud ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
+                </button>
+                {openSettings.cloud && (
+                  <div className="px-4 pb-4 sm:px-6 sm:pb-6">
+                    <CloudStorageSettings />
                   </div>
                 )}
               </div>
