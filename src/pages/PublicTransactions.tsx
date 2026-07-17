@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal, RefreshCw, Landmark } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -66,11 +66,12 @@ const PublicTransactions = () => {
   const [customDateRange, setCustomDateRange] = useState<{ from?: Date; to?: Date }>({});
   const [addingRuleTerms, setAddingRuleTerms] = useState(false);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [isBankSyncing, setIsBankSyncing] = useState(false);
   
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    const loadData = async () => {
+  const loadData = useCallback(async (showLoader = true) => {
+      if (showLoader) setLoading(true);
       if (!token) {
         setError('Неправильная ссылка');
         setLoading(false);
@@ -167,10 +168,60 @@ const PublicTransactions = () => {
       } finally {
         setLoading(false);
       }
-    };
-
-    loadData();
   }, [token]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  const handleBankSync = async () => {
+    setIsBankSyncing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.user) {
+        toast({
+          title: 'Требуется авторизация',
+          description: 'Синхронизация банков доступна владельцу после входа в приложение',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const supabaseUrl = (supabase as any).supabaseUrl as string;
+      const supabaseKey = (supabase as any).supabaseKey as string;
+      const response = await fetch(`${supabaseUrl}/functions/v1/banking-sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: supabaseKey,
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ user_id: session.user.id }),
+      });
+      const result = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+
+      if (!response.ok) {
+        throw new Error(result?.error || `HTTP ${response.status}`);
+      }
+
+      await loadData(false);
+      toast({
+        title: 'Синхронизация завершена',
+        description: result.imported > 0
+          ? `Добавлено новых транзакций: ${result.imported}`
+          : 'Новых банковских транзакций нет',
+      });
+    } catch (syncError) {
+      toast({
+        title: 'Ошибка синхронизации банка',
+        description: syncError instanceof Error ? syncError.message : String(syncError),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsBankSyncing(false);
+    }
+  };
 
   const getCategoryName = (categoryId: string): string => {
     const category = categories.find(c => c.id === categoryId);
@@ -435,14 +486,33 @@ const PublicTransactions = () => {
     <>
       <div className="min-h-screen bg-background p-4 sm:p-6">
         <div className="max-w-6xl mx-auto">
-          {/* Header */}
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold mb-2">Таблица транзакций</h1>
-            <p className="text-muted-foreground">
-              {hasActiveFilters 
-                ? `Найдено транзакций: ${filteredTransactions.length}` 
-                : 'Введите текст поиска для просмотра транзакций'}
-            </p>
+          {/* Header actions */}
+          <div className="mb-6 rounded-xl border border-border bg-card p-4 shadow-sm sm:p-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h1 className="text-3xl font-bold mb-2">Таблица транзакций</h1>
+                <p className="text-muted-foreground">
+                  {hasActiveFilters
+                    ? `Найдено транзакций: ${filteredTransactions.length}`
+                    : 'Введите текст поиска для просмотра транзакций'}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleBankSync}
+                  disabled={isBankSyncing}
+                  className="h-11 gap-2 whitespace-nowrap"
+                >
+                  {isBankSyncing
+                    ? <RefreshCw className="h-4 w-4 animate-spin" />
+                    : <Landmark className="h-4 w-4" />}
+                  {isBankSyncing ? 'Синхронизация...' : 'Синхронизировать банки Польши'}
+                </Button>
+              </div>
+            </div>
           </div>
 
           {/* Search and filters */}
