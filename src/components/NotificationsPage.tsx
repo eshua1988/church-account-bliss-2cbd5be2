@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, QrCode, Copy, Banknote, ExternalLink, BellRing, Archive, FolderArchive } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, QrCode, Copy, Banknote, ExternalLink, BellRing, Archive, FolderArchive, FileText, ChevronDown } from 'lucide-react';
 import JSZip from 'jszip';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { useAuth } from '@/contexts/AuthContext';
@@ -99,6 +99,7 @@ const NotificationCard = ({
   const { toast } = useToast();
   const transactionId = notification.metadata?.transaction_id as string | undefined;
   const pdfPath = notification.metadata?.pdf_path as string | undefined;
+  const isArchived = Boolean(notification.metadata?.archived_at);
   const isSaving = savingId === notification.id;
   const isRuleRequest = isRuleRequestNotification(notification);
   const requestedTerms = Array.isArray(notification.metadata?.terms)
@@ -173,7 +174,7 @@ const NotificationCard = ({
     (onAddToTransaction && !transactionId ? 1 : 0) +
     (imagesSkipped && payoutUrl ? 1 : 0) +
     ((pdfPath || transactionId) ? 1 : 0) +
-    (onArchive && (pdfPath || transactionId) ? 1 : 0) +
+    (onArchive && !isArchived && (pdfPath || transactionId) ? 1 : 0) +
     (paymentQr ? 1 : 0);
   const SWIPE_MAX = mobileButtonCount * BTN_W;
   const SWIPE_THRESHOLD = 50;
@@ -286,7 +287,7 @@ const NotificationCard = ({
           {isDownloading ? '...' : 'PDF'}
         </Button>
       )}
-      {onArchive && (pdfPath || transactionId) && (
+      {onArchive && !isArchived && (pdfPath || transactionId) && (
         <Button
           variant="outline"
           size="sm"
@@ -379,7 +380,7 @@ const NotificationCard = ({
             <span className="text-[11px] font-medium leading-none">PDF</span>
           </button>
         )}
-        {onArchive && (pdfPath || transactionId) && (
+        {onArchive && !isArchived && (pdfPath || transactionId) && (
           <button
             className="flex flex-col items-center justify-center gap-1 text-white bg-amber-600 active:bg-amber-700"
             style={{ width: `${BTN_W}px` }}
@@ -591,6 +592,7 @@ export const NotificationsPage = () => {
   const [swipedId, setSwipedId] = useState<string | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<Notification | null>(null);
   const [downloadingArchive, setDownloadingArchive] = useState<string | null>(null);
+  const [expandedArchiveGroups, setExpandedArchiveGroups] = useState<Set<string>>(new Set());
 
   const archiveNotification = async (archiveType: 'income' | 'expense') => {
     if (!archiveTarget) return;
@@ -662,6 +664,32 @@ export const NotificationsPage = () => {
       blob: await pdfResponse.blob(),
       name: filePath.split('/').pop() || `${notification.id}.pdf`,
     };
+  };
+
+  const removeFromArchive = async (notification: Notification) => {
+    setSavingId(notification.id);
+    try {
+      const metadata = { ...(notification.metadata || {}) } as Record<string, unknown>;
+      delete metadata.archive_type;
+      delete metadata.archive_year;
+      delete metadata.archived_at;
+
+      const { error } = await supabase
+        .from('notifications')
+        .update({ metadata })
+        .eq('id', notification.id);
+      if (error) throw error;
+      await refetchNotifications();
+      toast({ title: 'PDF удалён из архива' });
+    } catch (error) {
+      toast({
+        title: 'Ошибка удаления из архива',
+        description: error instanceof Error ? error.message : String(error),
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingId(null);
+    }
   };
 
   const upsertOtherRuleTerms = async (transactionType: 'income' | 'expense', terms: string[]) => {
@@ -853,9 +881,7 @@ export const NotificationsPage = () => {
 
   const ruleRequests = notifications.filter(isRuleRequestNotification);
   const archivedNotifications = notifications.filter(n => Boolean(n.metadata?.archived_at));
-  const payoutNotifications = notifications.filter(
-    n => !isRuleRequestNotification(n) && !n.metadata?.archived_at,
-  );
+  const payoutNotifications = notifications.filter(n => !isRuleRequestNotification(n));
   const withoutPhotos = payoutNotifications.filter(n => n.metadata?.images_skipped);
   const withPhotos = payoutNotifications.filter(n => !n.metadata?.images_skipped);
   const pushEnabled = pushPermission === 'granted' && hasPushSubscription;
@@ -1051,29 +1077,82 @@ export const NotificationsPage = () => {
           {activeTab === 'extension' && Object.entries(archiveGroups).map(([key, items]) => {
             const [year, type] = key.split('-');
             const label = `${year} ${type === 'income' ? 'доход' : 'расход'}`;
+            const isExpanded = expandedArchiveGroups.has(key);
             return (
               <div key={key} className="rounded-xl border border-border bg-card p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="flex min-w-0 items-center gap-3 text-left"
+                    onClick={() => setExpandedArchiveGroups(prev => {
+                      const next = new Set(prev);
+                      if (next.has(key)) next.delete(key);
+                      else next.add(key);
+                      return next;
+                    })}
+                    aria-expanded={isExpanded}
+                  >
                     <FolderArchive className="h-6 w-6 text-primary" />
                     <div>
                       <p className="font-semibold">{label}</p>
                       <p className="text-xs text-muted-foreground">PDF-файлов: {items.length}</p>
                     </div>
+                    <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", isExpanded && "rotate-180")} />
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => downloadArchive(key, items)}
+                      disabled={downloadingArchive === key}
+                    >
+                      {downloadingArchive === key
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : <Download className="h-4 w-4" />}
+                      Скачать ZIP
+                    </Button>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                    onClick={() => downloadArchive(key, items)}
-                    disabled={downloadingArchive === key}
-                  >
-                    {downloadingArchive === key
-                      ? <Loader2 className="h-4 w-4 animate-spin" />
-                      : <Download className="h-4 w-4" />}
-                    Скачать ZIP
-                  </Button>
                 </div>
+                {isExpanded && (
+                  <div className="mt-4 space-y-2 border-t border-border pt-3">
+                    {items.map(notification => {
+                      const issuedTo = notification.metadata?.issued_to as string | undefined;
+                      const pdfPath = notification.metadata?.pdf_path as string | undefined;
+                      return (
+                        <div
+                          key={notification.id}
+                          className="flex items-center justify-between gap-3 rounded-lg bg-muted/40 px-3 py-2"
+                        >
+                          <div className="flex min-w-0 items-center gap-2">
+                            <FileText className="h-4 w-4 flex-shrink-0 text-primary" />
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">
+                                {issuedTo || notification.title || 'PDF документ'}
+                              </p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {pdfPath?.split('/').pop() || format(new Date(notification.created_at), 'dd.MM.yyyy HH:mm')}
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 flex-shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => removeFromArchive(notification)}
+                            disabled={savingId === notification.id}
+                            aria-label="Удалить PDF из архива"
+                            title="Удалить PDF из архива"
+                          >
+                            {savingId === notification.id
+                              ? <Loader2 className="h-4 w-4 animate-spin" />
+                              : <Trash2 className="h-4 w-4" />}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
