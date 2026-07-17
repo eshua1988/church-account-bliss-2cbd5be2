@@ -5,6 +5,7 @@ export interface CloudConnection {
   name: string;
   provider: CloudProvider;
   enabled: boolean;
+  clientId?: string;
   accessToken?: string;
   folderId?: string;
   folderUrl?: string;
@@ -41,12 +42,14 @@ const joinPath = (...parts: Array<string | undefined>) =>
   parts.filter(Boolean).map(part => String(part).replace(/^\/+|\/+$/g, '')).filter(Boolean).join('/');
 
 const getGoogleFolderId = (connection: CloudConnection) => {
-  if (connection.folderId?.trim()) return connection.folderId.trim();
   const url = connection.folderUrl?.trim();
-  if (!url) return '';
-  return url.match(/\/folders\/([a-zA-Z0-9_-]+)/)?.[1] ||
-    new URL(url).searchParams.get('id') ||
-    '';
+  if (url) {
+    const fromUrl = url.match(/\/folders\/([a-zA-Z0-9_-]+)/)?.[1] ||
+      new URL(url).searchParams.get('id');
+    if (fromUrl) return fromUrl;
+  }
+  const manualId = connection.folderId?.trim() || '';
+  return /^[a-zA-Z0-9_-]+$/.test(manualId) ? manualId : '';
 };
 
 const getOneDriveShareId = (url: string) =>
@@ -62,7 +65,12 @@ const uploadGoogleDrive = async (connection: CloudConnection, fileName: string, 
   const list = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id)`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!list.ok) throw new Error(`Google Drive: HTTP ${list.status}`);
+  if (!list.ok) {
+    if (list.status === 401) {
+      throw new Error('Google Drive: авторизация истекла или недействительна. Нажмите «Подключить Google Drive»');
+    }
+    throw new Error(`Google Drive: HTTP ${list.status}`);
+  }
   const existing = (await list.json()).files?.[0]?.id;
 
   if (existing) {
