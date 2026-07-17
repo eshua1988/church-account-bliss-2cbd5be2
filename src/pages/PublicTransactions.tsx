@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal, RefreshCw, Landmark, ListPlus, RotateCcw } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal, RefreshCw, Landmark, ListPlus, RotateCcw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -441,6 +441,11 @@ const PublicTransactions = () => {
     searchWordsForRules.some(word =>
       allRuleTypes.every(type => !getUnavailableRuleWords(type).has(word))
     );
+  const hasSearchOrFilters =
+    searchText.trim() !== '' ||
+    typeFilter !== 'all' ||
+    currencyFilter !== 'all' ||
+    Boolean(customDateRange.from || customDateRange.to);
 
   const resetAllFilters = () => {
     setSearchText('');
@@ -535,7 +540,7 @@ const PublicTransactions = () => {
                   placeholder="Поиск только в Прочее (доход) и Прочее (расход). Несколько слов можно через запятую..."
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
-                  className="h-12 pl-10 pr-12 text-base"
+                  className={cn("h-12 pl-10 text-base", hasSearchOrFilters ? "pr-24" : "pr-12")}
                 />
                 <Button
                   type="button"
@@ -543,13 +548,27 @@ const PublicTransactions = () => {
                   size="icon"
                   onClick={() => setShowAdvancedFilters(prev => !prev)}
                   className={cn(
-                    "absolute right-1 top-1/2 h-10 w-10 -translate-y-1/2 text-muted-foreground hover:text-foreground",
+                    "absolute top-1/2 h-10 w-10 -translate-y-1/2 text-muted-foreground hover:text-foreground",
+                    hasSearchOrFilters ? "right-11" : "right-1",
                     showAdvancedFilters && "text-primary"
                   )}
                   aria-label="Фильтры"
                 >
                   <SlidersHorizontal className="h-5 w-5" />
                 </Button>
+                {hasSearchOrFilters && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={resetAllFilters}
+                    className="absolute right-1 top-1/2 h-10 w-10 -translate-y-1/2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    aria-label="Сбросить поиск и все фильтры"
+                    title="Сбросить поиск и все фильтры"
+                  >
+                    <X className="h-5 w-5" strokeWidth={2.5} />
+                  </Button>
+                )}
               </div>
             </div>
 
