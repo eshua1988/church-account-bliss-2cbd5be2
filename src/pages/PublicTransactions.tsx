@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal, RefreshCw, Landmark, ListPlus, RotateCcw, X } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal, RefreshCw, Landmark, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -42,6 +42,26 @@ interface PublicTransactionsResponse {
   addedTerms?: string[];
   imported?: number;
 }
+
+const DocumentKeywordIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+    aria-hidden="true"
+  >
+    <path d="M4 3h10a2 2 0 0 1 2 2v5" />
+    <path d="M4 3v16h6" />
+    <path d="M7 7h6M7 10h5M7 13h3" />
+    <circle cx="15" cy="15" r="5" />
+    <path d="m18.7 18.7 3 3" />
+    <path d="M13.2 16.6 15 12.8l1.8 3.8M13.8 15.4h2.4M18.2 13.5h2M19.2 12.5v2" />
+  </svg>
+);
 
 const PublicTransactions = () => {
   const { token } = useParams<{ token: string }>();
@@ -512,20 +532,8 @@ const PublicTransactions = () => {
                   aria-label="Добавить слово для поиска"
                   title="Добавить слово для поиска"
                 >
-                  <ListPlus className={cn("h-4 w-4", addingRuleTerms && "animate-pulse")} />
+                  <DocumentKeywordIcon className={cn("h-5 w-5", addingRuleTerms && "animate-pulse")} />
                   <span className="hidden sm:inline">Добавить слово для поиска</span>
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={resetAllFilters}
-                  className="h-11 gap-2 whitespace-nowrap px-3 text-muted-foreground sm:px-4"
-                  aria-label="Сбросить все настройки"
-                  title="Сбросить все настройки"
-                >
-                  <RotateCcw className="h-4 w-4" />
-                  <span className="hidden sm:inline">Сбросить все настройки</span>
                 </Button>
               </div>
             </div>
@@ -537,7 +545,7 @@ const PublicTransactions = () => {
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
-                  placeholder="Поиск только в Прочее (доход) и Прочее (расход). Несколько слов можно через запятую..."
+                  placeholder="Поиск транзакции по ключевому слову."
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
                   className={cn("h-12 pl-10 text-base", hasSearchOrFilters ? "pr-24" : "pr-12")}
