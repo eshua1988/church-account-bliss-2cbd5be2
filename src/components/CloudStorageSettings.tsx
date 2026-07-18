@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CircleHelp, Cloud, Link2, Plus, Save, Trash2 } from 'lucide-react';
+import { CircleHelp, Cloud, Link2, Loader2, Plus, Save, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -81,32 +81,50 @@ export const CloudStorageSettings = () => {
   const [connections, setConnections] = useState<CloudConnection[]>(loadCloudConnections);
   const [newProvider, setNewProvider] = useState<CloudProvider>('google_drive');
   const [helpProvider, setHelpProvider] = useState<CloudProvider | null>(null);
+  const [loadingConnections, setLoadingConnections] = useState(true);
   const { toast } = useToast();
   const { user } = useAuth();
   const isMobile = useIsMobile();
   const loadedRemoteFor = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!user || loadedRemoteFor.current === user.id) return;
+    if (!user) {
+      setLoadingConnections(false);
+      return;
+    }
+    if (loadedRemoteFor.current === user.id) return;
     loadedRemoteFor.current = user.id;
-    const remote = Array.isArray(user.user_metadata?.cloud_connections)
-      ? user.user_metadata.cloud_connections as CloudConnection[]
-      : [];
-    if (remote.length === 0) return;
+    let active = true;
 
-    setConnections(current => {
-      const localById = new Map(current.map(connection => [connection.id, connection]));
-      const merged = remote.map(connection => ({
-        ...connection,
-        accessToken: localById.get(connection.id)?.accessToken,
-        password: localById.get(connection.id)?.password,
-      }));
-      for (const local of current) {
-        if (!merged.some(connection => connection.id === local.id)) merged.push(local);
+    const loadLatestConnections = async () => {
+      setLoadingConnections(true);
+      const { data } = await supabase.auth.getUser();
+      if (!active) return;
+
+      const latestUser = data.user || user;
+      const remote = Array.isArray(latestUser.user_metadata?.cloud_connections)
+        ? latestUser.user_metadata.cloud_connections as CloudConnection[]
+        : [];
+
+      if (remote.length > 0) {
+        setConnections(current => {
+          const localById = new Map(current.map(connection => [connection.id, connection]));
+          const merged = remote.map(connection => ({
+            ...connection,
+            accessToken: localById.get(connection.id)?.accessToken,
+            password: localById.get(connection.id)?.password,
+          }));
+          saveCloudConnections(merged);
+          return merged;
+        });
       }
-      saveCloudConnections(merged);
-      return merged;
-    });
+      setLoadingConnections(false);
+    };
+
+    void loadLatestConnections();
+    return () => {
+      active = false;
+    };
   }, [user]);
 
   const update = (id: string, patch: Partial<CloudConnection>) =>
@@ -227,7 +245,14 @@ export const CloudStorageSettings = () => {
         </Button>
       </div>
 
-      {isMobile && connections.length > 0 && (
+      {isMobile && loadingConnections && (
+        <div className="flex items-center justify-center gap-2 rounded-xl border border-primary/25 bg-primary/5 p-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Загрузка подключённых облаков…
+        </div>
+      )}
+
+      {isMobile && !loadingConnections && connections.length > 0 && (
         <div className="space-y-2 rounded-xl border border-primary/25 bg-primary/5 p-3">
           <div>
             <p className="text-sm font-semibold">Подключённые облака</p>
@@ -261,7 +286,7 @@ export const CloudStorageSettings = () => {
         </div>
       )}
 
-      {connections.length === 0 && (
+      {!loadingConnections && connections.length === 0 && (
         <div className="rounded-lg border border-dashed border-border p-6 text-center text-muted-foreground">
           <Cloud className="mx-auto mb-2 h-8 w-8 opacity-50" />
           Облачные хранилища ещё не добавлены
