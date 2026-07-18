@@ -387,7 +387,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
     }
   };
 
-  const toggleExpand = (id: string) => {
+  const toggleExpand = useCallback((id: string) => {
     setExpandedTransactions(prev => {
       const newSet = new Set(prev);
       if (newSet.has(id)) {
@@ -397,7 +397,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
       }
       return newSet;
     });
-  };
+  }, []);
 
   const isAllSelected = filteredTransactions.length > 0 && selectedTransactions.size === filteredTransactions.length;
 
@@ -570,7 +570,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                 <React.Fragment key={transaction.id}>
                   <div
                     className={cn(
-                      'rounded-lg border p-3 transition-colors',
+                      'rounded-lg border p-3 transition-colors [content-visibility:auto] [contain-intrinsic-size:72px]',
                       selectedTransactions.has(transaction.id)
                         ? (calculatorMode ? 'bg-primary/10 ring-1 ring-primary/40' : 'bg-muted/50')
                         : 'bg-card'
@@ -665,7 +665,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
         </div>
 
         {/* Desktop: table */}
-        <div className="hidden sm:block rounded-md border overflow-auto max-h-[500px]">
+        <div className="hidden sm:block rounded-md border overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-background z-10 [&_tr]:border-b">
               <tr className="border-b">
@@ -705,7 +705,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                   return (
                     <React.Fragment key={transaction.id}>
                       <tr className={cn(
-                        "border-b transition-colors hover:bg-muted/50",
+                        "border-b transition-colors hover:bg-muted/50 [content-visibility:auto] [contain-intrinsic-size:56px]",
                         selectedTransactions.has(transaction.id) && (calculatorMode ? "bg-primary/10 ring-1 ring-inset ring-primary/40" : "bg-muted/50")
                       )}>
                         <td className="p-4 w-10 px-2 align-middle">
