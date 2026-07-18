@@ -151,7 +151,7 @@ const mapTransaction = (tx: any, rules: any[] = []) => ({
   category: tx.category_id || 'other',
   amount: Number(tx.amount),
   currency: tx.currency,
-  description: cleanBankText(tx.description),
+  description: cleanBankText(tx.bank_title) || cleanBankText(tx.description),
   date: tx.date,
   createdAt: tx.created_at,
   issuedTo: tx.issued_to || undefined,

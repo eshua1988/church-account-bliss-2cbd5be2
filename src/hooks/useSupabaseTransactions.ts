@@ -40,7 +40,7 @@ const mapDbToTransaction = (dbTx: DbTransaction): Transaction => ({
   category: (dbTx.category_id || 'other') as TransactionCategory,
   amount: Number(dbTx.amount),
   currency: dbTx.currency as Currency,
-  description: cleanBankText(dbTx.description),
+  description: cleanBankText(dbTx.bank_title) || cleanBankText(dbTx.description),
   date: new Date(dbTx.date),
   createdAt: new Date(dbTx.created_at),
   issuedTo: dbTx.issued_to || undefined,
