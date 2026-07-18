@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, QrCode, Copy, Banknote, ExternalLink, BellRing, Archive, FolderArchive, FileText, ChevronDown } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, QrCode, Copy, Banknote, ExternalLink, BellRing, Archive, FolderArchive, FileText, ChevronDown, Building2 } from 'lucide-react';
 import JSZip from 'jszip';
+import jsPDF from 'jspdf';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -13,6 +14,8 @@ import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { Currency } from '@/types/transaction';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ROBOTO_FONT_BASE64 } from '@/lib/robotoFont';
 
 const OTHER_DEPARTMENT_BY_TYPE = {
   income: 'Прочее (доход)',
@@ -39,6 +42,20 @@ const mergeRuleTerms = (existingText: string, newTerms: string[]) => {
 
 const splitRuleTerms = (text: string) =>
   String(text || '').split(',').map(normalizeRuleTerm).filter(Boolean);
+
+const blobToDataUrl = (blob: Blob) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result));
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(blob);
+});
+
+const loadImage = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
+  const image = new Image();
+  image.onload = () => resolve(image);
+  image.onerror = reject;
+  image.src = src;
+});
 
 const isRuleRequestNotification = (notification: Notification) =>
   notification.type === 'rule_request' ||
@@ -74,6 +91,7 @@ const NotificationCard = ({
   onApproveRuleRequest,
   onRejectRuleRequest,
   onArchive,
+  onChangeDepartment,
   savingId,
   swipedId,
   onSwipe,
@@ -87,6 +105,7 @@ const NotificationCard = ({
   onApproveRuleRequest?: (notification: Notification) => void;
   onRejectRuleRequest?: (notification: Notification) => void;
   onArchive?: (notification: Notification) => void;
+  onChangeDepartment?: (notification: Notification) => void;
   savingId?: string | null;
   swipedId?: string | null;
   onSwipe?: (id: string | null) => void;
@@ -175,6 +194,7 @@ const NotificationCard = ({
     (imagesSkipped && payoutUrl ? 1 : 0) +
     ((pdfPath || transactionId) ? 1 : 0) +
     (onArchive && !isArchived && (pdfPath || transactionId) ? 1 : 0) +
+    (onChangeDepartment && !isRuleRequest ? 1 : 0) +
     (paymentQr ? 1 : 0);
   const SWIPE_MAX = mobileButtonCount * BTN_W;
   const SWIPE_THRESHOLD = 50;
@@ -228,6 +248,18 @@ const NotificationCard = ({
   // Action buttons — shared between desktop bottom row and mobile swipe tray
   const actionButtons = (
     <>
+      {onChangeDepartment && !isRuleRequest && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5 h-8 px-2.5 text-xs"
+          onClick={() => { onChangeDepartment(notification); doClose(); }}
+          disabled={isSaving}
+        >
+          <Building2 className="h-3 w-3" />
+          Отдел
+        </Button>
+      )}
       {onAddToTransaction && !transactionId && !isRuleRequest && (
         <Button
           variant="outline"
@@ -326,6 +358,17 @@ const NotificationCard = ({
         className="sm:hidden absolute right-0 top-0 bottom-0 flex rounded-r-xl overflow-hidden"
         style={{ width: `${SWIPE_MAX}px` }}
       >
+        {onChangeDepartment && !isRuleRequest && (
+          <button
+            className="flex flex-col items-center justify-center gap-1 text-white bg-violet-600 active:bg-violet-700"
+            style={{ width: `${BTN_W}px` }}
+            onClick={() => { onChangeDepartment(notification); doClose(); }}
+            disabled={isSaving}
+          >
+            <Building2 className="h-5 w-5" />
+            <span className="text-[11px] font-medium leading-none">Отдел</span>
+          </button>
+        )}
         {onAddToTransaction && !transactionId && !isRuleRequest && (
           <button
             className="flex flex-col items-center justify-center gap-1 text-white bg-blue-600 active:bg-blue-700"
@@ -583,7 +626,7 @@ export const NotificationsPage = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const { addTransaction } = useSupabaseTransactions();
-  const { getExpenseCategories } = useSupabaseCategories();
+  const { categories, getExpenseCategories } = useSupabaseCategories();
 
   const [activeTab, setActiveTab] = useState<'all' | 'no_photos' | 'extension'>('all');
   const [deptMap, setDeptMap] = useState<Record<string, string>>({});
@@ -591,8 +634,170 @@ export const NotificationsPage = () => {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [swipedId, setSwipedId] = useState<string | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<Notification | null>(null);
+  const [departmentTarget, setDepartmentTarget] = useState<Notification | null>(null);
+  const [selectedDepartment, setSelectedDepartment] = useState('');
   const [downloadingArchive, setDownloadingArchive] = useState<string | null>(null);
   const [expandedArchiveGroups, setExpandedArchiveGroups] = useState<Set<string>>(new Set());
+
+  const regenerateNotificationPdf = async (notification: Notification, departmentName: string) => {
+    const meta = notification.metadata || {};
+    const folderKey = String(meta.transaction_id || meta.folder_key || '');
+    if (!folderKey) throw new Error('Папка PDF не найдена');
+
+    const date = String(meta.date || notification.created_at.slice(0, 10));
+    const pdfPath = String(meta.pdf_path || `${notification.user_id}/${folderKey}/dowod_wyplaty_${date}_${folderKey.slice(0, 8)}.pdf`);
+    const folderPath = `${notification.user_id}/${folderKey}`;
+    const { data: branding } = await supabase
+      .from('shared_payout_links')
+      .select('organization_name')
+      .eq('owner_user_id', notification.user_id)
+      .not('organization_name', 'is', null)
+      .limit(1)
+      .maybeSingle();
+
+    const doc = new jsPDF();
+    doc.addFileToVFS('Roboto-Regular.ttf', ROBOTO_FONT_BASE64);
+    doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
+    doc.setFont('Roboto');
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const left = 20;
+    const tableWidth = pageWidth - 40;
+    const labelWidth = 50;
+    const valueWidth = tableWidth - labelWidth;
+    const rowHeight = 10;
+    const padding = 3;
+    const drawCell = (x: number, y: number, width: number, height: number, text: string, fill = false) => {
+      if (fill) {
+        doc.setFillColor(240, 240, 240);
+        doc.rect(x, y, width, height, 'F');
+      }
+      doc.setDrawColor(0);
+      doc.setLineWidth(0.3);
+      doc.rect(x, y, width, height, 'S');
+      doc.setFontSize(10);
+      const lines = doc.splitTextToSize(String(text || ''), width - padding * 2);
+      doc.text(lines[0] || '', x + padding, y + height / 2 + 3);
+    };
+
+    doc.setFontSize(11);
+    doc.text(branding?.organization_name || 'KOŚCIÓŁ BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE', pageWidth / 2, 20, { align: 'center' });
+    doc.setFontSize(16);
+    doc.text('Dowód wypłaty', pageWidth / 2, 32, { align: 'center' });
+
+    let y = 45;
+    const half = (tableWidth - 10) / 2;
+    drawCell(left, y, 35, rowHeight, 'Data', true);
+    drawCell(left + 35, y, half - 35, rowHeight, date);
+    const amountX = left + half + 10;
+    drawCell(amountX, y, 45, rowHeight, `Kwota (${String(meta.currency || 'PLN')})`, true);
+    drawCell(amountX + 45, y, half - 45, rowHeight, String(meta.amount || ''));
+    y += rowHeight + 8;
+
+    const drawRow = (label: string, value: string) => {
+      drawCell(left, y, labelWidth, rowHeight, label, true);
+      drawCell(left + labelWidth, y, valueWidth, rowHeight, value);
+      y += rowHeight;
+    };
+    drawRow('Wydano (imię i nazwisko)', String(meta.issued_to || notification.title || ''));
+    drawRow('Konto do przelewu', String(meta.bank_account || meta.decision_number || ''));
+    drawRow('Nazwa działu', departmentName);
+
+    const drawMultilineRow = (label: string, value: string) => {
+      const lines = doc.splitTextToSize(value, valueWidth - padding * 2);
+      const height = Math.max(rowHeight * 2, lines.length * 6 + padding * 2);
+      drawCell(left, y, labelWidth, height, label, true);
+      doc.rect(left + labelWidth, y, valueWidth, height, 'S');
+      doc.setFontSize(10);
+      if (lines.length) doc.text(lines, left + labelWidth + padding, y + padding + 6);
+      y += height;
+    };
+    drawMultilineRow('Na podstawie', String(meta.basis || notification.message || ''));
+    drawMultilineRow('Kwota słownie', String(meta.amount_in_words || ''));
+    y += 15;
+    doc.setFontSize(10);
+    doc.text('Kasjer: ________________________________', left, y);
+    doc.text('Podpis kasjera: ________________________________', pageWidth / 2, y);
+    y += 15;
+    doc.setFontSize(11);
+    doc.text('Podpis odbiorcy:', left, y);
+    y += 5;
+    doc.rect(left, y, 150, 40, 'S');
+
+    const { data: signature } = await supabase.storage.from('documents').download(`${folderPath}/signature.png`);
+    if (signature) {
+      const signatureUrl = await blobToDataUrl(signature);
+      doc.addImage(signatureUrl, 'PNG', left + 5, y + 2, 140, 36);
+    }
+
+    const { data: files } = await supabase.storage.from('documents').list(folderPath, { limit: 100 });
+    const attachments = (files || []).filter(file =>
+      /\.(png|jpe?g)$/i.test(file.name) && file.name.toLowerCase() !== 'signature.png'
+    );
+    for (const file of attachments) {
+      const { data: imageBlob } = await supabase.storage.from('documents').download(`${folderPath}/${file.name}`);
+      if (!imageBlob) continue;
+      const imageUrl = await blobToDataUrl(imageBlob);
+      const image = await loadImage(imageUrl);
+      const margin = 15;
+      const maxWidth = pageWidth - margin * 2;
+      const maxHeight = pageHeight - margin * 2;
+      let width = maxWidth;
+      let height = image.height / image.width * width;
+      if (height > maxHeight) {
+        height = maxHeight;
+        width = image.width / image.height * height;
+      }
+      doc.addPage();
+      doc.addImage(imageUrl, /png$/i.test(file.name) ? 'PNG' : 'JPEG', (pageWidth - width) / 2, (pageHeight - height) / 2, width, height);
+    }
+
+    const pdfBlob = doc.output('blob');
+    const { error: uploadError } = await supabase.storage
+      .from('documents')
+      .upload(pdfPath, pdfBlob, { contentType: 'application/pdf', upsert: true });
+    if (uploadError) throw uploadError;
+    return pdfPath;
+  };
+
+  const saveNotificationDepartment = async () => {
+    if (!departmentTarget || !selectedDepartment) return;
+    setSavingId(departmentTarget.id);
+    try {
+      const pdfPath = await regenerateNotificationPdf(departmentTarget, selectedDepartment);
+      const metadata = {
+        ...(departmentTarget.metadata || {}),
+        department_name: selectedDepartment,
+        pdf_path: pdfPath,
+      };
+      const { error } = await supabase
+        .from('notifications')
+        .update({ metadata })
+        .eq('id', departmentTarget.id);
+      if (error) throw error;
+
+      const transactionId = departmentTarget.metadata?.transaction_id as string | undefined;
+      if (transactionId) {
+        await supabase
+          .from('transactions')
+          .update({ department_name: selectedDepartment, cashier_name: selectedDepartment } as any)
+          .eq('id', transactionId);
+      }
+
+      await refetchNotifications();
+      setDepartmentTarget(null);
+      toast({ title: 'Отдел изменён', description: 'Уведомление и PDF обновлены' });
+    } catch (error) {
+      toast({
+        title: 'Не удалось изменить отдел',
+        description: error instanceof Error ? error.message : String(error),
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingId(null);
+    }
+  };
 
   const archiveNotification = async (archiveType: 'income' | 'expense') => {
     if (!archiveTarget) return;
@@ -1142,6 +1347,26 @@ export const NotificationsPage = () => {
                           <Button
                             variant="ghost"
                             size="icon"
+                            className="h-8 w-8 flex-shrink-0 text-violet-500 hover:bg-violet-500/10 hover:text-violet-600"
+                            onClick={() => {
+                              setDepartmentTarget(notification);
+                              setSelectedDepartment(
+                                String(
+                                  notification.metadata?.department_name
+                                  || deptMap[notification.metadata?.transaction_id as string]
+                                  || '',
+                                ),
+                              );
+                            }}
+                            disabled={savingId === notification.id}
+                            aria-label="Изменить отдел"
+                            title="Изменить отдел"
+                          >
+                            <Building2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             className="h-8 w-8 flex-shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
                             onClick={() => removeFromArchive(notification)}
                             disabled={savingId === notification.id}
@@ -1172,6 +1397,16 @@ export const NotificationsPage = () => {
               onApproveRuleRequest={handleApproveRuleRequest}
               onRejectRuleRequest={handleRejectRuleRequest}
               onArchive={activeTab === 'extension' ? undefined : setArchiveTarget}
+              onChangeDepartment={(item) => {
+                setDepartmentTarget(item);
+                setSelectedDepartment(
+                  String(
+                    item.metadata?.department_name
+                    || deptMap[item.metadata?.transaction_id as string]
+                    || '',
+                  ),
+                );
+              }}
               savingId={savingId}
               swipedId={swipedId}
               onSwipe={setSwipedId}
@@ -1182,6 +1417,49 @@ export const NotificationsPage = () => {
           </p>
         </div>
       )}
+
+      <Dialog
+        open={Boolean(departmentTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDepartmentTarget(null);
+            setSelectedDepartment('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Выберите отдел</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Отдел изменится в уведомлении, связанной транзакции и в сохранённом PDF-файле.
+          </p>
+          <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
+            <SelectTrigger>
+              <SelectValue placeholder="Выберите отдел" />
+            </SelectTrigger>
+            <SelectContent>
+              {[...new Set(categories.map((category) => category.name))]
+                .sort((a, b) => a.localeCompare(b, 'ru'))
+                .map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+          <Button
+            className="gap-2"
+            onClick={saveNotificationDepartment}
+            disabled={!selectedDepartment || Boolean(savingId)}
+          >
+            {savingId
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <Building2 className="h-4 w-4" />}
+            Сохранить и обновить PDF
+          </Button>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(archiveTarget)} onOpenChange={(open) => !open && setArchiveTarget(null)}>
         <DialogContent className="max-w-sm">
