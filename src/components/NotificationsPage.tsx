@@ -647,6 +647,29 @@ export const NotificationsPage = () => {
     const date = String(meta.date || notification.created_at.slice(0, 10));
     const pdfPath = String(meta.pdf_path || `${notification.user_id}/${folderKey}/dowod_wyplaty_${date}_${folderKey.slice(0, 8)}.pdf`);
     const folderPath = `${notification.user_id}/${folderKey}`;
+    const supabaseUrl = (supabase as any).supabaseUrl as string;
+    const supabaseKey = (supabase as any).supabaseKey as string;
+    const edgeHeaders = { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` };
+    const downloadProtectedFile = async (filePath: string) => {
+      const params = new URLSearchParams({
+        action: 'sign',
+        filePath,
+        userId: notification.user_id,
+      });
+      const signResponse = await fetch(
+        `${supabaseUrl}/functions/v1/upload-payout-pdf?${params}`,
+        { headers: edgeHeaders },
+      );
+      const signResult = await signResponse.json();
+      if (!signResponse.ok || !signResult.signedUrl) {
+        throw new Error(signResult.error || `Не удалось открыть ${filePath.split('/').pop()}`);
+      }
+      const fileResponse = await fetch(signResult.signedUrl);
+      if (!fileResponse.ok) {
+        throw new Error(`Ошибка загрузки файла: HTTP ${fileResponse.status}`);
+      }
+      return fileResponse.blob();
+    };
     const { data: branding } = await supabase
       .from('shared_payout_links')
       .select('organization_name')
@@ -725,10 +748,13 @@ export const NotificationsPage = () => {
     y += 5;
     doc.rect(left, y, 150, 40, 'S');
 
-    const { data: signature } = await supabase.storage.from('documents').download(`${folderPath}/signature.png`);
-    if (signature) {
+    try {
+      const signature = await downloadProtectedFile(`${folderPath}/signature.png`);
       const signatureUrl = await blobToDataUrl(signature);
       doc.addImage(signatureUrl, 'PNG', left + 5, y + 2, 140, 36);
+    } catch (error) {
+      // Older notifications may not contain a separately stored signature.
+      console.info('Signature is not available for PDF regeneration:', error);
     }
 
     const { data: files } = await supabase.storage.from('documents').list(folderPath, { limit: 100 });
@@ -736,8 +762,7 @@ export const NotificationsPage = () => {
       /\.(png|jpe?g)$/i.test(file.name) && file.name.toLowerCase() !== 'signature.png'
     );
     for (const file of attachments) {
-      const { data: imageBlob } = await supabase.storage.from('documents').download(`${folderPath}/${file.name}`);
-      if (!imageBlob) continue;
+      const imageBlob = await downloadProtectedFile(`${folderPath}/${file.name}`);
       const imageUrl = await blobToDataUrl(imageBlob);
       const image = await loadImage(imageUrl);
       const margin = 15;
@@ -754,9 +779,26 @@ export const NotificationsPage = () => {
     }
 
     const pdfBlob = doc.output('blob');
+    const payoutToken = String(meta.link_token || fallbackToken || '');
+    if (!payoutToken) throw new Error('Не найдена ссылка доступа для обновления PDF');
+    const uploadParams = new URLSearchParams({
+      action: 'upload-url',
+      filePath: pdfPath,
+      token: payoutToken,
+    });
+    const uploadUrlResponse = await fetch(
+      `${supabaseUrl}/functions/v1/upload-payout-pdf?${uploadParams}`,
+      { headers: edgeHeaders },
+    );
+    const uploadUrlResult = await uploadUrlResponse.json();
+    if (!uploadUrlResponse.ok || !uploadUrlResult.token || !uploadUrlResult.path) {
+      throw new Error(uploadUrlResult.error || 'Не удалось получить доступ для обновления PDF');
+    }
     const { error: uploadError } = await supabase.storage
       .from('documents')
-      .upload(pdfPath, pdfBlob, { contentType: 'application/pdf', upsert: true });
+      .uploadToSignedUrl(uploadUrlResult.path, uploadUrlResult.token, pdfBlob, {
+        contentType: 'application/pdf',
+      });
     if (uploadError) throw uploadError;
     return pdfPath;
   };
@@ -779,10 +821,15 @@ export const NotificationsPage = () => {
 
       const transactionId = departmentTarget.metadata?.transaction_id as string | undefined;
       if (transactionId) {
-        await supabase
+        const { error: transactionError } = await supabase
           .from('transactions')
           .update({ department_name: selectedDepartment, cashier_name: selectedDepartment } as any)
           .eq('id', transactionId);
+        if (transactionError) {
+          // Public payout notifications can reference a transaction owned by another
+          // auth context. The notification and PDF are still authoritative here.
+          console.warn('Linked transaction department was not updated:', transactionError);
+        }
       }
 
       await refetchNotifications();
