@@ -364,7 +364,7 @@ const Index = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-screen overflow-hidden bg-background flex flex-col">
       <Header 
         collapsed={sidebarCollapsed}
         onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -376,7 +376,7 @@ const Index = () => {
         expenseCategories={getExpenseCategories()}
       />
       
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         <AppSidebar 
           activeTab={activeTab} 
           onTabChange={setActiveTab}
@@ -386,7 +386,7 @@ const Index = () => {
           spreadsheetId={spreadsheetId}
         />
         
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 min-h-0 min-w-0 overflow-auto">
         
         <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
 
