@@ -386,15 +386,25 @@ const PublicTransactions = () => {
 
     // Apply text search - exact word match in description, bankTitle, and names
     if (searchText.trim()) {
-      if (!isOtherTransaction(t)) return false;
-
       const searchWords = getSearchWords(searchText); // Minimum 2 characters
 
       if (searchWords.length === 0) return false; // No valid search words
 
+      const normalizedComment = normalizeSearchText(t.comment || '');
+      const commentWords = normalizedComment
+        .split(/[\s\-_.,;:'"«»()[\]{}\/]+/)
+        .filter(word => word.length >= 2)
+        .concat(compactSearchText(t.comment || ''));
+      const matchesComment = searchWords.every(searchWord =>
+        commentWords.some(commentWord => commentWord.includes(searchWord))
+      );
+      if (!isOtherTransaction(t) && !matchesComment) return false;
+
       const allowedRuleWords = getAllowedRuleWords(t.type);
-      if (allowedRuleWords.size === 0) return false;
-      if (!searchWords.every(searchWord => allowedRuleWords.has(searchWord))) return false;
+      if (!searchWords.every(searchWord =>
+        allowedRuleWords.has(searchWord) ||
+        commentWords.some(commentWord => commentWord.includes(searchWord))
+      )) return false;
 
       // Combine all searchable text fields
       const fullSearchableText = [
@@ -404,6 +414,7 @@ const PublicTransactions = () => {
         t.bankRecipient || '',
         t.issuedTo || '',
         t.cashierName || '',
+        t.comment || '',
         getTransactionDepartmentName(t)
       ].join(' ');
       const normalizedSearchableText = normalizeSearchText(fullSearchableText);
@@ -791,6 +802,12 @@ const PublicTransactions = () => {
                               <div className="col-span-2 md:col-span-2">
                                 <p className="text-muted-foreground text-xs">От кого</p>
                                 <p className="font-medium">{transaction.bankSender}</p>
+                              </div>
+                            )}
+                            {transaction.comment && (
+                              <div className="col-span-2 md:col-span-4">
+                                <p className="text-muted-foreground text-xs">Комментарий</p>
+                                <p className="font-medium">{transaction.comment}</p>
                               </div>
                             )}
                             {transaction.bankRecipient && (

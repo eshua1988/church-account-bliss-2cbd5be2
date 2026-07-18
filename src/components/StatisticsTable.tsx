@@ -643,6 +643,12 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                             <p className="font-medium">{transaction.bankSender}</p>
                           </div>
                         )}
+                        {transaction.comment && (
+                          <div className="col-span-2">
+                            <p className="text-muted-foreground text-xs">Комментарий</p>
+                            <p className="font-medium">{transaction.comment}</p>
+                          </div>
+                        )}
                         {transaction.issuedTo && (
                           <div className="col-span-2">
                             <p className="text-muted-foreground text-xs">Wydano</p>
@@ -768,6 +774,12 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                                 <div>
                                   <p className="text-muted-foreground text-xs">Nadawca</p>
                                   <p className="font-medium">{transaction.bankSender}</p>
+                                </div>
+                              )}
+                              {transaction.comment && (
+                                <div className="col-span-2 md:col-span-4">
+                                  <p className="text-muted-foreground text-xs">Комментарий</p>
+                                  <p className="font-medium">{transaction.comment}</p>
                                 </div>
                               )}
                               {transaction.issuedTo && (
@@ -918,7 +930,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                         onBlur={(e) => {
                           const val = e.target.value.trim();
                           if (val !== (transaction.comment || '')) {
-                            onUpdate(transaction.id, { comment: val || null, description: val || null });
+                            onUpdate(transaction.id, { comment: val || null });
                           }
                         }}
                       />

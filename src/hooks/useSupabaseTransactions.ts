@@ -28,20 +28,26 @@ interface DbTransaction {
   comment: string | null;
 }
 
+const cleanBankText = (value: string | null) =>
+  (value || '')
+    .replace(/(^|\s)TRANSFER[-_\s]?(?:IN|OUT)(?=\s|$)/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 const mapDbToTransaction = (dbTx: DbTransaction): Transaction => ({
   id: dbTx.id,
   type: dbTx.type as TransactionType,
   category: (dbTx.category_id || 'other') as TransactionCategory,
   amount: Number(dbTx.amount),
   currency: dbTx.currency as Currency,
-  description: dbTx.description || '',
+  description: cleanBankText(dbTx.description),
   date: new Date(dbTx.date),
   createdAt: new Date(dbTx.created_at),
   issuedTo: dbTx.issued_to || undefined,
   decisionNumber: dbTx.decision_number || undefined,
   amountInWords: dbTx.amount_in_words || undefined,
   cashierName: dbTx.cashier_name || undefined,
-  bankTitle: dbTx.bank_title || undefined,
+  bankTitle: cleanBankText(dbTx.bank_title) || undefined,
   bankSender: dbTx.bank_sender || undefined,
   bankRecipient: dbTx.bank_recipient || undefined,
   source: dbTx.source || undefined,

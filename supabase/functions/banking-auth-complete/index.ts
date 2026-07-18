@@ -150,9 +150,13 @@ Deno.serve(async (req) => {
         for (const tx of pageTxs) {
           const amount = parseFloat(tx.transaction_amount?.amount || tx.amount || '0')
           const debit = tx.credit_debit_indicator === 'DBIT' || amount < 0
-          const bankTitle = Array.isArray(tx.remittance_information)
+          const rawBankTitle = Array.isArray(tx.remittance_information)
             ? tx.remittance_information.join(' ')
             : (tx.remittance_information || '')
+          const bankTitle = String(rawBankTitle)
+            .replace(/(^|\s)TRANSFER[-_\s]?(?:IN|OUT)(?=\s|$)/gi, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
           const bankSender = tx.debtor?.name || ''
           const bankRecipient = tx.creditor?.name || ''
           allTx.push({

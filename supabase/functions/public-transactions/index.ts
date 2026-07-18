@@ -139,20 +139,26 @@ const getPendingRuleSearchTerms = (notifications: any[] = []) => {
   return result;
 };
 
+const cleanBankText = (value: unknown) =>
+  String(value || '')
+    .replace(/(^|\s)TRANSFER[-_\s]?(?:IN|OUT)(?=\s|$)/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 const mapTransaction = (tx: any, rules: any[] = []) => ({
   id: tx.id,
   type: tx.type,
   category: tx.category_id || 'other',
   amount: Number(tx.amount),
   currency: tx.currency,
-  description: tx.description || '',
+  description: cleanBankText(tx.description),
   date: tx.date,
   createdAt: tx.created_at,
   issuedTo: tx.issued_to || undefined,
   decisionNumber: tx.decision_number || undefined,
   amountInWords: tx.amount_in_words || undefined,
   cashierName: tx.cashier_name || undefined,
-  bankTitle: tx.bank_title || undefined,
+  bankTitle: cleanBankText(tx.bank_title) || undefined,
   bankSender: tx.bank_sender || undefined,
   bankRecipient: tx.bank_recipient || undefined,
   source: tx.source || undefined,
