@@ -394,11 +394,13 @@ const Index = () => {
           {activeTab === 'statistics' && (
             <div className="animate-fade-in">
               <Tabs defaultValue="balance" className="w-full">
-                <TabsList className="mb-4 flex-wrap h-auto gap-1 p-1">
-                  <TabsTrigger value="balance" className="text-xs sm:text-sm">{t('balanceByCurrency')}</TabsTrigger>
-                  <TabsTrigger value="table" className="text-xs sm:text-sm">{t('transactionsTable')}</TabsTrigger>
-                  <TabsTrigger value="calculator" className="text-xs sm:text-sm">Калькулятор</TabsTrigger>
-                </TabsList>
+                <div className="sticky top-0 z-30 -mx-3 sm:-mx-4 mb-4 px-3 sm:px-4 py-2 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85 border-b border-border/60">
+                  <TabsList className="flex-wrap h-auto gap-1 p-1">
+                    <TabsTrigger value="balance" className="text-xs sm:text-sm">{t('balanceByCurrency')}</TabsTrigger>
+                    <TabsTrigger value="table" className="text-xs sm:text-sm">{t('transactionsTable')}</TabsTrigger>
+                    <TabsTrigger value="calculator" className="text-xs sm:text-sm">Калькулятор</TabsTrigger>
+                  </TabsList>
+                </div>
                 <TabsContent value="calculator">
                   <StatisticsTable
                     transactions={transactions}
