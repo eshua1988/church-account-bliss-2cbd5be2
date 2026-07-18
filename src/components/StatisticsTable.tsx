@@ -40,6 +40,17 @@ interface StatisticsTableProps {
 
 type TimeRange = 'all' | 'thisMonth' | 'lastMonth' | 'last3Months' | 'last6Months' | 'thisYear';
 
+const ExpandableTransaction = ({
+  children,
+}: {
+  children: (expanded: boolean, toggle: () => void) => React.ReactNode;
+}) => {
+  const [expanded, setExpanded] = useState(false);
+  const toggle = useCallback(() => setExpanded(value => !value), []);
+
+  return <>{children(expanded, toggle)}</>;
+};
+
 const normalizeSearchText = (text: string) =>
   text
     .normalize('NFKD')
@@ -386,17 +397,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
     }
   };
 
-  const toggleExpand = useCallback((id: string, view: 'mobile' | 'desktop') => {
-    const details = document.getElementById(`transaction-details-${view}-${id}`);
-    const button = document.getElementById(`transaction-toggle-${view}-${id}`);
-    if (!details || !button) return;
-
-    const isOpen = details.classList.contains('hidden');
-    details.classList.toggle('hidden', !isOpen);
-    button.setAttribute('aria-expanded', String(isOpen));
-    button.querySelector('svg')?.classList.toggle('rotate-180', isOpen);
-  }, []);
-
   const isAllSelected = filteredTransactions.length > 0 && selectedTransactions.size === filteredTransactions.length;
 
   const handleDeleteSelected = () => {
@@ -562,9 +562,9 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
           {filteredTransactions.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">{t('noTransactions')}</p>
           ) : (
-            filteredTransactions.map(transaction => {
-              return (
-                <React.Fragment key={transaction.id}>
+            filteredTransactions.map(transaction => (
+                <ExpandableTransaction key={transaction.id}>
+                {(isExpanded, toggleExpand) => (
                   <div
                     className={cn(
                       'rounded-lg border p-3 transition-colors [content-visibility:auto] [contain-intrinsic-size:72px]',
@@ -593,14 +593,13 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                           {transaction.type === 'income' ? '+' : '-'}{transaction.amount.toLocaleString(getDateLocale())} {CURRENCY_SYMBOLS[transaction.currency]}
                         </span>
                         <Button
-                          id={`transaction-toggle-mobile-${transaction.id}`}
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7 flex-shrink-0"
-                          aria-expanded="false"
-                          onClick={() => toggleExpand(transaction.id, 'mobile')}
+                          aria-expanded={isExpanded}
+                          onClick={toggleExpand}
                         >
-                          <ChevronDown className="h-4 w-4 transition-transform" />
+                          <ChevronDown className={cn("h-4 w-4 transition-transform", isExpanded && "rotate-180")} />
                         </Button>
                         {onUpdate && (
                           <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-primary" onClick={() => setEditingTransactionId(transaction.id)}>
@@ -612,10 +611,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                     <p className="text-xs text-muted-foreground mt-1 ml-8">
                       {format(new Date(transaction.date), 'dd.MM.yyyy')}
                     </p>
-                    <div
-                      id={`transaction-details-mobile-${transaction.id}`}
-                      className="hidden mt-3 pt-3 border-t grid grid-cols-2 gap-3 text-sm"
-                    >
+                    {isExpanded && <div className="mt-3 pt-3 border-t grid grid-cols-2 gap-3 text-sm">
                         <div>
                           <p className="text-muted-foreground text-xs">{t('type')}</p>
                           <p className={cn('font-medium', transaction.type === 'income' ? 'text-success' : 'text-destructive')}>
@@ -661,11 +657,11 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                             <p className="font-medium">{transaction.issuedTo}</p>
                           </div>
                         )}
-                    </div>
+                    </div>}
                   </div>
-                </React.Fragment>
-              );
-            })
+                )}
+                </ExpandableTransaction>
+            ))
           )}
         </div>
 
@@ -705,9 +701,10 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                   </td>
                 </tr>
               ) : (
-                filteredTransactions.map(transaction => {
-                  return (
-                    <React.Fragment key={transaction.id}>
+                filteredTransactions.map(transaction => (
+                    <ExpandableTransaction key={transaction.id}>
+                    {(isExpanded, toggleExpand) => (
+                    <React.Fragment>
                       <tr className={cn(
                         "border-b transition-colors hover:bg-muted/50 [content-visibility:auto] [contain-intrinsic-size:56px]",
                         selectedTransactions.has(transaction.id) && (calculatorMode ? "bg-primary/10 ring-1 ring-inset ring-primary/40" : "bg-muted/50")
@@ -729,14 +726,13 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                         </td>
                         <td className="p-4 w-8 px-1 align-middle">
                           <Button
-                            id={`transaction-toggle-desktop-${transaction.id}`}
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7"
-                            aria-expanded="false"
-                            onClick={() => toggleExpand(transaction.id, 'desktop')}
+                            aria-expanded={isExpanded}
+                            onClick={toggleExpand}
                           >
-                            <ChevronDown className="h-4 w-4 transition-transform" />
+                            <ChevronDown className={cn("h-4 w-4 transition-transform", isExpanded && "rotate-180")} />
                           </Button>
                         </td>
                         {onUpdate && (
@@ -747,10 +743,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                           </td>
                         )}
                       </tr>
-                      <tr
-                        id={`transaction-details-desktop-${transaction.id}`}
-                        className="hidden bg-muted/30 border-b"
-                      >
+                      {isExpanded && <tr className="bg-muted/30 border-b">
                           <td colSpan={99} className="p-4 py-3">
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                               <div>
@@ -809,10 +802,11 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                               )}
                             </div>
                           </td>
-                      </tr>
+                      </tr>}
                     </React.Fragment>
-                  );
-                })
+                    )}
+                    </ExpandableTransaction>
+                ))
               )}
             </tbody>
           </table>
