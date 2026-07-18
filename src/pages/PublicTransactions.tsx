@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal, RefreshCw, Landmark, X } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -18,6 +18,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { useToast } from '@/hooks/use-toast';
 import { CURRENCY_SYMBOLS, Transaction } from '@/types/transaction';
 import DateRangeFilter from '@/components/DateRangeFilter';
+import { CloudSyncIcon } from '@/components/icons/CloudSyncIcon';
 
 interface Category {
   id: string;
@@ -516,8 +517,7 @@ const PublicTransactions = () => {
                   aria-label="Поиск новых транзакций"
                   title="Поиск новых транзакций"
                 >
-                  <Landmark className="h-4 w-4" />
-                  <RefreshCw className={cn("h-4 w-4", isBankSyncing && "animate-spin")} />
+                  <CloudSyncIcon className={cn("h-5 w-5", isBankSyncing && "animate-pulse")} />
                   <span className="hidden sm:inline">
                     {isBankSyncing ? 'Поиск...' : 'Поиск новых транзакций'}
                   </span>

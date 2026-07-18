@@ -38,9 +38,18 @@ import { Transaction } from '@/types/transaction';
 import { Category } from '@/hooks/useSupabaseCategories';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { CloudSyncIcon } from '@/components/icons/CloudSyncIcon';
 
 export const HEADER_SETTINGS_UPDATED_EVENT = 'church-header-settings-updated';
 const HEADER_SETTINGS_KEY = 'church_header_settings';
+
+const hardReload = async () => {
+  if ('caches' in window) {
+    const cacheNames = await caches.keys();
+    await Promise.all(cacheNames.map(cacheName => caches.delete(cacheName)));
+  }
+  window.location.reload();
+};
 
 export interface HeaderSettings {
   iconName: string;
@@ -351,6 +360,17 @@ export const Header = ({
           </div>
 
           <div className="flex items-center gap-1 sm:gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => void hardReload()}
+              aria-label="Принудительно обновить приложение"
+              title="Обновить приложение (Ctrl+Shift+R)"
+              className="flex-shrink-0"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+
             {onSync && (
               <Button
                 variant="outline"
@@ -361,7 +381,7 @@ export const Header = ({
                 title={isSyncing ? 'Синхронизация...' : 'Синхронизация'}
                 className="flex-shrink-0"
               >
-                <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''} ${isMobile ? '' : 'sm:mr-2'}`} />
+                <CloudSyncIcon className={`${isSyncing ? 'animate-pulse' : ''} ${isMobile ? '' : 'sm:mr-2'}`} />
                 <span className="hidden sm:inline">{isSyncing ? 'Синхронизация...' : 'Синхронизация'}</span>
               </Button>
             )}
