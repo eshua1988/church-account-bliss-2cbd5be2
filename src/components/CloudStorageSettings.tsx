@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Cloud, Link2, Plus, Save, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { CircleHelp, Cloud, Link2, Plus, Save, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -18,6 +18,55 @@ import {
   saveCloudConnections,
 } from '@/lib/cloudStorage';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { supabase } from '@/integrations/supabase/client';
+
+const HELP_CONTENT: Record<CloudProvider, { title: string; steps: string[] }> = {
+  google_drive: {
+    title: 'Подключение Google Drive',
+    steps: [
+      'Создайте папку на Google Drive и вставьте сюда ссылку на неё.',
+      'В Google Cloud включите Google Drive API.',
+      'Создайте OAuth 2.0 Client ID типа «Веб-приложение».',
+      'В разрешённые источники JavaScript добавьте https://eshua1988.github.io.',
+      'Если приложение тестируется, добавьте свой email в «Получатели → Тестовые пользователи».',
+      'Вставьте Client ID и нажмите «Подключить Google Drive». Пароль Google вводить не нужно.',
+    ],
+  },
+  onedrive: {
+    title: 'Подключение OneDrive',
+    steps: [
+      'Создайте папку OneDrive и вставьте общую ссылку на неё.',
+      'В Microsoft Entra зарегистрируйте приложение и разрешите Microsoft Graph Files.ReadWrite.',
+      'Получите OAuth access token и вставьте его в поле подключения.',
+      'Сохраните подключение. При ошибке 401 получите новый токен.',
+    ],
+  },
+  dropbox: {
+    title: 'Подключение Dropbox',
+    steps: [
+      'Создайте приложение в Dropbox App Console.',
+      'Разрешите files.content.write и files.metadata.read.',
+      'Создайте access token и укажите путь к папке, например /Church Accounting.',
+      'Сохраните подключение. Архивы с одинаковым именем будут обновляться.',
+    ],
+  },
+  webdav: {
+    title: 'Подключение WebDAV / Nextcloud',
+    steps: [
+      'Укажите полный WebDAV URL вашего облака.',
+      'Укажите путь к папке для ZIP-архивов.',
+      'Введите логин и пароль приложения, а не основной пароль аккаунта.',
+      'На сервере WebDAV должен быть разрешён CORS для домена приложения.',
+    ],
+  },
+};
+
+const withoutSecrets = (connection: CloudConnection): CloudConnection => {
+  const { accessToken: _accessToken, password: _password, ...safe } = connection;
+  return safe;
+};
 
 const createConnection = (provider: CloudProvider): CloudConnection => ({
   id: crypto.randomUUID(),
@@ -30,7 +79,33 @@ const createConnection = (provider: CloudProvider): CloudConnection => ({
 export const CloudStorageSettings = () => {
   const [connections, setConnections] = useState<CloudConnection[]>(loadCloudConnections);
   const [newProvider, setNewProvider] = useState<CloudProvider>('google_drive');
+  const [helpProvider, setHelpProvider] = useState<CloudProvider | null>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
+  const loadedRemoteFor = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!user || loadedRemoteFor.current === user.id) return;
+    loadedRemoteFor.current = user.id;
+    const remote = Array.isArray(user.user_metadata?.cloud_connections)
+      ? user.user_metadata.cloud_connections as CloudConnection[]
+      : [];
+    if (remote.length === 0) return;
+
+    setConnections(current => {
+      const localById = new Map(current.map(connection => [connection.id, connection]));
+      const merged = remote.map(connection => ({
+        ...connection,
+        accessToken: localById.get(connection.id)?.accessToken,
+        password: localById.get(connection.id)?.password,
+      }));
+      for (const local of current) {
+        if (!merged.some(connection => connection.id === local.id)) merged.push(local);
+      }
+      saveCloudConnections(merged);
+      return merged;
+    });
+  }, [user]);
 
   const update = (id: string, patch: Partial<CloudConnection>) =>
     setConnections(prev => prev.map(connection => connection.id === id ? { ...connection, ...patch } : connection));
@@ -79,8 +154,7 @@ export const CloudStorageSettings = () => {
             item.id === connection.id ? { ...item, accessToken: response.access_token } : item,
           );
           setConnections(next);
-          saveCloudConnections(next);
-          toast({ title: 'Google Drive подключён' });
+          void persist(next, 'Google Drive подключён');
         },
       });
       client.requestAccessToken({ prompt: '' });
@@ -93,16 +167,24 @@ export const CloudStorageSettings = () => {
     }
   };
 
-  const persist = (message = 'Настройки облака сохранены') => {
-    saveCloudConnections(connections);
+  const persist = async (nextConnections = connections, message = 'Настройки облака сохранены') => {
+    saveCloudConnections(nextConnections);
+    if (user) {
+      const { error } = await supabase.auth.updateUser({
+        data: { cloud_connections: nextConnections.map(withoutSecrets) },
+      });
+      if (error) {
+        toast({ title: 'Не удалось сохранить настройки в профиле', description: error.message, variant: 'destructive' });
+        return;
+      }
+    }
     toast({ title: message });
   };
 
   const remove = (id: string) => {
     const next = connections.filter(item => item.id !== id);
     setConnections(next);
-    saveCloudConnections(next);
-    toast({ title: 'Облако удалено' });
+    void persist(next, 'Облако удалено');
   };
 
   return (
@@ -143,9 +225,19 @@ export const CloudStorageSettings = () => {
             <Switch checked={connection.enabled} onCheckedChange={(enabled) => update(connection.id, { enabled })} />
             <Button
               type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => setHelpProvider(connection.provider)}
+              aria-label={`Инструкция: ${CLOUD_PROVIDER_LABELS[connection.provider]}`}
+              title="Инструкция по подключению"
+            >
+              <CircleHelp className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
               variant="outline"
               size="icon"
-              onClick={() => persist()}
+              onClick={() => void persist()}
               aria-label="Сохранить облако"
               title="Сохранить"
             >
@@ -163,8 +255,6 @@ export const CloudStorageSettings = () => {
             </Button>
           </div>
 
-          <p className="text-xs font-medium text-muted-foreground">{CLOUD_PROVIDER_LABELS[connection.provider]}</p>
-
           {connection.provider === 'google_drive' && (
             <div className="grid gap-3 sm:grid-cols-2">
               <Input className="sm:col-span-2" value={connection.folderUrl || ''} onChange={(e) => update(connection.id, { folderUrl: e.target.value })} placeholder="Ссылка на папку Google Drive" />
@@ -176,7 +266,7 @@ export const CloudStorageSettings = () => {
               <p className="text-xs text-muted-foreground sm:col-span-2">
                 {connection.accessToken
                   ? 'Авторизация получена. Если появится ошибка 401, подключите Google Drive повторно.'
-                  : 'Пароль Google вводить не нужно. Вход откроется в официальном окне Google.'}
+                  : 'На этом устройстве Google Drive ещё не подключён. Пароль вводить не нужно — вход откроется в официальном окне Google.'}
               </p>
             </div>
           )}
@@ -205,8 +295,30 @@ export const CloudStorageSettings = () => {
       ))}
 
       <p className="text-xs text-muted-foreground">
-        Данные подключения сохраняются только в этом браузере. Для OAuth используйте токены с минимальными правами доступа.
+        Названия, ссылки и Client ID синхронизируются между устройствами. OAuth-токены и пароли хранятся только на устройстве, где выполнено подключение.
       </p>
+
+      <Dialog open={helpProvider !== null} onOpenChange={(open) => !open && setHelpProvider(null)}>
+        <DialogContent className="max-w-lg">
+          {helpProvider && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{HELP_CONTENT[helpProvider].title}</DialogTitle>
+              </DialogHeader>
+              <ol className="space-y-3 text-sm">
+                {HELP_CONTENT[helpProvider].steps.map((step, index) => (
+                  <li key={step} className="flex gap-3">
+                    <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+                      {index + 1}
+                    </span>
+                    <span className="pt-0.5 text-muted-foreground">{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
