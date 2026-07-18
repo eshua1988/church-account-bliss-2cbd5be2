@@ -82,6 +82,7 @@ export const CloudStorageSettings = () => {
   const [newProvider, setNewProvider] = useState<CloudProvider>('google_drive');
   const [helpProvider, setHelpProvider] = useState<CloudProvider | null>(null);
   const [loadingConnections, setLoadingConnections] = useState(true);
+  const [mobileEditingId, setMobileEditingId] = useState<string | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const isMobile = useIsMobile();
@@ -174,6 +175,7 @@ export const CloudStorageSettings = () => {
             item.id === connection.id ? { ...item, accessToken: response.access_token } : item,
           );
           setConnections(next);
+          setMobileEditingId(null);
           void persist(next, 'Google Drive подключён');
         },
       });
@@ -199,6 +201,7 @@ export const CloudStorageSettings = () => {
       }
     }
     toast({ title: message });
+    setMobileEditingId(null);
   };
 
   const remove = (id: string) => {
@@ -217,6 +220,7 @@ export const CloudStorageSettings = () => {
       void connectGoogleDrive(connection);
       return;
     }
+    setMobileEditingId(connection.id);
     setHelpProvider(connection.provider);
     window.setTimeout(() => {
       document.getElementById(`cloud-connection-${connection.id}`)?.scrollIntoView({
@@ -226,9 +230,26 @@ export const CloudStorageSettings = () => {
     }, 150);
   };
 
+  const disconnectThisDevice = (connection: CloudConnection) => {
+    const next = connections.map(item =>
+      item.id === connection.id
+        ? { ...item, accessToken: undefined, password: undefined }
+        : item,
+    );
+    setConnections(next);
+    saveCloudConnections(next);
+    toast({ title: `${connection.name} отключено на этом телефоне` });
+  };
+
+  const addCloud = () => {
+    const connection = createConnection(newProvider);
+    setConnections(prev => [...prev, connection]);
+    if (isMobile) setMobileEditingId(connection.id);
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div className={`${isMobile && connections.length > 0 ? 'hidden' : 'flex'} flex-col gap-2 sm:flex-row`}>
         <Select value={newProvider} onValueChange={(value) => setNewProvider(value as CloudProvider)}>
           <SelectTrigger className="sm:max-w-xs">
             <SelectValue placeholder="Выберите облако" />
@@ -239,7 +260,7 @@ export const CloudStorageSettings = () => {
             ))}
           </SelectContent>
         </Select>
-        <Button type="button" className="gap-2" onClick={() => setConnections(prev => [...prev, createConnection(newProvider)])}>
+        <Button type="button" className="gap-2" onClick={addCloud}>
           <Plus className="h-4 w-4" />
           Добавить облако
         </Button>
@@ -275,10 +296,10 @@ export const CloudStorageSettings = () => {
                   type="button"
                   size="sm"
                   variant={connected ? 'outline' : 'default'}
-                  className="flex-shrink-0"
-                  onClick={() => connectThisDevice(connection)}
+                  className={connected ? 'flex-shrink-0 text-destructive hover:text-destructive' : 'flex-shrink-0'}
+                  onClick={() => connected ? disconnectThisDevice(connection) : connectThisDevice(connection)}
                 >
-                  {connected ? 'Переподключить' : 'Подключить телефон'}
+                  {connected ? 'Отключить' : 'Подключить'}
                 </Button>
               </div>
             );
@@ -293,7 +314,7 @@ export const CloudStorageSettings = () => {
         </div>
       )}
 
-      {connections.map(connection => (
+      {connections.map(connection => (!isMobile || connections.length === 0 || mobileEditingId === connection.id) && (
         <div id={`cloud-connection-${connection.id}`} key={connection.id} className="space-y-3 rounded-xl border border-border p-4">
           <div className="flex items-center gap-3">
             <Cloud className="h-5 w-5 text-primary" />
