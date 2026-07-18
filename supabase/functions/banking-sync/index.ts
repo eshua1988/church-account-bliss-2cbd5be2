@@ -155,7 +155,7 @@ Deno.serve(async (req) => {
             ? tx.remittance_information.join(' ')
             : (tx.remittance_information || '')
           const bankTitle = String(rawBankTitle)
-            .replace(/(^|\s)TRANSFER[-_\s]?(?:IN|OUT)(?=\s|$)/gi, ' ')
+            .replace(/(^|\s)(?:TRANSFER[-_\s]?(?:IN|OUT)|MOBILE-PAYMENT-C2C-EXTERNAL)(?=\s|$)/gi, ' ')
             .replace(/\s+/g, ' ')
             .trim()
           const bankSender = tx.debtor?.name || ''

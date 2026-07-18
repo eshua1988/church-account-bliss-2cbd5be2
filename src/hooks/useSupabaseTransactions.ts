@@ -30,7 +30,7 @@ interface DbTransaction {
 
 const cleanBankText = (value: string | null) =>
   (value || '')
-    .replace(/(^|\s)TRANSFER[-_\s]?(?:IN|OUT)(?=\s|$)/gi, ' ')
+    .replace(/(^|\s)(?:TRANSFER[-_\s]?(?:IN|OUT)|MOBILE-PAYMENT-C2C-EXTERNAL)(?=\s|$)/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
