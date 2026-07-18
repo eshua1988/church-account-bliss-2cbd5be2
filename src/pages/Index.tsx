@@ -58,6 +58,11 @@ const Index = () => {
   const {
     transactions,
     loading: transactionsLoading,
+    loadingMore: transactionsLoadingMore,
+    totalCount: transactionCount,
+    hasMore: hasMoreTransactions,
+    loadMore: loadMoreTransactions,
+    availableCurrencies,
     addTransaction,
     deleteTransaction,
     updateTransaction,
@@ -408,6 +413,10 @@ const Index = () => {
                     <div>
                       <StatisticsTable 
                         transactions={transactions} 
+                        totalCount={transactionCount}
+                        hasMore={hasMoreTransactions}
+                        loadingMore={transactionsLoadingMore}
+                        onLoadMore={loadMoreTransactions}
                         getCategoryName={getCategoryName} 
                         onDelete={handleDeleteTransaction}
                         onUpdate={async (id, updates) => {
@@ -427,7 +436,9 @@ const Index = () => {
                 </TabsContent>
                 <TabsContent value="balance">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {([...new Set(transactions.map(tx => tx.currency))] as Currency[])
+                    {((availableCurrencies.length > 0
+                      ? availableCurrencies
+                      : [...new Set(transactions.map(tx => tx.currency))]) as Currency[])
                       .map((currency, index) => {
                         const currencyBalance = getBalanceByCurrency(currency);
                         return (
@@ -444,7 +455,7 @@ const Index = () => {
                         );
                       })}
                   </div>
-                  {transactions.length === 0 && (
+                  {transactionCount === 0 && (
                     <p className="text-muted-foreground text-center py-8">{t('noTransactions')}</p>
                   )}
                 </TabsContent>

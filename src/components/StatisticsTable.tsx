@@ -27,6 +27,10 @@ import type { Notification } from '@/hooks/useNotifications';
 
 interface StatisticsTableProps {
   transactions: Transaction[];
+  totalCount?: number;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
   getCategoryName: (id: string) => string;
   onDelete?: (id: string) => void;
   onUpdate?: (id: string, updates: Partial<Transaction>) => void;
@@ -66,7 +70,7 @@ const getSearchWords = (text: string) =>
     .map(word => word.trim())
     .filter(word => word.length >= 2);
 
-export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpdate, selectedCurrency, categories = [], notifications = [], onLinkNotification, onUnlinkNotification, calculatorMode = false }: StatisticsTableProps) => {
+export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loadingMore = false, onLoadMore, getCategoryName, onDelete, onUpdate, selectedCurrency, categories = [], notifications = [], onLinkNotification, onUnlinkNotification, calculatorMode = false }: StatisticsTableProps) => {
   const { t, getDateLocale } = useTranslation();
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
@@ -811,6 +815,25 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
             </tbody>
           </table>
         </div>
+
+        {!calculatorMode && totalCount !== undefined && (
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-4">
+            <p className="text-xs text-muted-foreground">
+              Загружено транзакций: {transactions.length.toLocaleString()} из {totalCount.toLocaleString()}
+            </p>
+            {hasMore && onLoadMore && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={loadingMore}
+                onClick={onLoadMore}
+              >
+                {loadingMore ? 'Загрузка…' : 'Загрузить ещё 200'}
+              </Button>
+            )}
+          </div>
+        )}
 
         {selectedTransactions.size > 0 && !calculatorMode && (
           <>

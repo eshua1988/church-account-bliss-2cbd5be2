@@ -28,6 +28,16 @@ interface DbTransaction {
   comment: string | null;
 }
 
+interface CurrencyTotal {
+  currency: Currency;
+  income: number;
+  expense: number;
+  balance: number;
+  transactionCount: number;
+}
+
+const PAGE_SIZE = 200;
+
 const cleanBankText = (value: string | null) =>
   (value || '')
     .replace(/(?:\d{4}\s*)?OD:\s*\d+\s+DO:\s*\d+\s+MOBILE-PAYMENT-C2C\b/gi, ' ')
@@ -62,39 +72,77 @@ export const useSupabaseTransactions = () => {
   const { user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currencyTotals, setCurrencyTotals] = useState<CurrencyTotal[]>([]);
   const initializedRef = useRef(false);
 
-  // Fetch transactions
-  const fetchTransactions = useCallback(async () => {
+  const fetchCurrencyTotals = useCallback(async () => {
+    if (!user) {
+      setCurrencyTotals([]);
+      return [] as CurrencyTotal[];
+    }
+
+    const { data, error } = await (supabase as any).rpc('transaction_currency_totals');
+    if (error) throw error;
+
+    const totals = (data || []).map((row: any) => ({
+      currency: row.currency as Currency,
+      income: Number(row.income),
+      expense: Number(row.expense),
+      balance: Number(row.balance),
+      transactionCount: Number(row.transaction_count),
+    }));
+    setCurrencyTotals(totals);
+    return totals;
+  }, [user]);
+
+  // Only keep a bounded page in browser memory. Aggregates are calculated by PostgreSQL.
+  const fetchTransactions = useCallback(async (append = false, offset = 0) => {
     if (!user) {
       setTransactions([]);
+      setTotalCount(0);
+      setCurrencyTotals([]);
       setLoading(false);
       return;
     }
 
     try {
-      // Show loading spinner only on first load, background refreshes are silent
-      if (!initializedRef.current) setLoading(true);
+      if (!initializedRef.current && !append) setLoading(true);
+      if (append) setLoadingMore(true);
+      const from = append ? offset : 0;
+      const to = from + PAGE_SIZE - 1;
       const { data, error } = await supabase
         .from('transactions')
         .select('*')
         .eq('user_id', user.id)
         .order('date', { ascending: false })
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(from, to);
 
       if (error) throw error;
 
       const mappedTransactions = (data as DbTransaction[]).map(mapDbToTransaction);
-      setTransactions(mappedTransactions);
+      setTransactions(current => append ? [...current, ...mappedTransactions] : mappedTransactions);
+      if (!append) {
+        const totals = await fetchCurrencyTotals();
+        setTotalCount(totals.reduce((sum, total) => sum + total.transactionCount, 0));
+      }
       initializedRef.current = true;
     } catch (err) {
       console.error('Error fetching transactions:', err);
       setError(err instanceof Error ? err : new Error('Failed to fetch transactions'));
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
-  }, [user]);
+  }, [user, fetchCurrencyTotals]);
+
+  const loadMore = useCallback(
+    () => fetchTransactions(true, transactions.length),
+    [fetchTransactions, transactions.length],
+  );
 
   // Subscribe to realtime changes + polling fallback
   useEffect(() => {
@@ -114,7 +162,7 @@ export const useSupabaseTransactions = () => {
           filter: `user_id=eq.${user.id}`,
         },
         () => {
-          fetchTransactions();
+          fetchTransactions(false);
         }
       )
       .subscribe((status) => {
@@ -126,7 +174,7 @@ export const useSupabaseTransactions = () => {
       });
 
     // Polling fallback every 30s in case Realtime drops
-    const poll = setInterval(() => fetchTransactions(), 30_000);
+    const poll = setInterval(() => fetchTransactions(false), 30_000);
 
     return () => {
       supabase.removeChannel(channel);
@@ -213,7 +261,7 @@ export const useSupabaseTransactions = () => {
 
     if (error) {
       // Revert on error
-      fetchTransactions();
+      fetchTransactions(false);
       throw error;
     }
   }, [fetchTransactions]);
@@ -227,6 +275,14 @@ export const useSupabaseTransactions = () => {
   }, [transactions]);
 
   const getBalanceByCurrency = useCallback((currency: Currency) => {
+    const serverTotal = currencyTotals.find(total => total.currency === currency);
+    if (serverTotal) {
+      return {
+        income: serverTotal.income,
+        expense: serverTotal.expense,
+        balance: serverTotal.balance,
+      };
+    }
     const income = transactions
       .filter(t => t.currency === currency && t.type === 'income')
       .reduce((sum, t) => sum + t.amount, 0);
@@ -236,7 +292,7 @@ export const useSupabaseTransactions = () => {
       .reduce((sum, t) => sum + t.amount, 0);
     
     return { income, expense, balance: income - expense };
-  }, [transactions]);
+  }, [transactions, currencyTotals]);
 
   const getRecentTransactions = useCallback((limit: number = 10) => {
     return [...transactions]
@@ -290,7 +346,12 @@ export const useSupabaseTransactions = () => {
   return {
     transactions,
     loading,
+    loadingMore,
     error,
+    totalCount,
+    hasMore: transactions.length < totalCount,
+    loadMore,
+    availableCurrencies: currencyTotals.map(total => total.currency),
     addTransaction,
     deleteTransaction,
     updateTransaction,
