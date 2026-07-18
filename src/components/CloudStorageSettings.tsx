@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const HELP_CONTENT: Record<CloudProvider, { title: string; steps: string[] }> = {
   google_drive: {
@@ -82,6 +83,7 @@ export const CloudStorageSettings = () => {
   const [helpProvider, setHelpProvider] = useState<CloudProvider | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
+  const isMobile = useIsMobile();
   const loadedRemoteFor = useRef<string | null>(null);
 
   useEffect(() => {
@@ -187,6 +189,25 @@ export const CloudStorageSettings = () => {
     void persist(next, 'Облако удалено');
   };
 
+  const hasDeviceAccess = (connection: CloudConnection) => {
+    if (connection.provider === 'webdav') return Boolean(connection.password);
+    return Boolean(connection.accessToken);
+  };
+
+  const connectThisDevice = (connection: CloudConnection) => {
+    if (connection.provider === 'google_drive') {
+      void connectGoogleDrive(connection);
+      return;
+    }
+    setHelpProvider(connection.provider);
+    window.setTimeout(() => {
+      document.getElementById(`cloud-connection-${connection.id}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }, 150);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -206,6 +227,40 @@ export const CloudStorageSettings = () => {
         </Button>
       </div>
 
+      {isMobile && connections.length > 0 && (
+        <div className="space-y-2 rounded-xl border border-primary/25 bg-primary/5 p-3">
+          <div>
+            <p className="text-sm font-semibold">Подключённые облака</p>
+            <p className="text-xs text-muted-foreground">Доступ к облаку на этом телефоне</p>
+          </div>
+          {connections.map(connection => {
+            const connected = hasDeviceAccess(connection);
+            return (
+              <div key={connection.id} className="flex items-center justify-between gap-3 rounded-lg bg-card px-3 py-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className={connected ? "h-2.5 w-2.5 flex-shrink-0 rounded-full bg-green-500" : "h-2.5 w-2.5 flex-shrink-0 rounded-full bg-amber-500"} />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{connection.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {connected ? 'Подключено на телефоне' : 'Требуется подключение'}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={connected ? 'outline' : 'default'}
+                  className="flex-shrink-0"
+                  onClick={() => connectThisDevice(connection)}
+                >
+                  {connected ? 'Переподключить' : 'Подключить телефон'}
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {connections.length === 0 && (
         <div className="rounded-lg border border-dashed border-border p-6 text-center text-muted-foreground">
           <Cloud className="mx-auto mb-2 h-8 w-8 opacity-50" />
@@ -214,7 +269,7 @@ export const CloudStorageSettings = () => {
       )}
 
       {connections.map(connection => (
-        <div key={connection.id} className="space-y-3 rounded-xl border border-border p-4">
+        <div id={`cloud-connection-${connection.id}`} key={connection.id} className="space-y-3 rounded-xl border border-border p-4">
           <div className="flex items-center gap-3">
             <Cloud className="h-5 w-5 text-primary" />
             <Input
