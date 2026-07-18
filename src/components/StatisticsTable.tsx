@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp, TrendingDown, Trash2, Download, ChevronDown, ChevronUp, FileText, Settings, Search, SlidersHorizontal } from 'lucide-react';
+import { TrendingUp, TrendingDown, Trash2, Download, ChevronDown, FileText, Settings, Search, SlidersHorizontal } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -62,7 +62,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
   const [customDateRange, setCustomDateRange] = useState<{ from?: Date; to?: Date }>({});
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
-  const [expandedTransactions, setExpandedTransactions] = useState<Set<string>>(new Set());
   const [internalCurrencyFilter, setInternalCurrencyFilter] = useState<string | null>(null);
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
@@ -387,16 +386,15 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
     }
   };
 
-  const toggleExpand = useCallback((id: string) => {
-    setExpandedTransactions(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(id)) {
-        newSet.delete(id);
-      } else {
-        newSet.add(id);
-      }
-      return newSet;
-    });
+  const toggleExpand = useCallback((id: string, view: 'mobile' | 'desktop') => {
+    const details = document.getElementById(`transaction-details-${view}-${id}`);
+    const button = document.getElementById(`transaction-toggle-${view}-${id}`);
+    if (!details || !button) return;
+
+    const isOpen = details.classList.contains('hidden');
+    details.classList.toggle('hidden', !isOpen);
+    button.setAttribute('aria-expanded', String(isOpen));
+    button.querySelector('svg')?.classList.toggle('rotate-180', isOpen);
   }, []);
 
   const isAllSelected = filteredTransactions.length > 0 && selectedTransactions.size === filteredTransactions.length;
@@ -565,7 +563,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
             <p className="text-center text-muted-foreground py-8">{t('noTransactions')}</p>
           ) : (
             filteredTransactions.map(transaction => {
-              const isExpanded = expandedTransactions.has(transaction.id);
               return (
                 <React.Fragment key={transaction.id}>
                   <div
@@ -595,8 +592,15 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                         )}>
                           {transaction.type === 'income' ? '+' : '-'}{transaction.amount.toLocaleString(getDateLocale())} {CURRENCY_SYMBOLS[transaction.currency]}
                         </span>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0" onClick={() => toggleExpand(transaction.id)}>
-                          {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        <Button
+                          id={`transaction-toggle-mobile-${transaction.id}`}
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 flex-shrink-0"
+                          aria-expanded="false"
+                          onClick={() => toggleExpand(transaction.id, 'mobile')}
+                        >
+                          <ChevronDown className="h-4 w-4 transition-transform" />
                         </Button>
                         {onUpdate && (
                           <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-primary" onClick={() => setEditingTransactionId(transaction.id)}>
@@ -608,8 +612,10 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                     <p className="text-xs text-muted-foreground mt-1 ml-8">
                       {format(new Date(transaction.date), 'dd.MM.yyyy')}
                     </p>
-                    {isExpanded && (
-                      <div className="mt-3 pt-3 border-t grid grid-cols-2 gap-3 text-sm">
+                    <div
+                      id={`transaction-details-mobile-${transaction.id}`}
+                      className="hidden mt-3 pt-3 border-t grid grid-cols-2 gap-3 text-sm"
+                    >
                         <div>
                           <p className="text-muted-foreground text-xs">{t('type')}</p>
                           <p className={cn('font-medium', transaction.type === 'income' ? 'text-success' : 'text-destructive')}>
@@ -655,8 +661,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                             <p className="font-medium">{transaction.issuedTo}</p>
                           </div>
                         )}
-                      </div>
-                    )}
+                    </div>
                   </div>
                 </React.Fragment>
               );
@@ -701,7 +706,6 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                 </tr>
               ) : (
                 filteredTransactions.map(transaction => {
-                  const isExpanded = expandedTransactions.has(transaction.id);
                   return (
                     <React.Fragment key={transaction.id}>
                       <tr className={cn(
@@ -724,8 +728,15 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                           {transaction.type === 'income' ? '+' : '-'}{transaction.amount.toLocaleString(getDateLocale())} {CURRENCY_SYMBOLS[transaction.currency]}
                         </td>
                         <td className="p-4 w-8 px-1 align-middle">
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => toggleExpand(transaction.id)}>
-                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          <Button
+                            id={`transaction-toggle-desktop-${transaction.id}`}
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            aria-expanded="false"
+                            onClick={() => toggleExpand(transaction.id, 'desktop')}
+                          >
+                            <ChevronDown className="h-4 w-4 transition-transform" />
                           </Button>
                         </td>
                         {onUpdate && (
@@ -736,8 +747,10 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                           </td>
                         )}
                       </tr>
-                      {isExpanded && (
-                        <tr className="bg-muted/30 border-b">
+                      <tr
+                        id={`transaction-details-desktop-${transaction.id}`}
+                        className="hidden bg-muted/30 border-b"
+                      >
                           <td colSpan={99} className="p-4 py-3">
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                               <div>
@@ -796,8 +809,7 @@ export const StatisticsTable = ({ transactions, getCategoryName, onDelete, onUpd
                               )}
                             </div>
                           </td>
-                        </tr>
-                      )}
+                      </tr>
                     </React.Fragment>
                   );
                 })
