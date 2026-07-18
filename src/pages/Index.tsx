@@ -171,12 +171,12 @@ const Index = () => {
     // Only sync if spreadsheet is configured and transaction count changed
     if (spreadsheetId && transactions.length !== prevTransactionCountRef.current) {
       const timerId = setTimeout(() => {
-        handleSync();
+        void handleSheetSync();
       }, 1000);
       prevTransactionCountRef.current = transactions.length;
       return () => clearTimeout(timerId);
     }
-  }, [transactions.length, spreadsheetId, handleSync]);
+  }, [transactions.length, spreadsheetId, handleSheetSync]);
 
   const incomeByCategory = getTransactionsByCategory('income');
   const expenseByCategory = getTransactionsByCategory('expense');

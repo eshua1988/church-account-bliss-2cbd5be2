@@ -5,8 +5,10 @@ export interface CloudConnection {
   name: string;
   provider: CloudProvider;
   enabled: boolean;
+  deviceEnabled?: boolean;
   clientId?: string;
   accessToken?: string;
+  accessTokenExpiresAt?: number;
   folderId?: string;
   folderUrl?: string;
   folderPath?: string;
@@ -36,6 +38,67 @@ export const loadCloudConnections = (): CloudConnection[] => {
 export const saveCloudConnections = (connections: CloudConnection[]) => {
   localStorage.setItem(CLOUD_CONNECTIONS_KEY, JSON.stringify(connections));
   window.dispatchEvent(new CustomEvent('cloud-connections-changed'));
+};
+
+export const hasCloudCredentials = (connection: CloudConnection) => {
+  if (connection.provider === 'webdav') return Boolean(connection.password);
+  if (!connection.accessToken) return false;
+  if (connection.provider !== 'google_drive') return true;
+  return Boolean(connection.accessTokenExpiresAt && connection.accessTokenExpiresAt > Date.now());
+};
+
+export const isCloudEnabledOnDevice = (connection: CloudConnection) =>
+  connection.deviceEnabled ?? Boolean(connection.accessToken || connection.password);
+
+const loadGoogleIdentity = () => new Promise<void>((resolve, reject) => {
+  if ((window as any).google?.accounts?.oauth2) {
+    resolve();
+    return;
+  }
+  const existing = document.querySelector<HTMLScriptElement>('script[data-google-identity]');
+  if (existing) {
+    existing.addEventListener('load', () => resolve(), { once: true });
+    existing.addEventListener('error', () => reject(new Error('Не удалось загрузить Google OAuth')), { once: true });
+    return;
+  }
+  const script = document.createElement('script');
+  script.src = 'https://accounts.google.com/gsi/client';
+  script.async = true;
+  script.defer = true;
+  script.dataset.googleIdentity = 'true';
+  script.onload = () => resolve();
+  script.onerror = () => reject(new Error('Не удалось загрузить Google OAuth'));
+  document.head.appendChild(script);
+});
+
+export const renewGoogleDriveToken = async (connection: CloudConnection): Promise<CloudConnection> => {
+  if (!connection.clientId?.trim()) throw new Error('Не указан Google OAuth Client ID');
+  await loadGoogleIdentity();
+
+  return new Promise((resolve, reject) => {
+    const client = (window as any).google.accounts.oauth2.initTokenClient({
+      client_id: connection.clientId.trim(),
+      scope: 'https://www.googleapis.com/auth/drive',
+      callback: (response: {
+        access_token?: string;
+        expires_in?: number;
+        error?: string;
+        error_description?: string;
+      }) => {
+        if (!response.access_token) {
+          reject(new Error(response.error_description || response.error || 'Авторизация Google отменена'));
+          return;
+        }
+        resolve({
+          ...connection,
+          deviceEnabled: true,
+          accessToken: response.access_token,
+          accessTokenExpiresAt: Date.now() + Math.max(0, (response.expires_in || 3600) - 60) * 1000,
+        });
+      },
+    });
+    client.requestAccessToken({ prompt: '' });
+  });
 };
 
 const joinPath = (...parts: Array<string | undefined>) =>

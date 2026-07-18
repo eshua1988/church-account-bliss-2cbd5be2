@@ -1,7 +1,15 @@
 import JSZip from 'jszip';
 import { supabase } from '@/integrations/supabase/client';
 import { Notification } from '@/hooks/useNotifications';
-import { loadCloudConnections, uploadCloudArchive } from '@/lib/cloudStorage';
+import {
+  CloudConnection,
+  hasCloudCredentials,
+  isCloudEnabledOnDevice,
+  loadCloudConnections,
+  renewGoogleDriveToken,
+  saveCloudConnections,
+  uploadCloudArchive,
+} from '@/lib/cloudStorage';
 
 const getPdfBlob = async (notification: Notification) => {
   let filePath = notification.metadata?.pdf_path as string | undefined;
@@ -35,8 +43,29 @@ const getPdfBlob = async (notification: Notification) => {
 };
 
 export const syncNotificationArchivesToCloud = async (notifications: Notification[]) => {
-  const connections = loadCloudConnections().filter(connection => connection.enabled);
-  if (connections.length === 0) return { uploaded: 0, archives: 0, skipped: true, errors: [] as string[] };
+  const storedConnections = loadCloudConnections();
+  const connections: CloudConnection[] = [];
+  const errors: string[] = [];
+
+  for (const connection of storedConnections) {
+    if (!connection.enabled || !isCloudEnabledOnDevice(connection)) continue;
+    if (connection.provider === 'google_drive' && !hasCloudCredentials(connection)) {
+      try {
+        const renewed = await renewGoogleDriveToken(connection);
+        const index = storedConnections.findIndex(item => item.id === renewed.id);
+        storedConnections[index] = renewed;
+        connections.push(renewed);
+      } catch (error) {
+        errors.push(`${connection.name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      continue;
+    }
+    if (hasCloudCredentials(connection)) connections.push(connection);
+  }
+  saveCloudConnections(storedConnections);
+  if (connections.length === 0) {
+    return { uploaded: 0, archives: 0, skipped: true, errors };
+  }
 
   const archived = notifications.filter(notification => notification.metadata?.archived_at);
   const groups = archived.reduce<Record<string, Notification[]>>((result, notification) => {
@@ -49,8 +78,6 @@ export const syncNotificationArchivesToCloud = async (notifications: Notificatio
   }, {});
 
   let uploaded = 0;
-  const errors: string[] = [];
-
   for (const [key, items] of Object.entries(groups)) {
     const [year, type] = key.split('-');
     const folderName = `${year} ${type === 'income' ? 'доход' : 'расход'}`;

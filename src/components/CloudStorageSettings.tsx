@@ -14,6 +14,7 @@ import {
   CLOUD_PROVIDER_LABELS,
   CloudConnection,
   CloudProvider,
+  isCloudEnabledOnDevice,
   loadCloudConnections,
   saveCloudConnections,
 } from '@/lib/cloudStorage';
@@ -65,7 +66,13 @@ const HELP_CONTENT: Record<CloudProvider, { title: string; steps: string[] }> = 
 };
 
 const withoutSecrets = (connection: CloudConnection): CloudConnection => {
-  const { accessToken: _accessToken, password: _password, ...safe } = connection;
+  const {
+    accessToken: _accessToken,
+    accessTokenExpiresAt: _accessTokenExpiresAt,
+    deviceEnabled: _deviceEnabled,
+    password: _password,
+    ...safe
+  } = connection;
   return safe;
 };
 
@@ -113,6 +120,8 @@ export const CloudStorageSettings = () => {
           const merged = remote.map(connection => ({
             ...connection,
             accessToken: localById.get(connection.id)?.accessToken,
+            accessTokenExpiresAt: localById.get(connection.id)?.accessTokenExpiresAt,
+            deviceEnabled: localById.get(connection.id)?.deviceEnabled,
             password: localById.get(connection.id)?.password,
           }));
           saveCloudConnections(merged);
@@ -162,7 +171,7 @@ export const CloudStorageSettings = () => {
       const client = (window as any).google.accounts.oauth2.initTokenClient({
         client_id: connection.clientId.trim(),
         scope: 'https://www.googleapis.com/auth/drive',
-        callback: (response: { access_token?: string; error?: string; error_description?: string }) => {
+        callback: (response: { access_token?: string; expires_in?: number; error?: string; error_description?: string }) => {
           if (!response.access_token) {
             toast({
               title: 'Google Drive не подключён',
@@ -172,7 +181,14 @@ export const CloudStorageSettings = () => {
             return;
           }
           const next = connections.map(item =>
-            item.id === connection.id ? { ...item, accessToken: response.access_token } : item,
+            item.id === connection.id
+              ? {
+                  ...item,
+                  deviceEnabled: true,
+                  accessToken: response.access_token,
+                  accessTokenExpiresAt: Date.now() + Math.max(0, (response.expires_in || 3600) - 60) * 1000,
+                }
+              : item,
           );
           setConnections(next);
           setMobileEditingId(null);
@@ -210,11 +226,6 @@ export const CloudStorageSettings = () => {
     void persist(next, 'Облако удалено');
   };
 
-  const hasDeviceAccess = (connection: CloudConnection) => {
-    if (connection.provider === 'webdav') return Boolean(connection.password);
-    return Boolean(connection.accessToken);
-  };
-
   const connectThisDevice = (connection: CloudConnection) => {
     if (connection.provider === 'google_drive') {
       void connectGoogleDrive(connection);
@@ -233,7 +244,13 @@ export const CloudStorageSettings = () => {
   const disconnectThisDevice = (connection: CloudConnection) => {
     const next = connections.map(item =>
       item.id === connection.id
-        ? { ...item, accessToken: undefined, password: undefined }
+        ? {
+            ...item,
+            accessToken: undefined,
+            accessTokenExpiresAt: undefined,
+            deviceEnabled: false,
+            password: undefined,
+          }
         : item,
     );
     setConnections(next);
@@ -280,7 +297,7 @@ export const CloudStorageSettings = () => {
             <p className="text-xs text-muted-foreground">Доступ к облаку на этом телефоне</p>
           </div>
           {connections.map(connection => {
-            const connected = hasDeviceAccess(connection);
+            const connected = isCloudEnabledOnDevice(connection);
             return (
               <div key={connection.id} className="flex items-center justify-between gap-3 rounded-lg bg-card px-3 py-3">
                 <div className="flex min-w-0 items-center gap-2">
