@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { amountInPolishWords, type DepositCurrency } from '@/lib/amountInWords';
 
 const PublicDeposit = () => {
   const { token = '' } = useParams();
@@ -20,12 +22,15 @@ const PublicDeposit = () => {
   const [error, setError] = useState('');
   const [form, setForm] = useState({
     amount: '',
+    currency: 'PLN' as DepositCurrency,
     date: new Date().toISOString().slice(0, 10),
     receivedFrom: '',
     basis: '',
-    amountInWords: '',
     cashier: '',
   });
+
+  const numericAmount = Number(form.amount.replace(',', '.')) || 0;
+  const amountInWords = amountInPolishWords(numericAmount, form.currency);
 
   useEffect(() => {
     supabase.functions.invoke('validate-payout-token', { body: { token } })
@@ -78,10 +83,10 @@ const PublicDeposit = () => {
   const fillAnother = () => {
     setForm({
       amount: '',
+      currency: 'PLN',
       date: new Date().toISOString().slice(0, 10),
       receivedFrom: '',
       basis: '',
-      amountInWords: '',
       cashier: '',
     });
     setError('');
@@ -100,7 +105,7 @@ const PublicDeposit = () => {
     setSubmitting(true);
     const signature = canvasRef.current?.toDataURL('image/png').split(',')[1] || '';
     const { data, error: submitError } = await supabase.functions.invoke('submit-public-deposit', {
-      body: { token, ...form, amount, signatureBase64: signature, organizationName },
+      body: { token, ...form, amount, amountInWords, signatureBase64: signature, organizationName },
     });
     setSubmitting(false);
     if (submitError || !data?.success) {
@@ -143,8 +148,19 @@ const PublicDeposit = () => {
         <CardContent>
           <form className="grid gap-5 sm:grid-cols-2" onSubmit={submit}>
             <div className="space-y-2">
-              <Label htmlFor="deposit-amount">Kwota / Сумма (PLN)</Label>
-              <Input id="deposit-amount" inputMode="decimal" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} required />
+              <Label htmlFor="deposit-amount">Kwota / Сумма</Label>
+              <div className="grid grid-cols-[1fr_110px] gap-2">
+                <Input id="deposit-amount" inputMode="decimal" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} required />
+                <Select value={form.currency} onValueChange={(currency: DepositCurrency) => setForm({ ...form, currency })}>
+                  <SelectTrigger aria-label="Валюта"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PLN">PLN - zł</SelectItem>
+                    <SelectItem value="USD">USD - $</SelectItem>
+                    <SelectItem value="EUR">EUR - €</SelectItem>
+                    <SelectItem value="UAH">UAH - ₴</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="deposit-date">Data / Дата</Label>
@@ -160,7 +176,7 @@ const PublicDeposit = () => {
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="deposit-words">Kwota słownie / Сумма прописью</Label>
-              <Textarea id="deposit-words" value={form.amountInWords} onChange={e => setForm({ ...form, amountInWords: e.target.value })} />
+              <Textarea id="deposit-words" value={amountInWords} readOnly className="cursor-default bg-muted" />
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="deposit-cashier">Kasjer / Кассир</Label>

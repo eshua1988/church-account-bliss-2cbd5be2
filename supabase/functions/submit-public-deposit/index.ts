@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { jsPDF } from 'https://esm.sh/jspdf@2.5.1';
 import { ROBOTO_FONT_BASE64 } from '../_shared/robotoFont.ts';
+import { amountInPolishWords, type DepositCurrency } from '../_shared/amountInWords.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,13 +20,13 @@ Deno.serve(async request => {
     const body = await request.json();
     const token = text(body.token, 100);
     const amount = Number(body.amount);
+    const currency = text(body.currency, 3).toUpperCase() as DepositCurrency;
     const date = text(body.date, 10);
     const receivedFrom = text(body.receivedFrom);
     const basis = text(body.basis);
-    const amountInWords = text(body.amountInWords);
     const cashier = text(body.cashier, 150);
     const signatureBase64 = text(body.signatureBase64, 2_000_000);
-    if (!token || !amount || amount <= 0 || !date || !receivedFrom || !basis) {
+    if (!token || !amount || amount <= 0 || !date || !receivedFrom || !basis || !['PLN', 'USD', 'EUR', 'UAH'].includes(currency)) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -46,7 +47,8 @@ Deno.serve(async request => {
     doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
     doc.setFont('Roboto', 'normal');
     const organization = text(body.organizationName || link.organization_name || 'ZBÓR BIBLIJNY KOŚCIÓŁ W WARSZAWIE', 200);
-    const amountText = `${amount.toFixed(2)} PLN`;
+    const amountText = `${amount.toFixed(2)} ${currency}`;
+    const amountInWords = amountInPolishWords(amount, currency);
 
     const drawLineText = (label: string, value: string, x: number, y: number, width: number) => {
       const defaultSize = 8.5;
@@ -68,16 +70,10 @@ Deno.serve(async request => {
     };
 
     const drawCopy = (offsetY: number) => {
-      const leftX = 8;
-      const leftW = 130;
-      const rightX = 145;
-      const rightW = 57;
-      const dividerX = 141.5;
+      const leftX = 12;
+      const leftW = 186;
       doc.setDrawColor(0);
       doc.setLineWidth(0.25);
-      doc.setLineDashPattern([0.7, 0.7], 0);
-      doc.line(dividerX, offsetY + 4, dividerX, offsetY + 130);
-      doc.setLineDashPattern([], 0);
 
       doc.setFontSize(9);
       doc.text(organization, leftX + leftW / 2, offsetY + 10, { align: 'center', maxWidth: leftW - 8 });
@@ -87,14 +83,13 @@ Deno.serve(async request => {
       doc.text('DOWÓD WPŁATY', leftX + leftW / 2, offsetY + 25, { align: 'center' });
 
       doc.rect(leftX, offsetY + 27, leftW, 14);
-      doc.line(leftX + 52, offsetY + 27, leftX + 52, offsetY + 41);
-      doc.line(leftX + 104, offsetY + 27, leftX + 104, offsetY + 41);
+      doc.line(leftX + leftW / 2, offsetY + 27, leftX + leftW / 2, offsetY + 41);
       doc.line(leftX, offsetY + 32, leftX + leftW, offsetY + 32);
       doc.setFontSize(8);
-      doc.text('Kwota', leftX + 26, offsetY + 31, { align: 'center' });
-      doc.text('Data', leftX + 78, offsetY + 31, { align: 'center' });
-      doc.text(amountText, leftX + 26, offsetY + 38, { align: 'center' });
-      doc.text(date, leftX + 78, offsetY + 38, { align: 'center' });
+      doc.text('Kwota', leftX + leftW / 4, offsetY + 31, { align: 'center' });
+      doc.text('Data', leftX + leftW * 0.75, offsetY + 31, { align: 'center' });
+      doc.text(amountText, leftX + leftW / 4, offsetY + 38, { align: 'center' });
+      doc.text(date, leftX + leftW * 0.75, offsetY + 38, { align: 'center' });
 
       drawLineText('Podstawa:', basis, leftX + 1, offsetY + 51, leftW - 2);
       doc.line(leftX + 1, offsetY + 60, leftX + leftW - 1, offsetY + 60);
@@ -103,40 +98,16 @@ Deno.serve(async request => {
       doc.line(leftX + 1, offsetY + 87, leftX + leftW - 1, offsetY + 87);
 
       doc.rect(leftX, offsetY + 92, leftW, 16);
-      doc.line(leftX + 78, offsetY + 92, leftX + 78, offsetY + 108);
+      doc.line(leftX + 126, offsetY + 92, leftX + 126, offsetY + 108);
       doc.text('Podpis nadawca:', leftX + 1, offsetY + 100);
+      doc.text(receivedFrom, leftX + 30, offsetY + 100);
       if (signatureBase64) {
-        try { doc.addImage(`data:image/png;base64,${signatureBase64}`, 'PNG', leftX + 80, offsetY + 93, 47, 14); } catch { /* ignore malformed signature */ }
+        try { doc.addImage(`data:image/png;base64,${signatureBase64}`, 'PNG', leftX + 128, offsetY + 93, 56, 14); } catch { /* ignore malformed signature */ }
       }
       doc.rect(leftX, offsetY + 112, leftW, 16);
-      doc.line(leftX + 78, offsetY + 112, leftX + 78, offsetY + 128);
+      doc.line(leftX + 126, offsetY + 112, leftX + 126, offsetY + 128);
       doc.text('Podpis kasjer:', leftX + 1, offsetY + 120);
-      if (cashier) doc.text(cashier, leftX + 80, offsetY + 120);
-
-      doc.rect(rightX, offsetY + 2, rightW, 128);
-      doc.setFontSize(8.5);
-      doc.text('«BOŻA ŁASKA» W WARSZAWIE', rightX + rightW / 2, offsetY + 13, { align: 'center', maxWidth: rightW - 4 });
-      doc.text('ЦЕРКОВЬ ХРИСТИАН БАПТИСТОВ', rightX + rightW / 2, offsetY + 19, { align: 'center', maxWidth: rightW - 4 });
-      doc.text('«БОЖЬЯ БЛАГОДАТЬ» В ВАРШАВЕ', rightX + rightW / 2, offsetY + 25, { align: 'center', maxWidth: rightW - 4 });
-      doc.setFontSize(9);
-      doc.text('PARAGON', rightX + rightW / 2, offsetY + 34, { align: 'center' });
-      doc.setFontSize(8);
-      doc.text('dowodu wpłaty', rightX + rightW / 2, offsetY + 44, { align: 'center' });
-      doc.rect(rightX, offsetY + 46, rightW, 12);
-      doc.line(rightX + rightW / 2, offsetY + 46, rightX + rightW / 2, offsetY + 58);
-      doc.line(rightX, offsetY + 51, rightX + rightW, offsetY + 51);
-      doc.text('Kwota', rightX + rightW / 4, offsetY + 50, { align: 'center' });
-      doc.text('Data', rightX + rightW * 0.75, offsetY + 50, { align: 'center' });
-      doc.text(amountText, rightX + rightW / 4, offsetY + 56, { align: 'center' });
-      doc.text(date, rightX + rightW * 0.75, offsetY + 56, { align: 'center' });
-      drawLineText('Otrzymano od:', receivedFrom, rightX + 1, offsetY + 67, rightW - 3);
-      drawLineText('Podstawa:', basis, rightX + 1, offsetY + 77, rightW - 3);
-      doc.line(rightX + 1, offsetY + 86, rightX + rightW - 2, offsetY + 86);
-      doc.line(rightX + 1, offsetY + 95, rightX + rightW - 2, offsetY + 95);
-      drawLineText('Kwota słownie:', amountInWords, rightX + 1, offsetY + 105, rightW - 3);
-      doc.line(rightX + 1, offsetY + 113, rightX + rightW - 2, offsetY + 113);
-      drawLineText('Kasjer:', cashier, rightX + 1, offsetY + 122, rightW - 3);
-      doc.text('Podpis kasjera:', rightX + 1, offsetY + 128);
+      if (cashier) doc.text(cashier, leftX + 128, offsetY + 120);
     };
 
     drawCopy(25);
@@ -156,7 +127,7 @@ Deno.serve(async request => {
       link_token: token,
       pdf_path: pdfPath,
       amount,
-      currency: 'PLN',
+      currency,
       issued_to: receivedFrom,
       basis,
       amount_in_words: amountInWords,
