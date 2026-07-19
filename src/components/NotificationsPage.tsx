@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, QrCode, Copy, Banknote, ExternalLink, BellRing, Archive, FolderArchive, FileText, ChevronDown, Building2 } from 'lucide-react';
 import JSZip from 'jszip';
-import jsPDF from 'jspdf';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -15,7 +14,6 @@ import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { Currency } from '@/types/transaction';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ROBOTO_FONT_BASE64 } from '@/lib/robotoFont';
 
 const OTHER_DEPARTMENT_BY_TYPE = {
   income: 'Прочее (доход)',
@@ -42,20 +40,6 @@ const mergeRuleTerms = (existingText: string, newTerms: string[]) => {
 
 const splitRuleTerms = (text: string) =>
   String(text || '').split(',').map(normalizeRuleTerm).filter(Boolean);
-
-const blobToDataUrl = (blob: Blob) => new Promise<string>((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => resolve(String(reader.result));
-  reader.onerror = () => reject(reader.error);
-  reader.readAsDataURL(blob);
-});
-
-const loadImage = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
-  const image = new Image();
-  image.onload = () => resolve(image);
-  image.onerror = reject;
-  image.src = src;
-});
 
 const isRuleRequestNotification = (notification: Notification) =>
   notification.type === 'rule_request' ||
@@ -670,115 +654,74 @@ export const NotificationsPage = () => {
       }
       return fileResponse.blob();
     };
-    const { data: branding } = await supabase
-      .from('shared_payout_links')
-      .select('organization_name')
-      .eq('owner_user_id', notification.user_id)
-      .not('organization_name', 'is', null)
-      .limit(1)
-      .maybeSingle();
+    // Edit the original PDF instead of rebuilding it. This preserves every
+    // attachment page and the recipient signature already embedded in the file.
+    const [{ PDFDocument, rgb }, pdfjsLib] = await Promise.all([
+      import('pdf-lib'),
+      import('pdfjs-dist'),
+    ]);
+    const originalPdf = await downloadProtectedFile(pdfPath);
+    const originalBytes = new Uint8Array(await originalPdf.arrayBuffer());
 
-    const doc = new jsPDF();
-    doc.addFileToVFS('Roboto-Regular.ttf', ROBOTO_FONT_BASE64);
-    doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
-    doc.setFont('Roboto');
-
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const left = 20;
-    const tableWidth = pageWidth - 40;
-    const labelWidth = 50;
-    const valueWidth = tableWidth - labelWidth;
-    const rowHeight = 10;
-    const padding = 3;
-    const drawCell = (x: number, y: number, width: number, height: number, text: string, fill = false) => {
-      if (fill) {
-        doc.setFillColor(240, 240, 240);
-        doc.rect(x, y, width, height, 'F');
-      }
-      doc.setDrawColor(0);
-      doc.setLineWidth(0.3);
-      doc.rect(x, y, width, height, 'S');
-      doc.setFontSize(10);
-      const lines = doc.splitTextToSize(String(text || ''), width - padding * 2);
-      doc.text(lines[0] || '', x + padding, y + height / 2 + 3);
-    };
-
-    doc.setFontSize(11);
-    doc.text(branding?.organization_name || 'KOŚCIÓŁ BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE', pageWidth / 2, 20, { align: 'center' });
-    doc.setFontSize(16);
-    doc.text('Dowód wypłaty', pageWidth / 2, 32, { align: 'center' });
-
-    let y = 45;
-    const half = (tableWidth - 10) / 2;
-    drawCell(left, y, 35, rowHeight, 'Data', true);
-    drawCell(left + 35, y, half - 35, rowHeight, date);
-    const amountX = left + half + 10;
-    drawCell(amountX, y, 45, rowHeight, `Kwota (${String(meta.currency || 'PLN')})`, true);
-    drawCell(amountX + 45, y, half - 45, rowHeight, String(meta.amount || ''));
-    y += rowHeight + 8;
-
-    const drawRow = (label: string, value: string) => {
-      drawCell(left, y, labelWidth, rowHeight, label, true);
-      drawCell(left + labelWidth, y, valueWidth, rowHeight, value);
-      y += rowHeight;
-    };
-    drawRow('Wydano (imię i nazwisko)', String(meta.issued_to || notification.title || ''));
-    drawRow('Konto do przelewu', String(meta.bank_account || meta.decision_number || ''));
-    drawRow('Nazwa działu', departmentName);
-
-    const drawMultilineRow = (label: string, value: string) => {
-      const lines = doc.splitTextToSize(value, valueWidth - padding * 2);
-      const height = Math.max(rowHeight * 2, lines.length * 6 + padding * 2);
-      drawCell(left, y, labelWidth, height, label, true);
-      doc.rect(left + labelWidth, y, valueWidth, height, 'S');
-      doc.setFontSize(10);
-      if (lines.length) doc.text(lines, left + labelWidth + padding, y + padding + 6);
-      y += height;
-    };
-    drawMultilineRow('Na podstawie', String(meta.basis || notification.message || ''));
-    drawMultilineRow('Kwota słownie', String(meta.amount_in_words || ''));
-    y += 15;
-    doc.setFontSize(10);
-    doc.text('Kasjer: ________________________________', left, y);
-    doc.text('Podpis kasjera: ________________________________', pageWidth / 2, y);
-    y += 15;
-    doc.setFontSize(11);
-    doc.text('Podpis odbiorcy:', left, y);
-    y += 5;
-    doc.rect(left, y, 150, 40, 'S');
-
+    // Locate the department row from the PDF text layer. Both the client and
+    // server PDF layouts use the same value-column X coordinate, but a
+    // different Y coordinate, so reading the label makes the edit robust.
+    let departmentBaseline: number | undefined;
     try {
-      const signature = await downloadProtectedFile(`${folderPath}/signature.png`);
-      const signatureUrl = await blobToDataUrl(signature);
-      doc.addImage(signatureUrl, 'PNG', left + 5, y + 2, 140, 36);
+      const sourcePdf = await pdfjsLib.getDocument({ data: originalBytes.slice() }).promise;
+      const sourcePage = await sourcePdf.getPage(1);
+      const textContent = await sourcePage.getTextContent();
+      const departmentLabel = textContent.items.find((item: any) => {
+        const text = String(item.str || '').toLocaleLowerCase('pl');
+        return text.includes('nazwa') && (text.includes('dzia') || text.includes('department'));
+      }) as any;
+      if (departmentLabel?.transform) departmentBaseline = Number(departmentLabel.transform[5]);
+      await sourcePdf.destroy();
     } catch (error) {
-      // Older notifications may not contain a separately stored signature.
-      console.info('Signature is not available for PDF regeneration:', error);
+      console.warn('Could not locate department label in PDF, using standard layout:', error);
     }
 
-    const { data: files } = await supabase.storage.from('documents').list(folderPath, { limit: 100 });
-    const attachments = (files || []).filter(file =>
-      /\.(png|jpe?g)$/i.test(file.name) && file.name.toLowerCase() !== 'signature.png'
-    );
-    for (const file of attachments) {
-      const imageBlob = await downloadProtectedFile(`${folderPath}/${file.name}`);
-      const imageUrl = await blobToDataUrl(imageBlob);
-      const image = await loadImage(imageUrl);
-      const margin = 15;
-      const maxWidth = pageWidth - margin * 2;
-      const maxHeight = pageHeight - margin * 2;
-      let width = maxWidth;
-      let height = image.height / image.width * width;
-      if (height > maxHeight) {
-        height = maxHeight;
-        width = image.width / image.height * height;
-      }
-      doc.addPage();
-      doc.addImage(imageUrl, /png$/i.test(file.name) ? 'PNG' : 'JPEG', (pageWidth - width) / 2, (pageHeight - height) / 2, width, height);
-    }
+    const pdfDoc = await PDFDocument.load(originalBytes);
+    const firstPage = pdfDoc.getPage(0);
+    const { width: pageWidth, height: pageHeight } = firstPage.getSize();
+    const mmX = pageWidth / 210;
+    const mmY = pageHeight / 297;
+    const valueX = 70 * mmX;
+    const valueWidth = 120 * mmX;
+    const rowHeight = 10 * mmY;
+    const baseline = departmentBaseline || pageHeight - (83 * mmY) - (6.5 * mmY);
+    const valueY = baseline - (3.2 * mmY);
 
-    const pdfBlob = doc.output('blob');
+    firstPage.drawRectangle({
+      x: valueX + 0.4 * mmX,
+      y: valueY,
+      width: valueWidth - 0.8 * mmX,
+      height: rowHeight - 0.8 * mmY,
+      color: rgb(1, 1, 1),
+    });
+
+    // Render the selected department through Canvas so Cyrillic text remains
+    // supported without replacing or re-encoding the rest of the PDF.
+    const canvas = document.createElement('canvas');
+    canvas.width = 2400;
+    canvas.height = 150;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Не удалось подготовить текст отдела');
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#000000';
+    context.font = '42px Arial, sans-serif';
+    context.textBaseline = 'middle';
+    context.fillText(departmentName, 10, canvas.height / 2, canvas.width - 20);
+    const departmentImage = await pdfDoc.embedPng(canvas.toDataURL('image/png'));
+    firstPage.drawImage(departmentImage, {
+      x: valueX + 3 * mmX,
+      y: valueY + 1.2 * mmY,
+      width: valueWidth - 6 * mmX,
+      height: rowHeight - 3 * mmY,
+    });
+
+    const updatedBytes = await pdfDoc.save();
+    const pdfBlob = new Blob([updatedBytes as BlobPart], { type: 'application/pdf' });
     const payoutToken = String(meta.link_token || fallbackToken || '');
     if (!payoutToken) throw new Error('Не найдена ссылка доступа для обновления PDF');
     const uploadParams = new URLSearchParams({
