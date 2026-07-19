@@ -1,4 +1,4 @@
-export type DepositCurrency = 'PLN' | 'USD' | 'EUR' | 'UAH';
+export type DepositCurrency = 'PLN' | 'USD' | 'EUR' | 'UAH' | 'OTHER';
 
 const ONES = ['', 'jeden', 'dwa', 'trzy', 'cztery', 'pięć', 'sześć', 'siedem', 'osiem', 'dziewięć'];
 const TEENS = ['dziesięć', 'jedenaście', 'dwanaście', 'trzynaście', 'czternaście', 'piętnaście', 'szesnaście', 'siedemnaście', 'osiemnaście', 'dziewiętnaście'];
@@ -10,6 +10,7 @@ const CURRENCY_FORMS: Record<DepositCurrency, [string, string, string]> = {
   USD: ['dolar amerykański', 'dolary amerykańskie', 'dolarów amerykańskich'],
   EUR: ['euro', 'euro', 'euro'],
   UAH: ['hrywna', 'hrywny', 'hrywien'],
+  OTHER: ['', '', ''],
 };
 
 const formIndex = (value: number) => {
@@ -36,7 +37,7 @@ const tripletToWords = (value: number) => {
   return words.join(' ');
 };
 
-export const amountInPolishWords = (amount: number, currency: DepositCurrency) => {
+export const amountInPolishWords = (amount: number, currency: DepositCurrency, customCurrency = '') => {
   const safeAmount = Number.isFinite(amount) && amount >= 0 ? Math.min(amount, 999_999_999.99) : 0;
   const rounded = Math.round(safeAmount * 100);
   const whole = Math.floor(rounded / 100);
@@ -55,7 +56,10 @@ export const amountInPolishWords = (amount: number, currency: DepositCurrency) =
   }
   if (remainder) words.push(tripletToWords(remainder));
   if (!whole) words.push('zero');
-  words.push(CURRENCY_FORMS[currency][formIndex(whole)]);
+  const currencyWord = currency === 'OTHER'
+    ? customCurrency.trim()
+    : CURRENCY_FORMS[currency][formIndex(whole)];
+  if (currencyWord) words.push(currencyWord);
 
   return `${words.join(' ')} ${String(cents).padStart(2, '0')}/100`;
 };

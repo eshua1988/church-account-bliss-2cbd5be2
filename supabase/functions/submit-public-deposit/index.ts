@@ -20,13 +20,18 @@ Deno.serve(async request => {
     const body = await request.json();
     const token = text(body.token, 100);
     const amount = Number(body.amount);
-    const currency = text(body.currency, 3).toUpperCase() as DepositCurrency;
+    const currency = text(body.currency, 5).toUpperCase() as DepositCurrency;
+    const customCurrency = text(body.customCurrency, 20);
     const date = text(body.date, 10);
     const receivedFrom = text(body.receivedFrom);
     const basis = text(body.basis);
     const cashier = text(body.cashier, 150);
     const signatureBase64 = text(body.signatureBase64, 2_000_000);
-    if (!token || !amount || amount <= 0 || !date || !receivedFrom || !basis || !['PLN', 'USD', 'EUR', 'UAH'].includes(currency)) {
+    if (
+      !token || !amount || amount <= 0 || !date || !receivedFrom || !basis ||
+      !['PLN', 'USD', 'EUR', 'UAH', 'OTHER'].includes(currency) ||
+      (currency === 'OTHER' && !customCurrency)
+    ) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -47,8 +52,9 @@ Deno.serve(async request => {
     doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
     doc.setFont('Roboto', 'normal');
     const organization = text(body.organizationName || link.organization_name || 'ZBÓR BIBLIJNY KOŚCIÓŁ W WARSZAWIE', 200);
-    const amountText = `${amount.toFixed(2)} ${currency}`;
-    const amountInWords = amountInPolishWords(amount, currency);
+    const currencyLabel = currency === 'OTHER' ? customCurrency : currency;
+    const amountText = `${amount.toFixed(2)} ${currencyLabel}`;
+    const amountInWords = amountInPolishWords(amount, currency, customCurrency);
 
     const drawLineText = (label: string, value: string, x: number, y: number, width: number) => {
       const defaultSize = 8.5;
@@ -128,6 +134,7 @@ Deno.serve(async request => {
       pdf_path: pdfPath,
       amount,
       currency,
+      custom_currency: customCurrency || null,
       issued_to: receivedFrom,
       basis,
       amount_in_words: amountInWords,

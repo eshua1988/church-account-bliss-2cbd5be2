@@ -23,6 +23,7 @@ const PublicDeposit = () => {
   const [form, setForm] = useState({
     amount: '',
     currency: 'PLN' as DepositCurrency,
+    customCurrency: '',
     date: new Date().toISOString().slice(0, 10),
     receivedFrom: '',
     basis: '',
@@ -30,7 +31,7 @@ const PublicDeposit = () => {
   });
 
   const numericAmount = Number(form.amount.replace(',', '.')) || 0;
-  const amountInWords = amountInPolishWords(numericAmount, form.currency);
+  const amountInWords = amountInPolishWords(numericAmount, form.currency, form.customCurrency);
 
   useEffect(() => {
     supabase.functions.invoke('validate-payout-token', { body: { token } })
@@ -84,6 +85,7 @@ const PublicDeposit = () => {
     setForm({
       amount: '',
       currency: 'PLN',
+      customCurrency: '',
       date: new Date().toISOString().slice(0, 10),
       receivedFrom: '',
       basis: '',
@@ -150,7 +152,16 @@ const PublicDeposit = () => {
             <div className="space-y-2">
               <Label htmlFor="deposit-amount">Kwota / Сумма</Label>
               <div className="grid grid-cols-[1fr_110px] gap-2">
-                <Input id="deposit-amount" inputMode="decimal" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} required />
+                <Input
+                  id="deposit-amount"
+                  inputMode="decimal"
+                  value={form.amount}
+                  onChange={e => {
+                    const sanitized = e.target.value.replace(/[^\d.,]/g, '').replace(/([.,].*)[.,]/g, '$1');
+                    setForm({ ...form, amount: sanitized });
+                  }}
+                  required
+                />
                 <Select value={form.currency} onValueChange={(currency: DepositCurrency) => setForm({ ...form, currency })}>
                   <SelectTrigger aria-label="Валюта"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -158,9 +169,19 @@ const PublicDeposit = () => {
                     <SelectItem value="USD">USD - $</SelectItem>
                     <SelectItem value="EUR">EUR - €</SelectItem>
                     <SelectItem value="UAH">UAH - ₴</SelectItem>
+                    <SelectItem value="OTHER">Другая</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+              {form.currency === 'OTHER' && (
+                <Input
+                  aria-label="Название другой валюты"
+                  placeholder="Название или код валюты"
+                  value={form.customCurrency}
+                  onChange={e => setForm({ ...form, customCurrency: e.target.value.slice(0, 20) })}
+                  required
+                />
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="deposit-date">Data / Дата</Label>
