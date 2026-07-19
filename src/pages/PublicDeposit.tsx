@@ -8,7 +8,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { amountInPolishWords, type DepositCurrency } from '@/lib/amountInWords';
+
+interface IncomeCategory {
+  id: string;
+  name: string;
+  type: 'income';
+}
+
+const OTHER_BASIS = '__other__';
 
 const PublicDeposit = () => {
   const { token = '' } = useParams();
@@ -19,6 +28,7 @@ const PublicDeposit = () => {
   const [valid, setValid] = useState(false);
   const [success, setSuccess] = useState(false);
   const [organizationName, setOrganizationName] = useState('ZBÓR BIBLIJNY KOŚCIÓŁ W WARSZAWIE');
+  const [incomeCategories, setIncomeCategories] = useState<IncomeCategory[]>([]);
   const [error, setError] = useState('');
   const [form, setForm] = useState({
     amount: '',
@@ -26,7 +36,8 @@ const PublicDeposit = () => {
     customCurrency: '',
     date: new Date().toISOString().slice(0, 10),
     receivedFrom: '',
-    basis: '',
+    basisChoice: '',
+    customBasis: '',
     cashier: '',
   });
 
@@ -39,6 +50,11 @@ const PublicDeposit = () => {
         const isDeposit = data?.valid && data?.linkType === 'deposit';
         setValid(Boolean(isDeposit));
         setOrganizationName(data?.organizationName || organizationName);
+        setIncomeCategories(
+          Array.isArray(data?.categories)
+            ? data.categories.filter((category: IncomeCategory) => category?.type === 'income' && category?.name)
+            : [],
+        );
         if (!isDeposit) setError('Ссылка недействительна или отключена');
       })
       .catch(() => setError('Не удалось проверить ссылку'))
@@ -88,7 +104,8 @@ const PublicDeposit = () => {
       customCurrency: '',
       date: new Date().toISOString().slice(0, 10),
       receivedFrom: '',
-      basis: '',
+      basisChoice: '',
+      customBasis: '',
       cashier: '',
     });
     setError('');
@@ -100,14 +117,18 @@ const PublicDeposit = () => {
     event.preventDefault();
     setError('');
     const amount = Number(form.amount.replace(',', '.'));
-    if (!amount || amount <= 0 || !form.receivedFrom.trim() || !form.basis.trim()) {
+    const selectedCategory = incomeCategories.find(category => category.id === form.basisChoice);
+    const basis = form.basisChoice === OTHER_BASIS
+      ? form.customBasis.trim()
+      : selectedCategory?.name.trim() || '';
+    if (!amount || amount <= 0 || !form.receivedFrom.trim() || !basis) {
       setError('Заполните сумму, получателя и основание');
       return;
     }
     setSubmitting(true);
     const signature = canvasRef.current?.toDataURL('image/png').split(',')[1] || '';
     const { data, error: submitError } = await supabase.functions.invoke('submit-public-deposit', {
-      body: { token, ...form, amount, amountInWords, signatureBase64: signature, organizationName },
+      body: { token, ...form, basis, amount, amountInWords, signatureBase64: signature, organizationName },
     });
     setSubmitting(false);
     if (submitError || !data?.success) {
@@ -192,8 +213,45 @@ const PublicDeposit = () => {
               <Input id="deposit-from" value={form.receivedFrom} onChange={e => setForm({ ...form, receivedFrom: e.target.value })} required />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="deposit-basis">Podstawa / Основание</Label>
-              <Textarea id="deposit-basis" value={form.basis} onChange={e => setForm({ ...form, basis: e.target.value })} required />
+              <Label>Podstawa / Основание</Label>
+              <RadioGroup
+                value={form.basisChoice}
+                onValueChange={basisChoice => setForm({
+                  ...form,
+                  basisChoice,
+                  customBasis: basisChoice === OTHER_BASIS ? form.customBasis : '',
+                })}
+                className="gap-0 overflow-hidden rounded-md border"
+                aria-label="Основание платежа"
+              >
+                {incomeCategories.map(category => (
+                  <Label
+                    key={category.id}
+                    htmlFor={`deposit-basis-${category.id}`}
+                    className="flex cursor-pointer items-center gap-3 border-b px-4 py-3 font-normal last:border-b-0 hover:bg-muted/50"
+                  >
+                    <RadioGroupItem id={`deposit-basis-${category.id}`} value={category.id} />
+                    <span>{category.name}</span>
+                  </Label>
+                ))}
+                <Label
+                  htmlFor="deposit-basis-other"
+                  className="flex cursor-pointer items-center gap-3 px-4 py-3 font-normal hover:bg-muted/50"
+                >
+                  <RadioGroupItem id="deposit-basis-other" value={OTHER_BASIS} />
+                  <span>Другое</span>
+                </Label>
+              </RadioGroup>
+              {form.basisChoice === OTHER_BASIS && (
+                <Textarea
+                  id="deposit-basis-custom"
+                  value={form.customBasis}
+                  onChange={e => setForm({ ...form, customBasis: e.target.value })}
+                  placeholder="Введите основание"
+                  autoFocus
+                  required
+                />
+              )}
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="deposit-words">Kwota słownie / Сумма прописью</Label>

@@ -71,12 +71,13 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get categories for this owner (expense categories only)
+    // Deposit links use income categories; payout links keep using expense categories.
+    const categoryType = linkData.link_type === 'deposit' ? 'income' : 'expense';
     const { data: categories, error: catError } = await supabase
       .from('categories')
       .select('id, name, type')
       .eq('user_id', linkData.owner_user_id)
-      .eq('type', 'expense')
+      .eq('type', categoryType)
       .order('sort_order');
 
     if (catError) {
