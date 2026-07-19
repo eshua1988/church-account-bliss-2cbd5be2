@@ -178,7 +178,7 @@ const NotificationCard = ({
     (imagesSkipped && payoutUrl ? 1 : 0) +
     ((pdfPath || transactionId) ? 1 : 0) +
     (onArchive && !isArchived && (pdfPath || transactionId) ? 1 : 0) +
-    (onChangeDepartment && !isRuleRequest ? 1 : 0) +
+    (onChangeDepartment && notification.type === 'payout' && !isRuleRequest ? 1 : 0) +
     (paymentQr ? 1 : 0);
   const SWIPE_MAX = mobileButtonCount * BTN_W;
   const SWIPE_THRESHOLD = 50;
@@ -232,7 +232,7 @@ const NotificationCard = ({
   // Action buttons — shared between desktop bottom row and mobile swipe tray
   const actionButtons = (
     <>
-      {onChangeDepartment && !isRuleRequest && (
+      {onChangeDepartment && notification.type === 'payout' && !isRuleRequest && (
         <Button
           variant="outline"
           size="sm"
@@ -342,7 +342,7 @@ const NotificationCard = ({
         className="sm:hidden absolute right-0 top-0 bottom-0 flex rounded-r-xl overflow-hidden"
         style={{ width: `${SWIPE_MAX}px` }}
       >
-        {onChangeDepartment && !isRuleRequest && (
+        {onChangeDepartment && notification.type === 'payout' && !isRuleRequest && (
           <button
             className="flex flex-col items-center justify-center gap-1 text-white bg-violet-600 active:bg-violet-700"
             style={{ width: `${BTN_W}px` }}
@@ -1336,7 +1336,7 @@ export const NotificationsPage = () => {
                               </p>
                             </div>
                           </div>
-                          <Button
+                          {notification.type === 'payout' && <Button
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8 flex-shrink-0 text-violet-500 hover:bg-violet-500/10 hover:text-violet-600"
@@ -1355,7 +1355,7 @@ export const NotificationsPage = () => {
                             title="Изменить PDF"
                           >
                             <Pencil className="h-4 w-4" />
-                          </Button>
+                          </Button>}
                           <Button
                             variant="ghost"
                             size="icon"

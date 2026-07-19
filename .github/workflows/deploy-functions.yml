@@ -21,7 +21,7 @@ jobs:
 
       - name: Deploy all Edge Functions
         run: |
-          for fn in submit-public-payout validate-payout-token public-transactions send-push-notification add-images-to-payout generate-payout-pdf upload-payout-pdf check-pending-payouts google-sheets telegram-bot banking-auth-start banking-auth-complete banking-sync; do
+          for fn in submit-public-payout submit-public-deposit validate-payout-token public-transactions send-push-notification add-images-to-payout generate-payout-pdf upload-payout-pdf check-pending-payouts google-sheets telegram-bot banking-auth-start banking-auth-complete banking-sync; do
             supabase functions deploy $fn --project-ref htepbcotdqrewbxmasbf
           done
         env:

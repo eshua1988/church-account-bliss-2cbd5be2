@@ -18,6 +18,7 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { GoogleSheetsSync } from '@/components/GoogleSheetsSync';
 import { TelegramBotSettings } from '@/components/TelegramBotSettings';
 import { SharePayoutLink } from '@/components/SharePayoutLink';
+import { ShareDepositLink } from '@/components/ShareDepositLink';
 import { ShareTransactionsLink } from '@/components/ShareTransactionsLink';
 import { NotificationsPage } from '@/components/NotificationsPage';
 import { BankingPage } from '@/components/BankingPage';
@@ -555,6 +556,11 @@ const Index = () => {
                     <div>
                       <h5 className="font-semibold text-sm mb-3">Расходный ордер</h5>
                       <SharePayoutLink />
+                    </div>
+                    <Separator />
+                    <div>
+                      <h5 className="font-semibold text-sm mb-3">Dowód wpłaty</h5>
+                      <ShareDepositLink />
                     </div>
                     <Separator />
                     <div>

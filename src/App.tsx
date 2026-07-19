@@ -14,6 +14,7 @@ import PublicPayout from "./pages/PublicPayout";
 import PublicTransactions from "./pages/PublicTransactions";
 import SignaturePad from "./pages/SignaturePad";
 import BankCallback from "./pages/BankCallback";
+import PublicDeposit from "./pages/PublicDeposit";
 
 const queryClient = new QueryClient();
 
@@ -47,6 +48,7 @@ const App = () => (
             <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/payout/:token" element={<PublicPayout />} />
+              <Route path="/deposit/:token" element={<PublicDeposit />} />
               <Route path="/transactions/:token" element={<PublicTransactions />} />
               <Route path="/sign" element={<SignaturePad />} />
               <Route 
