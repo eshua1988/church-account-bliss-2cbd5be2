@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, QrCode, Copy, Banknote, ExternalLink, BellRing, Archive, FolderArchive, FileText, ChevronDown, Building2 } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, QrCode, Copy, Banknote, ExternalLink, BellRing, Archive, FolderArchive, FileText, ChevronDown, Building2, Pencil } from 'lucide-react';
 import JSZip from 'jszip';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { useAuth } from '@/contexts/AuthContext';
@@ -240,8 +240,8 @@ const NotificationCard = ({
           onClick={() => { onChangeDepartment(notification); doClose(); }}
           disabled={isSaving}
         >
-          <Building2 className="h-3 w-3" />
-          Отдел
+          <Pencil className="h-3 w-3" />
+          PDF
         </Button>
       )}
       {onAddToTransaction && !transactionId && !isRuleRequest && (
@@ -349,8 +349,8 @@ const NotificationCard = ({
             onClick={() => { onChangeDepartment(notification); doClose(); }}
             disabled={isSaving}
           >
-            <Building2 className="h-5 w-5" />
-            <span className="text-[11px] font-medium leading-none">Отдел</span>
+            <Pencil className="h-5 w-5" />
+            <span className="text-[11px] font-medium leading-none">PDF</span>
           </button>
         )}
         {onAddToTransaction && !transactionId && !isRuleRequest && (
@@ -1351,10 +1351,10 @@ export const NotificationsPage = () => {
                               );
                             }}
                             disabled={savingId === notification.id}
-                            aria-label="Изменить отдел"
-                            title="Изменить отдел"
+                            aria-label="Изменить PDF"
+                            title="Изменить PDF"
                           >
-                            <Building2 className="h-4 w-4" />
+                            <Pencil className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="ghost"
