@@ -165,10 +165,10 @@ const PublicDeposit = () => {
                 <Select value={form.currency} onValueChange={(currency: DepositCurrency) => setForm({ ...form, currency })}>
                   <SelectTrigger aria-label="Валюта"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="PLN">PLN - zł</SelectItem>
-                    <SelectItem value="USD">USD - $</SelectItem>
-                    <SelectItem value="EUR">EUR - €</SelectItem>
-                    <SelectItem value="UAH">UAH - ₴</SelectItem>
+                    <SelectItem value="PLN">PLN</SelectItem>
+                    <SelectItem value="USD">USD</SelectItem>
+                    <SelectItem value="EUR">EUR</SelectItem>
+                    <SelectItem value="UAH">UAH</SelectItem>
                     <SelectItem value="OTHER">Другая</SelectItem>
                   </SelectContent>
                 </Select>

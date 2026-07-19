@@ -13,6 +13,14 @@ const CURRENCY_FORMS: Record<DepositCurrency, [string, string, string]> = {
   OTHER: ['', '', ''],
 };
 
+const FRACTION_FORMS: Record<DepositCurrency, [string, string, string]> = {
+  PLN: ['grosz', 'grosze', 'groszy'],
+  USD: ['cent', 'centy', 'centów'],
+  EUR: ['cent', 'centy', 'centów'],
+  UAH: ['kopiejka', 'kopiejki', 'kopiejek'],
+  OTHER: ['setna', 'setne', 'setnych'],
+};
+
 const formIndex = (value: number) => {
   const lastTwo = value % 100;
   if (lastTwo >= 12 && lastTwo <= 14) return 2;
@@ -61,5 +69,8 @@ export const amountInPolishWords = (amount: number, currency: DepositCurrency, c
     : CURRENCY_FORMS[currency][formIndex(whole)];
   if (currencyWord) words.push(currencyWord);
 
-  return `${words.join(' ')} ${String(cents).padStart(2, '0')}/100`;
+  const fractionWords = cents
+    ? `${tripletToWords(cents)} ${FRACTION_FORMS[currency][formIndex(cents)]}`
+    : `zero ${FRACTION_FORMS[currency][2]}`;
+  return `${words.join(' ')} ${fractionWords}`;
 };
