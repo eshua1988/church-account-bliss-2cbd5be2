@@ -14,6 +14,8 @@ import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { Currency } from '@/types/transaction';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 const OTHER_DEPARTMENT_BY_TYPE = {
   income: 'Прочее (доход)',
@@ -76,6 +78,7 @@ const NotificationCard = ({
   onRejectRuleRequest,
   onArchive,
   onChangeDepartment,
+  onEditDepositPdf,
   savingId,
   swipedId,
   onSwipe,
@@ -90,6 +93,7 @@ const NotificationCard = ({
   onRejectRuleRequest?: (notification: Notification) => void;
   onArchive?: (notification: Notification) => void;
   onChangeDepartment?: (notification: Notification) => void;
+  onEditDepositPdf?: (notification: Notification) => void;
   savingId?: string | null;
   swipedId?: string | null;
   onSwipe?: (id: string | null) => void;
@@ -105,6 +109,13 @@ const NotificationCard = ({
   const isArchived = Boolean(notification.metadata?.archived_at);
   const isSaving = savingId === notification.id;
   const isRuleRequest = isRuleRequestNotification(notification);
+  const isDeposit = notification.type === 'deposit' || notification.metadata?.document_type === 'deposit';
+  const receiptCount = Math.max(
+    1,
+    Number(notification.metadata?.receipt_count)
+      || (Array.isArray(notification.metadata?.receipts) ? notification.metadata.receipts.length : 0)
+      || 1,
+  );
   const requestedTerms = Array.isArray(notification.metadata?.terms)
     ? (notification.metadata.terms as unknown[]).map(String).join(', ')
     : '';
@@ -179,6 +190,7 @@ const NotificationCard = ({
     ((pdfPath || transactionId) ? 1 : 0) +
     (onArchive && !isArchived && (pdfPath || transactionId) ? 1 : 0) +
     (onChangeDepartment && notification.type === 'payout' && !isRuleRequest ? 1 : 0) +
+    (onEditDepositPdf && isDeposit && !isRuleRequest ? 1 : 0) +
     (paymentQr ? 1 : 0);
   const SWIPE_MAX = mobileButtonCount * BTN_W;
   const SWIPE_THRESHOLD = 50;
@@ -238,6 +250,18 @@ const NotificationCard = ({
           size="sm"
           className="gap-1.5 h-8 px-2.5 text-xs"
           onClick={() => { onChangeDepartment(notification); doClose(); }}
+          disabled={isSaving}
+        >
+          <Pencil className="h-3 w-3" />
+          PDF
+        </Button>
+      )}
+      {onEditDepositPdf && isDeposit && !isRuleRequest && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5 h-8 px-2.5 text-xs"
+          onClick={() => { onEditDepositPdf(notification); doClose(); }}
           disabled={isSaving}
         >
           <Pencil className="h-3 w-3" />
@@ -347,6 +371,17 @@ const NotificationCard = ({
             className="flex flex-col items-center justify-center gap-1 text-white bg-violet-600 active:bg-violet-700"
             style={{ width: `${BTN_W}px` }}
             onClick={() => { onChangeDepartment(notification); doClose(); }}
+            disabled={isSaving}
+          >
+            <Pencil className="h-5 w-5" />
+            <span className="text-[11px] font-medium leading-none">PDF</span>
+          </button>
+        )}
+        {onEditDepositPdf && isDeposit && !isRuleRequest && (
+          <button
+            className="flex flex-col items-center justify-center gap-1 text-white bg-violet-600 active:bg-violet-700"
+            style={{ width: `${BTN_W}px` }}
+            onClick={() => { onEditDepositPdf(notification); doClose(); }}
             disabled={isSaving}
           >
             <Pencil className="h-5 w-5" />
@@ -475,6 +510,11 @@ const NotificationCard = ({
               ) : departmentName && (
                 <p className="text-sm text-muted-foreground mt-0.5 truncate leading-snug">
                   {departmentName}
+                </p>
+              )}
+              {isDeposit && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Квитанций в PDF: {receiptCount}
                 </p>
               )}
             </div>
@@ -620,8 +660,201 @@ export const NotificationsPage = () => {
   const [archiveTarget, setArchiveTarget] = useState<Notification | null>(null);
   const [departmentTarget, setDepartmentTarget] = useState<Notification | null>(null);
   const [selectedDepartment, setSelectedDepartment] = useState('');
+  const [depositPdfTarget, setDepositPdfTarget] = useState<Notification | null>(null);
+  const [selectedReceiptIndex, setSelectedReceiptIndex] = useState('0');
+  const [cashierName, setCashierName] = useState('');
+  const cashierSignatureRef = useRef<HTMLCanvasElement | null>(null);
+  const drawingCashierSignature = useRef(false);
   const [downloadingArchive, setDownloadingArchive] = useState<string | null>(null);
   const [expandedArchiveGroups, setExpandedArchiveGroups] = useState<Set<string>>(new Set());
+
+  const depositReceipts = depositPdfTarget && Array.isArray(depositPdfTarget.metadata?.receipts)
+    ? depositPdfTarget.metadata.receipts as Array<Record<string, unknown>>
+    : depositPdfTarget
+      ? [{
+          issued_to: depositPdfTarget.metadata?.issued_to,
+          amount: depositPdfTarget.metadata?.amount,
+          currency: depositPdfTarget.metadata?.currency,
+          date: depositPdfTarget.metadata?.date,
+        }]
+      : [];
+
+  const clearCashierSignature = () => {
+    const canvas = cashierSignatureRef.current;
+    canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+  };
+
+  const cashierPointer = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left) * event.currentTarget.width / rect.width,
+      y: (event.clientY - rect.top) * event.currentTarget.height / rect.height,
+    };
+  };
+
+  const startCashierSignature = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    drawingCashierSignature.current = true;
+    const point = cashierPointer(event);
+    const context = event.currentTarget.getContext('2d');
+    context?.beginPath();
+    context?.moveTo(point.x, point.y);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const drawCashierSignature = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!drawingCashierSignature.current) return;
+    const context = event.currentTarget.getContext('2d');
+    if (!context) return;
+    const point = cashierPointer(event);
+    context.strokeStyle = '#111827';
+    context.lineWidth = 3;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.lineTo(point.x, point.y);
+    context.stroke();
+  };
+
+  const openDepositPdfEditor = (notification: Notification) => {
+    const receipts = Array.isArray(notification.metadata?.receipts)
+      ? notification.metadata.receipts as Array<Record<string, unknown>>
+      : [];
+    setDepositPdfTarget(notification);
+    setSelectedReceiptIndex('0');
+    setCashierName(String(receipts[0]?.cashier || notification.metadata?.cashier || ''));
+    requestAnimationFrame(clearCashierSignature);
+  };
+
+  const saveDepositPdf = async () => {
+    if (!depositPdfTarget || !cashierName.trim()) return;
+    const receiptIndex = Number(selectedReceiptIndex);
+    const meta = depositPdfTarget.metadata || {};
+    const pdfPath = String(meta.pdf_path || '');
+    if (!pdfPath) return;
+
+    setSavingId(depositPdfTarget.id);
+    try {
+      const supabaseUrl = (supabase as any).supabaseUrl as string;
+      const supabaseKey = (supabase as any).supabaseKey as string;
+      const edgeHeaders = { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` };
+      const signParams = new URLSearchParams({
+        action: 'sign',
+        filePath: pdfPath,
+        userId: depositPdfTarget.user_id,
+      });
+      const signResponse = await fetch(
+        `${supabaseUrl}/functions/v1/upload-payout-pdf?${signParams}`,
+        { headers: edgeHeaders },
+      );
+      const signResult = await signResponse.json();
+      if (!signResponse.ok || !signResult.signedUrl) {
+        throw new Error(signResult.error || 'Не удалось открыть PDF');
+      }
+      const sourceResponse = await fetch(signResult.signedUrl);
+      if (!sourceResponse.ok) throw new Error(`Ошибка загрузки PDF: HTTP ${sourceResponse.status}`);
+
+      const { PDFDocument } = await import('pdf-lib');
+      const pdfDoc = await PDFDocument.load(await sourceResponse.arrayBuffer());
+      const pageIndex = Math.floor(receiptIndex / 2);
+      if (pageIndex >= pdfDoc.getPageCount()) throw new Error('Квитанция не найдена в PDF');
+      const page = pdfDoc.getPage(pageIndex);
+      const { width: pageWidth, height: pageHeight } = page.getSize();
+      const mmX = pageWidth / 210;
+      const mmY = pageHeight / 297;
+      const isModernLayout = Array.isArray(meta.receipts);
+      const receiptOffset = receiptIndex % 2 === 0 ? 10 : 153;
+      const topMm = isModernLayout ? receiptOffset + 98 : 137;
+      const heightMm = isModernLayout ? 12 : 16;
+      const leftMm = 12;
+      const widthMm = 186;
+
+      const area = document.createElement('canvas');
+      area.width = 1860;
+      area.height = Math.round(heightMm * 10);
+      const context = area.getContext('2d');
+      if (!context) throw new Error('Не удалось подготовить область кассира');
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, area.width, area.height);
+      context.strokeStyle = '#111111';
+      context.lineWidth = 3;
+      context.strokeRect(1.5, 1.5, area.width - 3, area.height - 3);
+      const signatureStart = Math.round(area.width * 0.68);
+      context.beginPath();
+      context.moveTo(signatureStart, 0);
+      context.lineTo(signatureStart, area.height);
+      context.stroke();
+      context.fillStyle = '#111111';
+      context.font = '38px Arial, sans-serif';
+      context.textBaseline = 'middle';
+      context.fillText('Kasjer:', 14, area.height / 2);
+      context.font = '36px Arial, sans-serif';
+      context.fillText(cashierName.trim(), 155, area.height / 2, signatureStart - 175);
+      const signature = cashierSignatureRef.current;
+      if (signature) {
+        context.drawImage(
+          signature,
+          signatureStart + 12,
+          8,
+          area.width - signatureStart - 24,
+          area.height - 16,
+        );
+      }
+      const areaImage = await pdfDoc.embedPng(area.toDataURL('image/png'));
+      page.drawImage(areaImage, {
+        x: leftMm * mmX,
+        y: pageHeight - (topMm + heightMm) * mmY,
+        width: widthMm * mmX,
+        height: heightMm * mmY,
+      });
+
+      const updatedBytes = await pdfDoc.save();
+      const token = String(meta.link_token || fallbackToken || '');
+      if (!token) throw new Error('Не найден ключ для обновления PDF');
+      const uploadParams = new URLSearchParams({ action: 'upload-url', filePath: pdfPath, token });
+      const uploadResponse = await fetch(
+        `${supabaseUrl}/functions/v1/upload-payout-pdf?${uploadParams}`,
+        { headers: edgeHeaders },
+      );
+      const uploadResult = await uploadResponse.json();
+      if (!uploadResponse.ok || !uploadResult.path || !uploadResult.token) {
+        throw new Error(uploadResult.error || 'Не удалось получить доступ для сохранения PDF');
+      }
+      const { error: uploadError } = await supabase.storage
+        .from('documents')
+        .uploadToSignedUrl(
+          uploadResult.path,
+          uploadResult.token,
+          new Blob([updatedBytes as BlobPart], { type: 'application/pdf' }),
+          { contentType: 'application/pdf' },
+        );
+      if (uploadError) throw uploadError;
+
+      const receipts = Array.isArray(meta.receipts)
+        ? (meta.receipts as Array<Record<string, unknown>>).map((receipt, index) =>
+            index === receiptIndex ? { ...receipt, cashier: cashierName.trim(), cashier_signed: true } : receipt)
+        : undefined;
+      const updatedMetadata = {
+        ...meta,
+        ...(receipts ? { receipts } : { cashier: cashierName.trim(), cashier_signed: true }),
+      };
+      const { error: updateError } = await supabase
+        .from('notifications')
+        .update({ metadata: updatedMetadata })
+        .eq('id', depositPdfTarget.id);
+      if (updateError) throw updateError;
+
+      setDepositPdfTarget(null);
+      await refetchNotifications();
+      toast({ title: 'PDF обновлён', description: 'Имя кассира и подпись сохранены в выбранной квитанции.' });
+    } catch (error) {
+      toast({
+        title: 'Не удалось обновить PDF',
+        description: error instanceof Error ? error.message : String(error),
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingId(null);
+    }
+  };
 
   const regenerateNotificationPdf = async (notification: Notification, departmentName: string) => {
     const meta = notification.metadata || {};
@@ -1399,6 +1632,7 @@ export const NotificationsPage = () => {
                   ),
                 );
               }}
+              onEditDepositPdf={openDepositPdfEditor}
               savingId={savingId}
               swipedId={swipedId}
               onSwipe={setSwipedId}
@@ -1409,6 +1643,85 @@ export const NotificationsPage = () => {
           </p>
         </div>
       )}
+
+      <Dialog
+        open={Boolean(depositPdfTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDepositPdfTarget(null);
+            setSelectedReceiptIndex('0');
+            setCashierName('');
+            clearCashierSignature();
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Редактировать Dowód wpłaty</DialogTitle>
+          </DialogHeader>
+          {depositReceipts.length > 1 && (
+            <div className="space-y-2">
+              <Label>Квитанция</Label>
+              <Select
+                value={selectedReceiptIndex}
+                onValueChange={(value) => {
+                  setSelectedReceiptIndex(value);
+                  setCashierName(String(depositReceipts[Number(value)]?.cashier || ''));
+                  clearCashierSignature();
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {depositReceipts.map((receipt, index) => (
+                    <SelectItem key={index} value={String(index)}>
+                      Квитанция {index + 1}: {String(receipt.issued_to || 'без имени')}
+                      {receipt.amount ? ` - ${String(receipt.amount)} ${String(receipt.currency || '')}` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label htmlFor="deposit-cashier-name">Кассир - Имя Фамилия</Label>
+            <Input
+              id="deposit-cashier-name"
+              value={cashierName}
+              onChange={(event) => setCashierName(event.target.value)}
+              placeholder="Введите имя и фамилию кассира"
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <Label>Подпись кассира</Label>
+              <Button type="button" variant="ghost" size="sm" onClick={clearCashierSignature}>
+                Очистить
+              </Button>
+            </div>
+            <canvas
+              ref={cashierSignatureRef}
+              width={700}
+              height={180}
+              className="h-36 w-full touch-none rounded-md border bg-white cursor-crosshair"
+              onPointerDown={startCashierSignature}
+              onPointerMove={drawCashierSignature}
+              onPointerUp={() => { drawingCashierSignature.current = false; }}
+              onPointerCancel={() => { drawingCashierSignature.current = false; }}
+              onPointerLeave={() => { drawingCashierSignature.current = false; }}
+            />
+          </div>
+          <Button
+            className="gap-2"
+            onClick={saveDepositPdf}
+            disabled={!cashierName.trim() || Boolean(savingId)}
+          >
+            {savingId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
+            Сохранить в PDF
+          </Button>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={Boolean(departmentTarget)}
