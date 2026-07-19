@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { jsPDF } from 'https://esm.sh/jspdf@2.5.1';
+import { ROBOTO_FONT_BASE64 } from '../_shared/robotoFont.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,15 +8,6 @@ const corsHeaders = {
 };
 
 const text = (value: unknown, max = 500) => String(value || '').trim().slice(0, max);
-
-async function loadRobotoFont(supabase: ReturnType<typeof createClient>) {
-  const { data } = await supabase.storage.from('documents').download('fonts/Roboto-Regular.ttf');
-  if (!data) return null;
-  const bytes = new Uint8Array(await data.arrayBuffer());
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
-}
 
 Deno.serve(async request => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -50,21 +42,29 @@ Deno.serve(async request => {
     }
 
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const font = await loadRobotoFont(supabase);
-    if (font) {
-      doc.addFileToVFS('Roboto-Regular.ttf', font);
-      doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
-      doc.setFont('Roboto');
-    }
+    doc.addFileToVFS('Roboto-Regular.ttf', ROBOTO_FONT_BASE64);
+    doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
+    doc.setFont('Roboto', 'normal');
     const organization = text(body.organizationName || link.organization_name || 'ZBÓR BIBLIJNY KOŚCIÓŁ W WARSZAWIE', 200);
     const amountText = `${amount.toFixed(2)} PLN`;
 
     const drawLineText = (label: string, value: string, x: number, y: number, width: number) => {
-      doc.setFontSize(8.5);
+      const defaultSize = 8.5;
+      doc.setFontSize(defaultSize);
       doc.text(label, x, y);
       const labelWidth = doc.getTextWidth(label) + 1;
       doc.line(x + labelWidth, y + 1, x + width, y + 1);
-      if (value) doc.text(value, x + labelWidth + 1, y);
+      if (value) {
+        const availableWidth = Math.max(width - labelWidth - 2, 4);
+        let fontSize = defaultSize;
+        doc.setFontSize(fontSize);
+        while (doc.getTextWidth(value) > availableWidth && fontSize > 5) {
+          fontSize -= 0.25;
+          doc.setFontSize(fontSize);
+        }
+        doc.text(value, x + labelWidth + 1, y);
+        doc.setFontSize(defaultSize);
+      }
     };
 
     const drawCopy = (offsetY: number) => {
@@ -139,8 +139,7 @@ Deno.serve(async request => {
       doc.text('Podpis kasjera:', rightX + 1, offsetY + 128);
     };
 
-    drawCopy(3);
-    drawCopy(151);
+    drawCopy(25);
 
     const folderKey = crypto.randomUUID();
     const fileName = `dowod_wplaty_${date}_${folderKey.slice(0, 8)}.pdf`;

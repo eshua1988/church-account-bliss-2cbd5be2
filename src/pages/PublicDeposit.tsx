@@ -75,6 +75,20 @@ const PublicDeposit = () => {
     canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
   };
 
+  const fillAnother = () => {
+    setForm({
+      amount: '',
+      date: new Date().toISOString().slice(0, 10),
+      receivedFrom: '',
+      basis: '',
+      amountInWords: '',
+      cashier: '',
+    });
+    setError('');
+    setSuccess(false);
+    requestAnimationFrame(clearSignature);
+  };
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError('');
@@ -110,6 +124,9 @@ const PublicDeposit = () => {
             <CheckCircle2 className="mx-auto h-12 w-12 text-green-500" />
             <h1 className="text-xl font-bold">Dowód wpłaty отправлен</h1>
             <p className="text-muted-foreground">Заполненный PDF появился в уведомлениях бухгалтерии.</p>
+            <Button className="w-full" onClick={fillAnother}>
+              Заполнить ещё один Dowód wpłaty
+            </Button>
           </CardContent>
         </Card>
       </div>
