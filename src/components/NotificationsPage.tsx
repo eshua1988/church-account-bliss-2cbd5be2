@@ -709,7 +709,9 @@ export const NotificationsPage = () => {
     if (!context) throw new Error('Не удалось подготовить текст отдела');
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = '#000000';
-    context.font = '42px Arial, sans-serif';
+    // The canvas is scaled into a 7 mm-high PDF area. 78 px produces the
+    // same visual size as the other 10 pt values in the payout table.
+    context.font = '78px Arial, sans-serif';
     context.textBaseline = 'middle';
     context.fillText(departmentName, 10, canvas.height / 2, canvas.width - 20);
     const departmentImage = await pdfDoc.embedPng(canvas.toDataURL('image/png'));
