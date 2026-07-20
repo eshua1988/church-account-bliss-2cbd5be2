@@ -17,27 +17,35 @@ interface IncomeCategory {
   type: 'income';
 }
 
+interface DepositSigner {
+  id: string;
+  fullName: string;
+}
+
 interface DepositEntry {
   id: string;
   amount: string;
   currency: DepositCurrency;
   customCurrency: string;
   date: string;
-  receivedFrom: string;
   basisChoice: string;
   customBasis: string;
+  basisDetails: string;
+  signers: DepositSigner[];
 }
 
 const OTHER_BASIS = '__other__';
+const createSigner = (): DepositSigner => ({ id: crypto.randomUUID(), fullName: '' });
 const createEntry = (): DepositEntry => ({
   id: crypto.randomUUID(),
   amount: '',
   currency: 'PLN',
   customCurrency: '',
   date: new Date().toISOString().slice(0, 10),
-  receivedFrom: '',
   basisChoice: '',
   customBasis: '',
+  basisDetails: '',
+  signers: [createSigner()],
 });
 
 const PublicDeposit = () => {
@@ -72,6 +80,30 @@ const PublicDeposit = () => {
 
   const updateEntry = (id: string, patch: Partial<DepositEntry>) => {
     setEntries(current => current.map(entry => entry.id === id ? { ...entry, ...patch } : entry));
+  };
+
+  const updateSigner = (entryId: string, signerId: string, fullName: string) => {
+    setEntries(current => current.map(entry => entry.id === entryId
+      ? { ...entry, signers: entry.signers.map(signer => signer.id === signerId ? { ...signer, fullName } : signer) }
+      : entry));
+  };
+
+  const addSigner = (entryId: string) => {
+    setEntries(current => current.map(entry => entry.id === entryId
+      ? { ...entry, signers: [...entry.signers, createSigner()] }
+      : entry));
+  };
+
+  const removeSigner = (entryId: string, signerId: string) => {
+    delete canvasRefs.current[signerId];
+    setEntries(current => current.map(entry => entry.id === entryId && entry.signers.length > 1
+      ? { ...entry, signers: entry.signers.filter(signer => signer.id !== signerId) }
+      : entry));
+  };
+
+  const isTargetedCategory = (entry: DepositEntry) => {
+    const name = incomeCategories.find(category => category.id === entry.basisChoice)?.name || '';
+    return /(целев|ціль|celow)/i.test(name);
   };
 
   const pointerPosition = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -124,7 +156,7 @@ const PublicDeposit = () => {
 
   const removeEntry = (id: string) => {
     if (entries.length === 1) return;
-    delete canvasRefs.current[id];
+    entries.find(entry => entry.id === id)?.signers.forEach(signer => delete canvasRefs.current[signer.id]);
     setEntries(current => current.filter(entry => entry.id !== id));
   };
 
@@ -135,19 +167,26 @@ const PublicDeposit = () => {
       const selectedCategory = incomeCategories.find(category => category.id === entry.basisChoice);
       const basis = entry.basisChoice === OTHER_BASIS
         ? entry.customBasis.trim()
-        : selectedCategory?.name.trim() || '';
+        : [selectedCategory?.name.trim(), isTargetedCategory(entry) ? entry.basisDetails.trim() : ''].filter(Boolean).join(': ');
+      const signers = entry.signers.map(signer => ({
+        fullName: signer.fullName.trim(),
+        signatureBase64: canvasRefs.current[signer.id]?.toDataURL('image/png').split(',')[1] || '',
+      }));
       return {
         amount: Number(entry.amount.replace(',', '.')),
         currency: entry.currency,
         customCurrency: entry.customCurrency,
         date: entry.date,
-        receivedFrom: entry.receivedFrom.trim(),
         basis,
-        signatureBase64: canvasRefs.current[entry.id]?.toDataURL('image/png').split(',')[1] || '',
+        signers,
+        // Legacy fields keep older deployed functions compatible during rollout.
+        receivedFrom: signers[0]?.fullName || '',
+        signatureBase64: signers[0]?.signatureBase64 || '',
       };
     });
     const invalid = preparedEntries.some(entry =>
-      !entry.amount || entry.amount <= 0 || !entry.date || !entry.receivedFrom || !entry.basis ||
+      !entry.amount || entry.amount <= 0 || !entry.date || !entry.basis ||
+      entry.signers.length === 0 || entry.signers.some(signer => !signer.fullName) ||
       (entry.currency === 'OTHER' && !entry.customCurrency.trim()),
     );
     if (invalid) {
@@ -244,16 +283,15 @@ const PublicDeposit = () => {
                   <Input id={`date-${entry.id}`} type="date" value={entry.date} onChange={event => updateEntry(entry.id, { date: event.target.value })} required />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor={`from-${entry.id}`}>Imię i nazwisko / Имя Фамилия</Label>
-                  <Input id={`from-${entry.id}`} value={entry.receivedFrom} onChange={event => updateEntry(entry.id, { receivedFrom: event.target.value })} required />
-                </div>
-                <div className="space-y-2 sm:col-span-2">
                   <Label>Podstawa / Основание</Label>
                   <RadioGroup
                     value={entry.basisChoice}
                     onValueChange={basisChoice => updateEntry(entry.id, {
                       basisChoice,
                       customBasis: basisChoice === OTHER_BASIS ? entry.customBasis : '',
+                      basisDetails: /(целев|ціль|celow)/i.test(incomeCategories.find(category => category.id === basisChoice)?.name || '')
+                        ? entry.basisDetails
+                        : '',
                     })}
                     className="gap-0 overflow-hidden rounded-md border"
                   >
@@ -276,23 +314,48 @@ const PublicDeposit = () => {
                       required
                     />
                   )}
+                  {isTargetedCategory(entry) && (
+                    <Textarea
+                      value={entry.basisDetails}
+                      onChange={event => updateEntry(entry.id, { basisDetails: event.target.value })}
+                      placeholder="Уточните назначение целевого пожертвования"
+                      required
+                    />
+                  )}
                 </div>
-                <div className="space-y-2 sm:col-span-2">
-                  <div className="flex items-center justify-between">
-                    <Label>Nadawca / Подпись отправителя</Label>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => clearSignature(entry.id)}><Eraser className="mr-1 h-4 w-4" />Очистить</Button>
+                {entry.signers.map((signer, signerIndex) => (
+                  <div key={signer.id} className="space-y-3 rounded-md border p-3 sm:col-span-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <Label className="font-semibold">Nadawca {signerIndex + 1} / Отправитель {signerIndex + 1}</Label>
+                      {entry.signers.length > 1 && (
+                        <Button type="button" variant="ghost" size="icon" onClick={() => removeSigner(entry.id, signer.id)} aria-label="Удалить отправителя">
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`from-${signer.id}`}>Imię i nazwisko / Имя Фамилия</Label>
+                      <Input id={`from-${signer.id}`} value={signer.fullName} onChange={event => updateSigner(entry.id, signer.id, event.target.value)} required />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label>Podpis / Подпись</Label>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => clearSignature(signer.id)}><Eraser className="mr-1 h-4 w-4" />Очистить</Button>
+                    </div>
+                    <canvas
+                      ref={canvas => { canvasRefs.current[signer.id] = canvas; }}
+                      width={900}
+                      height={220}
+                      className="h-40 w-full touch-none rounded-md border bg-white"
+                      onPointerDown={event => startDrawing(signer.id, event)}
+                      onPointerMove={event => draw(signer.id, event)}
+                      onPointerUp={() => { drawingId.current = null; }}
+                      onPointerCancel={() => { drawingId.current = null; }}
+                    />
                   </div>
-                  <canvas
-                    ref={canvas => { canvasRefs.current[entry.id] = canvas; }}
-                    width={900}
-                    height={220}
-                    className="h-40 w-full touch-none rounded-md border bg-white"
-                    onPointerDown={event => startDrawing(entry.id, event)}
-                    onPointerMove={event => draw(entry.id, event)}
-                    onPointerUp={() => { drawingId.current = null; }}
-                    onPointerCancel={() => { drawingId.current = null; }}
-                  />
-                </div>
+                ))}
+                <Button type="button" variant="outline" className="sm:col-span-2" onClick={() => addSigner(entry.id)} disabled={entry.signers.length >= 10}>
+                  <Plus className="mr-2 h-4 w-4" />Добавить дополнительного пользователя
+                </Button>
               </section>
             ))}
             <Button type="button" variant="outline" className="h-12 w-full" onClick={addEntry}>

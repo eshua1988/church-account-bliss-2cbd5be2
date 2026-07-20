@@ -11,25 +11,37 @@ const corsHeaders = {
 const text = (value: unknown, max = 500) => String(value || '').trim().slice(0, max);
 const allowedCurrencies = ['PLN', 'USD', 'EUR', 'UAH', 'OTHER'];
 
+interface DepositSigner {
+  fullName: string;
+  signatureBase64: string;
+}
+
 interface DepositEntry {
   amount: number;
   currency: DepositCurrency;
   customCurrency: string;
   date: string;
-  receivedFrom: string;
   basis: string;
-  signatureBase64: string;
+  signers: DepositSigner[];
 }
 
-const parseEntry = (value: Record<string, unknown>): DepositEntry => ({
-  amount: Number(value.amount),
-  currency: text(value.currency, 5).toUpperCase() as DepositCurrency,
-  customCurrency: text(value.customCurrency, 20),
-  date: text(value.date, 10),
-  receivedFrom: text(value.receivedFrom),
-  basis: text(value.basis),
-  signatureBase64: text(value.signatureBase64, 2_000_000),
-});
+const parseEntry = (value: Record<string, unknown>): DepositEntry => {
+  const rawSigners = Array.isArray(value.signers) ? value.signers : [];
+  const signers = rawSigners.length > 0
+    ? rawSigners.map(raw => {
+      const signer = (raw || {}) as Record<string, unknown>;
+      return { fullName: text(signer.fullName), signatureBase64: text(signer.signatureBase64, 2_000_000) };
+    })
+    : [{ fullName: text(value.receivedFrom), signatureBase64: text(value.signatureBase64, 2_000_000) }];
+  return {
+    amount: Number(value.amount),
+    currency: text(value.currency, 5).toUpperCase() as DepositCurrency,
+    customCurrency: text(value.customCurrency, 20),
+    date: text(value.date, 10),
+    basis: text(value.basis),
+    signers,
+  };
+};
 
 Deno.serve(async request => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -46,7 +58,8 @@ Deno.serve(async request => {
     }
     const entries = rawEntries.map((entry: Record<string, unknown>) => parseEntry(entry));
     const invalid = !token || entries.some(entry =>
-      !entry.amount || entry.amount <= 0 || !entry.date || !entry.receivedFrom || !entry.basis ||
+      !entry.amount || entry.amount <= 0 || !entry.date || !entry.basis ||
+      entry.signers.length === 0 || entry.signers.length > 10 || entry.signers.some(signer => !signer.fullName) ||
       !allowedCurrencies.includes(entry.currency) ||
       (entry.currency === 'OTHER' && !entry.customCurrency),
     );
@@ -119,21 +132,38 @@ Deno.serve(async request => {
       drawLineText('Kwota słownie:', amountWords, leftX + 1, offsetY + 62, width - 2);
       doc.line(leftX + 1, offsetY + 70, leftX + width - 1, offsetY + 70);
 
-      doc.rect(leftX, offsetY + 76, width, 18);
-      doc.line(leftX + 126, offsetY + 76, leftX + 126, offsetY + 94);
+      const signerTop = offsetY + 76;
+      const signerHeight = 18;
       doc.setFontSize(8);
-      doc.text('Nadawca:', leftX + 1, offsetY + 86);
-      doc.text(entry.receivedFrom, leftX + 22, offsetY + 86, { maxWidth: 102 });
-      if (entry.signatureBase64) {
-        try { doc.addImage(`data:image/png;base64,${entry.signatureBase64}`, 'PNG', leftX + 128, offsetY + 78, 56, 14); } catch { /* ignore malformed signature */ }
-      }
-      doc.rect(leftX, offsetY + 98, width, 12);
-      doc.text('Kasjer:', leftX + 1, offsetY + 106);
+      entry.signers.forEach((signer, signerIndex) => {
+        const rowTop = signerTop + signerIndex * signerHeight;
+        doc.rect(leftX, rowTop, width, signerHeight);
+        doc.line(leftX + 126, rowTop, leftX + 126, rowTop + signerHeight);
+        doc.text(entry.signers.length > 1 ? `Nadawca ${signerIndex + 1}:` : 'Nadawca:', leftX + 1, rowTop + 10);
+        doc.text(signer.fullName, leftX + 25, rowTop + 10, { maxWidth: 99 });
+        if (signer.signatureBase64) {
+          try { doc.addImage(`data:image/png;base64,${signer.signatureBase64}`, 'PNG', leftX + 128, rowTop + 2, 56, 14); } catch { /* ignore malformed signature */ }
+        }
+      });
+      const cashierTop = signerTop + entry.signers.length * signerHeight + 4;
+      doc.rect(leftX, cashierTop, width, 12);
+      doc.text('Kasjer:', leftX + 1, cashierTop + 8);
+      return { height: cashierTop + 12 - offsetY, cashierTop };
     };
 
-    entries.forEach((entry, index) => {
-      if (index > 0 && index % 2 === 0) doc.addPage();
-      drawReceipt(entry, index % 2 === 0 ? 10 : 153);
+    const receiptLayouts: Array<{ pageIndex: number; offsetY: number; cashierTop: number }> = [];
+    let pageIndex = 0;
+    let cursorY = 10;
+    entries.forEach(entry => {
+      const expectedHeight = 92 + entry.signers.length * 18;
+      if (cursorY > 10 && cursorY + expectedHeight > 287) {
+        doc.addPage();
+        pageIndex += 1;
+        cursorY = 10;
+      }
+      const layout = drawReceipt(entry, cursorY);
+      receiptLayouts.push({ pageIndex, offsetY: cursorY, cashierTop: layout.cashierTop });
+      cursorY += layout.height + 10;
     });
 
     const folderKey = crypto.randomUUID();
@@ -147,14 +177,19 @@ Deno.serve(async request => {
     });
     if (uploadError) throw uploadError;
 
-    const receiptMetadata = entries.map(entry => ({
+    const receiptMetadata = entries.map((entry, index) => ({
       amount: entry.amount,
       currency: entry.currency,
       custom_currency: entry.customCurrency || null,
-      issued_to: entry.receivedFrom,
+      issued_to: entry.signers.map(signer => signer.fullName).join(', '),
+      senders: entry.signers.map(signer => ({ full_name: signer.fullName })),
       basis: entry.basis,
       amount_in_words: amountInPolishWords(entry.amount, entry.currency, entry.customCurrency),
       date: entry.date,
+      page_index: receiptLayouts[index].pageIndex,
+      offset_y_mm: receiptLayouts[index].offsetY,
+      cashier_top_mm: receiptLayouts[index].cashierTop,
+      cashier_height_mm: 12,
     }));
     const metadata = {
       folder_key: folderKey,
@@ -170,7 +205,9 @@ Deno.serve(async request => {
     const { data: notification, error: notificationError } = await supabase.from('notifications').insert({
       user_id: link.owner_user_id,
       title: entries.length > 1 ? `Новые Dowód wpłaty (${entries.length})` : 'Новый Dowód wpłaty',
-      message: entries.length > 1 ? `${entries.length} квитанции в одном PDF` : `${first.receivedFrom}: ${first.amount.toFixed(2)} ${firstCurrency}`,
+      message: entries.length > 1
+        ? `${entries.length} квитанции в одном PDF`
+        : `${first.signers.map(signer => signer.fullName).join(', ')}: ${first.amount.toFixed(2)} ${firstCurrency}`,
       type: 'deposit',
       metadata,
     }).select('id').single();

@@ -758,7 +758,10 @@ export const NotificationsPage = () => {
 
       const { PDFDocument } = await import('pdf-lib');
       const pdfDoc = await PDFDocument.load(await sourceResponse.arrayBuffer());
-      const pageIndex = Math.floor(receiptIndex / 2);
+      const receiptLayout = depositReceipts[receiptIndex] || {};
+      const pageIndex = Number.isFinite(Number(receiptLayout.page_index))
+        ? Number(receiptLayout.page_index)
+        : Math.floor(receiptIndex / 2);
       if (pageIndex >= pdfDoc.getPageCount()) throw new Error('Квитанция не найдена в PDF');
       const page = pdfDoc.getPage(pageIndex);
       const { width: pageWidth, height: pageHeight } = page.getSize();
@@ -766,8 +769,12 @@ export const NotificationsPage = () => {
       const mmY = pageHeight / 297;
       const isModernLayout = Array.isArray(meta.receipts);
       const receiptOffset = receiptIndex % 2 === 0 ? 10 : 153;
-      const topMm = isModernLayout ? receiptOffset + 98 : 137;
-      const heightMm = isModernLayout ? 12 : 16;
+      const topMm = Number.isFinite(Number(receiptLayout.cashier_top_mm))
+        ? Number(receiptLayout.cashier_top_mm)
+        : (isModernLayout ? receiptOffset + 98 : 137);
+      const heightMm = Number.isFinite(Number(receiptLayout.cashier_height_mm))
+        ? Number(receiptLayout.cashier_height_mm)
+        : (isModernLayout ? 12 : 16);
       const leftMm = 12;
       const widthMm = 186;
 
