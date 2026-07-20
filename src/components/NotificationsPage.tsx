@@ -16,6 +16,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  getNotificationArchiveMonth,
+  getNotificationArchiveYear,
+} from '@/lib/archiveFolders';
 
 const OTHER_DEPARTMENT_BY_TYPE = {
   income: 'Прочее (доход)',
@@ -1026,9 +1030,7 @@ export const NotificationsPage = () => {
 
   const archiveNotification = async (archiveType: 'income' | 'expense') => {
     if (!archiveTarget) return;
-    const year = new Date(
-      (archiveTarget.metadata?.date as string | undefined) || archiveTarget.created_at,
-    ).getFullYear();
+    const year = getNotificationArchiveYear(archiveTarget);
 
     setSavingId(archiveTarget.id);
     try {
@@ -1326,8 +1328,7 @@ export const NotificationsPage = () => {
   const ruleRequestsUnread = ruleRequests.filter(n => !n.is_read).length;
   const archiveGroups = archivedNotifications.reduce<Record<string, Notification[]>>((groups, notification) => {
     const type = notification.metadata?.archive_type === 'income' ? 'income' : 'expense';
-    const year = Number(notification.metadata?.archive_year) ||
-      new Date((notification.metadata?.date as string | undefined) || notification.created_at).getFullYear();
+    const year = Number(notification.metadata?.archive_year) || getNotificationArchiveYear(notification);
     const key = `${year}-${type}`;
     (groups[key] ||= []).push(notification);
     return groups;
@@ -1344,7 +1345,8 @@ export const NotificationsPage = () => {
 
       for (const notification of items) {
         const { blob, name } = await getNotificationPdf(notification);
-        folder.file(`${notification.id.slice(0, 8)}-${name}`, blob);
+        const monthFolder = folder.folder(getNotificationArchiveMonth(notification));
+        monthFolder?.file(`${notification.id.slice(0, 8)}-${name}`, blob);
       }
 
       const archiveBlob = await zip.generateAsync({

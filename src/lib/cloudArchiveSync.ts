@@ -10,6 +10,10 @@ import {
   saveCloudConnections,
   uploadCloudArchive,
 } from '@/lib/cloudStorage';
+import {
+  getNotificationArchiveMonth,
+  getNotificationArchiveYear,
+} from '@/lib/archiveFolders';
 
 const getPdfBlob = async (notification: Notification) => {
   let filePath = notification.metadata?.pdf_path as string | undefined;
@@ -70,8 +74,7 @@ export const syncNotificationArchivesToCloud = async (notifications: Notificatio
   const archived = notifications.filter(notification => notification.metadata?.archived_at);
   const groups = archived.reduce<Record<string, Notification[]>>((result, notification) => {
     const type = notification.metadata?.archive_type === 'income' ? 'income' : 'expense';
-    const year = Number(notification.metadata?.archive_year) ||
-      new Date((notification.metadata?.date as string | undefined) || notification.created_at).getFullYear();
+    const year = Number(notification.metadata?.archive_year) || getNotificationArchiveYear(notification);
     const key = `${year}-${type}`;
     (result[key] ||= []).push(notification);
     return result;
@@ -87,7 +90,8 @@ export const syncNotificationArchivesToCloud = async (notifications: Notificatio
 
     for (const notification of items) {
       const pdf = await getPdfBlob(notification);
-      folder.file(`${notification.id.slice(0, 8)}-${pdf.name}`, pdf.blob);
+      const monthFolder = folder.folder(getNotificationArchiveMonth(notification));
+      monthFolder?.file(`${notification.id.slice(0, 8)}-${pdf.name}`, pdf.blob);
     }
 
     const archive = await zip.generateAsync({
