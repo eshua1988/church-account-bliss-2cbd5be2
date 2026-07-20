@@ -59,7 +59,7 @@ Deno.serve(async request => {
     const entries = rawEntries.map((entry: Record<string, unknown>) => parseEntry(entry));
     const invalid = !token || entries.some(entry =>
       !entry.amount || entry.amount <= 0 || !entry.date || !entry.basis ||
-      entry.signers.length === 0 || entry.signers.length > 10 || entry.signers.some(signer => !signer.fullName) ||
+      entry.signers.length === 0 || entry.signers.length > 10 || entry.signers.some(signer => !signer.fullName || !signer.signatureBase64) ||
       !allowedCurrencies.includes(entry.currency) ||
       (entry.currency === 'OTHER' && !entry.customCurrency),
     );

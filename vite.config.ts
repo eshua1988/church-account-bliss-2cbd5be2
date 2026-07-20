@@ -28,7 +28,7 @@ export default defineConfig(({ mode }) => ({
         display: 'standalone',
         orientation: 'portrait',
         scope: basePath,
-        start_url: basePath,
+        start_url: `${basePath}?source=pwa`,
         icons: [
           {
             src: `${basePath}Kosciol.ico.png`.replace('//', '/'),

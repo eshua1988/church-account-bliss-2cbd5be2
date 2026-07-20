@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { CheckCircle2, Eraser, Loader2, Plus, ReceiptText, Trash2 } from 'lucide-react';
+import { CheckCircle2, Eraser, Loader2, Plus, ReceiptText, Trash2, UserRoundPlus } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -59,9 +59,11 @@ const PublicDeposit = () => {
   const [organizationName, setOrganizationName] = useState('ZBÓR BIBLIJNY KOŚCIÓŁ W WARSZAWIE');
   const [incomeCategories, setIncomeCategories] = useState<IncomeCategory[]>([]);
   const [entries, setEntries] = useState<DepositEntry[]>([createEntry()]);
+  const signedSignerIds = useRef(new Set<string>());
   const [error, setError] = useState('');
 
   useEffect(() => {
+    localStorage.setItem('pwa:last-public-deposit', `/deposit/${token}`);
     supabase.functions.invoke('validate-payout-token', { body: { token } })
       .then(({ data }) => {
         const isDeposit = data?.valid && data?.linkType === 'deposit';
@@ -96,6 +98,7 @@ const PublicDeposit = () => {
 
   const removeSigner = (entryId: string, signerId: string) => {
     delete canvasRefs.current[signerId];
+    signedSignerIds.current.delete(signerId);
     setEntries(current => current.map(entry => entry.id === entryId && entry.signers.length > 1
       ? { ...entry, signers: entry.signers.filter(signer => signer.id !== signerId) }
       : entry));
@@ -135,15 +138,18 @@ const PublicDeposit = () => {
     context.lineJoin = 'round';
     context.lineTo(point.x, point.y);
     context.stroke();
+    signedSignerIds.current.add(id);
   };
 
   const clearSignature = (id: string) => {
     const canvas = canvasRefs.current[id];
     canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+    signedSignerIds.current.delete(id);
   };
 
   const fillAnother = () => {
     canvasRefs.current = {};
+    signedSignerIds.current.clear();
     setEntries([createEntry()]);
     setError('');
     setSuccess(false);
@@ -156,7 +162,9 @@ const PublicDeposit = () => {
 
   const removeEntry = (id: string) => {
     if (entries.length === 1) return;
-    entries.find(entry => entry.id === id)?.signers.forEach(signer => delete canvasRefs.current[signer.id]);
+    const signerIds = entries.find(entry => entry.id === id)?.signers.map(signer => signer.id) || [];
+    signerIds.forEach(signerId => delete canvasRefs.current[signerId]);
+    signerIds.forEach(signerId => signedSignerIds.current.delete(signerId));
     setEntries(current => current.filter(entry => entry.id !== id));
   };
 
@@ -170,7 +178,9 @@ const PublicDeposit = () => {
         : [selectedCategory?.name.trim(), isTargetedCategory(entry) ? entry.basisDetails.trim() : ''].filter(Boolean).join(': ');
       const signers = entry.signers.map(signer => ({
         fullName: signer.fullName.trim(),
-        signatureBase64: canvasRefs.current[signer.id]?.toDataURL('image/png').split(',')[1] || '',
+        signatureBase64: signedSignerIds.current.has(signer.id)
+          ? canvasRefs.current[signer.id]?.toDataURL('image/png').split(',')[1] || ''
+          : '',
       }));
       return {
         amount: Number(entry.amount.replace(',', '.')),
@@ -186,11 +196,11 @@ const PublicDeposit = () => {
     });
     const invalid = preparedEntries.some(entry =>
       !entry.amount || entry.amount <= 0 || !entry.date || !entry.basis ||
-      entry.signers.length === 0 || entry.signers.some(signer => !signer.fullName) ||
+      entry.signers.length === 0 || entry.signers.some(signer => !signer.fullName || !signer.signatureBase64) ||
       (entry.currency === 'OTHER' && !entry.customCurrency.trim()),
     );
     if (invalid) {
-      setError('Заполните сумму, имя и фамилию, дату и основание во всех квитанциях');
+      setError('Заполните сумму, дату, основание, имя и обязательную подпись каждого отправителя');
       return;
     }
     setSubmitting(true);
@@ -319,7 +329,6 @@ const PublicDeposit = () => {
                       value={entry.basisDetails}
                       onChange={event => updateEntry(entry.id, { basisDetails: event.target.value })}
                       placeholder="Уточните назначение целевого пожертвования"
-                      required
                     />
                   )}
                 </div>
@@ -354,7 +363,7 @@ const PublicDeposit = () => {
                   </div>
                 ))}
                 <Button type="button" variant="outline" className="sm:col-span-2" onClick={() => addSigner(entry.id)} disabled={entry.signers.length >= 10}>
-                  <Plus className="mr-2 h-4 w-4" />Добавить дополнительного пользователя
+                  <UserRoundPlus className="mr-2 h-5 w-5" />Добавить дополнительного пользователя
                 </Button>
               </section>
             ))}

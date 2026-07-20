@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -36,6 +36,21 @@ function ThemeInitializer() {
   return null;
 }
 
+function PwaHome() {
+  const isPwaLaunch = new URLSearchParams(window.location.search).get('source') === 'pwa';
+  const lastDepositPath = localStorage.getItem('pwa:last-public-deposit');
+
+  if (isPwaLaunch && lastDepositPath?.startsWith('/deposit/')) {
+    return <Navigate to={lastDepositPath} replace />;
+  }
+
+  return (
+    <ProtectedRoute>
+      <Index />
+    </ProtectedRoute>
+  );
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeInitializer />
@@ -53,11 +68,7 @@ const App = () => (
               <Route path="/sign" element={<SignaturePad />} />
               <Route 
                 path="/" 
-                element={
-                  <ProtectedRoute>
-                    <Index />
-                  </ProtectedRoute>
-                } 
+                element={<PwaHome />}
               />
               <Route path="/bank-callback" element={<BankCallback />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
