@@ -83,7 +83,7 @@ Deno.serve(async request => {
     doc.addFileToVFS('Roboto-Regular.ttf', ROBOTO_FONT_BASE64);
     doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
     doc.setFont('Roboto', 'normal');
-    const organization = text(body.organizationName || link.organization_name || 'ZBÓR BIBLIJNY KOŚCIÓŁ W WARSZAWIE', 200);
+    const organization = 'KOŚCIÓŁ BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE - БИБЛЕЙСКАЯ ЦЕРКОВЬ В ВАРШАВЕ';
 
     const drawLineText = (label: string, value: string, x: number, y: number, width: number) => {
       const defaultSize = 8;
@@ -113,26 +113,22 @@ Deno.serve(async request => {
       doc.setLineWidth(0.25);
       doc.setFontSize(8.5);
       doc.text(organization, leftX + width / 2, offsetY + 7, { align: 'center', maxWidth: width - 8 });
-      doc.setFontSize(8);
-      doc.text('БИБЛЕЙСКАЯ ЦЕРКОВЬ В ВАРШАВЕ', leftX + width / 2, offsetY + 13, { align: 'center' });
       doc.setFontSize(9.5);
-      doc.text('DOWÓD WPŁATY', leftX + width / 2, offsetY + 20, { align: 'center' });
+      doc.text('DOWÓD WPŁATY', leftX + width / 2, offsetY + 14, { align: 'center' });
 
-      doc.rect(leftX, offsetY + 22, width, 13);
-      doc.line(leftX + width / 2, offsetY + 22, leftX + width / 2, offsetY + 35);
-      doc.line(leftX, offsetY + 27, leftX + width, offsetY + 27);
+      doc.rect(leftX, offsetY + 16, width, 13);
+      doc.line(leftX + width / 2, offsetY + 16, leftX + width / 2, offsetY + 29);
+      doc.line(leftX, offsetY + 21, leftX + width, offsetY + 21);
       doc.setFontSize(7.5);
-      doc.text('Kwota', leftX + width / 4, offsetY + 26, { align: 'center' });
-      doc.text('Data', leftX + width * 0.75, offsetY + 26, { align: 'center' });
-      doc.text(amountText, leftX + width / 4, offsetY + 33, { align: 'center' });
-      doc.text(entry.date, leftX + width * 0.75, offsetY + 33, { align: 'center' });
+      doc.text('Kwota', leftX + width / 4, offsetY + 20, { align: 'center' });
+      doc.text('Data', leftX + width * 0.75, offsetY + 20, { align: 'center' });
+      doc.text(amountText, leftX + width / 4, offsetY + 27, { align: 'center' });
+      doc.text(entry.date, leftX + width * 0.75, offsetY + 27, { align: 'center' });
 
-      drawLineText('Podstawa:', entry.basis, leftX + 1, offsetY + 45, width - 2);
-      doc.line(leftX + 1, offsetY + 53, leftX + width - 1, offsetY + 53);
-      drawLineText('Kwota słownie:', amountWords, leftX + 1, offsetY + 62, width - 2);
-      doc.line(leftX + 1, offsetY + 70, leftX + width - 1, offsetY + 70);
+      drawLineText('Podstawa:', entry.basis, leftX + 1, offsetY + 39, width - 2);
+      drawLineText('Kwota słownie:', amountWords, leftX + 1, offsetY + 48, width - 2);
 
-      const signerTop = offsetY + 76;
+      const signerTop = offsetY + 54;
       const signerHeight = 18;
       doc.setFontSize(8);
       entry.signers.forEach((signer, signerIndex) => {
@@ -155,7 +151,7 @@ Deno.serve(async request => {
     let pageIndex = 0;
     let cursorY = 10;
     entries.forEach(entry => {
-      const expectedHeight = 92 + entry.signers.length * 18;
+      const expectedHeight = 70 + entry.signers.length * 18;
       if (cursorY > 10 && cursorY + expectedHeight > 287) {
         doc.addPage();
         pageIndex += 1;

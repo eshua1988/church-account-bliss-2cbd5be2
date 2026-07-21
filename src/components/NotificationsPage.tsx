@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   getNotificationArchiveMonth,
   getNotificationArchiveYear,
@@ -667,6 +668,7 @@ export const NotificationsPage = () => {
   const [depositPdfTarget, setDepositPdfTarget] = useState<Notification | null>(null);
   const [selectedReceiptIndex, setSelectedReceiptIndex] = useState('0');
   const [cashierName, setCashierName] = useState('');
+  const [signAllDepositReceipts, setSignAllDepositReceipts] = useState(false);
   const cashierSignatureRef = useRef<HTMLCanvasElement | null>(null);
   const drawingCashierSignature = useRef(false);
   const [downloadingArchive, setDownloadingArchive] = useState<string | null>(null);
@@ -725,6 +727,7 @@ export const NotificationsPage = () => {
     setDepositPdfTarget(notification);
     setSelectedReceiptIndex('0');
     setCashierName(String(receipts[0]?.cashier || notification.metadata?.cashier || ''));
+    setSignAllDepositReceipts(false);
     requestAnimationFrame(clearCashierSignature);
   };
 
@@ -758,29 +761,17 @@ export const NotificationsPage = () => {
 
       const { PDFDocument } = await import('pdf-lib');
       const pdfDoc = await PDFDocument.load(await sourceResponse.arrayBuffer());
-      const receiptLayout = depositReceipts[receiptIndex] || {};
-      const pageIndex = Number.isFinite(Number(receiptLayout.page_index))
-        ? Number(receiptLayout.page_index)
-        : Math.floor(receiptIndex / 2);
-      if (pageIndex >= pdfDoc.getPageCount()) throw new Error('Квитанция не найдена в PDF');
-      const page = pdfDoc.getPage(pageIndex);
-      const { width: pageWidth, height: pageHeight } = page.getSize();
-      const mmX = pageWidth / 210;
-      const mmY = pageHeight / 297;
-      const isModernLayout = Array.isArray(meta.receipts);
-      const receiptOffset = receiptIndex % 2 === 0 ? 10 : 153;
-      const topMm = Number.isFinite(Number(receiptLayout.cashier_top_mm))
-        ? Number(receiptLayout.cashier_top_mm)
-        : (isModernLayout ? receiptOffset + 98 : 137);
-      const heightMm = Number.isFinite(Number(receiptLayout.cashier_height_mm))
-        ? Number(receiptLayout.cashier_height_mm)
-        : (isModernLayout ? 12 : 16);
-      const leftMm = 12;
-      const widthMm = 186;
+      const receiptIndexes = signAllDepositReceipts
+        ? depositReceipts.map((_, index) => index)
+        : [receiptIndex];
+      const selectedLayout = depositReceipts[receiptIndex] || {};
+      const selectedHeightMm = Number.isFinite(Number(selectedLayout.cashier_height_mm))
+        ? Number(selectedLayout.cashier_height_mm)
+        : (Array.isArray(meta.receipts) ? 12 : 16);
 
       const area = document.createElement('canvas');
       area.width = 1860;
-      area.height = Math.round(heightMm * 10);
+      area.height = Math.round(selectedHeightMm * 10);
       const context = area.getContext('2d');
       if (!context) throw new Error('Не удалось подготовить область кассира');
       context.fillStyle = '#ffffff';
@@ -810,11 +801,29 @@ export const NotificationsPage = () => {
         );
       }
       const areaImage = await pdfDoc.embedPng(area.toDataURL('image/png'));
-      page.drawImage(areaImage, {
-        x: leftMm * mmX,
-        y: pageHeight - (topMm + heightMm) * mmY,
-        width: widthMm * mmX,
-        height: heightMm * mmY,
+      receiptIndexes.forEach(index => {
+        const receiptLayout = depositReceipts[index] || {};
+        const pageIndex = Number.isFinite(Number(receiptLayout.page_index))
+          ? Number(receiptLayout.page_index)
+          : Math.floor(index / 2);
+        if (pageIndex >= pdfDoc.getPageCount()) throw new Error('Квитанция не найдена в PDF');
+        const page = pdfDoc.getPage(pageIndex);
+        const { width: pageWidth, height: pageHeight } = page.getSize();
+        const mmX = pageWidth / 210;
+        const mmY = pageHeight / 297;
+        const receiptOffset = index % 2 === 0 ? 10 : 153;
+        const topMm = Number.isFinite(Number(receiptLayout.cashier_top_mm))
+          ? Number(receiptLayout.cashier_top_mm)
+          : (Array.isArray(meta.receipts) ? receiptOffset + 98 : 137);
+        const heightMm = Number.isFinite(Number(receiptLayout.cashier_height_mm))
+          ? Number(receiptLayout.cashier_height_mm)
+          : selectedHeightMm;
+        page.drawImage(areaImage, {
+          x: 12 * mmX,
+          y: pageHeight - (topMm + heightMm) * mmY,
+          width: 186 * mmX,
+          height: heightMm * mmY,
+        });
       });
 
       const updatedBytes = await pdfDoc.save();
@@ -841,7 +850,7 @@ export const NotificationsPage = () => {
 
       const receipts = Array.isArray(meta.receipts)
         ? (meta.receipts as Array<Record<string, unknown>>).map((receipt, index) =>
-            index === receiptIndex ? { ...receipt, cashier: cashierName.trim(), cashier_signed: true } : receipt)
+            receiptIndexes.includes(index) ? { ...receipt, cashier: cashierName.trim(), cashier_signed: true } : receipt)
         : undefined;
       const updatedMetadata = {
         ...meta,
@@ -855,7 +864,12 @@ export const NotificationsPage = () => {
 
       setDepositPdfTarget(null);
       await refetchNotifications();
-      toast({ title: 'PDF обновлён', description: 'Имя кассира и подпись сохранены в выбранной квитанции.' });
+      toast({
+        title: 'PDF обновлён',
+        description: signAllDepositReceipts
+          ? 'Имя кассира и подпись сохранены во всех квитанциях PDF.'
+          : 'Имя кассира и подпись сохранены в выбранной квитанции.',
+      });
     } catch (error) {
       toast({
         title: 'Не удалось обновить PDF',
@@ -1660,6 +1674,7 @@ export const NotificationsPage = () => {
             setDepositPdfTarget(null);
             setSelectedReceiptIndex('0');
             setCashierName('');
+            setSignAllDepositReceipts(false);
             clearCashierSignature();
           }
         }}
@@ -1694,7 +1709,21 @@ export const NotificationsPage = () => {
             </div>
           )}
           <div className="space-y-2">
-            <Label htmlFor="deposit-cashier-name">Кассир - Имя Фамилия</Label>
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="deposit-cashier-name">Кассир - Имя Фамилия</Label>
+              {depositReceipts.length > 1 && (
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="sign-all-deposit-receipts" className="cursor-pointer text-xs text-muted-foreground">
+                    Подписать все квитанции
+                  </Label>
+                  <Switch
+                    id="sign-all-deposit-receipts"
+                    checked={signAllDepositReceipts}
+                    onCheckedChange={setSignAllDepositReceipts}
+                  />
+                </div>
+              )}
+            </div>
             <Input
               id="deposit-cashier-name"
               value={cashierName}

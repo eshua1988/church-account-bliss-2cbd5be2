@@ -37,7 +37,8 @@ function ThemeInitializer() {
 }
 
 function PwaHome() {
-  const isPwaLaunch = new URLSearchParams(window.location.search).get('source') === 'pwa';
+  const launchSource = new URLSearchParams(window.location.search).get('source');
+  const isPwaLaunch = launchSource === 'pwa' || launchSource === 'deposit-pwa';
   const lastDepositPath = localStorage.getItem('pwa:last-public-deposit');
 
   if (isPwaLaunch && lastDepositPath?.startsWith('/deposit/')) {

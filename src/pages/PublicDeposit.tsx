@@ -64,6 +64,22 @@ const PublicDeposit = () => {
 
   useEffect(() => {
     localStorage.setItem('pwa:last-public-deposit', `/deposit/${token}`);
+
+    let manifestLink = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    const previousManifestHref = manifestLink?.getAttribute('href') || '';
+    const previousTitle = document.title;
+    const appleTitle = document.querySelector<HTMLMetaElement>('meta[name="apple-mobile-web-app-title"]');
+    const previousAppleTitle = appleTitle?.content || '';
+
+    if (!manifestLink) {
+      manifestLink = document.createElement('link');
+      manifestLink.rel = 'manifest';
+      document.head.appendChild(manifestLink);
+    }
+    manifestLink.href = `${import.meta.env.BASE_URL}deposit-manifest.webmanifest`;
+    document.title = 'Dowód wpłaty';
+    if (appleTitle) appleTitle.content = 'Dowód wpłaty';
+
     supabase.functions.invoke('validate-payout-token', { body: { token } })
       .then(({ data }) => {
         const isDeposit = data?.valid && data?.linkType === 'deposit';
@@ -78,6 +94,13 @@ const PublicDeposit = () => {
       })
       .catch(() => setError('Не удалось проверить ссылку'))
       .finally(() => setLoading(false));
+
+    return () => {
+      if (previousManifestHref) manifestLink!.href = previousManifestHref;
+      else manifestLink?.remove();
+      document.title = previousTitle;
+      if (appleTitle) appleTitle.content = previousAppleTitle;
+    };
   }, [token]);
 
   const updateEntry = (id: string, patch: Partial<DepositEntry>) => {
