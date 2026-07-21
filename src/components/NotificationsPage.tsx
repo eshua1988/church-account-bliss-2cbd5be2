@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, QrCode, Copy, Banknote, ExternalLink, BellRing, Archive, FolderArchive, FileText, ChevronDown, Building2, Pencil } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, Banknote, BellRing, Archive, FolderArchive, FileText, ChevronDown, Building2, Pencil } from 'lucide-react';
 import JSZip from 'jszip';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { useAuth } from '@/contexts/AuthContext';
@@ -55,26 +55,6 @@ const isRuleRequestNotification = (notification: Notification) =>
 const isDepositNotification = (notification: Notification) =>
   notification.type === 'deposit' || notification.metadata?.document_type === 'deposit';
 
-// Detect account type and build QR string
-function buildPaymentQr(account: string, amount: number, currency: string, recipientName: string, title: string): { qrValue: string; type: 'blik' | 'iban' | 'phone' } {
-  const clean = account.replace(/\s/g, '');
-  // IBAN: starts with 2 letters + digits, length 15-34
-  const isIban = /^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/i.test(clean);
-  if (isIban) {
-    // Polish bank QR standard: 2|1|IBAN|Name|AmountGrosze|Title||
-    const amountGrosze = currency === 'PLN' ? Math.round(amount * 100) : Math.round(amount * 100);
-    const qrValue = `2|1|${clean.toUpperCase()}|${recipientName}|${amountGrosze}|${title}||`;
-    return { qrValue, type: 'iban' };
-  }
-  // Phone: 9 digits or +48xxxxxxxxx
-  const isPhone = /^(\+?48)?[0-9]{9}$/.test(clean);
-  if (isPhone) {
-    const normalized = clean.startsWith('+') ? clean : clean.length === 9 ? `+48${clean}` : `+${clean}`;
-    return { qrValue: normalized, type: 'blik' };
-  }
-  return { qrValue: account, type: 'phone' };
-}
-
 const NotificationCard = ({
   notification,
   onMarkAsRead,
@@ -107,7 +87,6 @@ const NotificationCard = ({
   onSwipe?: (id: string | null) => void;
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
-  const [showQr, setShowQr] = useState(false);
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [isSwiped, setIsSwiped] = useState(false);
 
@@ -178,15 +157,10 @@ const NotificationCard = ({
   const amount = notification.metadata?.amount as number | undefined;
   const currency = notification.metadata?.currency as string | undefined;
   const imagesSkipped = notification.metadata?.images_skipped as boolean | undefined;
-  const bankAccount = notification.metadata?.bank_account as string | undefined;
   const baseUrl = window.location.origin + import.meta.env.BASE_URL.replace(/\/$/, '');
   const payoutUrl = payoutToken
     ? `${baseUrl}/payout/${payoutToken}?name=${encodeURIComponent(issuedTo || '')}`
     : undefined;
-
-  const paymentQr = bankAccount && amount
-    ? buildPaymentQr(bankAccount, amount, currency || 'PLN', issuedTo || '', departmentName || 'Расходный ордер')
-    : null;
 
   const BTN_W = 64;
   const mobileButtonCount =
@@ -198,8 +172,7 @@ const NotificationCard = ({
     ((pdfPath || transactionId) ? 1 : 0) +
     (onArchive && !isArchived && (pdfPath || transactionId) ? 1 : 0) +
     (onChangeDepartment && notification.type === 'payout' && !isRuleRequest ? 1 : 0) +
-    (onEditDepositPdf && isDeposit && !isRuleRequest ? 1 : 0) +
-    (paymentQr ? 1 : 0);
+    (onEditDepositPdf && isDeposit && !isRuleRequest ? 1 : 0);
   const SWIPE_MAX = mobileButtonCount * BTN_W;
   const SWIPE_THRESHOLD = 50;
 
@@ -346,17 +319,6 @@ const NotificationCard = ({
           В архив
         </Button>
       )}
-      {paymentQr && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1 h-8 px-2.5 text-xs border-green-500/50 text-green-600 hover:text-green-700 hover:bg-green-500/10"
-          onClick={() => { setShowQr(true); doClose(); }}
-        >
-          <QrCode className="h-3 w-3" />
-          Оплатить
-        </Button>
-      )}
     </>
   );
 
@@ -460,16 +422,6 @@ const NotificationCard = ({
             <span className="text-[11px] font-medium leading-none">Архив</span>
           </button>
         )}
-        {paymentQr && (
-          <button
-            className="flex flex-col items-center justify-center gap-1 text-white bg-green-600 active:bg-green-700"
-            style={{ width: `${BTN_W}px` }}
-            onClick={() => { setShowQr(true); doClose(); }}
-          >
-            <QrCode className="h-5 w-5" />
-            <span className="text-[11px] font-medium leading-none">Оплатить</span>
-          </button>
-        )}
         {!notification.is_read && (
           <button
             className="flex flex-col items-center justify-center gap-1 text-white bg-indigo-500 active:bg-indigo-600"
@@ -552,7 +504,7 @@ const NotificationCard = ({
           </div>
           {/* Mobile: swipe hint when no swipe yet and there are actions */}
           <div className="flex sm:hidden items-center gap-1 text-xs text-muted-foreground">
-            {(onAddToTransaction || isRuleRequest || imagesSkipped || pdfPath || transactionId || paymentQr) && !isSwiped && (
+            {(onAddToTransaction || isRuleRequest || imagesSkipped || pdfPath || transactionId) && !isSwiped && (
               <span className="flex items-center gap-0.5 opacity-50">← действия</span>
             )}
           </div>
@@ -560,82 +512,6 @@ const NotificationCard = ({
       </div>
     </div>
 
-    {/* Payment Dialog */}
-    {paymentQr && (
-      <Dialog open={showQr} onOpenChange={setShowQr}>
-        <DialogContent className="max-w-xs w-full">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Banknote className="h-4 w-4 text-primary" />
-              {paymentQr.type === 'blik' ? 'Оплата через BLIK' : 'Банковский перевод'}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col gap-3 pt-1">
-            {/* Account / Phone */}
-            <div className="flex items-center justify-between gap-2 bg-muted rounded-lg px-3 py-2.5">
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground mb-0.5">
-                  {paymentQr.type === 'blik' ? 'Номер телефона (BLIK)' : 'Счёт IBAN'}
-                </p>
-                <p className="font-mono text-sm font-semibold truncate">{bankAccount}</p>
-              </div>
-              <Button
-                variant="ghost" size="sm" className="h-8 w-8 p-0 shrink-0"
-                onClick={() => { navigator.clipboard.writeText(bankAccount || ''); toast({ title: 'Скопировано' }); }}
-              >
-                <Copy className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-            {/* Recipient */}
-            <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2.5">
-              <div className="min-w-0 flex-1">
-                <p className="text-xs text-muted-foreground mb-0.5">Получатель</p>
-                <p className="text-sm font-medium truncate">{issuedTo || '—'}</p>
-              </div>
-            </div>
-            {/* Amount */}
-            <div className="flex items-center justify-between gap-2 bg-muted rounded-lg px-3 py-2.5">
-              <div>
-                <p className="text-xs text-muted-foreground mb-0.5">Сумма</p>
-                <p className="text-base font-bold text-primary">{amount} {currency}</p>
-              </div>
-              <Button
-                variant="ghost" size="sm" className="h-8 w-8 p-0 shrink-0"
-                onClick={() => { navigator.clipboard.writeText(`${amount}`); toast({ title: 'Скопировано' }); }}
-              >
-                <Copy className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-            {/* Action button */}
-            {paymentQr.type === 'blik' ? (
-              <a
-                href={`tel:${paymentQr.qrValue}`}
-                className="w-full"
-                onClick={() => setShowQr(false)}
-              >
-                <Button className="w-full gap-2 bg-green-600 hover:bg-green-700 text-white">
-                  <ExternalLink className="h-4 w-4" />
-                  Открыть в приложении банка
-                </Button>
-              </a>
-            ) : (
-              <Button
-                className="w-full gap-2 bg-green-600 hover:bg-green-700 text-white"
-                onClick={() => {
-                  const details = `${paymentQr.type === 'iban' ? 'IBAN' : 'Счёт'}: ${bankAccount}\nПолучатель: ${issuedTo || '—'}\nСумма: ${amount} ${currency}`;
-                  navigator.clipboard.writeText(details);
-                  toast({ title: 'Реквизиты скопированы', description: 'Вставьте в приложение банка' });
-                  setShowQr(false);
-                }}
-              >
-                <Copy className="h-4 w-4" />
-                Скопировать реквизиты
-              </Button>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-    )}
     </>
   );
 };

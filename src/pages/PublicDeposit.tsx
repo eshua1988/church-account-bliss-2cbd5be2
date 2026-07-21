@@ -262,16 +262,16 @@ const PublicDeposit = () => {
   }
 
   return (
-    <main className="min-h-screen bg-background p-3 sm:p-8">
-      <Card className="mx-auto max-w-2xl">
-        <CardHeader>
+    <main className="min-h-screen bg-background px-1.5 py-3 sm:p-8">
+      <Card className="mx-auto w-full max-w-2xl overflow-hidden">
+        <CardHeader className="px-3 py-5 sm:px-6 sm:py-6">
           <CardTitle className="flex items-center gap-2"><ReceiptText className="h-6 w-6" />Dowód wpłaty</CardTitle>
           <p className="text-sm text-muted-foreground">{organizationName}</p>
         </CardHeader>
-        <CardContent>
-          <form className="space-y-6" onSubmit={submit}>
+        <CardContent className="px-2 pb-4 sm:px-6 sm:pb-6">
+          <form className="min-w-0 space-y-4 sm:space-y-6" onSubmit={submit}>
             {entries.map((entry, index) => (
-              <section key={entry.id} className="grid gap-5 rounded-lg border p-4 sm:grid-cols-2">
+              <section key={entry.id} className="grid min-w-0 gap-4 rounded-lg border px-2.5 py-4 sm:grid-cols-2 sm:gap-5 sm:p-4">
                 <div className="flex items-center justify-between sm:col-span-2">
                   <h2 className="font-semibold">Dowód wpłaty {index + 1}</h2>
                   {entries.length > 1 && (
@@ -282,7 +282,7 @@ const PublicDeposit = () => {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor={`amount-${entry.id}`}>Kwota / Сумма</Label>
-                  <div className="grid grid-cols-[1fr_110px] gap-2">
+                  <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_96px] gap-2 sm:grid-cols-[minmax(0,1fr)_110px]">
                     <Input
                       id={`amount-${entry.id}`}
                       inputMode="decimal"
@@ -315,7 +315,7 @@ const PublicDeposit = () => {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor={`date-${entry.id}`}>Data / Дата</Label>
-                  <Input id={`date-${entry.id}`} type="date" value={entry.date} onChange={event => updateEntry(entry.id, { date: event.target.value })} required />
+                  <Input className="block min-w-0 max-w-full" id={`date-${entry.id}`} type="date" value={entry.date} onChange={event => updateEntry(entry.id, { date: event.target.value })} required />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
                   <Label>Podstawa / Основание</Label>
@@ -358,7 +358,7 @@ const PublicDeposit = () => {
                   )}
                 </div>
                 {entry.signers.map((signer, signerIndex) => (
-                  <div key={signer.id} className="space-y-3 rounded-md border p-3 sm:col-span-2">
+                  <div key={signer.id} className="min-w-0 space-y-3 rounded-md border p-2.5 sm:col-span-2 sm:p-3">
                     <div className="flex items-center justify-between gap-3">
                       <Label className="font-semibold">Nadawca {signerIndex + 1} / Отправитель {signerIndex + 1}</Label>
                       {entry.signers.length > 1 && (

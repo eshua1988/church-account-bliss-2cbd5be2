@@ -19,7 +19,8 @@ export default defineConfig(({ mode }) => ({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'Kosciol.ico.png', 'robots.txt'],
-      manifest: {
+      // Safari reads the manifest before React mounts. index.html selects it synchronously.
+      manifest: false, /* {
         name: 'Церковный учет',
         short_name: 'Учет',
         description: 'Система финансового учета церкви',
@@ -47,7 +48,7 @@ export default defineConfig(({ mode }) => ({
             purpose: 'maskable'
           }
         ]
-      },
+      }, */
       workbox: {
         importScripts: ['push-sw.js'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB (default 2 MB, exceeded by Roboto base64 bundle)

@@ -38,26 +38,42 @@ function ThemeInitializer() {
 
 function PwaHome() {
   const launchSource = new URLSearchParams(window.location.search).get('source');
-  const isPwaLaunch = launchSource === 'pwa' || launchSource === 'deposit-pwa';
-  const storedDepositPath = localStorage.getItem('pwa:last-public-deposit');
-  const cookieDepositPath = document.cookie
-    .split('; ')
-    .find(cookie => cookie.startsWith('pwa_last_public_deposit='))
-    ?.slice('pwa_last_public_deposit='.length);
-  let decodedCookieDepositPath: string | null = null;
+  const publicPwaType = launchSource?.endsWith('-pwa')
+    ? launchSource.slice(0, -4)
+    : null;
+  const isPublicPwaLaunch = ['payout', 'deposit', 'transactions'].includes(publicPwaType || '');
+  let lastPublicPath: string | null = null;
 
-  if (cookieDepositPath) {
+  if (isPublicPwaLaunch && publicPwaType) {
     try {
-      decodedCookieDepositPath = decodeURIComponent(cookieDepositPath);
+      lastPublicPath = localStorage.getItem(`pwa:last-public-${publicPwaType}`);
     } catch {
-      decodedCookieDepositPath = null;
+      // localStorage may be unavailable in private browsing.
+    }
+
+    if (!lastPublicPath) {
+      const cookieName = `pwa_last_public_${publicPwaType}=`;
+      const cookiePath = document.cookie
+        .split('; ')
+        .find(cookie => cookie.startsWith(cookieName))
+        ?.slice(cookieName.length);
+
+      if (cookiePath) {
+        try {
+          lastPublicPath = decodeURIComponent(cookiePath);
+        } catch {
+          lastPublicPath = null;
+        }
+      }
     }
   }
 
-  const lastDepositPath = decodedCookieDepositPath || storedDepositPath;
+  const matchesPwaType = publicPwaType
+    ? new RegExp(`^/${publicPwaType}/[a-zA-Z0-9_-]+`).test(lastPublicPath || '')
+    : false;
 
-  if (isPwaLaunch && lastDepositPath?.startsWith('/deposit/')) {
-    return <Navigate to={lastDepositPath} replace />;
+  if (isPublicPwaLaunch && matchesPwaType && lastPublicPath) {
+    return <Navigate to={lastPublicPath!} replace />;
   }
 
   return (

@@ -335,7 +335,7 @@ export const CategoryManager = ({ categories, onAdd, onDelete, onUpdate, onReord
               : 'text-muted-foreground hover:text-foreground'
           )}
         >
-          Расширение
+          {t('settingsExtension')}
         </button>
       </div>
 

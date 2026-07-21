@@ -479,7 +479,7 @@ const Index = () => {
               {/* Extension */}
               <div className="bg-card rounded-lg shadow-card overflow-hidden">
                 <button onClick={() => toggleSetting('extension')} className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-muted/50 transition-colors">
-                  <h4 className="font-semibold text-base sm:text-lg">Расширение</h4>
+                  <h4 className="font-semibold text-base sm:text-lg">{t('settingsExtension')}</h4>
                   {openSettings.extension ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
                 </button>
                 {openSettings.extension && (
@@ -535,7 +535,7 @@ const Index = () => {
               {/* Cloud archives */}
               <div className="bg-card rounded-lg shadow-card overflow-hidden">
                 <button onClick={() => toggleSetting('cloud')} className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-muted/50 transition-colors">
-                  <h4 className="font-semibold text-base sm:text-lg">Облако</h4>
+                  <h4 className="font-semibold text-base sm:text-lg">{t('cloudStorage')}</h4>
                   {openSettings.cloud ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
                 </button>
                 {openSettings.cloud && (
@@ -548,23 +548,23 @@ const Index = () => {
               {/* Share Payout Link */}
               <div className="bg-card rounded-lg shadow-card overflow-hidden">
                 <button onClick={() => toggleSetting('share')} className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-muted/50 transition-colors">
-                  <h4 className="font-semibold text-base sm:text-lg">Udostępnij formularz</h4>
+                  <h4 className="font-semibold text-base sm:text-lg">{t('shareForm')}</h4>
                   {openSettings.share ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
                 </button>
                 {openSettings.share && (
                   <div className="px-4 pb-4 sm:px-6 sm:pb-6 space-y-6">
                     <div>
-                      <h5 className="font-semibold text-sm mb-3">Расходный ордер</h5>
+                      <h5 className="font-semibold text-sm mb-3">{t('payoutOrder')}</h5>
                       <SharePayoutLink />
                     </div>
                     <Separator />
                     <div>
-                      <h5 className="font-semibold text-sm mb-3">Dowód wpłaty</h5>
+                      <h5 className="font-semibold text-sm mb-3">{t('depositReceipt')}</h5>
                       <ShareDepositLink />
                     </div>
                     <Separator />
                     <div>
-                      <h5 className="font-semibold text-sm mb-3">Таблица транзакций</h5>
+                      <h5 className="font-semibold text-sm mb-3">{t('transactionsTable')}</h5>
                       <ShareTransactionsLink />
                     </div>
                   </div>
@@ -574,7 +574,7 @@ const Index = () => {
               {/* Telegram Bot */}
               <div className="bg-card rounded-lg shadow-card overflow-hidden">
                 <button onClick={() => toggleSetting('telegram')} className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-muted/50 transition-colors">
-                  <h4 className="font-semibold text-base sm:text-lg">Telegram-бот</h4>
+                  <h4 className="font-semibold text-base sm:text-lg">{t('telegramBot')}</h4>
                   {openSettings.telegram ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
                 </button>
                 {openSettings.telegram && (
@@ -589,7 +589,7 @@ const Index = () => {
               {/* Banking */}
               <div className="bg-card rounded-lg shadow-card overflow-hidden">
                 <button onClick={() => toggleSetting('banking')} className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-muted/50 transition-colors">
-                  <h4 className="font-semibold text-base sm:text-lg">Банки Польши</h4>
+                  <h4 className="font-semibold text-base sm:text-lg">{t('polishBanks')}</h4>
                   {openSettings.banking ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
                 </button>
                 {openSettings.banking && (

@@ -118,16 +118,16 @@ export const SharePayoutLink = () => {
       setNewLinkType('standard');
       
       toast({
-        title: 'Link utworzony',
+        title: t('linkCreated'),
         description: newLinkType === 'stepwise' 
-          ? 'Utworzono link do poshagowego wypełniania' 
-          : 'Nowy link został utworzony',
+          ? t('stepwiseFormHint')
+          : t('linkCreated'),
       });
     } catch (err) {
       console.error('Error creating link:', err);
       toast({
-        title: 'Błąd',
-        description: 'Nie udało się utworzyć linku',
+        title: t('error'),
+        description: t('linkCreateError'),
         variant: 'destructive',
       });
     }
@@ -145,8 +145,8 @@ export const SharePayoutLink = () => {
       setLinks(prev => prev.filter(l => l.id !== id));
       
       toast({
-        title: 'Link usunięty',
-        description: 'Link został usunięty',
+        title: t('linkDeleted'),
+        description: t('linkDeleted'),
       });
     } catch (err) {
       console.error('Error deleting link:', err);
@@ -160,8 +160,8 @@ export const SharePayoutLink = () => {
     setTimeout(() => setCopiedId(null), 2000);
     
     toast({
-      title: 'Skopiowano',
-      description: 'Link został skopiowany do schowka',
+      title: t('copyLink'),
+      description: t('linkCopied'),
     });
   };
 
@@ -175,7 +175,7 @@ export const SharePayoutLink = () => {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
           <Link2 className="w-5 h-5" />
-          Udostępnij formularz
+          {t('shareForm')}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -183,7 +183,7 @@ export const SharePayoutLink = () => {
         <div className="space-y-3">
           <div className="flex gap-2">
             <Input
-              placeholder="Nazwa linku (opcjonalna)"
+              placeholder={t('linkNameOptional')}
               value={newLinkName}
               onChange={(e) => setNewLinkName(e.target.value)}
               className="flex-1"
@@ -195,7 +195,7 @@ export const SharePayoutLink = () => {
           
           {/* Link type selector */}
           <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Typ formularza:</Label>
+            <Label className="text-xs text-muted-foreground">{t('formType')}</Label>
             <ToggleGroup 
               type="single" 
               value={newLinkType} 
@@ -204,17 +204,17 @@ export const SharePayoutLink = () => {
             >
               <ToggleGroupItem value="standard" className="gap-2 text-xs">
                 <FileText className="w-4 h-4" />
-                Standardowy
+                {t('standardForm')}
               </ToggleGroupItem>
               <ToggleGroupItem value="stepwise" className="gap-2 text-xs">
                 <ListOrdered className="w-4 h-4" />
-                Poshagowy
+                {t('stepwiseForm')}
               </ToggleGroupItem>
             </ToggleGroup>
             <p className="text-xs text-muted-foreground">
               {newLinkType === 'stepwise' 
-                ? 'Użytkownik wypełnia formularz krok po kroku z możliwością zapisania i pobrania PDF'
-                : 'Użytkownik wypełnia wszystkie pola na jednym ekranie'}
+                ? t('stepwiseFormHint')
+                : t('standardFormHint')}
             </p>
           </div>
         </div>
@@ -223,7 +223,7 @@ export const SharePayoutLink = () => {
         <div className="space-y-2">
           {links.length === 0 && !loading && (
             <p className="text-sm text-muted-foreground text-center py-4">
-              Brak utworzonych linków. Utwórz pierwszy link powyżej.
+              {t('noSharedLinks')}
             </p>
           )}
           
@@ -235,13 +235,13 @@ export const SharePayoutLink = () => {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <p className="font-medium truncate">
-                    {link.name || 'Link bez nazwy'}
+                    {link.name || t('unnamedLink')}
                   </p>
                   <Badge variant={link.link_type === 'stepwise' ? 'secondary' : 'outline'} className="text-xs shrink-0">
                     {link.link_type === 'stepwise' ? (
-                      <><ListOrdered className="w-3 h-3 mr-1" />Poshagowy</>
+                      <><ListOrdered className="w-3 h-3 mr-1" />{t('stepwiseForm')}</>
                     ) : (
-                      <><FileText className="w-3 h-3 mr-1" />Standard</>
+                      <><FileText className="w-3 h-3 mr-1" />{t('standardForm')}</>
                     )}
                   </Badge>
                 </div>
@@ -255,7 +255,7 @@ export const SharePayoutLink = () => {
                   variant="ghost"
                   size="icon"
                   onClick={() => copyLink(link)}
-                  title="Kopiuj link"
+                  title={t('copyLink')}
                 >
                   {copiedId === link.id ? (
                     <Check className="w-4 h-4 text-primary" />
@@ -268,7 +268,7 @@ export const SharePayoutLink = () => {
                   variant="ghost"
                   size="icon"
                   onClick={() => openQrDialog(link)}
-                  title="Pokaż QR kod"
+                  title={t('showQrCode')}
                 >
                   <QrCode className="w-4 h-4" />
                 </Button>
@@ -277,7 +277,7 @@ export const SharePayoutLink = () => {
                   variant="ghost"
                   size="icon"
                   onClick={() => window.open(`${baseUrl}/payout/${link.token}`, '_blank')}
-                  title="Otwórz w nowej karcie"
+                  title={t('openNewTab')}
                 >
                   <ExternalLink className="w-4 h-4" />
                 </Button>
@@ -286,7 +286,7 @@ export const SharePayoutLink = () => {
                   variant="ghost"
                   size="icon"
                   onClick={() => deleteLink(link.id)}
-                  title="Usuń link"
+                  title={t('deleteLink')}
                   className="text-destructive hover:text-destructive"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -300,7 +300,7 @@ export const SharePayoutLink = () => {
         <Dialog open={showQrDialog} onOpenChange={setShowQrDialog}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>QR kod</DialogTitle>
+              <DialogTitle>{t('qrCode')}</DialogTitle>
             </DialogHeader>
             {selectedLink && (
               <div className="flex flex-col items-center gap-4 py-4">
@@ -313,7 +313,7 @@ export const SharePayoutLink = () => {
                   />
                 </div>
                 <p className="text-sm text-muted-foreground text-center">
-                  {selectedLink.name || 'Link bez nazwy'}
+                  {selectedLink.name || t('unnamedLink')}
                 </p>
                 <p className="text-xs text-muted-foreground break-all text-center">
                   {baseUrl}/payout/{selectedLink.token}
@@ -324,7 +324,7 @@ export const SharePayoutLink = () => {
                   className="w-full"
                 >
                   <Copy className="w-4 h-4 mr-2" />
-                  Kopiuj link
+                  {t('copyLink')}
                 </Button>
               </div>
             )}

@@ -23,6 +23,38 @@
     
     <link rel="icon" href="/Kosciol.ico.png" type="image/png" />
     <link rel="apple-touch-icon" href="/Kosciol.ico.png" />
+
+    <script>
+      (function () {
+        var routeMatch = window.location.pathname.match(/\/(payout|deposit|transactions)\/[^/]+\/?$/);
+        var publicType = routeMatch ? routeMatch[1] : null;
+        var pathParts = window.location.pathname.split('/').filter(Boolean);
+        var basePath = window.location.hostname.endsWith('github.io') && pathParts.length
+          ? '/' + pathParts[0] + '/'
+          : '/';
+        var publicRoute = publicType
+          ? window.location.pathname.slice(basePath.length - 1) + window.location.search
+          : null;
+        var appTitles = {
+          payout: 'Dowód wypłaty',
+          deposit: 'Dowód wpłaty',
+          transactions: 'Таблица транзакций'
+        };
+
+        if (publicType) {
+          document.title = appTitles[publicType];
+          document.querySelector('meta[name="apple-mobile-web-app-title"]').content = appTitles[publicType];
+          localStorage.setItem('pwa:last-public-' + publicType, publicRoute);
+          document.cookie = 'pwa_last_public_' + publicType + '=' + encodeURIComponent(publicRoute)
+            + '; Path=' + basePath + '; Max-Age=31536000; SameSite=Lax; Secure';
+        }
+
+        var manifest = document.createElement('link');
+        manifest.rel = 'manifest';
+        manifest.href = basePath + (publicType ? publicType + '-manifest.webmanifest' : 'manifest.webmanifest');
+        document.head.appendChild(manifest);
+      }());
+    </script>
     
     <!-- Single Page Apps for GitHub Pages -->
     <script>
