@@ -63,7 +63,9 @@ const PublicDeposit = () => {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    localStorage.setItem('pwa:last-public-deposit', `/deposit/${token}`);
+    const depositPath = `/deposit/${token}`;
+    localStorage.setItem('pwa:last-public-deposit', depositPath);
+    document.cookie = `pwa_last_public_deposit=${encodeURIComponent(depositPath)}; Path=${import.meta.env.BASE_URL}; Max-Age=31536000; SameSite=Lax; Secure`;
 
     let manifestLink = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
     const previousManifestHref = manifestLink?.getAttribute('href') || '';

@@ -1459,7 +1459,7 @@ export const NotificationsPage = () => {
         <button
           onClick={() => setActiveTab('all')}
           className={cn(
-            'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+            'order-0 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
             activeTab === 'all'
               ? 'border-primary text-primary'
               : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -1475,7 +1475,7 @@ export const NotificationsPage = () => {
         <button
           onClick={() => setActiveTab('income')}
           className={cn(
-            'flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
+            'order-2 flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
             activeTab === 'income'
               ? 'border-primary text-primary'
               : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -1497,7 +1497,7 @@ export const NotificationsPage = () => {
         <button
           onClick={() => setActiveTab('no_photos')}
           className={cn(
-            'flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+            'order-1 flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
             activeTab === 'no_photos'
               ? 'border-primary text-primary'
               : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -1519,7 +1519,7 @@ export const NotificationsPage = () => {
         <button
           onClick={() => setActiveTab('extension')}
           className={cn(
-            'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+            'order-3 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
             activeTab === 'extension'
               ? 'border-primary text-primary'
               : 'border-transparent text-muted-foreground hover:text-foreground'

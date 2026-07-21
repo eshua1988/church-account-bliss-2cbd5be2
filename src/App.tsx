@@ -39,7 +39,22 @@ function ThemeInitializer() {
 function PwaHome() {
   const launchSource = new URLSearchParams(window.location.search).get('source');
   const isPwaLaunch = launchSource === 'pwa' || launchSource === 'deposit-pwa';
-  const lastDepositPath = localStorage.getItem('pwa:last-public-deposit');
+  const storedDepositPath = localStorage.getItem('pwa:last-public-deposit');
+  const cookieDepositPath = document.cookie
+    .split('; ')
+    .find(cookie => cookie.startsWith('pwa_last_public_deposit='))
+    ?.slice('pwa_last_public_deposit='.length);
+  let decodedCookieDepositPath: string | null = null;
+
+  if (cookieDepositPath) {
+    try {
+      decodedCookieDepositPath = decodeURIComponent(cookieDepositPath);
+    } catch {
+      decodedCookieDepositPath = null;
+    }
+  }
+
+  const lastDepositPath = decodedCookieDepositPath || storedDepositPath;
 
   if (isPwaLaunch && lastDepositPath?.startsWith('/deposit/')) {
     return <Navigate to={lastDepositPath} replace />;
