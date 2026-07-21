@@ -52,6 +52,9 @@ const isRuleRequestNotification = (notification: Notification) =>
   notification.type === 'rule_request' ||
   notification.metadata?.request_type === 'department_rule_terms';
 
+const isDepositNotification = (notification: Notification) =>
+  notification.type === 'deposit' || notification.metadata?.document_type === 'deposit';
+
 // Detect account type and build QR string
 function buildPaymentQr(account: string, amount: number, currency: string, recipientName: string, title: string): { qrValue: string; type: 'blik' | 'iban' | 'phone' } {
   const clean = account.replace(/\s/g, '');
@@ -657,7 +660,7 @@ export const NotificationsPage = () => {
   const { addTransaction } = useSupabaseTransactions();
   const { categories, getExpenseCategories } = useSupabaseCategories();
 
-  const [activeTab, setActiveTab] = useState<'all' | 'no_photos' | 'extension'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'income' | 'no_photos' | 'extension'>('all');
   const [deptMap, setDeptMap] = useState<Record<string, string>>({});
   const [fallbackToken, setFallbackToken] = useState<string | undefined>();
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -1332,19 +1335,29 @@ export const NotificationsPage = () => {
       });
   }, [notifications]);
 
-  const ruleRequests = notifications.filter(isRuleRequestNotification);
-  const archivedNotifications = notifications.filter(n => Boolean(n.metadata?.archived_at));
-  const payoutNotifications = notifications.filter(n => !isRuleRequestNotification(n));
+  const incomeNotifications = notifications.filter(isDepositNotification);
+  const ruleRequests = notifications.filter(
+    n => !isDepositNotification(n) && isRuleRequestNotification(n)
+  );
+  const archivedNotifications = notifications.filter(
+    n => !isDepositNotification(n) && Boolean(n.metadata?.archived_at)
+  );
+  const payoutNotifications = notifications.filter(
+    n => !isDepositNotification(n) && !isRuleRequestNotification(n)
+  );
   const withoutPhotos = payoutNotifications.filter(n => n.metadata?.images_skipped);
   const withPhotos = payoutNotifications.filter(n => !n.metadata?.images_skipped);
   const pushEnabled = pushPermission === 'granted' && hasPushSubscription;
   const pushActionLabel = pushEnabled ? 'Проверить push' : 'Включить push';
   const displayed =
-    activeTab === 'extension'
+    activeTab === 'income'
+      ? incomeNotifications
+      : activeTab === 'extension'
       ? ruleRequests
       : activeTab === 'all'
         ? withPhotos
         : withoutPhotos;
+  const incomeUnread = incomeNotifications.filter(n => !n.is_read).length;
   const noPhotosUnread = withoutPhotos.filter(n => !n.is_read).length;
   const ruleRequestsUnread = ruleRequests.filter(n => !n.is_read).length;
   const archiveGroups = archivedNotifications.reduce<Record<string, Notification[]>>((groups, notification) => {
@@ -1442,7 +1455,7 @@ export const NotificationsPage = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-5 border-b border-border">
+      <div className="flex gap-1 mb-5 border-b border-border overflow-x-auto">
         <button
           onClick={() => setActiveTab('all')}
           className={cn(
@@ -1456,6 +1469,28 @@ export const NotificationsPage = () => {
           {withPhotos.length > 0 && (
             <span className="ml-2 text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5">
               {withPhotos.length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('income')}
+          className={cn(
+            'flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
+            activeTab === 'income'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <Banknote className="h-3.5 w-3.5" />
+          Доходы
+          {incomeNotifications.length > 0 && (
+            <span className={cn(
+              'ml-1 text-xs rounded-full px-1.5 py-0.5',
+              incomeUnread > 0
+                ? 'bg-green-500/20 text-green-500 font-semibold'
+                : 'bg-muted text-muted-foreground'
+            )}>
+              {incomeNotifications.length}
             </span>
           )}
         </button>
@@ -1515,6 +1550,12 @@ export const NotificationsPage = () => {
             <>
               <p className="text-lg">Нет уведомлений</p>
               <p className="text-sm mt-1">Здесь будут отображаться расходные ордера с фото</p>
+            </>
+          ) : activeTab === 'income' ? (
+            <>
+              <Banknote className="h-12 w-12 mx-auto mb-3 opacity-30" />
+              <p className="text-lg">Нет уведомлений о доходах</p>
+              <p className="text-sm mt-1">Здесь будут документы, отправленные через ссылку Dowód wpłaty</p>
             </>
           ) : activeTab === 'extension' ? (
             <>
