@@ -68,6 +68,47 @@ const PublicTransactions = () => {
   const { token } = useParams<{ token: string }>();
   const { toast } = useToast();
 
+  useEffect(() => {
+    if (!token) return;
+
+    const publicPath = `/transactions/${token}`;
+    const manifestHref = `${import.meta.env.BASE_URL}transactions-manifest.webmanifest`;
+    const existingManifestLink = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    const previousManifestHref = existingManifestLink?.getAttribute('href') ?? null;
+    const createdManifestLink = !existingManifestLink;
+    const manifestLink = existingManifestLink ?? document.createElement('link');
+    const previousTitle = document.title;
+    let appleTitle = document.querySelector<HTMLMetaElement>('meta[name="apple-mobile-web-app-title"]');
+    const createdAppleTitle = !appleTitle;
+    const previousAppleTitle = appleTitle?.content ?? '';
+
+    localStorage.setItem('pwa:last-public-transactions', publicPath);
+    document.cookie = `pwa_last_public_transactions=${encodeURIComponent(publicPath)}; path=${import.meta.env.BASE_URL}; max-age=31536000; SameSite=Lax`;
+
+    if (createdManifestLink) {
+      manifestLink.rel = 'manifest';
+      document.head.appendChild(manifestLink);
+    }
+    manifestLink.href = manifestHref;
+
+    if (!appleTitle) {
+      appleTitle = document.createElement('meta');
+      appleTitle.name = 'apple-mobile-web-app-title';
+      document.head.appendChild(appleTitle);
+    }
+    appleTitle.content = 'Таблица транзакций';
+    document.title = 'Таблица транзакций';
+
+    return () => {
+      document.title = previousTitle;
+      if (createdManifestLink) manifestLink.remove();
+      else if (previousManifestHref) manifestLink.href = previousManifestHref;
+
+      if (createdAppleTitle) appleTitle?.remove();
+      else if (appleTitle) appleTitle.content = previousAppleTitle;
+    };
+  }, [token]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);

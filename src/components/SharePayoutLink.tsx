@@ -73,6 +73,7 @@ export const SharePayoutLink = () => {
         .from('shared_payout_links')
         .select('*')
         .eq('owner_user_id', user.id)
+        .or('link_type.is.null,link_type.neq.deposit')
         .order('created_at', { ascending: false });
 
       if (error) throw error;

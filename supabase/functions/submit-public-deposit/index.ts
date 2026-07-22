@@ -86,7 +86,7 @@ Deno.serve(async request => {
     const organization = 'KOŚCIÓŁ BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE - БИБЛЕЙСКАЯ ЦЕРКОВЬ В ВАРШАВЕ';
 
     const drawLineText = (label: string, value: string, x: number, y: number, width: number) => {
-      const defaultSize = 8;
+      const defaultSize = 10;
       doc.setFontSize(defaultSize);
       doc.text(label, x, y);
       const labelWidth = doc.getTextWidth(label) + 1;
@@ -95,7 +95,7 @@ Deno.serve(async request => {
       const availableWidth = Math.max(width - labelWidth - 2, 4);
       let fontSize = defaultSize;
       doc.setFontSize(fontSize);
-      while (doc.getTextWidth(value) > availableWidth && fontSize > 5) {
+      while (doc.getTextWidth(value) > availableWidth && fontSize > 7) {
         fontSize -= 0.25;
         doc.setFontSize(fontSize);
       }
@@ -111,15 +111,15 @@ Deno.serve(async request => {
       const amountWords = amountInPolishWords(entry.amount, entry.currency, entry.customCurrency);
       doc.setDrawColor(0);
       doc.setLineWidth(0.25);
-      doc.setFontSize(8.5);
+      doc.setFontSize(10);
       doc.text(organization, leftX + width / 2, offsetY + 7, { align: 'center', maxWidth: width - 8 });
-      doc.setFontSize(9.5);
+      doc.setFontSize(11);
       doc.text('DOWÓD WPŁATY', leftX + width / 2, offsetY + 14, { align: 'center' });
 
       doc.rect(leftX, offsetY + 16, width, 13);
       doc.line(leftX + width / 2, offsetY + 16, leftX + width / 2, offsetY + 29);
       doc.line(leftX, offsetY + 21, leftX + width, offsetY + 21);
-      doc.setFontSize(7.5);
+      doc.setFontSize(9.5);
       doc.text('Kwota', leftX + width / 4, offsetY + 20, { align: 'center' });
       doc.text('Data', leftX + width * 0.75, offsetY + 20, { align: 'center' });
       doc.text(amountText, leftX + width / 4, offsetY + 27, { align: 'center' });
@@ -130,7 +130,7 @@ Deno.serve(async request => {
 
       const signerTop = offsetY + 54;
       const signerHeight = 18;
-      doc.setFontSize(8);
+      doc.setFontSize(10);
       entry.signers.forEach((signer, signerIndex) => {
         const rowTop = signerTop + signerIndex * signerHeight;
         doc.rect(leftX, rowTop, width, signerHeight);
