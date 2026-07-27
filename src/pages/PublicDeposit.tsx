@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { type DepositCurrency } from '@/lib/amountInWords';
+import { copyDepositIdentity } from '@/lib/depositEntryCopy';
 
 interface IncomeCategory {
   id: string;
@@ -181,8 +182,38 @@ const PublicDeposit = () => {
   };
 
   const addEntry = () => {
-    setEntries(current => [...current, createEntry()]);
+    const source = entries[entries.length - 1];
+    const signatures = new Map<string, string>();
+    source.signers.forEach(signer => {
+      if (!signedSignerIds.current.has(signer.id)) return;
+      const signature = canvasRefs.current[signer.id]?.toDataURL('image/png');
+      if (signature) signatures.set(signer.id, signature);
+    });
+    const copied = copyDepositIdentity(source, signatures);
+    const nextEntry: DepositEntry = {
+      ...createEntry(),
+      basisChoice: copied.basisChoice,
+      customBasis: copied.customBasis,
+      basisDetails: copied.basisDetails,
+      signers: copied.signers,
+    };
+
+    setEntries(current => [...current, nextEntry]);
     requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+    requestAnimationFrame(() => {
+      copied.signatures.forEach((signature, signerId) => {
+        const image = new Image();
+        image.onload = () => {
+          const canvas = canvasRefs.current[signerId];
+          const context = canvas?.getContext('2d');
+          if (!canvas || !context) return;
+          context.clearRect(0, 0, canvas.width, canvas.height);
+          context.drawImage(image, 0, 0, canvas.width, canvas.height);
+          signedSignerIds.current.add(signerId);
+        };
+        image.src = signature;
+      });
+    });
   };
 
   const removeEntry = (id: string) => {
