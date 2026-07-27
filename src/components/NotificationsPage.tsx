@@ -21,6 +21,7 @@ import {
   getNotificationArchiveMonth,
   getNotificationArchiveYear,
 } from '@/lib/archiveFolders';
+import { getArchivedNotifications } from '@/lib/notificationArchiveFilters';
 
 const OTHER_DEPARTMENT_BY_TYPE = {
   income: 'Прочее (доход)',
@@ -1215,9 +1216,7 @@ export const NotificationsPage = () => {
   const ruleRequests = notifications.filter(
     n => !isDepositNotification(n) && isRuleRequestNotification(n)
   );
-  const archivedNotifications = notifications.filter(
-    n => !isDepositNotification(n) && Boolean(n.metadata?.archived_at)
-  );
+  const archivedNotifications = getArchivedNotifications(notifications);
   const payoutNotifications = notifications.filter(
     n => !isDepositNotification(n) && !isRuleRequestNotification(n)
   );
