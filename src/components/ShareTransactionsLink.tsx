@@ -78,7 +78,7 @@ export const ShareTransactionsLink = () => {
         }
         return;
       }
-      setLinks(data || []);
+      setLinks((data || []).filter(link => !link.name?.startsWith('[Аналитика]')));
     } catch (err) {
       console.error('Error fetching links:', err);
     } finally {

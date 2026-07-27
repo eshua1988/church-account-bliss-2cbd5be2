@@ -7,6 +7,7 @@ const corsHeaders = {
 
 interface PublicTransactionsRequest {
   token: string;
+  includeNotifications?: boolean;
   action?: 'add-rule-terms' | 'sync-bank';
   terms?: string[];
   transactionTypes?: Array<'income' | 'expense'>;
@@ -385,6 +386,16 @@ Deno.serve(async (req) => {
       );
     }
 
+    const { data: analyticsNotifications } = body.includeNotifications
+      ? await supabase
+        .from('notifications')
+        .select('type, created_at, metadata')
+        .eq('user_id', linkData.owner_user_id)
+        .neq('type', 'push_subscription')
+        .neq('type', 'rule_request')
+        .order('created_at', { ascending: false })
+      : { data: [] };
+
     return new Response(
       JSON.stringify({
         valid: true,
@@ -392,6 +403,11 @@ Deno.serve(async (req) => {
         otherRuleSearchTerms: getOtherRuleSearchTerms(departmentRules || []),
         pendingRuleSearchTerms: getPendingRuleSearchTerms(pendingRuleNotifications || []),
         transactions: (transactions || []).map((tx) => mapTransaction(tx, departmentRules || [])),
+        notifications: (analyticsNotifications || []).map((notification: any) => ({
+          type: notification.type,
+          createdAt: notification.created_at,
+          documentType: notification.metadata?.document_type,
+        })),
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );

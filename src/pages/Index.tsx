@@ -20,6 +20,7 @@ import { TelegramBotSettings } from '@/components/TelegramBotSettings';
 import { SharePayoutLink } from '@/components/SharePayoutLink';
 import { ShareDepositLink } from '@/components/ShareDepositLink';
 import { ShareTransactionsLink } from '@/components/ShareTransactionsLink';
+import { ShareAnalyticsLink } from '@/components/ShareAnalyticsLink';
 import { NotificationsPage } from '@/components/NotificationsPage';
 import { BankingPage } from '@/components/BankingPage';
 import { TelegramMenuPage } from '@/components/TelegramMenuPage';
@@ -566,6 +567,11 @@ const Index = () => {
                     <div>
                       <h5 className="font-semibold text-sm mb-3">{t('transactionsTable')}</h5>
                       <ShareTransactionsLink />
+                    </div>
+                    <Separator />
+                    <div>
+                      <h5 className="font-semibold text-sm mb-3">Аналитика</h5>
+                      <ShareAnalyticsLink />
                     </div>
                   </div>
                 )}

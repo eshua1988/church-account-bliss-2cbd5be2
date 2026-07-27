@@ -1286,7 +1286,7 @@ export const translations = {
   },
   settingsExtension: { pl: 'Rozszerzenia', ru: 'Расширение', en: 'Extensions', uk: 'Розширення' },
   cloudStorage: { pl: 'Chmura', ru: 'Облако', en: 'Cloud storage', uk: 'Хмара' },
-  shareForm: { pl: 'Udostępnij formularz', ru: 'Поделиться формой', en: 'Share form', uk: 'Поділитися формою' },
+  shareForm: { pl: 'Linki publiczne', ru: 'Публичные ссылки', en: 'Public links', uk: 'Публічні посилання' },
   payoutOrder: { pl: 'Dowód wypłaty', ru: 'Расходный ордер', en: 'Payout document', uk: 'Видатковий ордер' },
   depositReceipt: { pl: 'Dowód wpłaty', ru: 'Приходный ордер', en: 'Deposit receipt', uk: 'Прибутковий ордер' },
   polishBanks: { pl: 'Banki polskie', ru: 'Банки Польши', en: 'Polish banks', uk: 'Банки Польщі' },
