@@ -8,7 +8,8 @@ const corsHeaders = {
 interface PublicTransactionsRequest {
   token: string;
   includeNotifications?: boolean;
-  action?: 'add-rule-terms' | 'sync-bank';
+  action?: 'add-rule-terms' | 'sync-bank' | 'analytics';
+  fromDate?: string;
   terms?: string[];
   transactionTypes?: Array<'income' | 'expense'>;
 }
@@ -218,6 +219,24 @@ Deno.serve(async (req) => {
       );
     }
 
+    if (body.action === 'analytics') {
+      const fromDate = /^\d{4}-\d{2}-\d{2}$/.test(body.fromDate || '')
+        ? body.fromDate
+        : new Date(Date.now() - 31 * 86400000).toISOString().slice(0, 10);
+      const { data: analytics, error: analyticsError } = await supabase.rpc(
+        'public_analytics_summary',
+        { target_user_id: linkData.owner_user_id, from_date: fromDate },
+      );
+      if (analyticsError) {
+        return new Response(JSON.stringify({ valid: false, error: 'Failed to aggregate analytics' }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ valid: true, analytics }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (body.action === 'sync-bank') {
       const { data: latestConnection } = await supabase
         .from('bank_connections')
@@ -376,7 +395,8 @@ Deno.serve(async (req) => {
       .select('*')
       .eq('user_id', linkData.owner_user_id)
       .order('date', { ascending: false })
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(501);
 
     if (transactionsError) {
       console.error('Transactions loading failed:', transactionsError);
@@ -402,7 +422,8 @@ Deno.serve(async (req) => {
         categories: categories || [],
         otherRuleSearchTerms: getOtherRuleSearchTerms(departmentRules || []),
         pendingRuleSearchTerms: getPendingRuleSearchTerms(pendingRuleNotifications || []),
-        transactions: (transactions || []).map((tx) => mapTransaction(tx, departmentRules || [])),
+        transactions: (transactions || []).slice(0, 500).map((tx) => mapTransaction(tx, departmentRules || [])),
+        hasMore: (transactions || []).length > 500,
         notifications: (analyticsNotifications || []).map((notification: any) => ({
           type: notification.type,
           createdAt: notification.created_at,
