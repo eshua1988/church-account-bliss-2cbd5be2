@@ -63,6 +63,7 @@ const PublicDeposit = () => {
   const [entries, setEntries] = useState<DepositEntry[]>([createEntry()]);
   const signedSignerIds = useRef(new Set<string>());
   const [error, setError] = useState('');
+  const [invalidFields, setInvalidFields] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const depositPath = `/deposit/${token}`;
@@ -179,10 +180,45 @@ const PublicDeposit = () => {
     signedSignerIds.current.clear();
     setEntries([createEntry()]);
     setError('');
+    setInvalidFields(new Set());
     setSuccess(false);
   };
 
+  const validateEntries = () => {
+    const invalid = new Set<string>();
+
+    entries.forEach(entry => {
+      const amount = Number(entry.amount.replace(',', '.'));
+      if (!entry.amount.trim() || !Number.isFinite(amount) || amount <= 0) invalid.add(`amount-${entry.id}`);
+      if (!entry.date) invalid.add(`date-${entry.id}`);
+      if (!entry.basisChoice || (entry.basisChoice === OTHER_BASIS && !entry.customBasis.trim())) {
+        invalid.add(`basis-group-${entry.id}`);
+      }
+      if (entry.currency === 'OTHER' && !entry.customCurrency.trim()) invalid.add(`currency-${entry.id}`);
+      entry.signers.forEach(signer => {
+        if (!signer.fullName.trim()) invalid.add(`from-${signer.id}`);
+        if (!signer.signatureDataUrl && !signedSignerIds.current.has(signer.id)) {
+          invalid.add(`signature-${signer.id}`);
+        }
+      });
+    });
+
+    setInvalidFields(invalid);
+    if (invalid.size === 0) return true;
+
+    setError('Заполните выделенные красным поля: сумму, дату, основание, имя и подпись каждого отправителя');
+    requestAnimationFrame(() => {
+      const firstKey = invalid.values().next().value;
+      const firstInvalid = firstKey ? document.getElementById(firstKey) : null;
+      firstInvalid?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      firstInvalid?.focus({ preventScroll: true });
+    });
+    return false;
+  };
+
   const addEntry = () => {
+    setError('');
+    if (!validateEntries()) return;
     const source = entries[0];
     const signatures = new Map<string, string>();
     source.signers.forEach(signer => {
@@ -235,6 +271,7 @@ const PublicDeposit = () => {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError('');
+    if (!validateEntries()) return;
     const preparedEntries = entries.map(entry => {
       const selectedCategory = incomeCategories.find(category => category.id === entry.basisChoice);
       const basis = entry.basisChoice === OTHER_BASIS
@@ -310,12 +347,17 @@ const PublicDeposit = () => {
           <p className="text-sm text-muted-foreground">{organizationName}</p>
         </CardHeader>
         <CardContent className="px-2 pb-4 sm:px-6 sm:pb-6">
-          <form className="min-w-0 space-y-4 sm:space-y-6" onSubmit={submit}>
-            <div className="grid gap-2 rounded-lg border bg-muted/20 p-3 sm:grid-cols-3">
-              <Button type="button" variant="outline" onClick={addEntry}>
-                <Plus className="mr-2 h-4 w-4" />
-                Добавить Dowód wpłaty
+          <form className="min-w-0 space-y-4 sm:space-y-6" onSubmit={submit} noValidate>
+            <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+              <Button type="submit" className="h-12 w-full" disabled={submitting}>
+                {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Сформировать и отправить PDF
               </Button>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button type="button" variant="outline" onClick={addEntry}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Добавить Dowód wpłaty
+                </Button>
               <Button
                 type="button"
                 variant="outline"
@@ -325,10 +367,7 @@ const PublicDeposit = () => {
                 <UserRoundPlus className="mr-2 h-4 w-4" />
                 Добавить пользователя
               </Button>
-              <Button type="submit" disabled={submitting}>
-                {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Сформировать и отправить PDF
-              </Button>
+              </div>
             </div>
             {entries.map((entry, index) => (
               <section key={entry.id} className="grid min-w-0 gap-4 rounded-lg border px-2.5 py-4 sm:grid-cols-2 sm:gap-5 sm:p-4">
@@ -347,6 +386,8 @@ const PublicDeposit = () => {
                   <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_96px] gap-2 sm:grid-cols-[minmax(0,1fr)_110px]">
                     <Input
                       id={`amount-${entry.id}`}
+                      aria-invalid={invalidFields.has(`amount-${entry.id}`)}
+                      className={invalidFields.has(`amount-${entry.id}`) ? 'border-destructive ring-1 ring-destructive' : ''}
                       inputMode="decimal"
                       value={entry.amount}
                       onChange={event => updateEntry(entry.id, {
@@ -355,7 +396,11 @@ const PublicDeposit = () => {
                       required
                     />
                     <Select value={entry.currency} onValueChange={(currency: DepositCurrency) => updateEntry(entry.id, { currency })}>
-                      <SelectTrigger aria-label="Валюта"><SelectValue /></SelectTrigger>
+                      <SelectTrigger
+                        aria-label="Валюта"
+                        aria-invalid={invalidFields.has(`currency-${entry.id}`)}
+                        className={invalidFields.has(`currency-${entry.id}`) ? 'border-destructive ring-1 ring-destructive' : ''}
+                      ><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="PLN">PLN</SelectItem>
                         <SelectItem value="USD">USD</SelectItem>
@@ -367,7 +412,10 @@ const PublicDeposit = () => {
                   </div>
                   {entry.currency === 'OTHER' && (
                     <Input
+                      id={`currency-${entry.id}`}
                       aria-label="Название другой валюты"
+                      aria-invalid={invalidFields.has(`currency-${entry.id}`)}
+                      className={invalidFields.has(`currency-${entry.id}`) ? 'border-destructive ring-1 ring-destructive' : ''}
                       placeholder="Название или код валюты"
                       value={entry.customCurrency}
                       onChange={event => updateEntry(entry.id, { customCurrency: event.target.value.slice(0, 20) })}
@@ -377,9 +425,21 @@ const PublicDeposit = () => {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor={`date-${entry.id}`}>Data / Дата</Label>
-                  <Input className="block min-w-0 max-w-full" id={`date-${entry.id}`} type="date" value={entry.date} onChange={event => updateEntry(entry.id, { date: event.target.value })} required />
+                  <Input
+                    className={`block min-w-0 max-w-full ${invalidFields.has(`date-${entry.id}`) ? 'border-destructive ring-1 ring-destructive' : ''}`}
+                    id={`date-${entry.id}`}
+                    aria-invalid={invalidFields.has(`date-${entry.id}`)}
+                    type="date"
+                    value={entry.date}
+                    onChange={event => updateEntry(entry.id, { date: event.target.value })}
+                    required
+                  />
                 </div>
-                {index === entries.length - 1 && <div className="space-y-2 sm:col-span-2">
+                {index === entries.length - 1 && <div
+                  id={`basis-group-${entry.id}`}
+                  tabIndex={-1}
+                  className={`space-y-2 rounded-md sm:col-span-2 ${invalidFields.has(`basis-group-${entry.id}`) ? 'ring-2 ring-destructive' : ''}`}
+                >
                   <Label>Podstawa / Основание</Label>
                   <RadioGroup
                     value={entry.basisChoice}
@@ -431,17 +491,27 @@ const PublicDeposit = () => {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor={`from-${signer.id}`}>Imię i nazwisko / Имя Фамилия</Label>
-                      <Input id={`from-${signer.id}`} value={signer.fullName} onChange={event => updateSigner(entry.id, signer.id, event.target.value)} required />
+                      <Input
+                        id={`from-${signer.id}`}
+                        aria-invalid={invalidFields.has(`from-${signer.id}`)}
+                        className={invalidFields.has(`from-${signer.id}`) ? 'border-destructive ring-1 ring-destructive' : ''}
+                        value={signer.fullName}
+                        onChange={event => updateSigner(entry.id, signer.id, event.target.value)}
+                        required
+                      />
                     </div>
                     <div className="flex items-center justify-between">
                       <Label>Podpis / Подпись</Label>
                       <Button type="button" variant="ghost" size="sm" onClick={() => clearSignature(signer.id)}><Eraser className="mr-1 h-4 w-4" />Очистить</Button>
                     </div>
                     <canvas
+                      id={`signature-${signer.id}`}
+                      tabIndex={-1}
+                      aria-invalid={invalidFields.has(`signature-${signer.id}`)}
                       ref={canvas => { canvasRefs.current[signer.id] = canvas; }}
                       width={900}
                       height={220}
-                      className="h-40 w-full touch-none rounded-md border bg-white"
+                      className={`h-40 w-full touch-none rounded-md border bg-white ${invalidFields.has(`signature-${signer.id}`) ? 'border-destructive ring-2 ring-destructive' : ''}`}
                       onPointerDown={event => startDrawing(signer.id, event)}
                       onPointerMove={event => draw(signer.id, event)}
                       onPointerUp={() => { drawingId.current = null; }}
