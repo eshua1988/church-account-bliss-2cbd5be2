@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal, X } from 'lucide-react';
@@ -42,6 +42,8 @@ interface PublicTransactionsResponse {
   success?: boolean;
   addedTerms?: string[];
   imported?: number;
+  hasMore?: boolean;
+  nextCursor?: { date: string; createdAt: string; id: string } | null;
 }
 
 const DocumentKeywordIcon = ({ className }: { className?: string }) => (
@@ -130,10 +132,13 @@ const PublicTransactions = () => {
   const [addingRuleTerms, setAddingRuleTerms] = useState(false);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [isBankSyncing, setIsBankSyncing] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const nextCursorRef = useRef<PublicTransactionsResponse['nextCursor']>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  const loadData = useCallback(async (showLoader = true) => {
+  const loadData = useCallback(async (showLoader = true, append = false) => {
       if (showLoader) setLoading(true);
       if (!token) {
         setError('Неправильная ссылка');
@@ -144,7 +149,7 @@ const PublicTransactions = () => {
       try {
         const { data, error: functionError } = await supabase.functions.invoke<PublicTransactionsResponse>(
           'public-transactions',
-          { body: { token } },
+          { body: { token, cursor: append ? nextCursorRef.current : undefined } },
         );
 
         if (functionError) {
@@ -168,7 +173,9 @@ const PublicTransactions = () => {
           income: data.pendingRuleSearchTerms?.income || [],
           expense: data.pendingRuleSearchTerms?.expense || [],
         });
-        setAllTransactions(data.transactions || []);
+        setAllTransactions(current => append ? [...current, ...(data.transactions || [])] : (data.transactions || []));
+        setHasMore(Boolean(data.hasMore));
+        nextCursorRef.current = data.nextCursor || null;
         /*
         // Get shared link and owner user ID
         const { data: linkData, error: linkError } = await supabase
@@ -230,6 +237,7 @@ const PublicTransactions = () => {
         setError('Ошибка при загрузке данных');
       } finally {
         setLoading(false);
+        setLoadingMore(false);
       }
   }, [token]);
 
@@ -876,6 +884,21 @@ const PublicTransactions = () => {
                   </Card>
                 );
               })}
+            </div>
+          )}
+
+          {hasMore && (
+            <div className="mt-4 flex justify-center">
+              <Button
+                variant="outline"
+                disabled={loadingMore}
+                onClick={() => {
+                  setLoadingMore(true);
+                  void loadData(false, true);
+                }}
+              >
+                {loadingMore ? 'Загрузка…' : 'Показать ещё 500'}
+              </Button>
             </div>
           )}
 

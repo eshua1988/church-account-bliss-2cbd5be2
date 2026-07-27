@@ -10,6 +10,11 @@ interface PublicTransactionsRequest {
   includeNotifications?: boolean;
   action?: 'add-rule-terms' | 'sync-bank' | 'analytics';
   fromDate?: string;
+  cursor?: {
+    date: string;
+    createdAt: string;
+    id: string;
+  };
   terms?: string[];
   transactionTypes?: Array<'income' | 'expense'>;
 }
@@ -390,13 +395,26 @@ Deno.serve(async (req) => {
       console.warn('Pending rule notifications loading failed:', pendingRulesError.message);
     }
 
-    const { data: transactions, error: transactionsError } = await supabase
+    let transactionsQuery = supabase
       .from('transactions')
       .select('*')
       .eq('user_id', linkData.owner_user_id)
       .order('date', { ascending: false })
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .limit(501);
+
+    const cursor = body.cursor;
+    if (cursor
+      && /^\d{4}-\d{2}-\d{2}$/.test(cursor.date)
+      && cursor.createdAt
+      && /^[0-9a-f-]{36}$/i.test(cursor.id)) {
+      transactionsQuery = transactionsQuery.or(
+        `date.lt.${cursor.date},and(date.eq.${cursor.date},created_at.lt.${cursor.createdAt}),and(date.eq.${cursor.date},created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`,
+      );
+    }
+
+    const { data: transactions, error: transactionsError } = await transactionsQuery;
 
     if (transactionsError) {
       console.error('Transactions loading failed:', transactionsError);
@@ -416,14 +434,22 @@ Deno.serve(async (req) => {
         .order('created_at', { ascending: false })
       : { data: [] };
 
+    const page = (transactions || []).slice(0, 500);
+    const lastTransaction = page[page.length - 1];
+
     return new Response(
       JSON.stringify({
         valid: true,
         categories: categories || [],
         otherRuleSearchTerms: getOtherRuleSearchTerms(departmentRules || []),
         pendingRuleSearchTerms: getPendingRuleSearchTerms(pendingRuleNotifications || []),
-        transactions: (transactions || []).slice(0, 500).map((tx) => mapTransaction(tx, departmentRules || [])),
+        transactions: page.map((tx) => mapTransaction(tx, departmentRules || [])),
         hasMore: (transactions || []).length > 500,
+        nextCursor: lastTransaction ? {
+          date: lastTransaction.date,
+          createdAt: lastTransaction.created_at,
+          id: lastTransaction.id,
+        } : null,
         notifications: (analyticsNotifications || []).map((notification: any) => ({
           type: notification.type,
           createdAt: notification.created_at,
