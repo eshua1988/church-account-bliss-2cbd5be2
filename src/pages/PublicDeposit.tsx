@@ -21,6 +21,7 @@ interface IncomeCategory {
 interface DepositSigner {
   id: string;
   fullName: string;
+  signatureDataUrl?: string;
 }
 
 interface DepositEntry {
@@ -185,6 +186,10 @@ const PublicDeposit = () => {
     const source = entries[entries.length - 1];
     const signatures = new Map<string, string>();
     source.signers.forEach(signer => {
+      if (signer.signatureDataUrl) {
+        signatures.set(signer.id, signer.signatureDataUrl);
+        return;
+      }
       if (!signedSignerIds.current.has(signer.id)) return;
       const signature = canvasRefs.current[signer.id]?.toDataURL('image/png');
       if (signature) signatures.set(signer.id, signature);
@@ -195,7 +200,10 @@ const PublicDeposit = () => {
       basisChoice: copied.basisChoice,
       customBasis: copied.customBasis,
       basisDetails: copied.basisDetails,
-      signers: copied.signers,
+      signers: copied.signers.map(signer => ({
+        ...signer,
+        signatureDataUrl: copied.signatures.get(signer.id),
+      })),
     };
 
     setEntries(current => [...current, nextEntry]);
@@ -234,7 +242,9 @@ const PublicDeposit = () => {
         : [selectedCategory?.name.trim(), isTargetedCategory(entry) ? entry.basisDetails.trim() : ''].filter(Boolean).join(': ');
       const signers = entry.signers.map(signer => ({
         fullName: signer.fullName.trim(),
-        signatureBase64: signedSignerIds.current.has(signer.id)
+        signatureBase64: signer.signatureDataUrl
+          ? signer.signatureDataUrl.split(',')[1] || ''
+          : signedSignerIds.current.has(signer.id)
           ? canvasRefs.current[signer.id]?.toDataURL('image/png').split(',')[1] || ''
           : '',
       }));
@@ -303,13 +313,20 @@ const PublicDeposit = () => {
           <form className="min-w-0 space-y-4 sm:space-y-6" onSubmit={submit}>
             {entries.map((entry, index) => (
               <section key={entry.id} className="grid min-w-0 gap-4 rounded-lg border px-2.5 py-4 sm:grid-cols-2 sm:gap-5 sm:p-4">
-                <div className="flex items-center justify-between sm:col-span-2">
+                <div className="flex items-center justify-between gap-3 sm:col-span-2">
                   <h2 className="font-semibold">Dowód wpłaty {index + 1}</h2>
-                  {entries.length > 1 && (
+                  <div className="flex items-center gap-2">
+                  {index === 0 && (
+                    <Button type="button" variant="outline" size="sm" onClick={addEntry}>
+                      <Plus className="mr-2 h-4 w-4" />Dowód wpłaty
+                    </Button>
+                  )}
+                  {entries.length > 1 && index > 0 && (
                     <Button type="button" variant="ghost" size="icon" onClick={() => removeEntry(entry.id)} aria-label="Удалить квитанцию">
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   )}
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor={`amount-${entry.id}`}>Kwota / Сумма</Label>
@@ -348,7 +365,7 @@ const PublicDeposit = () => {
                   <Label htmlFor={`date-${entry.id}`}>Data / Дата</Label>
                   <Input className="block min-w-0 max-w-full" id={`date-${entry.id}`} type="date" value={entry.date} onChange={event => updateEntry(entry.id, { date: event.target.value })} required />
                 </div>
-                <div className="space-y-2 sm:col-span-2">
+                {index === 0 && <div className="space-y-2 sm:col-span-2">
                   <Label>Podstawa / Основание</Label>
                   <RadioGroup
                     value={entry.basisChoice}
@@ -387,8 +404,8 @@ const PublicDeposit = () => {
                       placeholder="Уточните назначение целевого пожертвования"
                     />
                   )}
-                </div>
-                {entry.signers.map((signer, signerIndex) => (
+                </div>}
+                {index === 0 && entry.signers.map((signer, signerIndex) => (
                   <div key={signer.id} className="min-w-0 space-y-3 rounded-md border p-2.5 sm:col-span-2 sm:p-3">
                     <div className="flex items-center justify-between gap-3">
                       <Label className="font-semibold">Nadawca {signerIndex + 1} / Отправитель {signerIndex + 1}</Label>
@@ -418,14 +435,11 @@ const PublicDeposit = () => {
                     />
                   </div>
                 ))}
-                <Button type="button" variant="outline" className="sm:col-span-2" onClick={() => addSigner(entry.id)} disabled={entry.signers.length >= 10}>
+                {index === 0 && <Button type="button" variant="outline" className="sm:col-span-2" onClick={() => addSigner(entry.id)} disabled={entry.signers.length >= 10}>
                   <UserRoundPlus className="mr-2 h-5 w-5" />Добавить дополнительного пользователя
-                </Button>
+                </Button>}
               </section>
             ))}
-            <Button type="button" variant="outline" className="h-12 w-full" onClick={addEntry}>
-              <Plus className="mr-2 h-4 w-4" />Добавить Dowód wpłaty
-            </Button>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button className="h-12 w-full" disabled={submitting}>
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
