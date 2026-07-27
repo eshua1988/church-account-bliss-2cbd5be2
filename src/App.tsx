@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -7,15 +7,15 @@ import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
-import Index from "./pages/Index";
-import Auth from "./pages/Auth";
-import NotFound from "./pages/NotFound";
-import PublicPayout from "./pages/PublicPayout";
-import PublicTransactions from "./pages/PublicTransactions";
-import SignaturePad from "./pages/SignaturePad";
-import BankCallback from "./pages/BankCallback";
-import PublicDeposit from "./pages/PublicDeposit";
-import PublicAnalytics from "./pages/PublicAnalytics";
+const Index = lazy(() => import("./pages/Index"));
+const Auth = lazy(() => import("./pages/Auth"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const PublicPayout = lazy(() => import("./pages/PublicPayout"));
+const PublicTransactions = lazy(() => import("./pages/PublicTransactions"));
+const SignaturePad = lazy(() => import("./pages/SignaturePad"));
+const BankCallback = lazy(() => import("./pages/BankCallback"));
+const PublicDeposit = lazy(() => import("./pages/PublicDeposit"));
+const PublicAnalytics = lazy(() => import("./pages/PublicAnalytics"));
 
 const queryClient = new QueryClient();
 
@@ -93,7 +93,8 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter basename={import.meta.env.BASE_URL}>
-            <Routes>
+            <Suspense fallback={<div className="flex min-h-screen items-center justify-center">Загрузка…</div>}>
+              <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/payout/:token" element={<PublicPayout />} />
               <Route path="/deposit/:token" element={<PublicDeposit />} />
@@ -107,7 +108,8 @@ const App = () => (
               <Route path="/bank-callback" element={<BankCallback />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
-            </Routes>
+              </Routes>
+            </Suspense>
           </BrowserRouter>
         </LanguageProvider>
       </AuthProvider>
