@@ -540,6 +540,27 @@ async function buildMainMenuForUser(
     }
   }
 
+  const { data: registrationEvents } = await supabase
+    .from("registration_events")
+    .select("id, title, button_text, starts_at")
+    .eq("user_id", userId)
+    .eq("is_published", true)
+    .or(`starts_at.is.null,starts_at.gte.${new Date().toISOString()}`)
+    .order("starts_at", { ascending: true, nullsFirst: false })
+    .limit(20);
+
+  for (const event of registrationEvents ?? []) {
+    const buttonLabel = String(event.button_text || "Зарегистрироваться").trim();
+    const title = String(event.title || "").trim();
+    flatItems.push({
+      btn: {
+        text: `📅 ${buttonLabel}: ${title}`.slice(0, 64),
+        callback_data: `event_${event.id}`,
+      },
+      newRow: true,
+    });
+  }
+
   // Build rows: respect per-item newRow flag and global buttonsPerRow limit
   const buttons: Array<Array<Record<string, unknown>>> = [];
   let currentRow: Record<string, unknown>[] = [];
@@ -791,6 +812,50 @@ serve(async (req) => {
           if (callbackData === "get_links") {
             const msgId = await handleGetLinks(chatId, botOwnerId, supabase, botToken, userLangCode);
             if (msgId) newIds.push(msgId);
+          } else if (callbackData.startsWith("event_")) {
+            const eventId = callbackData.slice(6);
+            const telegramUser = update.callback_query.from ?? {};
+            if (botOwnerId && /^[0-9a-f-]{36}$/i.test(eventId)) {
+              const { data: registrationResult, error: registrationError } = await supabase.rpc(
+                "register_telegram_for_event",
+                {
+                  target_event_id: eventId,
+                  target_owner_user_id: botOwnerId,
+                  target_telegram_user_id: Number(telegramUser.id),
+                  target_telegram_chat_id: chatId,
+                  target_first_name: telegramUser.first_name ?? null,
+                  target_last_name: telegramUser.last_name ?? null,
+                  target_username: telegramUser.username ?? null,
+                },
+              );
+
+              const result = registrationResult as {
+                success?: boolean;
+                code?: string;
+                title?: string;
+                confirmation_text?: string;
+                registered_count?: number;
+                capacity?: number | null;
+              } | null;
+
+              let messageText = "Не удалось выполнить регистрацию.";
+              if (registrationError) {
+                console.error("Event registration failed:", registrationError);
+              } else if (result?.code === "full") {
+                messageText = `⛔ На мероприятие «${escapeHtml(result.title || "")}» свободных мест больше нет.`;
+              } else if (result?.code === "already_registered") {
+                messageText = `ℹ️ Вы уже зарегистрированы на мероприятие «${escapeHtml(result.title || "")}».`;
+              } else if (result?.success) {
+                const capacityText = result.capacity
+                  ? `\nМест занято: ${result.registered_count}/${result.capacity}`
+                  : "";
+                messageText = `✅ <b>${escapeHtml(result.title || "")}</b>\n${escapeHtml(result.confirmation_text || "Регистрация подтверждена!")}${capacityText}`;
+              }
+
+              const backKeyboard = { inline_keyboard: [[{ text: "◀ Назад", callback_data: "get_links" }]] };
+              const msgId = await sendMessage(chatId, messageText, backKeyboard, botToken);
+              if (msgId) newIds.push(msgId);
+            }
           } else if (callbackData.startsWith("gsheet_")) {
             // Google Sheet data button — use bot owner's config
             const userId2 = botOwnerId;

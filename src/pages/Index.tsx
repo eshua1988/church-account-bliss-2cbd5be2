@@ -24,6 +24,7 @@ import { ShareAnalyticsLink } from '@/components/ShareAnalyticsLink';
 import { NotificationsPage } from '@/components/NotificationsPage';
 import { BankingPage } from '@/components/BankingPage';
 import { TelegramMenuPage } from '@/components/TelegramMenuPage';
+import { RegistrationBuilder } from '@/components/RegistrationBuilder';
 import { HeaderBrandingSettings } from '@/components/HeaderBrandingSettings';
 import { useGoogleSheetsSync } from '@/hooks/useGoogleSheetsSync';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
@@ -616,6 +617,19 @@ const Index = () => {
                     <TelegramBotSettings />
                     <Separator />
                     <TelegramMenuPage />
+                  </div>
+                )}
+              </div>
+
+              {/* Event registration */}
+              <div className="bg-card rounded-lg shadow-card overflow-hidden">
+                <button onClick={() => toggleSetting('registration')} className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-muted/50 transition-colors">
+                  <h4 className="font-semibold text-base sm:text-lg">Регистрация</h4>
+                  {openSettings.registration ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
+                </button>
+                {openSettings.registration && (
+                  <div className="px-4 pb-4 sm:px-6 sm:pb-6">
+                    <RegistrationBuilder />
                   </div>
                 )}
               </div>
