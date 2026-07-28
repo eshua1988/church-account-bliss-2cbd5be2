@@ -478,18 +478,22 @@ Deno.serve(async (req) => {
 
         const { data: exportRows, error: exportError } = await supabase
           .from('transactions')
-          .select('date,type,amount,currency,description,bank_title,bank_sender,bank_recipient,department_name,comment')
+          .select('type,amount,currency,description,bank_title,bank_sender,bank_recipient,comment')
           .eq('user_id', linkData.owner_user_id)
           .in('id', transactionIds)
           .order('date', { ascending: false });
         if (exportError) throw new Error(`Ошибка чтения транзакций: ${exportError.message}`);
 
         const values = [
-          ['Дата', 'Тип', 'Сумма', 'Валюта', 'Описание', 'Назначение банка', 'Отправитель', 'Получатель', 'Отдел', 'Комментарий'],
+          ['Отправитель', 'Получатель', 'Сумма и валюта', 'Тип', 'Описание', 'Назначение', 'Комментарий'],
           ...(exportRows || []).map(row => [
-            row.date || '', row.type === 'income' ? 'Доход' : 'Расход', String(row.amount ?? ''),
-            row.currency || '', row.description || '', row.bank_title || '', row.bank_sender || '',
-            row.bank_recipient || '', row.department_name || '', row.comment || '',
+            row.bank_sender || '',
+            row.bank_recipient || '',
+            `${row.amount ?? ''}${row.currency ? ` ${row.currency}` : ''}`.trim(),
+            row.type === 'income' ? 'Доход' : 'Расход',
+            row.description || '',
+            row.bank_title || '',
+            row.comment || '',
           ]),
         ];
         const sheetsResponse = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, {
