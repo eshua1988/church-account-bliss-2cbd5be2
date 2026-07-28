@@ -503,7 +503,7 @@ Deno.serve(async (req) => {
             'Content-Type': 'application/json',
             'x-owner-user-id': linkData.owner_user_id,
           },
-          body: JSON.stringify({ action: 'write', values }),
+          body: JSON.stringify({ action: 'write', values, transactionTypeColors: true }),
         });
         const responseText = await sheetsResponse.text();
         let sheetsResult: Record<string, any> = {};

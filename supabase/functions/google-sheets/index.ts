@@ -46,6 +46,7 @@ interface SheetRequest {
   values?: string[][];
   transactionId?: string;
   notes?: NoteData[];
+  transactionTypeColors?: boolean;
 }
 
 async function authenticateRequest(req: Request): Promise<{ userId: string; token: string; authHeader: string; internal: boolean } | Response> {
@@ -503,6 +504,99 @@ serve(async (req) => {
             JSON.stringify({ error: msg }),
             { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
+        }
+
+        if (body.transactionTypeColors && values.length > 1) {
+          const formatRequests: Record<string, unknown>[] = [
+            {
+              repeatCell: {
+                range: {
+                  sheetId,
+                  startRowIndex: 1,
+                  endRowIndex: values.length,
+                  startColumnIndex: 0,
+                  endColumnIndex: Math.min(4, maxDataCols),
+                },
+                cell: {
+                  userEnteredFormat: {
+                    backgroundColor: { red: 1, green: 1, blue: 1 },
+                    textFormat: {
+                      foregroundColor: { red: 0.12, green: 0.12, blue: 0.12 },
+                      bold: false,
+                    },
+                  },
+                },
+                fields: 'userEnteredFormat(backgroundColor,textFormat)',
+              },
+            },
+          ];
+
+          const colorRuns: Array<{ type: 'income' | 'expense'; start: number; end: number }> = [];
+          let currentRun: { type: 'income' | 'expense'; start: number; end: number } | null = null;
+
+          for (let rowIndex = 1; rowIndex < values.length; rowIndex += 1) {
+            const type = String(values[rowIndex]?.[3] || '').trim().toLowerCase() === 'доход'
+              ? 'income'
+              : 'expense';
+            if (currentRun?.type === type && currentRun.end === rowIndex) {
+              currentRun.end = rowIndex + 1;
+            } else {
+              currentRun = { type, start: rowIndex, end: rowIndex + 1 };
+              colorRuns.push(currentRun);
+            }
+          }
+
+          const greenFormat = {
+            backgroundColor: { red: 0.86, green: 0.97, blue: 0.89 },
+            textFormat: {
+              foregroundColor: { red: 0.04, green: 0.45, blue: 0.18 },
+              bold: true,
+            },
+          };
+          const redFormat = {
+            backgroundColor: { red: 1, green: 0.89, blue: 0.89 },
+            textFormat: {
+              foregroundColor: { red: 0.75, green: 0.08, blue: 0.08 },
+              bold: true,
+            },
+          };
+
+          for (const run of colorRuns) {
+            const format = run.type === 'income' ? greenFormat : redFormat;
+            const columnRanges = run.type === 'income'
+              ? [[0, 1], [2, 4]]
+              : [[1, 4]];
+
+            for (const [startColumnIndex, endColumnIndex] of columnRanges) {
+              formatRequests.push({
+                repeatCell: {
+                  range: {
+                    sheetId,
+                    startRowIndex: run.start,
+                    endRowIndex: run.end,
+                    startColumnIndex,
+                    endColumnIndex,
+                  },
+                  cell: { userEnteredFormat: format },
+                  fields: 'userEnteredFormat(backgroundColor,textFormat)',
+                },
+              });
+            }
+          }
+
+          const formatResponse = await fetch(`${baseUrl}:batchUpdate`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ requests: formatRequests }),
+          });
+
+          if (!formatResponse.ok) {
+            const formatError = await formatResponse.json().catch(() => ({}));
+            console.error('Failed to color transaction cells:', formatError);
+          }
         }
         
         // Then, add notes if provided
