@@ -8,7 +8,7 @@ const corsHeaders = {
 interface PublicTransactionsRequest {
   token: string;
   includeNotifications?: boolean;
-  action?: 'add-rule-terms' | 'sync-bank' | 'analytics';
+  action?: 'add-rule-terms' | 'sync-bank' | 'analytics' | 'export-sheets';
   fromDate?: string;
   cursor?: {
     date: string;
@@ -17,6 +17,7 @@ interface PublicTransactionsRequest {
   };
   terms?: string[];
   transactionTypes?: Array<'income' | 'expense'>;
+  transactionIds?: string[];
 }
 
 const OTHER_DEPARTMENT_BY_TYPE = {
@@ -412,6 +413,63 @@ Deno.serve(async (req) => {
       transactionsQuery = transactionsQuery.or(
         `date.lt.${cursor.date},and(date.eq.${cursor.date},created_at.lt.${cursor.createdAt}),and(date.eq.${cursor.date},created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`,
       );
+    }
+
+    if (body.action === 'export-sheets') {
+      const transactionIds = Array.isArray(body.transactionIds)
+        ? Array.from(new Set(body.transactionIds.filter(id => /^[0-9a-f-]{36}$/i.test(id)))).slice(0, 1000)
+        : [];
+      if (transactionIds.length === 0) {
+        return new Response(JSON.stringify({ valid: true, success: false, error: 'No transactions to export' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { data: exportRows, error: exportError } = await supabase
+        .from('transactions')
+        .select('date,type,amount,currency,description,bank_title,bank_sender,bank_recipient,department_name,comment')
+        .eq('user_id', linkData.owner_user_id)
+        .in('id', transactionIds)
+        .order('date', { ascending: false });
+      if (exportError) throw exportError;
+
+      const values = [
+        ['Дата', 'Тип', 'Сумма', 'Валюта', 'Описание', 'Назначение банка', 'Отправитель', 'Получатель', 'Отдел', 'Комментарий'],
+        ...(exportRows || []).map(row => [
+          row.date || '',
+          row.type === 'income' ? 'Доход' : 'Расход',
+          String(row.amount ?? ''),
+          row.currency || '',
+          row.description || '',
+          row.bank_title || '',
+          row.bank_sender || '',
+          row.bank_recipient || '',
+          row.department_name || '',
+          row.comment || '',
+        ]),
+      ];
+      const sheetsResponse = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+          'Content-Type': 'application/json',
+          'x-owner-user-id': linkData.owner_user_id,
+        },
+        body: JSON.stringify({ action: 'write', values }),
+      });
+      const sheetsResult = await sheetsResponse.json().catch(() => ({ error: `HTTP ${sheetsResponse.status}` }));
+      if (!sheetsResponse.ok || !sheetsResult?.success) {
+        return new Response(JSON.stringify({
+          valid: true,
+          success: false,
+          error: sheetsResult?.error || 'Google Sheets export failed',
+        }), { status: sheetsResponse.status || 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({
+        valid: true,
+        success: true,
+        exported: Math.max(0, values.length - 1),
+      }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const { data: transactions, error: transactionsError } = await transactionsQuery;

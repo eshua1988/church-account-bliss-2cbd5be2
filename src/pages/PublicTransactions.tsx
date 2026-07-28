@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal, X } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal, X, Settings, Plus, Table2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -19,6 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import { CURRENCY_SYMBOLS, Transaction } from '@/types/transaction';
 import DateRangeFilter from '@/components/DateRangeFilter';
 import { CloudSyncIcon } from '@/components/icons/CloudSyncIcon';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 interface Category {
   id: string;
@@ -42,6 +43,7 @@ interface PublicTransactionsResponse {
   success?: boolean;
   addedTerms?: string[];
   imported?: number;
+  exported?: number;
   hasMore?: boolean;
   nextCursor?: { date: string; createdAt: string; id: string } | null;
 }
@@ -132,11 +134,39 @@ const PublicTransactions = () => {
   const [addingRuleTerms, setAddingRuleTerms] = useState(false);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [isBankSyncing, setIsBankSyncing] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [keywordDraft, setKeywordDraft] = useState('');
+  const [savedKeywords, setSavedKeywords] = useState<string[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const nextCursorRef = useRef<PublicTransactionsResponse['nextCursor']>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!token) return;
+    try {
+      const stored = JSON.parse(localStorage.getItem(`public-transactions:keywords:${token}`) || '[]');
+      setSavedKeywords(Array.isArray(stored) ? stored.filter(value => typeof value === 'string') : []);
+    } catch {
+      setSavedKeywords([]);
+    }
+  }, [token]);
+
+  const persistKeywords = (keywords: string[]) => {
+    setSavedKeywords(keywords);
+    if (token) localStorage.setItem(`public-transactions:keywords:${token}`, JSON.stringify(keywords));
+  };
+
+  const saveKeyword = () => {
+    const keyword = keywordDraft.trim();
+    if (!keyword) return;
+    const next = Array.from(new Set([...savedKeywords, keyword])).slice(0, 30);
+    persistKeywords(next);
+    setSearchText(keyword);
+    setKeywordDraft('');
+  };
 
   const loadData = useCallback(async (showLoader = true, append = false) => {
       if (showLoader) setLoading(true);
@@ -536,6 +566,34 @@ const PublicTransactions = () => {
     setShowAdvancedFilters(false);
   };
 
+  const exportToGoogleSheets = async () => {
+    const rows = hasActiveFilters ? filteredTransactions : allTransactions;
+    if (!token || rows.length === 0) {
+      toast({ title: 'Нет данных для экспорта', variant: 'destructive' });
+      return;
+    }
+    if (!window.confirm(`Экспортировать ${rows.length} транзакций в настроенную Google Таблицу? Текущие данные листа будут заменены.`)) return;
+
+    setIsExporting(true);
+    try {
+      const { data, error: functionError } = await supabase.functions.invoke<PublicTransactionsResponse>(
+        'public-transactions',
+        { body: { action: 'export-sheets', token, transactionIds: rows.map(row => row.id) } },
+      );
+      if (functionError) throw functionError;
+      if (!data?.success) throw new Error(data?.error || 'Не удалось экспортировать данные');
+      toast({ title: 'Экспорт завершён', description: `В Google Таблицу отправлено строк: ${data.exported || rows.length}` });
+    } catch (exportError) {
+      toast({
+        title: 'Ошибка экспорта',
+        description: exportError instanceof Error ? exportError.message : 'Проверьте настройку Google Таблицы',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -595,6 +653,21 @@ const PublicTransactions = () => {
                   <DocumentKeywordIcon className={cn("h-5 w-5", addingRuleTerms && "animate-pulse")} />
                   <span className="hidden sm:inline">Добавить слово для поиска</span>
                 </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setKeywordDraft(searchText.trim());
+                    setShowSettings(true);
+                  }}
+                  className="h-11 gap-2 whitespace-nowrap px-3 sm:px-4"
+                  aria-label="Настройки"
+                  title="Настройки"
+                >
+                  <Settings className="h-5 w-5" />
+                  <span className="hidden sm:inline">Настройки</span>
+                </Button>
               </div>
             </div>
           </div>
@@ -639,6 +712,22 @@ const PublicTransactions = () => {
                 )}
               </div>
             </div>
+
+            {savedKeywords.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {savedKeywords.map(keyword => (
+                  <Button
+                    key={keyword}
+                    type="button"
+                    size="sm"
+                    variant={searchText === keyword ? 'default' : 'outline'}
+                    onClick={() => setSearchText(keyword)}
+                  >
+                    {keyword}
+                  </Button>
+                ))}
+              </div>
+            )}
 
             <div className="flex flex-wrap items-center gap-2">
               {[
@@ -910,6 +999,81 @@ const PublicTransactions = () => {
           )}
         </div>
       </div>
+      <Dialog open={showSettings} onOpenChange={setShowSettings}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Настройки публичной таблицы</DialogTitle>
+            <DialogDescription>
+              Сохраните быстрые ключи поиска или экспортируйте текущие результаты в Google Таблицу владельца.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5">
+            <div className="space-y-2">
+              <label htmlFor="public-search-keyword" className="text-sm font-medium">Ключевое слово поиска</label>
+              <div className="flex gap-2">
+                <Input
+                  id="public-search-keyword"
+                  value={keywordDraft}
+                  onChange={event => setKeywordDraft(event.target.value)}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      saveKeyword();
+                    }
+                  }}
+                  placeholder="Например: 777"
+                />
+                <Button type="button" size="icon" onClick={saveKeyword} disabled={!keywordDraft.trim()}>
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              {savedKeywords.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {savedKeywords.map(keyword => (
+                    <div key={keyword} className="flex items-center rounded-md border bg-muted/40">
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 text-sm"
+                        onClick={() => {
+                          setSearchText(keyword);
+                          setShowSettings(false);
+                        }}
+                      >
+                        {keyword}
+                      </button>
+                      <button
+                        type="button"
+                        className="px-2 py-1.5 text-destructive"
+                        aria-label={`Удалить ключ ${keyword}`}
+                        onClick={() => persistKeywords(savedKeywords.filter(value => value !== keyword))}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <p className="mb-3 text-sm text-muted-foreground">
+                Экспортируется {hasActiveFilters ? `найденных строк: ${filteredTransactions.length}` : `загруженных строк: ${allTransactions.length}`}.
+                Данные текущего листа будут заменены.
+              </p>
+              <Button
+                type="button"
+                className="w-full"
+                onClick={exportToGoogleSheets}
+                disabled={isExporting || (hasActiveFilters ? filteredTransactions.length === 0 : allTransactions.length === 0)}
+              >
+                {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Table2 className="mr-2 h-4 w-4" />}
+                Экспортировать в Google Таблицу
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Toaster />
     </>
   );

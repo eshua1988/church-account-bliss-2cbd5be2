@@ -67,6 +67,14 @@ async function authenticateRequest(req: Request): Promise<{ userId: string; toke
     );
   }
 
+  // Trusted calls from another Edge Function may act for a link owner without
+  // exposing the service-role key or spreadsheet settings to the public client.
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  const internalOwnerId = req.headers.get('x-owner-user-id')?.trim() ?? '';
+  if (serviceRoleKey && token === serviceRoleKey && /^[0-9a-f-]{36}$/i.test(internalOwnerId)) {
+    return { userId: internalOwnerId, token, authHeader };
+  }
+
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_ANON_KEY') ?? '',
