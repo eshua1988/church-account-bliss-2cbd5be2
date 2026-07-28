@@ -553,25 +553,53 @@ const Index = () => {
                   {openSettings.share ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
                 </button>
                 {openSettings.share && (
-                  <div className="px-4 pb-4 sm:px-6 sm:pb-6 space-y-6">
-                    <div>
-                      <h5 className="font-semibold text-sm mb-3">{t('payoutOrder')}</h5>
-                      <SharePayoutLink />
+                  <div className="space-y-3 px-4 pb-4 sm:px-6 sm:pb-6">
+                    <div className="overflow-hidden rounded-xl border border-border">
+                      <button
+                        type="button"
+                        onClick={() => toggleSetting('sharePayout')}
+                        className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left hover:bg-muted/40"
+                      >
+                        <span className="font-semibold">{t('payoutOrder')}</span>
+                        {openSettings.sharePayout ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+                      </button>
+                      {openSettings.sharePayout && <div className="border-t p-3 sm:p-4"><SharePayoutLink /></div>}
                     </div>
-                    <Separator />
-                    <div>
-                      <h5 className="font-semibold text-sm mb-3">{t('depositReceipt')}</h5>
-                      <ShareDepositLink />
+
+                    <div className="overflow-hidden rounded-xl border border-border">
+                      <button
+                        type="button"
+                        onClick={() => toggleSetting('shareDeposit')}
+                        className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left hover:bg-muted/40"
+                      >
+                        <span className="font-semibold">{t('depositReceipt')}</span>
+                        {openSettings.shareDeposit ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+                      </button>
+                      {openSettings.shareDeposit && <div className="border-t p-3 sm:p-4"><ShareDepositLink /></div>}
                     </div>
-                    <Separator />
-                    <div>
-                      <h5 className="font-semibold text-sm mb-3">{t('transactionsTable')}</h5>
-                      <ShareTransactionsLink />
+
+                    <div className="overflow-hidden rounded-xl border border-border">
+                      <button
+                        type="button"
+                        onClick={() => toggleSetting('shareTransactions')}
+                        className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left hover:bg-muted/40"
+                      >
+                        <span className="font-semibold">{t('transactionsTable')}</span>
+                        {openSettings.shareTransactions ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+                      </button>
+                      {openSettings.shareTransactions && <div className="border-t p-3 sm:p-4"><ShareTransactionsLink /></div>}
                     </div>
-                    <Separator />
-                    <div>
-                      <h5 className="font-semibold text-sm mb-3">Аналитика</h5>
-                      <ShareAnalyticsLink />
+
+                    <div className="overflow-hidden rounded-xl border border-border">
+                      <button
+                        type="button"
+                        onClick={() => toggleSetting('shareAnalytics')}
+                        className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left hover:bg-muted/40"
+                      >
+                        <span className="font-semibold">Аналитика</span>
+                        {openSettings.shareAnalytics ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+                      </button>
+                      {openSettings.shareAnalytics && <div className="border-t p-3 sm:p-4"><ShareAnalyticsLink /></div>}
                     </div>
                   </div>
                 )}
