@@ -416,60 +416,61 @@ Deno.serve(async (req) => {
     }
 
     if (body.action === 'export-sheets') {
-      const transactionIds = Array.isArray(body.transactionIds)
-        ? Array.from(new Set(body.transactionIds.filter(id => /^[0-9a-f-]{36}$/i.test(id)))).slice(0, 1000)
-        : [];
-      if (transactionIds.length === 0) {
-        return new Response(JSON.stringify({ valid: true, success: false, error: 'No transactions to export' }), {
-          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      try {
+        const transactionIds = Array.isArray(body.transactionIds)
+          ? Array.from(new Set(body.transactionIds.filter(id => /^[0-9a-f-]{36}$/i.test(id)))).slice(0, 1000)
+          : [];
+        if (transactionIds.length === 0) {
+          return new Response(JSON.stringify({ valid: true, success: false, error: 'Нет корректных транзакций для экспорта' }), {
+            status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const { data: exportRows, error: exportError } = await supabase
+          .from('transactions')
+          .select('date,type,amount,currency,description,bank_title,bank_sender,bank_recipient,department_name,comment')
+          .eq('user_id', linkData.owner_user_id)
+          .in('id', transactionIds)
+          .order('date', { ascending: false });
+        if (exportError) throw new Error(`Ошибка чтения транзакций: ${exportError.message}`);
+
+        const values = [
+          ['Дата', 'Тип', 'Сумма', 'Валюта', 'Описание', 'Назначение банка', 'Отправитель', 'Получатель', 'Отдел', 'Комментарий'],
+          ...(exportRows || []).map(row => [
+            row.date || '', row.type === 'income' ? 'Доход' : 'Расход', String(row.amount ?? ''),
+            row.currency || '', row.description || '', row.bank_title || '', row.bank_sender || '',
+            row.bank_recipient || '', row.department_name || '', row.comment || '',
+          ]),
+        ];
+        const sheetsResponse = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+            'Content-Type': 'application/json',
+            'x-owner-user-id': linkData.owner_user_id,
+          },
+          body: JSON.stringify({ action: 'write', values }),
+        });
+        const responseText = await sheetsResponse.text();
+        let sheetsResult: Record<string, any> = {};
+        try { sheetsResult = responseText ? JSON.parse(responseText) : {}; } catch { sheetsResult = { error: responseText }; }
+        if (!sheetsResponse.ok || !sheetsResult?.success) {
+          const detail = sheetsResult?.error || sheetsResult?.message || `Google Sheets HTTP ${sheetsResponse.status}`;
+          console.error('Public Google Sheets export failed:', sheetsResponse.status, detail);
+          return new Response(JSON.stringify({ valid: true, success: false, error: detail }), {
+            status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify({
+          valid: true, success: true, exported: Math.max(0, values.length - 1),
+        }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      } catch (exportFailure) {
+        const message = exportFailure instanceof Error ? exportFailure.message : String(exportFailure);
+        console.error('Public export failed:', message);
+        return new Response(JSON.stringify({ valid: true, success: false, error: message }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-
-      const { data: exportRows, error: exportError } = await supabase
-        .from('transactions')
-        .select('date,type,amount,currency,description,bank_title,bank_sender,bank_recipient,department_name,comment')
-        .eq('user_id', linkData.owner_user_id)
-        .in('id', transactionIds)
-        .order('date', { ascending: false });
-      if (exportError) throw exportError;
-
-      const values = [
-        ['Дата', 'Тип', 'Сумма', 'Валюта', 'Описание', 'Назначение банка', 'Отправитель', 'Получатель', 'Отдел', 'Комментарий'],
-        ...(exportRows || []).map(row => [
-          row.date || '',
-          row.type === 'income' ? 'Доход' : 'Расход',
-          String(row.amount ?? ''),
-          row.currency || '',
-          row.description || '',
-          row.bank_title || '',
-          row.bank_sender || '',
-          row.bank_recipient || '',
-          row.department_name || '',
-          row.comment || '',
-        ]),
-      ];
-      const sheetsResponse = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabaseServiceKey}`,
-          'Content-Type': 'application/json',
-          'x-owner-user-id': linkData.owner_user_id,
-        },
-        body: JSON.stringify({ action: 'write', values }),
-      });
-      const sheetsResult = await sheetsResponse.json().catch(() => ({ error: `HTTP ${sheetsResponse.status}` }));
-      if (!sheetsResponse.ok || !sheetsResult?.success) {
-        return new Response(JSON.stringify({
-          valid: true,
-          success: false,
-          error: sheetsResult?.error || 'Google Sheets export failed',
-        }), { status: sheetsResponse.status || 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-      return new Response(JSON.stringify({
-        valid: true,
-        success: true,
-        exported: Math.max(0, values.length - 1),
-      }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const { data: transactions, error: transactionsError } = await transactionsQuery;

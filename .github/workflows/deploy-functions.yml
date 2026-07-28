@@ -5,6 +5,7 @@ on:
     branches: ['main']
     paths:
       - 'supabase/functions/**'
+      - '.github/workflows/deploy-functions.yml'
   workflow_dispatch:
 
 jobs:
@@ -21,7 +22,7 @@ jobs:
 
       - name: Deploy all Edge Functions
         run: |
-          for fn in submit-public-payout submit-public-deposit validate-payout-token public-transactions send-push-notification add-images-to-payout generate-payout-pdf upload-payout-pdf check-pending-payouts google-sheets telegram-bot banking-auth-start banking-auth-complete banking-sync; do
+          for fn in google-sheets public-transactions submit-public-payout submit-public-deposit validate-payout-token send-push-notification add-images-to-payout generate-payout-pdf upload-payout-pdf check-pending-payouts telegram-bot banking-auth-start banking-auth-complete banking-sync; do
             supabase functions deploy $fn --project-ref htepbcotdqrewbxmasbf
           done
         env:
