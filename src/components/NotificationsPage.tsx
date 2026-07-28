@@ -327,14 +327,14 @@ const NotificationCard = ({
     <>
     {/* Mobile swipe wrapper */}
     <div
-      className="relative overflow-hidden rounded-xl bg-card"
+      className="relative w-full min-w-0 max-w-full touch-pan-y overflow-hidden overscroll-contain rounded-xl bg-card"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
       {/* Action tray — Telegram-style (mobile only) */}
       <div
-        className="sm:hidden absolute right-0 top-0 bottom-0 flex rounded-r-xl overflow-hidden"
+        className="sm:hidden absolute right-0 top-0 bottom-0 flex max-w-full rounded-r-xl overflow-hidden"
         style={{ width: `${SWIPE_MAX}px` }}
       >
         {onChangeDepartment && notification.type === 'payout' && !isRuleRequest && (
@@ -1281,9 +1281,9 @@ export const NotificationsPage = () => {
   };
 
   return (
-    <div className="animate-fade-in">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
+    <div className="animate-fade-in w-full min-w-0 max-w-full overflow-x-hidden">
+      <div className="mb-4 flex min-w-0 flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
           <Mail className="h-6 w-6 text-primary" />
           <h3 className="text-lg font-semibold text-foreground">
             Уведомления
@@ -1294,7 +1294,7 @@ export const NotificationsPage = () => {
             )}
           </h3>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap">
           <Button
             variant="outline"
             size="icon"
@@ -1330,7 +1330,7 @@ export const NotificationsPage = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-5 border-b border-border overflow-x-auto">
+      <div className="mb-5 flex max-w-full gap-1 overflow-x-auto overscroll-x-contain border-b border-border">
         <button
           onClick={() => setActiveTab('all')}
           className={cn(
@@ -1446,7 +1446,7 @@ export const NotificationsPage = () => {
           )}
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="min-w-0 max-w-full space-y-3 overflow-x-hidden">
           {activeTab === 'extension' && Object.entries(archiveGroups).map(([key, items]) => {
             const [year, type] = key.split('-');
             const label = `${year} ${type === 'income' ? 'доход' : 'расход'}`;
