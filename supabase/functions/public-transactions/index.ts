@@ -8,7 +8,7 @@ const corsHeaders = {
 interface PublicTransactionsRequest {
   token: string;
   includeNotifications?: boolean;
-  action?: 'add-rule-terms' | 'sync-bank' | 'analytics' | 'export-sheets';
+  action?: 'add-rule-terms' | 'sync-bank' | 'analytics' | 'export-sheets' | 'save-sheets-settings';
   fromDate?: string;
   cursor?: {
     date: string;
@@ -18,6 +18,9 @@ interface PublicTransactionsRequest {
   terms?: string[];
   transactionTypes?: Array<'income' | 'expense'>;
   transactionIds?: string[];
+  spreadsheetId?: string;
+  sheetName?: string;
+  sheetRange?: string;
 }
 
 const OTHER_DEPARTMENT_BY_TYPE = {
@@ -223,6 +226,51 @@ Deno.serve(async (req) => {
         JSON.stringify({ valid: false, error: 'Link expired' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
+    }
+
+    if (body.action === 'save-sheets-settings') {
+      const spreadsheetInput = String(body.spreadsheetId || '').trim();
+      const spreadsheetMatch = spreadsheetInput.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+      const spreadsheetId = (spreadsheetMatch?.[1] || spreadsheetInput).trim();
+      const sheetName = String(body.sheetName || '').trim();
+      const columnRange = String(body.sheetRange || 'A:Z').trim().toUpperCase();
+
+      if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId)) {
+        return new Response(JSON.stringify({
+          valid: true,
+          success: false,
+          error: 'Укажите корректную ссылку или ID Google Таблицы',
+        }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      if (sheetName.length > 100 || !/^[A-Z]+(?::[A-Z]+|[0-9]+:[A-Z]+[0-9]+)?$/.test(columnRange)) {
+        return new Response(JSON.stringify({
+          valid: true,
+          success: false,
+          error: 'Проверьте название листа и диапазон, например A:Z',
+        }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      const escapedSheetName = sheetName.replace(/'/g, "''");
+      const fullRange = sheetName ? `'${escapedSheetName}'!${columnRange}` : columnRange;
+      const { error: settingsError } = await supabase
+        .from('profiles')
+        .update({ spreadsheet_id: spreadsheetId, sheet_range: fullRange })
+        .eq('id', linkData.owner_user_id);
+
+      if (settingsError) {
+        console.error('Public Sheets settings update failed:', settingsError);
+        return new Response(JSON.stringify({
+          valid: true,
+          success: false,
+          error: `Не удалось сохранить настройки: ${settingsError.message}`,
+        }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      return new Response(JSON.stringify({
+        valid: true,
+        success: true,
+        sheetsSettings: { spreadsheetId, sheetName, sheetRange: columnRange },
+      }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     if (body.action === 'analytics') {
@@ -473,7 +521,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    const { data: transactions, error: transactionsError } = await transactionsQuery;
+    const [{ data: transactions, error: transactionsError }, { data: sheetsProfile }] = await Promise.all([
+      transactionsQuery,
+      supabase
+        .from('profiles')
+        .select('spreadsheet_id, sheet_range')
+        .eq('id', linkData.owner_user_id)
+        .maybeSingle(),
+    ]);
 
     if (transactionsError) {
       console.error('Transactions loading failed:', transactionsError);
@@ -496,6 +551,9 @@ Deno.serve(async (req) => {
     const page = (transactions || []).slice(0, 500);
     const lastTransaction = page[page.length - 1];
 
+    const configuredRange = String(sheetsProfile?.sheet_range || 'A:Z');
+    const configuredRangeMatch = configuredRange.match(/^'((?:[^']|'')+)'!(.+)$/);
+
     return new Response(
       JSON.stringify({
         valid: true,
@@ -509,6 +567,11 @@ Deno.serve(async (req) => {
           createdAt: lastTransaction.created_at,
           id: lastTransaction.id,
         } : null,
+        sheetsSettings: {
+          spreadsheetId: sheetsProfile?.spreadsheet_id || '',
+          sheetName: configuredRangeMatch ? configuredRangeMatch[1].replace(/''/g, "'") : '',
+          sheetRange: configuredRangeMatch ? configuredRangeMatch[2] : configuredRange,
+        },
         notifications: (analyticsNotifications || []).map((notification: any) => ({
           type: notification.type,
           createdAt: notification.created_at,

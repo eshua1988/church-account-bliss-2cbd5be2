@@ -46,6 +46,11 @@ interface PublicTransactionsResponse {
   exported?: number;
   hasMore?: boolean;
   nextCursor?: { date: string; createdAt: string; id: string } | null;
+  sheetsSettings?: {
+    spreadsheetId: string;
+    sheetName: string;
+    sheetRange: string;
+  };
 }
 
 const DocumentKeywordIcon = ({ className }: { className?: string }) => (
@@ -138,6 +143,10 @@ const PublicTransactions = () => {
   const [keywordDraft, setKeywordDraft] = useState('');
   const [savedKeywords, setSavedKeywords] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
+  const [spreadsheetId, setSpreadsheetId] = useState('');
+  const [sheetName, setSheetName] = useState('');
+  const [sheetRange, setSheetRange] = useState('A:Z');
+  const [isSavingSheetsSettings, setIsSavingSheetsSettings] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const nextCursorRef = useRef<PublicTransactionsResponse['nextCursor']>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -204,6 +213,11 @@ const PublicTransactions = () => {
           expense: data.pendingRuleSearchTerms?.expense || [],
         });
         setAllTransactions(current => append ? [...current, ...(data.transactions || [])] : (data.transactions || []));
+        if (!append && data.sheetsSettings) {
+          setSpreadsheetId(data.sheetsSettings.spreadsheetId || '');
+          setSheetName(data.sheetsSettings.sheetName || '');
+          setSheetRange(data.sheetsSettings.sheetRange || 'A:Z');
+        }
         setHasMore(Boolean(data.hasMore));
         nextCursorRef.current = data.nextCursor || null;
         /*
@@ -572,6 +586,8 @@ const PublicTransactions = () => {
       toast({ title: 'Нет данных для экспорта', variant: 'destructive' });
       return;
     }
+    const settingsSaved = await saveSheetsSettings();
+    if (!settingsSaved) return;
     if (!window.confirm(`Экспортировать ${rows.length} транзакций в настроенную Google Таблицу? Текущие данные листа будут заменены.`)) return;
 
     setIsExporting(true);
@@ -591,6 +607,48 @@ const PublicTransactions = () => {
       });
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const saveSheetsSettings = async () => {
+    if (!token) return false;
+    if (!spreadsheetId.trim()) {
+      toast({ title: 'Укажите ссылку или ID Google Таблицы', variant: 'destructive' });
+      return false;
+    }
+
+    setIsSavingSheetsSettings(true);
+    try {
+      const { data, error: functionError } = await supabase.functions.invoke<PublicTransactionsResponse>(
+        'public-transactions',
+        {
+          body: {
+            action: 'save-sheets-settings',
+            token,
+            spreadsheetId,
+            sheetName,
+            sheetRange,
+          },
+        },
+      );
+      if (functionError) throw functionError;
+      if (!data?.success) throw new Error(data?.error || 'Не удалось сохранить настройки Google Sheets');
+      if (data.sheetsSettings) {
+        setSpreadsheetId(data.sheetsSettings.spreadsheetId);
+        setSheetName(data.sheetsSettings.sheetName);
+        setSheetRange(data.sheetsSettings.sheetRange);
+      }
+      toast({ title: 'Настройки Google Sheets сохранены' });
+      return true;
+    } catch (settingsError) {
+      toast({
+        title: 'Ошибка сохранения',
+        description: settingsError instanceof Error ? settingsError.message : 'Проверьте настройки таблицы',
+        variant: 'destructive',
+      });
+      return false;
+    } finally {
+      setIsSavingSheetsSettings(false);
     }
   };
 
@@ -1057,6 +1115,46 @@ const PublicTransactions = () => {
             </div>
 
             <div className="rounded-lg border p-3">
+              <div className="mb-4 space-y-3">
+                <div className="space-y-2">
+                  <label htmlFor="public-spreadsheet-id" className="text-sm font-medium">ID таблицы или ссылка</label>
+                  <Input
+                    id="public-spreadsheet-id"
+                    value={spreadsheetId}
+                    onChange={event => setSpreadsheetId(event.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/d/... или ID"
+                  />
+                  <p className="text-xs text-muted-foreground">Вставьте ссылку на Google Таблицу или только её ID.</p>
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="public-sheet-name" className="text-sm font-medium">Название листа</label>
+                  <Input
+                    id="public-sheet-name"
+                    value={sheetName}
+                    onChange={event => setSheetName(event.target.value)}
+                    placeholder="Лист1"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="public-sheet-range" className="text-sm font-medium">Диапазон листа</label>
+                  <Input
+                    id="public-sheet-range"
+                    value={sheetRange}
+                    onChange={event => setSheetRange(event.target.value)}
+                    placeholder="A:Z"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={saveSheetsSettings}
+                  disabled={isSavingSheetsSettings}
+                >
+                  {isSavingSheetsSettings && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Сохранить настройки
+                </Button>
+              </div>
               <p className="mb-3 text-sm text-muted-foreground">
                 Экспортируется {hasActiveFilters ? `найденных строк: ${filteredTransactions.length}` : `загруженных строк: ${allTransactions.length}`}.
                 Данные текущего листа будут заменены.
