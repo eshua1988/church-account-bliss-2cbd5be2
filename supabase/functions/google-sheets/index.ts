@@ -48,7 +48,7 @@ interface SheetRequest {
   notes?: NoteData[];
 }
 
-async function authenticateRequest(req: Request): Promise<{ userId: string; token: string; authHeader: string } | Response> {
+async function authenticateRequest(req: Request): Promise<{ userId: string; token: string; authHeader: string; internal: boolean } | Response> {
   const authHeader = req.headers.get('Authorization');
 
   if (!authHeader?.startsWith('Bearer ')) {
@@ -72,7 +72,7 @@ async function authenticateRequest(req: Request): Promise<{ userId: string; toke
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const internalOwnerId = req.headers.get('x-owner-user-id')?.trim() ?? '';
   if (serviceRoleKey && token === serviceRoleKey && /^[0-9a-f-]{36}$/i.test(internalOwnerId)) {
-    return { userId: internalOwnerId, token, authHeader };
+    return { userId: internalOwnerId, token, authHeader, internal: true };
   }
 
   const supabase = createClient(
@@ -93,7 +93,7 @@ async function authenticateRequest(req: Request): Promise<{ userId: string; toke
   }
 
   console.log(`Authenticated user: ${user.id}`);
-  return { userId: user.id, token, authHeader };
+  return { userId: user.id, token, authHeader, internal: false };
 }
 
 async function getAccessToken(): Promise<string> {
@@ -235,11 +235,16 @@ serve(async (req) => {
     const action = body.action;
 
     // Look up the user's configured spreadsheet in the database (do NOT trust client-supplied IDs)
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: authResult.authHeader } } }
-    );
+    const supabase = authResult.internal
+      ? createClient(
+          Deno.env.get('SUPABASE_URL') ?? '',
+          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+        )
+      : createClient(
+          Deno.env.get('SUPABASE_URL') ?? '',
+          Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+          { global: { headers: { Authorization: authResult.authHeader } } }
+        );
 
     const { data: profile, error: profileError } = await supabase
       .from('profiles')

@@ -254,8 +254,10 @@ Deno.serve(async (req) => {
       const fullRange = sheetName ? `'${escapedSheetName}'!${columnRange}` : columnRange;
       const { error: settingsError } = await supabase
         .from('profiles')
-        .update({ spreadsheet_id: spreadsheetId, sheet_range: fullRange })
-        .eq('id', linkData.owner_user_id);
+        .upsert(
+          { user_id: linkData.owner_user_id, spreadsheet_id: spreadsheetId, sheet_range: fullRange },
+          { onConflict: 'user_id' },
+        );
 
       if (settingsError) {
         console.error('Public Sheets settings update failed:', settingsError);
@@ -526,7 +528,7 @@ Deno.serve(async (req) => {
       supabase
         .from('profiles')
         .select('spreadsheet_id, sheet_range')
-        .eq('id', linkData.owner_user_id)
+        .eq('user_id', linkData.owner_user_id)
         .maybeSingle(),
     ]);
 
