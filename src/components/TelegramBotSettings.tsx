@@ -181,15 +181,15 @@ export function TelegramBotSettings() {
     }
   };
 
-  const reactivateWebhook = async (token: string | null) => {
+  const reactivateWebhook = async (bot: TelegramUser) => {
     setLoading(true);
     try {
       let response: Response;
-      if (token) {
+      if (bot.bot_token) {
         response = await fetch(`${SUPABASE_URL}/functions/v1/telegram-bot?setup_custom=true`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bot_token: token, user_id: user?.id }),
+          body: JSON.stringify({ bot_token: bot.bot_token, user_id: user?.id, bot_id: bot.id }),
         });
       } else {
         response = await fetch(`${SUPABASE_URL}/functions/v1/telegram-bot?setup=true&owner_id=${user?.id ?? ''}`);
@@ -251,7 +251,7 @@ export function TelegramBotSettings() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => reactivateWebhook(bot.bot_token)}
+                    onClick={() => reactivateWebhook(bot)}
                     disabled={loading}
                     title="Переактивировать webhook"
                     className="text-muted-foreground hover:text-primary"

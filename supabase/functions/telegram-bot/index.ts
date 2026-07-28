@@ -466,6 +466,7 @@ async function buildMainMenuForUser(
   userId: string,
   supabase: ReturnType<typeof createClient>,
   tgUserLangCode?: string,
+  botId?: string | null,
 ): Promise<{ keyboard: object; welcomeMessage: string }> {
   // Read custom bot config
   const { data: config } = await supabase
@@ -542,7 +543,7 @@ async function buildMainMenuForUser(
 
   const { data: registrationEvents } = await supabase
     .from("registration_events")
-    .select("id, title, button_text, starts_at")
+    .select("id, title, button_text, starts_at, telegram_bot_ids")
     .eq("user_id", userId)
     .eq("is_published", true)
     .or(`starts_at.is.null,starts_at.gte.${new Date().toISOString()}`)
@@ -550,6 +551,10 @@ async function buildMainMenuForUser(
     .limit(20);
 
   for (const event of registrationEvents ?? []) {
+    const assignedBots = Array.isArray((event as any).telegram_bot_ids)
+      ? (event as any).telegram_bot_ids as string[]
+      : [];
+    if (assignedBots.length > 0 && (!botId || !assignedBots.includes(botId))) continue;
     const buttonLabel = String(event.button_text || "Зарегистрироваться").trim();
     const title = String(event.title || "").trim();
     flatItems.push({
@@ -589,27 +594,29 @@ async function buildMainMenuForUser(
 async function resolveBotOwner(
   chatId: number,
   ownerFromUrl: string | null,
+  botIdFromUrl: string | null,
   supabase: ReturnType<typeof createClient>,
-): Promise<{ userId: string | null; botToken: string }> {
+): Promise<{ userId: string | null; botToken: string; botId: string | null }> {
   // 1) Owner encoded in webhook URL (custom bots set this when activating webhook)
   if (ownerFromUrl) {
-    const { data } = await supabase
+    let query = supabase
       .from("telegram_users")
-      .select("bot_token")
+      .select("id, bot_token")
       .eq("user_id", ownerFromUrl)
-      .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
+      .eq("is_active", true);
+    if (botIdFromUrl) query = query.eq("id", botIdFromUrl);
+    const { data } = await query.limit(1).maybeSingle();
     return {
       userId: ownerFromUrl,
       botToken: (data as any)?.bot_token || TELEGRAM_BOT_TOKEN,
+      botId: (data as any)?.id ?? botIdFromUrl,
     };
   }
 
   // 2) Direct link: the sender has their own account linked
   const { data: direct } = await supabase
     .from("telegram_users")
-    .select("user_id, bot_token")
+    .select("id, user_id, bot_token")
     .eq("telegram_chat_id", chatId)
     .eq("is_active", true)
     .maybeSingle();
@@ -617,13 +624,14 @@ async function resolveBotOwner(
     return {
       userId: (direct as any).user_id,
       botToken: (direct as any).bot_token || TELEGRAM_BOT_TOKEN,
+      botId: (direct as any).id,
     };
   }
 
   // 3) Fall back to first active user (shared public bot — anyone can use it)
   const { data: anyUser } = await supabase
     .from("telegram_users")
-    .select("user_id, bot_token")
+    .select("id, user_id, bot_token")
     .eq("is_active", true)
     .order("created_at", { ascending: true })
     .limit(1)
@@ -631,6 +639,7 @@ async function resolveBotOwner(
   return {
     userId: (anyUser as any)?.user_id ?? null,
     botToken: (anyUser as any)?.bot_token || TELEGRAM_BOT_TOKEN,
+    botId: (anyUser as any)?.id ?? null,
   };
 }
 
@@ -642,12 +651,43 @@ async function handleGetLinks(
   supabase: ReturnType<typeof createClient>,
   botToken: string,
   tgUserLangCode?: string,
+  botId?: string | null,
 ): Promise<number | null> {
   if (!botOwnerId) {
     return sendMessage(chatId, botI18n.welcomeFallback[getLang(null, tgUserLangCode)], undefined, botToken);
   }
-  const { keyboard, welcomeMessage } = await buildMainMenuForUser(botOwnerId, supabase, tgUserLangCode);
+  const { keyboard, welcomeMessage } = await buildMainMenuForUser(botOwnerId, supabase, tgUserLangCode, botId);
   return sendMessage(chatId, welcomeMessage, keyboard, botToken);
+}
+
+type RegistrationField = {
+  id: string;
+  label: string;
+  type: "text" | "phone" | "email" | "number";
+  required?: boolean;
+};
+
+function registrationPrompt(field: RegistrationField): { text: string; keyboard?: object } {
+  const required = field.required ? " *" : "";
+  if (field.type === "phone") {
+    return {
+      text: `📱 Введите «${escapeHtml(field.label)}»${required} или отправьте контакт кнопкой ниже.`,
+      keyboard: {
+        keyboard: [[{ text: "Отправить номер телефона", request_contact: true }]],
+        resize_keyboard: true,
+        one_time_keyboard: true,
+      },
+    };
+  }
+  return { text: `✍️ Введите «${escapeHtml(field.label)}»${required}:` };
+}
+
+function validRegistrationAnswer(field: RegistrationField, value: string): boolean {
+  if (!value.trim()) return !field.required;
+  if (field.type === "email") return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+  if (field.type === "phone") return value.replace(/\D/g, "").length >= 7;
+  if (field.type === "number") return Number.isFinite(Number(value.replace(",", ".")));
+  return true;
 }
 
 // ----- Webhook setup helper -----
@@ -692,7 +732,7 @@ serve(async (req) => {
   // Setup custom bot webhook
   if (url.searchParams.get("setup_custom") === "true" && req.method === "POST") {
     try {
-      const { bot_token, user_id } = await req.json() as { bot_token: string; user_id?: string };
+      const { bot_token, user_id, bot_id } = await req.json() as { bot_token: string; user_id?: string; bot_id?: string };
       if (!bot_token) {
         return new Response(JSON.stringify({ ok: false, description: "bot_token required" }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -706,8 +746,21 @@ serve(async (req) => {
         });
       }
       // Encode the bot owner in the webhook URL so all users' messages are served from their config
+      let resolvedBotId = bot_id;
+      if (!resolvedBotId && user_id) {
+        const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+        const { data: storedBot } = await admin
+          .from("telegram_users")
+          .select("id")
+          .eq("user_id", user_id)
+          .eq("bot_token", bot_token)
+          .eq("is_active", true)
+          .limit(1)
+          .maybeSingle();
+        resolvedBotId = (storedBot as any)?.id;
+      }
       const webhookUrl = user_id
-        ? `${SUPABASE_URL}/functions/v1/telegram-bot?owner=${user_id}`
+        ? `${SUPABASE_URL}/functions/v1/telegram-bot?owner=${user_id}${resolvedBotId ? `&bot_id=${resolvedBotId}` : ""}`
         : `${SUPABASE_URL}/functions/v1/telegram-bot`;
       const result = await setWebhook(bot_token, webhookUrl);
       return new Response(JSON.stringify({ ...result, bot: getMeResult.result }), {
@@ -789,19 +842,92 @@ serve(async (req) => {
         // Resolve bot owner & token without requiring the sender to be linked
         const ownerFromUrl = url.searchParams.get("owner");
         const userLangCode: string = update.message?.from?.language_code ?? update.callback_query?.from?.language_code ?? '';
-        const { userId: botOwnerId, botToken } = await resolveBotOwner(chatId, ownerFromUrl, supabase);
+        const botIdFromUrl = url.searchParams.get("bot_id");
+        const { userId: botOwnerId, botToken, botId } = await resolveBotOwner(chatId, ownerFromUrl, botIdFromUrl, supabase);
 
         // Clear history if user was inactive for 6+ hours (only applies for linked users)
         const existingIds = await clearStaleHistory(chatId, supabase, botToken);
         const newIds: number[] = [];
 
-        // Regular message → send configured menu to everyone
+        // Regular message: continue an active event form, otherwise show the menu.
         if (update.message?.chat?.type === "private") {
-          const { keyboard, welcomeMessage } = botOwnerId
-            ? await buildMainMenuForUser(botOwnerId, supabase, userLangCode)
-            : { keyboard: { inline_keyboard: [] as any }, welcomeMessage: botI18n.welcomeFallback[getLang(null, userLangCode)] };
-          const msgId = await sendMessage(chatId, welcomeMessage, keyboard, botToken);
-          if (msgId) newIds.push(msgId);
+          const telegramUser = update.message.from ?? {};
+          let sessionQuery = supabase
+            .from("event_registration_sessions")
+            .select("*, registration_events(*)")
+            .eq("telegram_user_id", Number(telegramUser.id))
+            .order("updated_at", { ascending: false });
+          if (botId) sessionQuery = sessionQuery.eq("bot_id", botId);
+          const { data: session } = await sessionQuery
+            .limit(1)
+            .maybeSingle();
+
+          if (session && botOwnerId) {
+            const event = (session as any).registration_events;
+            const fields = (Array.isArray(event?.form_fields) ? event.form_fields : []) as RegistrationField[];
+            const index = Number((session as any).current_field_index || 0);
+            const field = fields[index];
+            const answer = String(update.message.contact?.phone_number ?? update.message.text ?? "").trim();
+
+            if (!field || !validRegistrationAnswer(field, answer)) {
+              const prompt = field
+                ? registrationPrompt(field)
+                : { text: "Не удалось продолжить анкету. Нажмите кнопку регистрации ещё раз." };
+              const msgId = await sendMessage(
+                chatId,
+                field ? `⚠️ Проверьте значение.\n${prompt.text}` : prompt.text,
+                prompt.keyboard,
+                botToken,
+              );
+              if (msgId) newIds.push(msgId);
+            } else {
+              const answers = { ...((session as any).answers ?? {}), [field.id]: answer };
+              const nextIndex = index + 1;
+              if (nextIndex < fields.length) {
+                await supabase
+                  .from("event_registration_sessions")
+                  .update({ answers, current_field_index: nextIndex, updated_at: new Date().toISOString() })
+                  .eq("id", (session as any).id);
+                const prompt = registrationPrompt(fields[nextIndex]);
+                const msgId = await sendMessage(chatId, prompt.text, prompt.keyboard, botToken);
+                if (msgId) newIds.push(msgId);
+              } else {
+                const { data: registrationResult, error: registrationError } = await supabase.rpc(
+                  "register_telegram_for_event",
+                  {
+                    target_event_id: event.id,
+                    target_owner_user_id: botOwnerId,
+                    target_telegram_user_id: Number(telegramUser.id),
+                    target_telegram_chat_id: chatId,
+                    target_first_name: answers.first_name || telegramUser.first_name || null,
+                    target_last_name: answers.last_name || telegramUser.last_name || null,
+                    target_username: telegramUser.username ?? null,
+                    target_answers: answers,
+                  },
+                );
+                const result = registrationResult as any;
+                let text = registrationError
+                  ? "Не удалось сохранить регистрацию."
+                  : `✅ <b>${escapeHtml(result?.title || event.title || "")}</b>\n${escapeHtml(result?.confirmation_text || "Регистрация подтверждена!")}`;
+                let keyboard: object = { remove_keyboard: true };
+                if (result?.payment_required) {
+                  text += `\n\n💳 <b>К оплате: ${escapeHtml(String(result.price ?? ""))} ${escapeHtml(result.currency || "PLN")}</b>`;
+                  if (result.payment_instructions) text += `\n${escapeHtml(result.payment_instructions)}`;
+                  keyboard = result.payment_url
+                    ? { inline_keyboard: [[{ text: "Оплатить", url: result.payment_url }], [{ text: "◀ В меню", callback_data: "get_links" }]] }
+                    : { inline_keyboard: [[{ text: "◀ В меню", callback_data: "get_links" }]] };
+                }
+                const msgId = await sendMessage(chatId, text, keyboard, botToken);
+                if (msgId) newIds.push(msgId);
+              }
+            }
+          } else {
+            const { keyboard, welcomeMessage } = botOwnerId
+              ? await buildMainMenuForUser(botOwnerId, supabase, userLangCode, botId)
+              : { keyboard: { inline_keyboard: [] as any }, welcomeMessage: botI18n.welcomeFallback[getLang(null, userLangCode)] };
+            const msgId = await sendMessage(chatId, welcomeMessage, keyboard, botToken);
+            if (msgId) newIds.push(msgId);
+          }
         }
 
         // Inline button press
@@ -810,50 +936,34 @@ serve(async (req) => {
           const callbackData: string = update.callback_query.data || "";
 
           if (callbackData === "get_links") {
-            const msgId = await handleGetLinks(chatId, botOwnerId, supabase, botToken, userLangCode);
+            const msgId = await handleGetLinks(chatId, botOwnerId, supabase, botToken, userLangCode, botId);
             if (msgId) newIds.push(msgId);
           } else if (callbackData.startsWith("event_")) {
             const eventId = callbackData.slice(6);
             const telegramUser = update.callback_query.from ?? {};
             if (botOwnerId && /^[0-9a-f-]{36}$/i.test(eventId)) {
-              const { data: registrationResult, error: registrationError } = await supabase.rpc(
-                "register_telegram_for_event",
-                {
-                  target_event_id: eventId,
-                  target_owner_user_id: botOwnerId,
-                  target_telegram_user_id: Number(telegramUser.id),
-                  target_telegram_chat_id: chatId,
-                  target_first_name: telegramUser.first_name ?? null,
-                  target_last_name: telegramUser.last_name ?? null,
-                  target_username: telegramUser.username ?? null,
-                },
-              );
-
-              const result = registrationResult as {
-                success?: boolean;
-                code?: string;
-                title?: string;
-                confirmation_text?: string;
-                registered_count?: number;
-                capacity?: number | null;
-              } | null;
-
-              let messageText = "Не удалось выполнить регистрацию.";
-              if (registrationError) {
-                console.error("Event registration failed:", registrationError);
-              } else if (result?.code === "full") {
-                messageText = `⛔ На мероприятие «${escapeHtml(result.title || "")}» свободных мест больше нет.`;
-              } else if (result?.code === "already_registered") {
-                messageText = `ℹ️ Вы уже зарегистрированы на мероприятие «${escapeHtml(result.title || "")}».`;
-              } else if (result?.success) {
-                const capacityText = result.capacity
-                  ? `\nМест занято: ${result.registered_count}/${result.capacity}`
-                  : "";
-                messageText = `✅ <b>${escapeHtml(result.title || "")}</b>\n${escapeHtml(result.confirmation_text || "Регистрация подтверждена!")}${capacityText}`;
-              }
-
-              const backKeyboard = { inline_keyboard: [[{ text: "◀ Назад", callback_data: "get_links" }]] };
-              const msgId = await sendMessage(chatId, messageText, backKeyboard, botToken);
+              const { data: event } = await supabase
+                .from("registration_events")
+                .select("*")
+                .eq("id", eventId)
+                .eq("user_id", botOwnerId)
+                .eq("is_published", true)
+                .maybeSingle();
+              const fields = (Array.isArray((event as any)?.form_fields) ? (event as any).form_fields : []) as RegistrationField[];
+              await supabase.from("event_registration_sessions").upsert({
+                event_id: eventId,
+                bot_id: botId,
+                telegram_user_id: Number(telegramUser.id),
+                telegram_chat_id: chatId,
+                current_field_index: 0,
+                answers: {},
+                telegram_profile: telegramUser,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: "event_id,telegram_user_id" });
+              const prompt = fields[0]
+                ? registrationPrompt(fields[0])
+                : { text: "Для этого мероприятия не настроены поля анкеты." };
+              const msgId = await sendMessage(chatId, prompt.text, prompt.keyboard, botToken);
               if (msgId) newIds.push(msgId);
             }
           } else if (callbackData.startsWith("gsheet_")) {
