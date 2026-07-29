@@ -690,6 +690,27 @@ function validRegistrationAnswer(field: RegistrationField, value: string): boole
   return true;
 }
 
+/** A final review keeps an accidental or incomplete chat exchange from becoming
+ * a registration.  Telegram has no native multi-step form, so this is the
+ * equivalent of the review page before submitting a Google Form. */
+function registrationReview(event: { title?: string; form_fields?: unknown }, answers: Record<string, string>): string {
+  const fields = (Array.isArray(event.form_fields) ? event.form_fields : []) as RegistrationField[];
+  const rows = fields
+    .filter((field) => answers[field.id] !== undefined && String(answers[field.id]).trim() !== "")
+    .map((field) => `<b>${escapeHtml(field.label)}:</b> ${escapeHtml(String(answers[field.id]))}`);
+  return `📋 <b>Проверьте анкету</b>\n<b>${escapeHtml(event.title || "Мероприятие")}</b>\n\n${rows.join("\n") || "Нет заполненных полей."}\n\nНажмите «Подтвердить», чтобы завершить регистрацию.`;
+}
+
+function registrationReviewKeyboard(eventId: string): object {
+  return {
+    inline_keyboard: [
+      [{ text: "✅ Подтвердить регистрацию", callback_data: `event_confirm_${eventId}` }],
+      [{ text: "✏️ Заполнить заново", callback_data: `event_restart_${eventId}` }],
+      [{ text: "◀ В меню", callback_data: "get_links" }],
+    ],
+  };
+}
+
 // ----- Webhook setup helper -----
 
 async function setWebhook(token: string, webhookUrl: string): Promise<{ ok: boolean; description?: string }> {
@@ -869,7 +890,15 @@ serve(async (req) => {
             const field = fields[index];
             const answer = String(update.message.contact?.phone_number ?? update.message.text ?? "").trim();
 
-            if (!field || !validRegistrationAnswer(field, answer)) {
+            if (index === -1) {
+              const msgId = await sendMessage(
+                chatId,
+                registrationReview(event, (session as any).answers ?? {}),
+                registrationReviewKeyboard(event.id),
+                botToken,
+              );
+              if (msgId) newIds.push(msgId);
+            } else if (!field || !validRegistrationAnswer(field, answer)) {
               const prompt = field
                 ? registrationPrompt(field)
                 : { text: "Не удалось продолжить анкету. Нажмите кнопку регистрации ещё раз." };
@@ -889,35 +918,16 @@ serve(async (req) => {
                   .update({ answers, current_field_index: nextIndex, updated_at: new Date().toISOString() })
                   .eq("id", (session as any).id);
                 const prompt = registrationPrompt(fields[nextIndex]);
-                const msgId = await sendMessage(chatId, prompt.text, prompt.keyboard, botToken);
+                const msgId = await sendMessage(chatId, `Шаг ${nextIndex + 1} из ${fields.length}. ${prompt.text}`, prompt.keyboard, botToken);
                 if (msgId) newIds.push(msgId);
               } else {
-                const { data: registrationResult, error: registrationError } = await supabase.rpc(
-                  "register_telegram_for_event",
-                  {
-                    target_event_id: event.id,
-                    target_owner_user_id: botOwnerId,
-                    target_telegram_user_id: Number(telegramUser.id),
-                    target_telegram_chat_id: chatId,
-                    target_first_name: answers.first_name || telegramUser.first_name || null,
-                    target_last_name: answers.last_name || telegramUser.last_name || null,
-                    target_username: telegramUser.username ?? null,
-                    target_answers: answers,
-                  },
-                );
-                const result = registrationResult as any;
-                let text = registrationError
-                  ? "Не удалось сохранить регистрацию."
-                  : `✅ <b>${escapeHtml(result?.title || event.title || "")}</b>\n${escapeHtml(result?.confirmation_text || "Регистрация подтверждена!")}`;
-                let keyboard: object = { remove_keyboard: true };
-                if (result?.payment_required) {
-                  text += `\n\n💳 <b>К оплате: ${escapeHtml(String(result.price ?? ""))} ${escapeHtml(result.currency || "PLN")}</b>`;
-                  if (result.payment_instructions) text += `\n${escapeHtml(result.payment_instructions)}`;
-                  keyboard = result.payment_url
-                    ? { inline_keyboard: [[{ text: "Оплатить", url: result.payment_url }], [{ text: "◀ В меню", callback_data: "get_links" }]] }
-                    : { inline_keyboard: [[{ text: "◀ В меню", callback_data: "get_links" }]] };
-                }
-                const msgId = await sendMessage(chatId, text, keyboard, botToken);
+                // Do not persist yet.  The person gets a complete, readable
+                // form summary and explicitly submits it on the next step.
+                await supabase
+                  .from("event_registration_sessions")
+                  .update({ answers, current_field_index: -1, updated_at: new Date().toISOString() })
+                  .eq("id", (session as any).id);
+                const msgId = await sendMessage(chatId, registrationReview(event, answers), registrationReviewKeyboard(event.id), botToken);
                 if (msgId) newIds.push(msgId);
               }
             }
@@ -938,6 +948,55 @@ serve(async (req) => {
           if (callbackData === "get_links") {
             const msgId = await handleGetLinks(chatId, botOwnerId, supabase, botToken, userLangCode, botId);
             if (msgId) newIds.push(msgId);
+          } else if (callbackData.startsWith("event_confirm_") || callbackData.startsWith("event_restart_")) {
+            const confirm = callbackData.startsWith("event_confirm_");
+            const eventId = callbackData.slice(confirm ? "event_confirm_".length : "event_restart_".length);
+            const telegramUser = update.callback_query.from ?? {};
+            if (botOwnerId && /^[0-9a-f-]{36}$/i.test(eventId)) {
+              const { data: session } = await supabase
+                .from("event_registration_sessions")
+                .select("*, registration_events(*)")
+                .eq("event_id", eventId)
+                .eq("telegram_user_id", Number(telegramUser.id))
+                .maybeSingle();
+              const event = (session as any)?.registration_events;
+              const fields = (Array.isArray(event?.form_fields) ? event.form_fields : []) as RegistrationField[];
+              if (!session || !event) {
+                const msgId = await sendMessage(chatId, "Анкета не найдена. Нажмите кнопку регистрации ещё раз.", undefined, botToken);
+                if (msgId) newIds.push(msgId);
+              } else if (!confirm) {
+                await supabase.from("event_registration_sessions").update({ answers: {}, current_field_index: 0, updated_at: new Date().toISOString() }).eq("id", (session as any).id);
+                const prompt = fields[0] ? registrationPrompt(fields[0]) : { text: "Для этого мероприятия не настроены поля анкеты." };
+                const msgId = await sendMessage(chatId, `✏️ Начнём заново.\n\n${prompt.text}`, prompt.keyboard, botToken);
+                if (msgId) newIds.push(msgId);
+              } else if (Number((session as any).current_field_index) !== -1) {
+                const msgId = await sendMessage(chatId, "Сначала заполните анкету до конца.", undefined, botToken);
+                if (msgId) newIds.push(msgId);
+              } else {
+                const answers = (session as any).answers ?? {};
+                const { data: registrationResult, error: registrationError } = await supabase.rpc("register_telegram_for_event", {
+                  target_event_id: event.id, target_owner_user_id: botOwnerId,
+                  target_telegram_user_id: Number(telegramUser.id), target_telegram_chat_id: chatId,
+                  target_first_name: answers.first_name || telegramUser.first_name || null,
+                  target_last_name: answers.last_name || telegramUser.last_name || null,
+                  target_username: telegramUser.username ?? null, target_answers: answers,
+                });
+                const result = registrationResult as any;
+                let text = registrationError || !result?.success
+                  ? (result?.code === "already_registered" ? "Вы уже зарегистрированы на это мероприятие." : "Не удалось сохранить регистрацию.")
+                  : `✅ <b>${escapeHtml(result.title || event.title || "")}</b>\n${escapeHtml(result.confirmation_text || "Регистрация подтверждена!")}`;
+                let keyboard: object = { remove_keyboard: true };
+                if (result?.success && result.payment_required) {
+                  text += `\n\n💳 <b>К оплате: ${escapeHtml(String(result.price ?? ""))} ${escapeHtml(result.currency || "PLN")}</b>`;
+                  if (result.payment_instructions) text += `\n${escapeHtml(result.payment_instructions)}`;
+                  keyboard = result.payment_url
+                    ? { inline_keyboard: [[{ text: "Оплатить", url: result.payment_url }], [{ text: "◀ В меню", callback_data: "get_links" }]] }
+                    : { inline_keyboard: [[{ text: "◀ В меню", callback_data: "get_links" }]] };
+                }
+                const msgId = await sendMessage(chatId, text, keyboard, botToken);
+                if (msgId) newIds.push(msgId);
+              }
+            }
           } else if (callbackData.startsWith("event_")) {
             const eventId = callbackData.slice(6);
             const telegramUser = update.callback_query.from ?? {};
@@ -963,7 +1022,11 @@ serve(async (req) => {
               const prompt = fields[0]
                 ? registrationPrompt(fields[0])
                 : { text: "Для этого мероприятия не настроены поля анкеты." };
-              const msgId = await sendMessage(chatId, prompt.text, prompt.keyboard, botToken);
+              const description = String((event as any)?.description || "").trim();
+              const intro = event
+                ? `📋 <b>${escapeHtml((event as any).title || "Анкета")}</b>${description ? `\n${escapeHtml(description)}` : ""}\n\nШаг 1 из ${fields.length}. ${prompt.text}`
+                : prompt.text;
+              const msgId = await sendMessage(chatId, intro, prompt.keyboard, botToken);
               if (msgId) newIds.push(msgId);
             }
           } else if (callbackData.startsWith("gsheet_")) {
