@@ -51,7 +51,7 @@ interface PublicTransactionsResponse {
     sheetName: string;
     sheetRange: string;
   };
-  registrationSources?: Array<{ id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string; name_columns: string }>;
+  registrationSources?: Array<{ id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string; name_columns: string; amount_column: string }>;
 }
 
 const DocumentKeywordIcon = ({ className }: { className?: string }) => (
@@ -151,6 +151,7 @@ const PublicTransactions = () => {
   const [registrationSheetName, setRegistrationSheetName] = useState('');
   const [registrationSheetRange, setRegistrationSheetRange] = useState('A:Z');
   const [registrationNameColumns, setRegistrationNameColumns] = useState('A:B');
+  const [registrationAmountColumn, setRegistrationAmountColumn] = useState('');
   const [isSavingRegistrationSource, setIsSavingRegistrationSource] = useState(false);
   const [isReconciling, setIsReconciling] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -640,11 +641,11 @@ const PublicTransactions = () => {
     setIsSavingRegistrationSource(true);
     try {
       const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse>('public-transactions', {
-        body: { action: 'save-registration-source', token, spreadsheetId: registrationSpreadsheetId, sheetName: registrationSheetName, sheetRange: registrationSheetRange, nameColumns: registrationNameColumns },
+        body: { action: 'save-registration-source', token, spreadsheetId: registrationSpreadsheetId, sheetName: registrationSheetName, sheetRange: registrationSheetRange, nameColumns: registrationNameColumns, amountColumn: registrationAmountColumn },
       });
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || 'Не удалось добавить таблицу');
-      setRegistrationSpreadsheetId(''); setRegistrationSheetName(''); setRegistrationSheetRange('A:Z'); setRegistrationNameColumns('A:B');
+      setRegistrationSpreadsheetId(''); setRegistrationSheetName(''); setRegistrationSheetRange('A:Z'); setRegistrationNameColumns('A:B'); setRegistrationAmountColumn('');
       await loadData(false);
       toast({ title: 'Таблица регистрации добавлена' });
     } catch (error) {
@@ -1138,12 +1139,13 @@ const PublicTransactions = () => {
               <Input value={registrationSheetRange} onChange={event => setRegistrationSheetRange(event.target.value)} placeholder="Диапазон, например A:Z или C" />
               </div>
               <Input value={registrationNameColumns} onChange={event => setRegistrationNameColumns(event.target.value)} placeholder="Колонка Фамилия Имя, например C" />
+              <Input value={registrationAmountColumn} onChange={event => setRegistrationAmountColumn(event.target.value)} placeholder="Колонка суммы (необязательно), например E" />
               <Button type="button" variant="outline" className="w-full" onClick={saveRegistrationSource} disabled={isSavingRegistrationSource || !registrationSpreadsheetId.trim()}>
                 {isSavingRegistrationSource && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Добавить таблицу регистрации
               </Button>
               {registrationSources.map(source => (
                 <div key={source.id} className="flex items-center justify-between gap-2 rounded border px-3 py-2 text-sm">
-                  <span className="truncate">{source.sheet_name || 'Первый лист'} · {source.name_columns}</span>
+                  <span className="truncate">{source.sheet_name || 'Первый лист'} · {source.name_columns}{source.amount_column ? ` · сумма: ${source.amount_column}` : ''}</span>
                   <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteRegistrationSource(source.id)} aria-label="Удалить таблицу"><X className="h-4 w-4" /></Button>
                 </div>
               ))}

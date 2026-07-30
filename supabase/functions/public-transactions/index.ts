@@ -23,9 +23,10 @@ interface PublicTransactionsRequest {
   sheetRange?: string;
   sourceId?: string;
   nameColumns?: string;
+  amountColumn?: string;
 }
 
-type RegistrationSource = { id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string; name_columns: string };
+type RegistrationSource = { id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string; name_columns: string; amount_column: string };
 
 const transliteration: Record<string, string> = {
   а: 'a', б: 'b', в: 'v', г: 'h', ґ: 'g', д: 'd', е: 'e', ё: 'e', є: 'ie', ж: 'zh', з: 'z', и: 'y', і: 'i', ї: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'iu', я: 'ia',
@@ -71,6 +72,14 @@ const sourceRange = (source: Pick<RegistrationSource, 'sheet_name' | 'sheet_rang
   return source.sheet_name ? `'${name}'!${source.sheet_range}` : source.sheet_range;
 };
 const normalizeColumnRange = (value: string) => /^[A-Z]+$/.test(value) ? `${value}:${value}` : value;
+const parseSheetAmount = (value: unknown) => {
+  const normalized = String(value ?? '')
+    .replace(/\s/g, '')
+    .replace(/[^0-9,.-]/g, '')
+    .replace(',', '.');
+  const amount = Number(normalized);
+  return normalized && Number.isFinite(amount) ? amount : null;
+};
 
 const OTHER_DEPARTMENT_BY_TYPE = {
   income: 'Прочее (доход)',
@@ -283,10 +292,11 @@ Deno.serve(async (req) => {
       const sheetName = String(body.sheetName || '').trim();
       const sheetRange = normalizeColumnRange(String(body.sheetRange || 'A:Z').trim().toUpperCase());
       const nameColumns = normalizeColumnRange(String(body.nameColumns || 'A:B').trim().toUpperCase());
-      if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId) || !/^[A-Z]+(?::[A-Z]+|[0-9]+:[A-Z]+[0-9]+)?$/.test(sheetRange) || !/^[A-Z]+(?::[A-Z]+)?$/.test(nameColumns)) {
+      const amountColumn = String(body.amountColumn || '').trim().toUpperCase();
+      if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId) || !/^[A-Z]+(?::[A-Z]+|[0-9]+:[A-Z]+[0-9]+)?$/.test(sheetRange) || !/^[A-Z]+(?::[A-Z]+)?$/.test(nameColumns) || (amountColumn && !/^[A-Z]+$/.test(amountColumn))) {
         return new Response(JSON.stringify({ valid: true, success: false, error: 'Проверьте ссылку, диапазон листа и колонки с именем.' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-      const record = { owner_user_id: linkData.owner_user_id, spreadsheet_id: spreadsheetId, sheet_name: sheetName, sheet_range: sheetRange, name_columns: nameColumns };
+      const record = { owner_user_id: linkData.owner_user_id, spreadsheet_id: spreadsheetId, sheet_name: sheetName, sheet_range: sheetRange, name_columns: nameColumns, amount_column: amountColumn };
       // Adding an already configured sheet updates its name columns instead of
       // failing on the unique source constraint. This makes correcting A:Z → C:C easy.
       const query = body.sourceId && /^[0-9a-f-]{36}$/i.test(body.sourceId)
@@ -308,7 +318,7 @@ Deno.serve(async (req) => {
 
     if (body.action === 'reconcile-registration-sheets') {
       const [{ data: sources, error: sourceError }, { data: transactions, error: transactionError }] = await Promise.all([
-        supabase.from('registration_sheet_sources').select('id, spreadsheet_id, sheet_name, sheet_range, name_columns').eq('owner_user_id', linkData.owner_user_id),
+        supabase.from('registration_sheet_sources').select('id, spreadsheet_id, sheet_name, sheet_range, name_columns, amount_column').eq('owner_user_id', linkData.owner_user_id),
         // A person's name may be written in the payment title of either an
         // incoming or an outgoing bank transaction, so compare both types.
         supabase.from('transactions').select('id, date, amount, currency, bank_sender, bank_recipient, bank_title, description, comment').eq('user_id', linkData.owner_user_id).order('date', { ascending: false }).limit(3000),
@@ -330,6 +340,7 @@ Deno.serve(async (req) => {
         const columns = (source.name_columns === 'A:Z' && (surnameHeaderIndex >= 0 || nameHeaderIndex >= 0))
           ? [surnameHeaderIndex >= 0 ? surnameHeaderIndex : nameHeaderIndex]
           : configuredColumns;
+        const amountColumnIndex = source.amount_column ? lettersToIndex(source.amount_column) : null;
         const marks = values.slice(1).flatMap((row, index) => {
           const person = normalizePerson(columns.map(column => row[column] || '').join(' '));
           const nameTokens = person.split(' ').filter(token => token.length >= 3);
@@ -339,7 +350,10 @@ Deno.serve(async (req) => {
             // is recorded, while sender/recipient names may belong to another person.
             const text = normalizePerson(transaction.bank_title || transaction.title || transaction.description);
             const transactionTokens = text.split(' ').filter(token => token.length >= 3);
-            return nameTokens.every(token => transactionTokens.some(candidate => personTokenMatches(token, candidate)));
+            if (!nameTokens.every(token => transactionTokens.some(candidate => personTokenMatches(token, candidate)))) return false;
+            if (amountColumnIndex === null) return true;
+            const expectedAmount = parseSheetAmount(row[amountColumnIndex]);
+            return expectedAmount !== null && Math.abs(Number(transaction.amount) - expectedAmount) < 0.01;
           });
           if (!tx) return [];
           matched += 1;
@@ -661,7 +675,7 @@ Deno.serve(async (req) => {
         .maybeSingle(),
       supabase
         .from('registration_sheet_sources')
-        .select('id, spreadsheet_id, sheet_name, sheet_range, name_columns')
+        .select('id, spreadsheet_id, sheet_name, sheet_range, name_columns, amount_column')
         .eq('owner_user_id', linkData.owner_user_id)
         .order('created_at'),
     ]);
