@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal, X, Settings, Table2, Loader2 } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal, X, Settings, Table2, Loader2, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -152,6 +152,8 @@ const PublicTransactions = () => {
   const [registrationSheetRange, setRegistrationSheetRange] = useState('A:Z');
   const [registrationNameColumns, setRegistrationNameColumns] = useState('A:B');
   const [registrationAmountColumn, setRegistrationAmountColumn] = useState('');
+  const [editingRegistrationSourceId, setEditingRegistrationSourceId] = useState<string | null>(null);
+  const [keywordDraft, setKeywordDraft] = useState('');
   const [isSavingRegistrationSource, setIsSavingRegistrationSource] = useState(false);
   const [isReconciling, setIsReconciling] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -395,8 +397,8 @@ const PublicTransactions = () => {
   const formatMoney = (amount: number, currency: string) =>
     `${amount.toLocaleString()} ${CURRENCY_SYMBOLS[currency as keyof typeof CURRENCY_SYMBOLS] || currency}`;
 
-  const addSearchTermsToRules = async () => {
-    const terms = parseSearchTerms(searchText);
+  const addSearchTermsToRules = async (sourceText = searchText) => {
+    const terms = parseSearchTerms(sourceText);
     if (!token || terms.length === 0) return;
 
     setAddingRuleTerms(true);
@@ -429,6 +431,7 @@ const PublicTransactions = () => {
         description: 'Слова появятся в поиске после подтверждения',
       });
       appendPendingRuleTerms(data.addedTerms || terms, types as Array<'income' | 'expense'>);
+      if (sourceText !== searchText) setKeywordDraft('');
     } catch (err) {
       console.error('Error adding public rule terms:', err);
       const message = err instanceof Error ? err.message : 'Не удалось добавить слова в правила';
@@ -641,16 +644,34 @@ const PublicTransactions = () => {
     setIsSavingRegistrationSource(true);
     try {
       const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse>('public-transactions', {
-        body: { action: 'save-registration-source', token, spreadsheetId: registrationSpreadsheetId, sheetName: registrationSheetName, sheetRange: registrationSheetRange, nameColumns: registrationNameColumns, amountColumn: registrationAmountColumn },
+        body: { action: 'save-registration-source', token, sourceId: editingRegistrationSourceId || undefined, spreadsheetId: registrationSpreadsheetId, sheetName: registrationSheetName, sheetRange: registrationSheetRange, nameColumns: registrationNameColumns, amountColumn: registrationAmountColumn },
       });
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || 'Не удалось добавить таблицу');
-      setRegistrationSpreadsheetId(''); setRegistrationSheetName(''); setRegistrationSheetRange('A:Z'); setRegistrationNameColumns('A:B'); setRegistrationAmountColumn('');
+      setRegistrationSpreadsheetId(''); setRegistrationSheetName(''); setRegistrationSheetRange('A:Z'); setRegistrationNameColumns('A:B'); setRegistrationAmountColumn(''); setEditingRegistrationSourceId(null);
       await loadData(false);
-      toast({ title: 'Таблица регистрации добавлена' });
+      toast({ title: editingRegistrationSourceId ? 'Настройки таблицы обновлены' : 'Таблица регистрации добавлена' });
     } catch (error) {
       toast({ title: 'Ошибка сохранения', description: error instanceof Error ? error.message : 'Проверьте настройки таблицы', variant: 'destructive' });
     } finally { setIsSavingRegistrationSource(false); }
+  };
+
+  const editRegistrationSource = (source: NonNullable<PublicTransactionsResponse['registrationSources']>[number]) => {
+    setEditingRegistrationSourceId(source.id);
+    setRegistrationSpreadsheetId(source.spreadsheet_id);
+    setRegistrationSheetName(source.sheet_name);
+    setRegistrationSheetRange(source.sheet_range);
+    setRegistrationNameColumns(source.name_columns);
+    setRegistrationAmountColumn(source.amount_column || '');
+  };
+
+  const cancelRegistrationSourceEdit = () => {
+    setEditingRegistrationSourceId(null);
+    setRegistrationSpreadsheetId('');
+    setRegistrationSheetName('');
+    setRegistrationSheetRange('A:Z');
+    setRegistrationNameColumns('A:B');
+    setRegistrationAmountColumn('');
   };
 
   const deleteRegistrationSource = async (sourceId: string) => {
@@ -1073,6 +1094,34 @@ const PublicTransactions = () => {
           </DialogHeader>
 
           <div className="space-y-5">
+            <div className="rounded-lg border p-3 space-y-2">
+              <label htmlFor="public-keyword" className="text-sm font-medium">Ключевое слово поиска</label>
+              <div className="flex gap-2">
+                <Input
+                  id="public-keyword"
+                  value={keywordDraft}
+                  onChange={event => setKeywordDraft(event.target.value)}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      void addSearchTermsToRules(keywordDraft);
+                    }
+                  }}
+                  placeholder="Например: 777"
+                />
+                <Button
+                  type="button"
+                  size="icon"
+                  onClick={() => void addSearchTermsToRules(keywordDraft)}
+                  disabled={!parseSearchTerms(keywordDraft).length || addingRuleTerms}
+                  aria-label="Добавить ключевое слово"
+                  title="Добавить ключевое слово"
+                >
+                  {addingRuleTerms ? <Loader2 className="h-4 w-4 animate-spin" /> : '+'}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">Слово будет отправлено владельцу на подтверждение и после подтверждения начнёт использоваться для поиска новых транзакций.</p>
+            </div>
             <div className="rounded-lg border p-3">
               <div className="mb-4 space-y-3">
                 <div className="space-y-2">
@@ -1141,12 +1190,16 @@ const PublicTransactions = () => {
               <Input value={registrationNameColumns} onChange={event => setRegistrationNameColumns(event.target.value)} placeholder="Колонка Фамилия Имя, например C" />
               <Input value={registrationAmountColumn} onChange={event => setRegistrationAmountColumn(event.target.value)} placeholder="Колонка суммы (необязательно), например E" />
               <Button type="button" variant="outline" className="w-full" onClick={saveRegistrationSource} disabled={isSavingRegistrationSource || !registrationSpreadsheetId.trim()}>
-                {isSavingRegistrationSource && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Добавить таблицу регистрации
+                {isSavingRegistrationSource && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} {editingRegistrationSourceId ? 'Сохранить изменения' : 'Добавить таблицу регистрации'}
               </Button>
+              {editingRegistrationSourceId && <Button type="button" variant="ghost" className="w-full" onClick={cancelRegistrationSourceEdit}>Отменить редактирование</Button>}
               {registrationSources.map(source => (
                 <div key={source.id} className="flex items-center justify-between gap-2 rounded border px-3 py-2 text-sm">
                   <span className="truncate">{source.sheet_name || 'Первый лист'} · {source.name_columns}{source.amount_column ? ` · сумма: ${source.amount_column}` : ''}</span>
-                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteRegistrationSource(source.id)} aria-label="Удалить таблицу"><X className="h-4 w-4" /></Button>
+                  <div className="flex shrink-0 items-center">
+                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => editRegistrationSource(source)} aria-label="Редактировать таблицу" title="Редактировать таблицу"><Pencil className="h-4 w-4" /></Button>
+                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteRegistrationSource(source.id)} aria-label="Удалить таблицу"><X className="h-4 w-4" /></Button>
+                  </div>
                 </div>
               ))}
               <Button type="button" className="w-full" onClick={reconcileRegistrationSheets} disabled={isReconciling || registrationSources.length === 0}>
