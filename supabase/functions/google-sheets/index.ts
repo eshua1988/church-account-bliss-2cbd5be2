@@ -22,15 +22,22 @@ function numToColLetter(n: number): string {
   return col;
 }
 
+function colLetterToNumber(column: string): number {
+  return column.split('').reduce((value, char) => value * 26 + char.charCodeAt(0) - 64, 0);
+}
+
 /**
  * Expand the column range in a sheet reference so it covers `colCount` columns.
  * E.g. "'Data app'!A:Z" with colCount=30 → "'Data app'!A:AD"
  * If there are no column bounds (e.g. "Sheet1!A1:Z100") the bounds are left untouched.
  */
 function expandRangeColumns(range: string, colCount: number): string {
-  const lastCol = numToColLetter(Math.max(colCount, 1));
+  const count = Math.max(colCount, 1);
   // Match patterns like "A:Z" or "A:AZ" at the end of the range
-  return range.replace(/([A-Z]+):([A-Z]+)$/, `A:${lastCol}`);
+  return range.replace(/([A-Z]+):([A-Z]+)$/, (_match, startColumn: string) => {
+    const lastCol = numToColLetter(colLetterToNumber(startColumn) + count - 1);
+    return `${startColumn}:${lastCol}`;
+  });
 }
 
 interface NoteData {
@@ -402,6 +409,8 @@ serve(async (req) => {
     const resolvedSheetInfo = sheetsInfo.find(s => s.properties.title === resolvedSheetName);
     const sheetIdNum = resolvedSheetInfo?.properties?.sheetId ?? 0;
     const existingColumnCount = resolvedSheetInfo?.properties?.gridProperties?.columnCount ?? 0;
+    const rangeColumnMatch = resolvedRange.match(/([A-Z]+):[A-Z]+$/);
+    const rangeStartColumnIndex = rangeColumnMatch ? colLetterToNumber(rangeColumnMatch[1]) - 1 : 0;
 
     let response;
 
@@ -423,7 +432,7 @@ serve(async (req) => {
 
         const sheetId = sheetIdNum;
         const clearColumnCount = Math.max(maxDataCols, existingColumnCount, 1);
-        const clearRange = expandRangeColumns(`'${resolvedSheetName.replace(/'/g, "''")}'!A:A`, clearColumnCount);
+        const clearRange = expandRangeColumns(resolvedRange, clearColumnCount);
         const clearNotesRequest = {
           requests: [
             {
@@ -433,8 +442,8 @@ serve(async (req) => {
                   sheetId: sheetId,
                   startRowIndex: 0,
                   endRowIndex: 1000,
-                  startColumnIndex: 0,
-                  endColumnIndex: clearColumnCount,
+                  startColumnIndex: rangeStartColumnIndex,
+                  endColumnIndex: rangeStartColumnIndex + clearColumnCount,
                 },
                 cell: {
                   note: '',
@@ -517,8 +526,8 @@ serve(async (req) => {
                   sheetId,
                   startRowIndex: 1,
                   endRowIndex: values.length,
-                  startColumnIndex: 0,
-                  endColumnIndex: Math.min(4, maxDataCols),
+                  startColumnIndex: rangeStartColumnIndex,
+                  endColumnIndex: rangeStartColumnIndex + Math.min(4, maxDataCols),
                 },
                 cell: {
                   userEnteredFormat: {
@@ -577,8 +586,8 @@ serve(async (req) => {
                     sheetId,
                     startRowIndex: run.start,
                     endRowIndex: run.end,
-                    startColumnIndex,
-                    endColumnIndex,
+                  startColumnIndex: rangeStartColumnIndex + startColumnIndex,
+                  endColumnIndex: rangeStartColumnIndex + endColumnIndex,
                   },
                   cell: { userEnteredFormat: format },
                   fields: 'userEnteredFormat(backgroundColor,textFormat)',
