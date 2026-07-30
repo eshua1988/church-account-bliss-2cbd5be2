@@ -42,6 +42,7 @@ interface PublicTransactionsResponse {
   };
   success?: boolean;
   addedTerms?: string[];
+  existingTerms?: string[];
   imported?: number;
   exported?: number;
   hasMore?: boolean;
@@ -426,11 +427,16 @@ const PublicTransactions = () => {
         );
       }
 
+      const existingTerms = data.existingTerms || [];
+      const addedTerms = data.addedTerms || terms;
+      if (existingTerms.length) setSearchText(existingTerms.join(' '));
       toast({
-        title: 'Запрос отправлен',
-        description: 'Слова появятся в поиске после подтверждения',
+        title: addedTerms.length ? 'Запрос отправлен' : 'Ключевое слово уже подтверждено',
+        description: addedTerms.length
+          ? `${addedTerms.join(', ')}: слово появится в поиске после подтверждения${existingTerms.length ? `. ${existingTerms.join(', ')} уже используется` : ''}`
+          : `${existingTerms.join(', ')} применяется к поиску, экспорту и сверке`,
       });
-      appendPendingRuleTerms(data.addedTerms || terms, types as Array<'income' | 'expense'>);
+      appendPendingRuleTerms(addedTerms, types as Array<'income' | 'expense'>);
       if (sourceText !== searchText) setKeywordDraft('');
     } catch (err) {
       console.error('Error adding public rule terms:', err);
@@ -688,7 +694,7 @@ const PublicTransactions = () => {
     if (!token || registrationSources.length === 0) return;
     setIsReconciling(true);
     try {
-      const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse & { matched?: number }>('public-transactions', { body: { action: 'reconcile-registration-sheets', token } });
+      const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse & { matched?: number }>('public-transactions', { body: { action: 'reconcile-registration-sheets', token, keywords: getSearchWords(searchText) } });
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || 'Не удалось выполнить сверку');
       toast({ title: 'Сверка завершена', description: `Совпадений отмечено: ${data.matched || 0}` });

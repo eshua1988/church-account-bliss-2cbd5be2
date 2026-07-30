@@ -24,6 +24,7 @@ interface PublicTransactionsRequest {
   sourceId?: string;
   nameColumns?: string;
   amountColumn?: string;
+  keywords?: string[];
 }
 
 type RegistrationSource = { id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string; name_columns: string; amount_column: string };
@@ -317,13 +318,31 @@ Deno.serve(async (req) => {
     }
 
     if (body.action === 'reconcile-registration-sheets') {
-      const [{ data: sources, error: sourceError }, { data: transactions, error: transactionError }] = await Promise.all([
+      const [{ data: sources, error: sourceError }, { data: transactions, error: transactionError }, { data: keywordRules, error: keywordRulesError }] = await Promise.all([
         supabase.from('registration_sheet_sources').select('id, spreadsheet_id, sheet_name, sheet_range, name_columns, amount_column').eq('owner_user_id', linkData.owner_user_id),
         // A person's name may be written in the payment title of either an
         // incoming or an outgoing bank transaction, so compare both types.
         supabase.from('transactions').select('id, date, amount, currency, bank_sender, bank_recipient, bank_title, description, comment').eq('user_id', linkData.owner_user_id).order('date', { ascending: false }).limit(3000),
+        supabase.from('department_rules').select('search_text, department_name, transaction_type').eq('user_id', linkData.owner_user_id),
       ]);
-      if (sourceError || transactionError) throw new Error(sourceError?.message || transactionError?.message);
+      if (sourceError || transactionError || keywordRulesError) throw new Error(sourceError?.message || transactionError?.message || keywordRulesError?.message);
+      const approvedKeywords = new Set([
+        ...getOtherRuleSearchTerms(keywordRules || []).income,
+        ...getOtherRuleSearchTerms(keywordRules || []).expense,
+      ].map(term => normalizePerson(term)).filter(Boolean));
+      const requestedKeywords = parseTerms(body.keywords).map(term => normalizePerson(term)).filter(term => approvedKeywords.has(term));
+      if (requestedKeywords.length === 0) {
+        return new Response(
+          JSON.stringify({ valid: true, success: false, error: 'Введите подтверждённое ключевое слово в строку поиска перед сверкой.' }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+      const transactionsForReconciliation = requestedKeywords.length > 0
+        ? (transactions || []).filter(transaction => {
+            const text = normalizePerson(transaction.bank_title || transaction.title || transaction.description);
+            return requestedKeywords.some(keyword => text.includes(keyword));
+          })
+        : transactions || [];
       let matched = 0;
       for (const source of (sources || []) as RegistrationSource[]) {
         const read = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, { method: 'POST', headers: { Authorization: `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'x-owner-user-id': linkData.owner_user_id }, body: JSON.stringify({ action: 'read', spreadsheetId: source.spreadsheet_id, range: sourceRange(source) }) });
@@ -345,7 +364,7 @@ Deno.serve(async (req) => {
           const person = normalizePerson(columns.map(column => row[column] || '').join(' '));
           const nameTokens = person.split(' ').filter(token => token.length >= 3);
           if (nameTokens.length < 2) return [];
-          const tx = (transactions || []).find(transaction => {
+          const tx = transactionsForReconciliation.find(transaction => {
             // Use only the payment title/purpose: it is where "за кого платят"
             // is recorded, while sender/recipient names may belong to another person.
             const text = normalizePerson(transaction.bank_title || transaction.title || transaction.description);
@@ -499,17 +518,39 @@ Deno.serve(async (req) => {
         );
       }
 
+      // A term that is already present in an approved rule must not create a
+      // second confirmation request. It can be used immediately by the public
+      // page for search, export and reconciliation.
+      const { data: existingRules, error: existingRulesError } = await supabase
+        .from('department_rules')
+        .select('search_text, department_name, transaction_type')
+        .eq('user_id', linkData.owner_user_id);
+      if (existingRulesError) throw new Error(existingRulesError.message);
+      const existingTerms = new Set([
+        ...getOtherRuleSearchTerms(existingRules || []).income,
+        ...getOtherRuleSearchTerms(existingRules || []).expense,
+      ].map(term => term.toLowerCase()));
+      const alreadyApprovedTerms = terms.filter(term => existingTerms.has(term.toLowerCase()));
+      const termsForConfirmation = terms.filter(term => !existingTerms.has(term.toLowerCase()));
+
+      if (termsForConfirmation.length === 0) {
+        return new Response(
+          JSON.stringify({ valid: true, success: true, action: body.action, addedTerms: [], existingTerms: alreadyApprovedTerms }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
       const { data: notification, error: notificationError } = await supabase
         .from('notifications')
         .insert({
           user_id: linkData.owner_user_id,
           title: 'Новые слова для поиска',
-          message: `Пользователь публичной ссылки предложил: ${terms.join(', ')}`,
+          message: `Пользователь публичной ссылки предложил: ${termsForConfirmation.join(', ')}`,
           type: 'rule_request',
           is_read: false,
           metadata: {
             request_type: 'department_rule_terms',
-            terms,
+            terms: termsForConfirmation,
             transaction_types: transactionTypes,
             departments: transactionTypes.map((type) => OTHER_DEPARTMENT_BY_TYPE[type]),
             source: 'public_transactions',
@@ -535,7 +576,7 @@ Deno.serve(async (req) => {
             .update({
               metadata: {
                 request_type: 'department_rule_terms',
-                terms,
+                terms: termsForConfirmation,
                 transaction_types: transactionTypes,
                 departments: transactionTypes.map((type) => OTHER_DEPARTMENT_BY_TYPE[type]),
                 source: 'public_transactions',
@@ -549,7 +590,7 @@ Deno.serve(async (req) => {
       }
 
       return new Response(
-        JSON.stringify({ valid: true, success: true, action: body.action, addedTerms: terms }),
+        JSON.stringify({ valid: true, success: true, action: body.action, addedTerms: termsForConfirmation, existingTerms: alreadyApprovedTerms }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
