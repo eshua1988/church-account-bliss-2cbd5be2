@@ -1063,7 +1063,7 @@ const PublicTransactions = () => {
         </div>
       </div>
       <Dialog open={showSettings} onOpenChange={setShowSettings}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Настройки публичной таблицы</DialogTitle>
             <DialogDescription>
@@ -1099,7 +1099,7 @@ const PublicTransactions = () => {
                     id="public-sheet-range"
                     value={sheetRange}
                     onChange={event => setSheetRange(event.target.value)}
-                    placeholder="A:Z"
+                    placeholder="A:Z или B"
                   />
                 </div>
                 <Button
@@ -1110,7 +1110,7 @@ const PublicTransactions = () => {
                   disabled={isSavingSheetsSettings}
                 >
                   {isSavingSheetsSettings && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Сохранить настройки
+                  Добавить Google Таблицу
                 </Button>
               </div>
               <p className="mb-3 text-sm text-muted-foreground">
@@ -1135,9 +1135,9 @@ const PublicTransactions = () => {
               <Input value={registrationSpreadsheetId} onChange={event => setRegistrationSpreadsheetId(event.target.value)} placeholder="Ссылка или ID таблицы регистрации" />
               <div className="grid grid-cols-2 gap-2">
                 <Input value={registrationSheetName} onChange={event => setRegistrationSheetName(event.target.value)} placeholder="Название листа" />
-                <Input value={registrationSheetRange} onChange={event => setRegistrationSheetRange(event.target.value)} placeholder="Диапазон, например A:Z" />
+              <Input value={registrationSheetRange} onChange={event => setRegistrationSheetRange(event.target.value)} placeholder="Диапазон, например A:Z или C" />
               </div>
-              <Input value={registrationNameColumns} onChange={event => setRegistrationNameColumns(event.target.value)} placeholder="Колонки имени, например A:B" />
+              <Input value={registrationNameColumns} onChange={event => setRegistrationNameColumns(event.target.value)} placeholder="Колонка Фамилия Имя, например C" />
               <Button type="button" variant="outline" className="w-full" onClick={saveRegistrationSource} disabled={isSavingRegistrationSource || !registrationSpreadsheetId.trim()}>
                 {isSavingRegistrationSource && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Добавить таблицу регистрации
               </Button>

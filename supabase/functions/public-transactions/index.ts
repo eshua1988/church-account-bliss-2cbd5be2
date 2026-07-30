@@ -70,6 +70,7 @@ const sourceRange = (source: Pick<RegistrationSource, 'sheet_name' | 'sheet_rang
   const name = source.sheet_name.replace(/'/g, "''");
   return source.sheet_name ? `'${name}'!${source.sheet_range}` : source.sheet_range;
 };
+const normalizeColumnRange = (value: string) => /^[A-Z]+$/.test(value) ? `${value}:${value}` : value;
 
 const OTHER_DEPARTMENT_BY_TYPE = {
   income: 'Прочее (доход)',
@@ -280,8 +281,8 @@ Deno.serve(async (req) => {
       const input = String(body.spreadsheetId || '').trim();
       const spreadsheetId = (input.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)?.[1] || input).trim();
       const sheetName = String(body.sheetName || '').trim();
-      const sheetRange = String(body.sheetRange || 'A:Z').trim().toUpperCase();
-      const nameColumns = String(body.nameColumns || 'A:B').trim().toUpperCase();
+      const sheetRange = normalizeColumnRange(String(body.sheetRange || 'A:Z').trim().toUpperCase());
+      const nameColumns = normalizeColumnRange(String(body.nameColumns || 'A:B').trim().toUpperCase());
       if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId) || !/^[A-Z]+(?::[A-Z]+|[0-9]+:[A-Z]+[0-9]+)?$/.test(sheetRange) || !/^[A-Z]+(?::[A-Z]+)?$/.test(nameColumns)) {
         return new Response(JSON.stringify({ valid: true, success: false, error: 'Проверьте ссылку, диапазон листа и колонки с именем.' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
@@ -334,9 +335,9 @@ Deno.serve(async (req) => {
           const nameTokens = person.split(' ').filter(token => token.length >= 3);
           if (nameTokens.length < 2) return [];
           const tx = (transactions || []).find(transaction => {
-            // Bank title is the payment purpose/title where people commonly write
-            // "за кого платят". Keep every bank text field as a fallback.
-            const text = normalizePerson([transaction.bank_title, transaction.title, transaction.description, transaction.bank_sender, transaction.bank_recipient, transaction.comment].join(' '));
+            // Use only the payment title/purpose: it is where "за кого платят"
+            // is recorded, while sender/recipient names may belong to another person.
+            const text = normalizePerson(transaction.bank_title || transaction.title || transaction.description);
             const transactionTokens = text.split(' ').filter(token => token.length >= 3);
             return nameTokens.every(token => transactionTokens.some(candidate => personTokenMatches(token, candidate)));
           });
@@ -357,7 +358,7 @@ Deno.serve(async (req) => {
       const spreadsheetMatch = spreadsheetInput.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
       const spreadsheetId = (spreadsheetMatch?.[1] || spreadsheetInput).trim();
       const sheetName = String(body.sheetName || '').trim();
-      const columnRange = String(body.sheetRange || 'A:Z').trim().toUpperCase();
+      const columnRange = normalizeColumnRange(String(body.sheetRange || 'A:Z').trim().toUpperCase());
 
       if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId)) {
         return new Response(JSON.stringify({
