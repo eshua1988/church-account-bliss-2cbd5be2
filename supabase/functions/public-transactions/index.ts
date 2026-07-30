@@ -300,7 +300,16 @@ Deno.serve(async (req) => {
         const result = await read.json().catch(() => ({}));
         if (!read.ok) throw new Error(result?.error || `Не удалось прочитать лист ${source.sheet_name}`);
         const values: string[][] = result.values || [];
-        const columns = source.name_columns.split(':').map(lettersToIndex);
+        const configuredColumns = source.name_columns.split(':').map(lettersToIndex);
+        const header = values[0] || [];
+        // Forms often keep full name in one column named "Фамилия, Имя".
+        // Prefer it over an old broad A:Z setting, so only surname and name
+        // take part in matching rather than team, phone or form answers.
+        const surnameHeaderIndex = header.findIndex(value => /фамил|прізв|surname|last.?name/i.test(String(value || '')));
+        const nameHeaderIndex = header.findIndex(value => /имя|ім.?я|first.?name|name/i.test(String(value || '')));
+        const columns = (source.name_columns === 'A:Z' && (surnameHeaderIndex >= 0 || nameHeaderIndex >= 0))
+          ? [surnameHeaderIndex >= 0 ? surnameHeaderIndex : nameHeaderIndex]
+          : configuredColumns;
         const marks = values.slice(1).flatMap((row, index) => {
           const person = normalizePerson(columns.map(column => row[column] || '').join(' '));
           const nameTokens = person.split(' ').filter(token => token.length >= 3);
