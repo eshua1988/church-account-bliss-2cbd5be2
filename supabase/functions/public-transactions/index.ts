@@ -289,7 +289,9 @@ Deno.serve(async (req) => {
     if (body.action === 'reconcile-registration-sheets') {
       const [{ data: sources, error: sourceError }, { data: transactions, error: transactionError }] = await Promise.all([
         supabase.from('registration_sheet_sources').select('id, spreadsheet_id, sheet_name, sheet_range, name_columns').eq('owner_user_id', linkData.owner_user_id),
-        supabase.from('transactions').select('id, date, amount, currency, bank_sender, bank_recipient, bank_title, description, comment').eq('user_id', linkData.owner_user_id).eq('type', 'income').order('date', { ascending: false }).limit(3000),
+        // A person's name may be written in the payment title of either an
+        // incoming or an outgoing bank transaction, so compare both types.
+        supabase.from('transactions').select('id, date, amount, currency, bank_sender, bank_recipient, bank_title, description, comment').eq('user_id', linkData.owner_user_id).order('date', { ascending: false }).limit(3000),
       ]);
       if (sourceError || transactionError) throw new Error(sourceError?.message || transactionError?.message);
       let matched = 0;
