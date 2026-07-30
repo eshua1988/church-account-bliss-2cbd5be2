@@ -40,13 +40,14 @@ interface NoteData {
 }
 
 interface SheetRequest {
-  action: 'read' | 'write' | 'append' | 'delete' | 'diagnose';
+  action: 'read' | 'write' | 'append' | 'delete' | 'diagnose' | 'mark-matches';
   spreadsheetId: string;
   range: string;
   values?: string[][];
   transactionId?: string;
   notes?: NoteData[];
   transactionTypeColors?: boolean;
+  matches?: Array<{ row: number; nameColumn: number; note: string }>;
 }
 
 async function authenticateRequest(req: Request): Promise<{ userId: string; token: string; authHeader: string; internal: boolean } | Response> {
@@ -261,7 +262,7 @@ serve(async (req) => {
       );
     }
 
-    if (!profile) {
+    if (!profile && !authResult.internal) {
       return new Response(
         JSON.stringify({ error: 'Bad request: Please configure your Google Sheets ID in settings first' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -271,7 +272,7 @@ serve(async (req) => {
     const configuredSpreadsheetId = (profile?.spreadsheet_id ?? '').trim();
     const configuredRange = (profile?.sheet_range ?? "'Data app'!A:G").trim();
 
-    if (!configuredSpreadsheetId) {
+    if (!configuredSpreadsheetId && !authResult.internal) {
       return new Response(
         JSON.stringify({ error: 'Bad request: Please configure your Google Sheets ID in settings' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -279,7 +280,7 @@ serve(async (req) => {
     }
 
     // Backwards compatibility: if client sends a spreadsheetId, ensure it matches the user's configured one.
-    if (body.spreadsheetId && body.spreadsheetId !== configuredSpreadsheetId) {
+    if (!authResult.internal && body.spreadsheetId && body.spreadsheetId !== configuredSpreadsheetId) {
       console.error(`Spreadsheet ID mismatch for user ${authResult.userId}`);
       return new Response(
         JSON.stringify({ error: 'Forbidden: Spreadsheet ID mismatch' }),
@@ -287,8 +288,10 @@ serve(async (req) => {
       );
     }
 
-    const spreadsheetId = configuredSpreadsheetId;
-    const range = configuredRange;
+    // Internal functions can access explicitly configured registration sources.
+    // Browser clients are still locked to their profile's single export sheet.
+    const spreadsheetId = authResult.internal && body.spreadsheetId ? body.spreadsheetId : configuredSpreadsheetId;
+    const range = authResult.internal && body.range ? body.range : configuredRange;
     const values = body.values;
 
     console.log(`Google Sheets action: ${action}, spreadsheet: ${spreadsheetId}, range: ${range}, user: ${authResult.userId}`);
@@ -657,6 +660,37 @@ serve(async (req) => {
           }
         );
         break;
+      }
+
+      case 'mark-matches': {
+        const matches = Array.isArray(body.matches) ? body.matches : [];
+        if (matches.length === 0) {
+          return new Response(JSON.stringify({ success: true, marked: 0 }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        const requests = matches.slice(0, 500).flatMap((match) => {
+          const row = Number(match.row);
+          const col = Number(match.nameColumn);
+          if (!Number.isInteger(row) || row < 1 || !Number.isInteger(col) || col < 0) return [];
+          const cellRange = { sheetId: sheetIdNum, startRowIndex: row - 1, endRowIndex: row, startColumnIndex: col, endColumnIndex: col + 1 };
+          return [
+            { repeatCell: { range: cellRange, cell: { userEnteredFormat: { backgroundColor: { red: 0.84, green: 0.96, blue: 0.86 }, textFormat: { foregroundColor: { red: 0.04, green: 0.42, blue: 0.16 }, bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
+            { repeatCell: { range: cellRange, cell: { note: String(match.note || '').slice(0, 45000) }, fields: 'note' } },
+          ];
+        });
+        const markResponse = await fetch(`${baseUrl}:batchUpdate`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requests }),
+        });
+        if (!markResponse.ok) {
+          const error = await markResponse.json().catch(() => ({}));
+          throw new Error(error?.error?.message || 'Failed to mark matching rows');
+        }
+        return new Response(JSON.stringify({ success: true, marked: Math.floor(requests.length / 2) }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
       
       case 'delete': {

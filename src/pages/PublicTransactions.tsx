@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal, X, Settings, Plus, Table2, Loader2 } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, TrendingUp, TrendingDown, SlidersHorizontal, X, Settings, Table2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -51,6 +51,7 @@ interface PublicTransactionsResponse {
     sheetName: string;
     sheetRange: string;
   };
+  registrationSources?: Array<{ id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string; name_columns: string }>;
 }
 
 const DocumentKeywordIcon = ({ className }: { className?: string }) => (
@@ -140,42 +141,23 @@ const PublicTransactions = () => {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [isBankSyncing, setIsBankSyncing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [keywordDraft, setKeywordDraft] = useState('');
-  const [savedKeywords, setSavedKeywords] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   const [spreadsheetId, setSpreadsheetId] = useState('');
   const [sheetName, setSheetName] = useState('');
   const [sheetRange, setSheetRange] = useState('A:Z');
   const [isSavingSheetsSettings, setIsSavingSheetsSettings] = useState(false);
+  const [registrationSources, setRegistrationSources] = useState<NonNullable<PublicTransactionsResponse['registrationSources']>>([]);
+  const [registrationSpreadsheetId, setRegistrationSpreadsheetId] = useState('');
+  const [registrationSheetName, setRegistrationSheetName] = useState('');
+  const [registrationSheetRange, setRegistrationSheetRange] = useState('A:Z');
+  const [registrationNameColumns, setRegistrationNameColumns] = useState('A:B');
+  const [isSavingRegistrationSource, setIsSavingRegistrationSource] = useState(false);
+  const [isReconciling, setIsReconciling] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const nextCursorRef = useRef<PublicTransactionsResponse['nextCursor']>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    if (!token) return;
-    try {
-      const stored = JSON.parse(localStorage.getItem(`public-transactions:keywords:${token}`) || '[]');
-      setSavedKeywords(Array.isArray(stored) ? stored.filter(value => typeof value === 'string') : []);
-    } catch {
-      setSavedKeywords([]);
-    }
-  }, [token]);
-
-  const persistKeywords = (keywords: string[]) => {
-    setSavedKeywords(keywords);
-    if (token) localStorage.setItem(`public-transactions:keywords:${token}`, JSON.stringify(keywords));
-  };
-
-  const saveKeyword = () => {
-    const keyword = keywordDraft.trim();
-    if (!keyword) return;
-    const next = Array.from(new Set([...savedKeywords, keyword])).slice(0, 30);
-    persistKeywords(next);
-    setSearchText(keyword);
-    setKeywordDraft('');
-  };
 
   const loadData = useCallback(async (showLoader = true, append = false) => {
       if (showLoader) setLoading(true);
@@ -218,6 +200,7 @@ const PublicTransactions = () => {
           setSheetName(data.sheetsSettings.sheetName || '');
           setSheetRange(data.sheetsSettings.sheetRange || 'A:Z');
         }
+        if (!append) setRegistrationSources(data.registrationSources || []);
         setHasMore(Boolean(data.hasMore));
         nextCursorRef.current = data.nextCursor || null;
         /*
@@ -652,6 +635,45 @@ const PublicTransactions = () => {
     }
   };
 
+  const saveRegistrationSource = async () => {
+    if (!token || !registrationSpreadsheetId.trim()) return;
+    setIsSavingRegistrationSource(true);
+    try {
+      const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse>('public-transactions', {
+        body: { action: 'save-registration-source', token, spreadsheetId: registrationSpreadsheetId, sheetName: registrationSheetName, sheetRange: registrationSheetRange, nameColumns: registrationNameColumns },
+      });
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || 'Не удалось добавить таблицу');
+      setRegistrationSpreadsheetId(''); setRegistrationSheetName(''); setRegistrationSheetRange('A:Z'); setRegistrationNameColumns('A:B');
+      await loadData(false);
+      toast({ title: 'Таблица регистрации добавлена' });
+    } catch (error) {
+      toast({ title: 'Ошибка сохранения', description: error instanceof Error ? error.message : 'Проверьте настройки таблицы', variant: 'destructive' });
+    } finally { setIsSavingRegistrationSource(false); }
+  };
+
+  const deleteRegistrationSource = async (sourceId: string) => {
+    if (!token) return;
+    try {
+      const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse>('public-transactions', { body: { action: 'delete-registration-source', token, sourceId } });
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || 'Не удалось удалить таблицу');
+      setRegistrationSources(current => current.filter(source => source.id !== sourceId));
+    } catch (error) { toast({ title: 'Ошибка удаления', description: error instanceof Error ? error.message : undefined, variant: 'destructive' }); }
+  };
+
+  const reconcileRegistrationSheets = async () => {
+    if (!token || registrationSources.length === 0) return;
+    setIsReconciling(true);
+    try {
+      const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse & { matched?: number }>('public-transactions', { body: { action: 'reconcile-registration-sheets', token } });
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || 'Не удалось выполнить сверку');
+      toast({ title: 'Сверка завершена', description: `Совпадений отмечено: ${data.matched || 0}` });
+    } catch (error) { toast({ title: 'Ошибка сверки', description: error instanceof Error ? error.message : undefined, variant: 'destructive' }); }
+    finally { setIsReconciling(false); }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -770,22 +792,6 @@ const PublicTransactions = () => {
                 )}
               </div>
             </div>
-
-            {savedKeywords.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {savedKeywords.map(keyword => (
-                  <Button
-                    key={keyword}
-                    type="button"
-                    size="sm"
-                    variant={searchText === keyword ? 'default' : 'outline'}
-                    onClick={() => setSearchText(keyword)}
-                  >
-                    {keyword}
-                  </Button>
-                ))}
-              </div>
-            )}
 
             <div className="flex flex-wrap items-center gap-2">
               {[
@@ -1067,53 +1073,6 @@ const PublicTransactions = () => {
           </DialogHeader>
 
           <div className="space-y-5">
-            <div className="space-y-2">
-              <label htmlFor="public-search-keyword" className="text-sm font-medium">Ключевое слово поиска</label>
-              <div className="flex gap-2">
-                <Input
-                  id="public-search-keyword"
-                  value={keywordDraft}
-                  onChange={event => setKeywordDraft(event.target.value)}
-                  onKeyDown={event => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      saveKeyword();
-                    }
-                  }}
-                  placeholder="Например: 777"
-                />
-                <Button type="button" size="icon" onClick={saveKeyword} disabled={!keywordDraft.trim()}>
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-              {savedKeywords.length > 0 && (
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {savedKeywords.map(keyword => (
-                    <div key={keyword} className="flex items-center rounded-md border bg-muted/40">
-                      <button
-                        type="button"
-                        className="px-3 py-1.5 text-sm"
-                        onClick={() => {
-                          setSearchText(keyword);
-                          setShowSettings(false);
-                        }}
-                      >
-                        {keyword}
-                      </button>
-                      <button
-                        type="button"
-                        className="px-2 py-1.5 text-destructive"
-                        aria-label={`Удалить ключ ${keyword}`}
-                        onClick={() => persistKeywords(savedKeywords.filter(value => value !== keyword))}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
             <div className="rounded-lg border p-3">
               <div className="mb-4 space-y-3">
                 <div className="space-y-2">
@@ -1167,6 +1126,30 @@ const PublicTransactions = () => {
               >
                 {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Table2 className="mr-2 h-4 w-4" />}
                 Экспортировать в Google Таблицу
+              </Button>
+            </div>
+            <div className="rounded-lg border p-3 space-y-3">
+              <div>
+                <p className="font-medium">Таблицы регистрации</p>
+                <p className="text-xs text-muted-foreground">Добавьте лист Google Forms с именем и фамилией. При сверке совпадения с входящими транзакциями выделяются зелёным, а в ячейку добавляется примечание с транзакцией.</p>
+              </div>
+              <Input value={registrationSpreadsheetId} onChange={event => setRegistrationSpreadsheetId(event.target.value)} placeholder="Ссылка или ID таблицы регистрации" />
+              <div className="grid grid-cols-2 gap-2">
+                <Input value={registrationSheetName} onChange={event => setRegistrationSheetName(event.target.value)} placeholder="Название листа" />
+                <Input value={registrationSheetRange} onChange={event => setRegistrationSheetRange(event.target.value)} placeholder="Диапазон, например A:Z" />
+              </div>
+              <Input value={registrationNameColumns} onChange={event => setRegistrationNameColumns(event.target.value)} placeholder="Колонки имени, например A:B" />
+              <Button type="button" variant="outline" className="w-full" onClick={saveRegistrationSource} disabled={isSavingRegistrationSource || !registrationSpreadsheetId.trim()}>
+                {isSavingRegistrationSource && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Добавить таблицу регистрации
+              </Button>
+              {registrationSources.map(source => (
+                <div key={source.id} className="flex items-center justify-between gap-2 rounded border px-3 py-2 text-sm">
+                  <span className="truncate">{source.sheet_name || 'Первый лист'} · {source.name_columns}</span>
+                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteRegistrationSource(source.id)} aria-label="Удалить таблицу"><X className="h-4 w-4" /></Button>
+                </div>
+              ))}
+              <Button type="button" className="w-full" onClick={reconcileRegistrationSheets} disabled={isReconciling || registrationSources.length === 0}>
+                {isReconciling && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Сверить регистрации с транзакциями
               </Button>
             </div>
           </div>

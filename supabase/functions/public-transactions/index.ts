@@ -8,7 +8,7 @@ const corsHeaders = {
 interface PublicTransactionsRequest {
   token: string;
   includeNotifications?: boolean;
-  action?: 'add-rule-terms' | 'sync-bank' | 'analytics' | 'export-sheets' | 'save-sheets-settings';
+  action?: 'add-rule-terms' | 'sync-bank' | 'analytics' | 'export-sheets' | 'save-sheets-settings' | 'save-registration-source' | 'delete-registration-source' | 'reconcile-registration-sheets';
   fromDate?: string;
   cursor?: {
     date: string;
@@ -21,7 +21,25 @@ interface PublicTransactionsRequest {
   spreadsheetId?: string;
   sheetName?: string;
   sheetRange?: string;
+  sourceId?: string;
+  nameColumns?: string;
 }
+
+type RegistrationSource = { id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string; name_columns: string };
+
+const transliteration: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'h', ґ: 'g', д: 'd', е: 'e', ё: 'e', є: 'ie', ж: 'zh', з: 'z', и: 'y', і: 'i', ї: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'iu', я: 'ia',
+};
+const normalizePerson = (value: unknown) => String(value || '')
+  .toLowerCase()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .split('').map(char => transliteration[char] ?? char).join('')
+  .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+const lettersToIndex = (column: string) => column.split('').reduce((value, char) => value * 26 + char.charCodeAt(0) - 64, 0) - 1;
+const sourceRange = (source: Pick<RegistrationSource, 'sheet_name' | 'sheet_range'>) => {
+  const name = source.sheet_name.replace(/'/g, "''");
+  return source.sheet_name ? `'${name}'!${source.sheet_range}` : source.sheet_range;
+};
 
 const OTHER_DEPARTMENT_BY_TYPE = {
   income: 'Прочее (доход)',
@@ -226,6 +244,64 @@ Deno.serve(async (req) => {
         JSON.stringify({ valid: false, error: 'Link expired' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
+    }
+
+    if (body.action === 'save-registration-source') {
+      const input = String(body.spreadsheetId || '').trim();
+      const spreadsheetId = (input.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)?.[1] || input).trim();
+      const sheetName = String(body.sheetName || '').trim();
+      const sheetRange = String(body.sheetRange || 'A:Z').trim().toUpperCase();
+      const nameColumns = String(body.nameColumns || 'A:B').trim().toUpperCase();
+      if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId) || !/^[A-Z]+(?::[A-Z]+|[0-9]+:[A-Z]+[0-9]+)?$/.test(sheetRange) || !/^[A-Z]+(?::[A-Z]+)?$/.test(nameColumns)) {
+        return new Response(JSON.stringify({ valid: true, success: false, error: 'Проверьте ссылку, диапазон листа и колонки с именем.' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const record = { owner_user_id: linkData.owner_user_id, spreadsheet_id: spreadsheetId, sheet_name: sheetName, sheet_range: sheetRange, name_columns: nameColumns };
+      const query = body.sourceId && /^[0-9a-f-]{36}$/i.test(body.sourceId)
+        ? supabase.from('registration_sheet_sources').update(record).eq('id', body.sourceId).eq('owner_user_id', linkData.owner_user_id).select().single()
+        : supabase.from('registration_sheet_sources').insert(record).select().single();
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ valid: true, success: true, source: data }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (body.action === 'delete-registration-source') {
+      if (!body.sourceId || !/^[0-9a-f-]{36}$/i.test(body.sourceId)) throw new Error('Invalid source ID');
+      const { error } = await supabase.from('registration_sheet_sources').delete().eq('id', body.sourceId).eq('owner_user_id', linkData.owner_user_id);
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ valid: true, success: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (body.action === 'reconcile-registration-sheets') {
+      const [{ data: sources, error: sourceError }, { data: transactions, error: transactionError }] = await Promise.all([
+        supabase.from('registration_sheet_sources').select('id, spreadsheet_id, sheet_name, sheet_range, name_columns').eq('owner_user_id', linkData.owner_user_id),
+        supabase.from('transactions').select('id, date, amount, currency, bank_sender, bank_recipient, bank_title, description, comment').eq('user_id', linkData.owner_user_id).eq('type', 'income').order('date', { ascending: false }).limit(3000),
+      ]);
+      if (sourceError || transactionError) throw new Error(sourceError?.message || transactionError?.message);
+      let matched = 0;
+      for (const source of (sources || []) as RegistrationSource[]) {
+        const read = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, { method: 'POST', headers: { Authorization: `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'x-owner-user-id': linkData.owner_user_id }, body: JSON.stringify({ action: 'read', spreadsheetId: source.spreadsheet_id, range: sourceRange(source) }) });
+        const result = await read.json().catch(() => ({}));
+        if (!read.ok) throw new Error(result?.error || `Не удалось прочитать лист ${source.sheet_name}`);
+        const values: string[][] = result.values || [];
+        const columns = source.name_columns.split(':').map(lettersToIndex);
+        const marks = values.slice(1).flatMap((row, index) => {
+          const person = normalizePerson(columns.map(column => row[column] || '').join(' '));
+          const nameTokens = person.split(' ').filter(token => token.length >= 3);
+          if (nameTokens.length < 2) return [];
+          const tx = (transactions || []).find(transaction => {
+            const text = normalizePerson([transaction.bank_sender, transaction.bank_recipient, transaction.bank_title, transaction.description, transaction.comment].join(' '));
+            return nameTokens.every(token => text.includes(token));
+          });
+          if (!tx) return [];
+          matched += 1;
+          return [{ row: index + 2, nameColumn: columns[0], note: `Найдена транзакция: ${tx.date} — ${tx.amount} ${tx.currency || ''}. ${tx.bank_title || tx.description || ''}`.trim() }];
+        });
+        if (marks.length) {
+          const mark = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, { method: 'POST', headers: { Authorization: `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'x-owner-user-id': linkData.owner_user_id }, body: JSON.stringify({ action: 'mark-matches', spreadsheetId: source.spreadsheet_id, range: sourceRange(source), matches: marks }) });
+          if (!mark.ok) { const detail = await mark.json().catch(() => ({})); throw new Error(detail?.error || 'Не удалось отметить совпадения'); }
+        }
+      }
+      return new Response(JSON.stringify({ valid: true, success: true, matched }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     if (body.action === 'save-sheets-settings') {
@@ -527,13 +603,18 @@ Deno.serve(async (req) => {
       }
     }
 
-    const [{ data: transactions, error: transactionsError }, { data: sheetsProfile }] = await Promise.all([
+    const [{ data: transactions, error: transactionsError }, { data: sheetsProfile }, { data: registrationSources }] = await Promise.all([
       transactionsQuery,
       supabase
         .from('profiles')
         .select('spreadsheet_id, sheet_range')
         .eq('user_id', linkData.owner_user_id)
         .maybeSingle(),
+      supabase
+        .from('registration_sheet_sources')
+        .select('id, spreadsheet_id, sheet_name, sheet_range, name_columns')
+        .eq('owner_user_id', linkData.owner_user_id)
+        .order('created_at'),
     ]);
 
     if (transactionsError) {
@@ -578,6 +659,7 @@ Deno.serve(async (req) => {
           sheetName: configuredRangeMatch ? configuredRangeMatch[1].replace(/''/g, "'") : '',
           sheetRange: configuredRangeMatch ? configuredRangeMatch[2] : configuredRange,
         },
+        registrationSources: registrationSources || [],
         notifications: (analyticsNotifications || []).map((notification: any) => ({
           type: notification.type,
           createdAt: notification.created_at,
