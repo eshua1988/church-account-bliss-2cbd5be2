@@ -738,7 +738,6 @@ const PublicTransactions = () => {
                   type="button"
                   variant="outline"
                   onClick={() => {
-                    setKeywordDraft(searchText.trim());
                     setShowSettings(true);
                   }}
                   className="h-11 gap-2 whitespace-nowrap px-3 sm:px-4"
