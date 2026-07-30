@@ -41,10 +41,29 @@ const comparablePersonToken = (value: string) => value
   .replace(/([aeiouy])\1+/g, '$1')
   .replace(/ie/g, 'i')
   .replace(/ia/g, 'a');
+const levenshteinDistance = (left: string, right: string) => {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i += 1) {
+    let diagonal = previous[0];
+    previous[0] = i;
+    for (let j = 1; j <= right.length; j += 1) {
+      const saved = previous[j];
+      previous[j] = Math.min(previous[j] + 1, previous[j - 1] + 1, diagonal + (left[i - 1] === right[j - 1] ? 0 : 1));
+      diagonal = saved;
+    }
+  }
+  return previous[right.length];
+};
 const personTokenMatches = (expected: string, actual: string) => {
   const left = comparablePersonToken(expected);
   const right = comparablePersonToken(actual);
-  return left.length >= 3 && right.length >= 3 && (left.includes(right) || right.includes(left));
+  if (left.length < 3 || right.length < 3) return false;
+  if (left.includes(right) || right.includes(left)) return true;
+  // Accept only a small typo allowance. A full name still needs both tokens
+  // to match, so a single similar word cannot mark a registration by mistake.
+  const allowedErrors = Math.max(left.length, right.length) >= 9 ? 2 : 1;
+  return Math.abs(left.length - right.length) <= allowedErrors
+    && levenshteinDistance(left, right) <= allowedErrors;
 };
 const lettersToIndex = (column: string) => column.split('').reduce((value, char) => value * 26 + char.charCodeAt(0) - 64, 0) - 1;
 const sourceRange = (source: Pick<RegistrationSource, 'sheet_name' | 'sheet_range'>) => {
