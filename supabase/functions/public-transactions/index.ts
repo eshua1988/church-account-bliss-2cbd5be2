@@ -35,6 +35,17 @@ const normalizePerson = (value: unknown) => String(value || '')
   .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   .split('').map(char => transliteration[char] ?? char).join('')
   .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+// Makes transliterated variants such as Maria / Mariia comparable without
+// weakening surname matching to a generic substring search.
+const comparablePersonToken = (value: string) => value
+  .replace(/([aeiouy])\1+/g, '$1')
+  .replace(/ie/g, 'i')
+  .replace(/ia/g, 'a');
+const personTokenMatches = (expected: string, actual: string) => {
+  const left = comparablePersonToken(expected);
+  const right = comparablePersonToken(actual);
+  return left.length >= 3 && right.length >= 3 && (left.includes(right) || right.includes(left));
+};
 const lettersToIndex = (column: string) => column.split('').reduce((value, char) => value * 26 + char.charCodeAt(0) - 64, 0) - 1;
 const sourceRange = (source: Pick<RegistrationSource, 'sheet_name' | 'sheet_range'>) => {
   const name = source.sheet_name.replace(/'/g, "''");
@@ -293,8 +304,11 @@ Deno.serve(async (req) => {
           const nameTokens = person.split(' ').filter(token => token.length >= 3);
           if (nameTokens.length < 2) return [];
           const tx = (transactions || []).find(transaction => {
-            const text = normalizePerson([transaction.bank_sender, transaction.bank_recipient, transaction.bank_title, transaction.description, transaction.comment].join(' '));
-            return nameTokens.every(token => text.includes(token));
+            // Bank title is the payment purpose/title where people commonly write
+            // "за кого платят". Keep every bank text field as a fallback.
+            const text = normalizePerson([transaction.bank_title, transaction.title, transaction.description, transaction.bank_sender, transaction.bank_recipient, transaction.comment].join(' '));
+            const transactionTokens = text.split(' ').filter(token => token.length >= 3);
+            return nameTokens.every(token => transactionTokens.some(candidate => personTokenMatches(token, candidate)));
           });
           if (!tx) return [];
           matched += 1;
