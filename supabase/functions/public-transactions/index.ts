@@ -256,9 +256,13 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ valid: true, success: false, error: 'Проверьте ссылку, диапазон листа и колонки с именем.' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
       const record = { owner_user_id: linkData.owner_user_id, spreadsheet_id: spreadsheetId, sheet_name: sheetName, sheet_range: sheetRange, name_columns: nameColumns };
+      // Adding an already configured sheet updates its name columns instead of
+      // failing on the unique source constraint. This makes correcting A:Z → C:C easy.
       const query = body.sourceId && /^[0-9a-f-]{36}$/i.test(body.sourceId)
         ? supabase.from('registration_sheet_sources').update(record).eq('id', body.sourceId).eq('owner_user_id', linkData.owner_user_id).select().single()
-        : supabase.from('registration_sheet_sources').insert(record).select().single();
+        : supabase.from('registration_sheet_sources').upsert(record, {
+            onConflict: 'owner_user_id,spreadsheet_id,sheet_name,sheet_range',
+          }).select().single();
       const { data, error } = await query;
       if (error) throw new Error(error.message);
       return new Response(JSON.stringify({ valid: true, success: true, source: data }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
