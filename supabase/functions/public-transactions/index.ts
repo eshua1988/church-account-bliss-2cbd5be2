@@ -419,12 +419,19 @@ Deno.serve(async (req) => {
             // is recorded, while sender/recipient names may belong to another person.
             const text = normalizePerson(transaction.bank_title || transaction.title || transaction.description);
             const transactionTokens = text.split(' ').filter(token => token.length >= 3);
-            if (!nameTokens.every(token => transactionTokens.some(candidate => personTokenMatches(token, candidate)))) return false;
-            return true;
+            // A registration may contain one surname and several names
+            // (for example, "Kapustian Aleksandr, Matvej"). Match any
+            // surname/name pair, while still requiring two matching words.
+            const candidatePairs = nameTokens.length === 2
+              ? [nameTokens]
+              : nameTokens.flatMap((token, tokenIndex) => nameTokens.slice(tokenIndex + 1).map(other => [token, other]));
+            return candidatePairs.some(pair => pair.every(token => transactionTokens.some(candidate => personTokenMatches(token, candidate))));
           });
           if (!tx) return [];
           matched += 1;
-          return [{ row: index + 2, nameColumn: columns[0], note: `Найдена транзакция: ${tx.date} — ${tx.amount} ${tx.currency || ''}. ${tx.bank_title || tx.description || ''}`.trim() }];
+          // Google batchUpdate uses absolute column indexes. `columns[0]` is
+          // relative to the read range, so add its range offset back here.
+          return [{ row: index + 2, nameColumn: columns[0] + rangeStartIndex, note: `Найдена транзакция: ${tx.date} — ${tx.amount} ${tx.currency || ''}. ${tx.bank_title || tx.description || ''}`.trim() }];
         });
         if (marks.length) {
           const mark = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, { method: 'POST', headers: { Authorization: `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'x-owner-user-id': linkData.owner_user_id }, body: JSON.stringify({ action: 'mark-matches', spreadsheetId: source.spreadsheet_id, range: sourceRange(source), matches: marks }) });
