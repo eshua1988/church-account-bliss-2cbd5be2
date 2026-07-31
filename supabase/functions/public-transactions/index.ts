@@ -124,6 +124,12 @@ const parseTerms = (terms: unknown) => {
     });
 };
 
+// Banks distribute the payment purpose between different fields.  Do not use
+// only the first non-empty one: a generic bank title such as "RETREAT." can
+// otherwise hide the participant name stored in the description.
+const transactionPaymentText = (transaction: { bank_title?: string | null; title?: string | null; description?: string | null; comment?: string | null }) =>
+  normalizePerson([transaction.bank_title, transaction.title, transaction.description, transaction.comment].filter(Boolean).join(' '));
+
 const sendPushNotification = async (supabaseUrl: string, serviceKey: string, notificationId: string) => {
   try {
     const response = await fetch(`${supabaseUrl}/functions/v1/send-push-notification`, {
@@ -397,7 +403,7 @@ Deno.serve(async (req) => {
       }
       const transactionsForReconciliation = requestedKeywords.length > 0
         ? (transactions || []).filter(transaction => {
-            const text = normalizePerson(transaction.bank_title || transaction.title || transaction.description);
+            const text = transactionPaymentText(transaction);
             return requestedKeywords.some(keyword => text.includes(keyword));
           })
         : transactions || [];
@@ -428,7 +434,7 @@ Deno.serve(async (req) => {
           const tx = transactionsForReconciliation.find(transaction => {
             // Use only the payment title/purpose: it is where "за кого платят"
             // is recorded, while sender/recipient names may belong to another person.
-            const text = normalizePerson(transaction.bank_title || transaction.title || transaction.description);
+            const text = transactionPaymentText(transaction);
             const transactionTokens = text.split(' ').filter(token => token.length >= 3);
             // A registration may contain one surname and several names
             // (for example, "Kapustian Aleksandr, Matvej"). The first word
