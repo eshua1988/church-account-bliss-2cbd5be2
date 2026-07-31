@@ -80,7 +80,14 @@ const sourceRange = (source: Pick<RegistrationSource, 'sheet_name' | 'sheet_rang
   const name = source.sheet_name.replace(/'/g, "''");
   return source.sheet_name ? `'${name}'!${source.sheet_range}` : source.sheet_range;
 };
-const normalizeColumnRange = (value: string) => /^[A-Z]+$/.test(value) ? `${value}:${value}` : value;
+// Column ranges accept C, c, C:C and c:c and are stored as C:C.
+// Other characters and row numbers are not valid for these settings.
+const normalizeColumnRange = (value: string) => {
+  const normalized = value.trim().toUpperCase();
+  if (!/^[A-Z]+(?::[A-Z]+)?$/.test(normalized)) return '';
+  const [start, end] = normalized.split(':');
+  return `${start}:${end || start}`;
+};
 const parseSheetAmount = (value: unknown) => {
   const normalized = String(value ?? '')
     .replace(/\s/g, '')
@@ -315,9 +322,9 @@ Deno.serve(async (req) => {
       const input = String(body.spreadsheetId || '').trim();
       const spreadsheetId = (input.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)?.[1] || input).trim();
       const sheetName = String(body.sheetName || '').trim();
-      const sheetRange = normalizeColumnRange(String(body.sheetRange || 'A:Z').trim().toUpperCase());
-      const nameColumns = normalizeColumnRange(String(body.nameColumns || 'A:B').trim().toUpperCase());
-      if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId) || !/^[A-Z]+(?::[A-Z]+|[0-9]+:[A-Z]+[0-9]+)?$/.test(sheetRange) || !/^[A-Z]+(?::[A-Z]+)?$/.test(nameColumns)) {
+      const sheetRange = normalizeColumnRange(String(body.sheetRange || 'A:Z'));
+      const nameColumns = normalizeColumnRange(String(body.nameColumns || 'A:B'));
+      if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId) || !sheetRange || !nameColumns) {
         return new Response(JSON.stringify({ valid: true, success: false, error: 'Проверьте ссылку, диапазон листа и колонки с именем.' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
       const record = { owner_user_id: linkData.owner_user_id, spreadsheet_id: spreadsheetId, sheet_name: sheetName, sheet_range: sheetRange, name_columns: nameColumns, amount_column: '' };
@@ -337,8 +344,8 @@ Deno.serve(async (req) => {
       const input = String(body.spreadsheetId || '').trim();
       const spreadsheetId = (input.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)?.[1] || input).trim();
       const sheetName = String(body.sheetName || '').trim();
-      const sheetRange = normalizeColumnRange(String(body.sheetRange || 'A:Z').trim().toUpperCase());
-      if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId) || !/^[A-Z]+(?::[A-Z]+|[0-9]+:[A-Z]+[0-9]+)?$/.test(sheetRange)) {
+      const sheetRange = normalizeColumnRange(String(body.sheetRange || 'A:Z'));
+      if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId) || !sheetRange) {
         return new Response(JSON.stringify({ valid: true, success: false, error: 'Проверьте ссылку, лист и диапазон.' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
       const record = { owner_user_id: linkData.owner_user_id, spreadsheet_id: spreadsheetId, sheet_name: sheetName, sheet_range: sheetRange };
@@ -446,7 +453,7 @@ Deno.serve(async (req) => {
       const spreadsheetMatch = spreadsheetInput.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
       const spreadsheetId = (spreadsheetMatch?.[1] || spreadsheetInput).trim();
       const sheetName = String(body.sheetName || '').trim();
-      const columnRange = normalizeColumnRange(String(body.sheetRange || 'A:Z').trim().toUpperCase());
+      const columnRange = normalizeColumnRange(String(body.sheetRange || 'A:Z'));
 
       if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId)) {
         return new Response(JSON.stringify({
@@ -455,7 +462,7 @@ Deno.serve(async (req) => {
           error: 'Укажите корректную ссылку или ID Google Таблицы',
         }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-      if (sheetName.length > 100 || !/^[A-Z]+(?::[A-Z]+|[0-9]+:[A-Z]+[0-9]+)?$/.test(columnRange)) {
+      if (sheetName.length > 100 || !columnRange) {
         return new Response(JSON.stringify({
           valid: true,
           success: false,

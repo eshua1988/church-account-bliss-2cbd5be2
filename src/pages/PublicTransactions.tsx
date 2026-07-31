@@ -78,6 +78,10 @@ const DocumentKeywordIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
+// Google Sheets column ranges accept C, c, C:C and c:c. Store one canonical
+// form and prevent accidentally typing Cyrillic letters, digits or spaces.
+const sanitizeColumnRange = (value: string) => value.replace(/[^a-zA-Z:]/g, '').toUpperCase();
+
 const PublicTransactions = () => {
   const { token } = useParams<{ token: string }>();
   const { toast } = useToast();
@@ -1223,7 +1227,8 @@ const PublicTransactions = () => {
                   <Input
                     id="public-sheet-range"
                     value={sheetRange}
-                    onChange={event => setSheetRange(event.target.value)}
+                    onChange={event => setSheetRange(sanitizeColumnRange(event.target.value))}
+                    pattern="[A-Za-z:]*"
                     placeholder="A:Z или B"
                   />
                 </div>
@@ -1274,7 +1279,7 @@ const PublicTransactions = () => {
                     {availableSheetNames.map(name => <option key={name} value={name}>{name}</option>)}
                   </select>
                 ) : <Input value={registrationSheetName} onChange={event => setRegistrationSheetName(event.target.value)} placeholder={isLoadingSheetNames ? 'Загрузка листов…' : 'Вставьте ссылку для выбора листа'} />}
-                <Input value={registrationSheetRange} onChange={event => setRegistrationSheetRange(event.target.value)} placeholder="Диапазон, например A:Z или C" />
+                <Input value={registrationSheetRange} onChange={event => setRegistrationSheetRange(sanitizeColumnRange(event.target.value))} pattern="[A-Za-z:]*" placeholder="Диапазон, например A:Z или C" />
               </div>
               <Button type="button" variant="outline" className="w-full" onClick={saveRegistrationSource} disabled={isSavingRegistrationSource || !registrationSpreadsheetId.trim()}>
                 {isSavingRegistrationSource && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} {editingRegistrationSourceId ? 'Сохранить изменения' : 'Добавить таблицу регистрации'}
