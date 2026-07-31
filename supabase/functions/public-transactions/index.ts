@@ -396,7 +396,11 @@ Deno.serve(async (req) => {
         const result = await read.json().catch(() => ({}));
         if (!read.ok) throw new Error(result?.error || `Не удалось прочитать лист ${source.sheet_name}`);
         const values: string[][] = result.values || [];
-        const configuredColumns = source.name_columns.split(':').map(lettersToIndex);
+        // Values returned by Google start at the first column of sheet_range.
+        // For example, for C:C the name is values[row][0], not values[row][2].
+        const rangeStartColumn = source.sheet_range.match(/^([A-Z]+)/)?.[1] || 'A';
+        const rangeStartIndex = lettersToIndex(rangeStartColumn);
+        const configuredColumns = source.name_columns.split(':').map(column => lettersToIndex(column) - rangeStartIndex);
         const header = values[0] || [];
         // Forms often keep full name in one column named "Фамилия, Имя".
         // Prefer it over an old broad A:Z setting, so only surname and name
