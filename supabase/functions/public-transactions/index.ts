@@ -155,19 +155,17 @@ const parseTerms = (terms: unknown) => {
     });
 };
 
-// Banks distribute the payment purpose and payer's name between different
-// fields.  Do not use only the first non-empty one: a generic bank title such
-// as "RETREAT." can otherwise hide the participant name in a description or
-// in the sender/recipient details.  A match below still requires a full name,
-// so these extra fields cannot produce a surname-only match.
-const transactionPaymentText = (transaction: { bank_title?: string | null; title?: string | null; description?: string | null; comment?: string | null; bank_sender?: string | null; bank_recipient?: string | null }) =>
+// Banks distribute the payment purpose between different fields.  Do not use
+// only the first non-empty one: a generic bank title such as "RETREAT." can
+// otherwise hide the participant name stored in the description.  Sender and
+// recipient are intentionally excluded: they can belong to a refund or a
+// transfer counterparty rather than to the registered participant.
+const transactionPaymentText = (transaction: { bank_title?: string | null; title?: string | null; description?: string | null; comment?: string | null }) =>
   normalizePerson([
     transaction.bank_title,
     transaction.title,
     transaction.description,
     transaction.comment,
-    transaction.bank_sender,
-    transaction.bank_recipient,
   ].filter(Boolean).join(' '));
 
 const sendPushNotification = async (supabaseUrl: string, serviceKey: string, notificationId: string) => {
@@ -483,9 +481,8 @@ Deno.serve(async (req) => {
           const nameTokens = person.split(' ').filter(token => token.length >= 3);
           if (nameTokens.length < 2) return [];
           const tx = transactionsForReconciliation.find(transaction => {
-            // Use payment purpose together with payer/recipient fields.  Banks
-            // place the participant's full name in different fields depending
-            // on the transfer type.
+            // Use only payment-purpose fields, where the person the payment is
+            // for is recorded. Sender/recipient may belong to somebody else.
             const text = transactionPaymentText(transaction);
             const transactionTokens = text.split(' ').filter(token => token.length >= 3);
             // A registration may contain one surname and several names
@@ -508,7 +505,7 @@ Deno.serve(async (req) => {
           return [{ row: index + 2, nameColumn: columns[0] + rangeStartIndex, note: `Найдена транзакция: ${tx.date} — ${tx.amount} ${tx.currency || ''}. ${transactionNoteText(tx)}`.trim() }];
         });
         if (marks.length) {
-          const mark = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, { method: 'POST', headers: { Authorization: `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'x-owner-user-id': linkData.owner_user_id }, body: JSON.stringify({ action: 'mark-matches', spreadsheetId: source.spreadsheet_id, range: sourceRange(source), matches: marks }) });
+          const mark = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, { method: 'POST', headers: { Authorization: `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'x-owner-user-id': linkData.owner_user_id }, body: JSON.stringify({ action: 'mark-matches', spreadsheetId: source.spreadsheet_id, range: sourceRange(source), matches: marks, clearMatchNotes: { startRowIndex: 1, endRowIndex: values.length, columnIndex: columns[0] + rangeStartIndex } }) });
           if (!mark.ok) { const detail = await mark.json().catch(() => ({})); throw new Error(detail?.error || 'Не удалось отметить совпадения'); }
         }
       }

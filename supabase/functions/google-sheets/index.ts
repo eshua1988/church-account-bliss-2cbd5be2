@@ -55,6 +55,7 @@ interface SheetRequest {
   notes?: NoteData[];
   transactionTypeColors?: boolean;
   matches?: Array<{ row: number; nameColumn: number; note: string }>;
+  clearMatchNotes?: { startRowIndex: number; endRowIndex: number; columnIndex: number };
 }
 
 async function authenticateRequest(req: Request): Promise<{ userId: string; token: string; authHeader: string; internal: boolean } | Response> {
@@ -678,12 +679,33 @@ serve(async (req) => {
 
       case 'mark-matches': {
         const matches = Array.isArray(body.matches) ? body.matches : [];
-        if (matches.length === 0) {
-          return new Response(JSON.stringify({ success: true, marked: 0 }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        const clearMatchNotes = body.clearMatchNotes;
+        const requests: Record<string, unknown>[] = [];
+        if (clearMatchNotes
+          && Number.isInteger(clearMatchNotes.startRowIndex)
+          && Number.isInteger(clearMatchNotes.endRowIndex)
+          && Number.isInteger(clearMatchNotes.columnIndex)
+          && clearMatchNotes.startRowIndex >= 1
+          && clearMatchNotes.endRowIndex > clearMatchNotes.startRowIndex
+          && clearMatchNotes.columnIndex >= 0) {
+          // Notes from a previous run must not remain on rows which no longer
+          // have a reliable payment match. Only notes are cleared; the sheet's
+          // existing colours and other formatting are left untouched.
+          requests.push({
+            repeatCell: {
+              range: {
+                sheetId: sheetIdNum,
+                startRowIndex: clearMatchNotes.startRowIndex,
+                endRowIndex: clearMatchNotes.endRowIndex,
+                startColumnIndex: clearMatchNotes.columnIndex,
+                endColumnIndex: clearMatchNotes.columnIndex + 1,
+              },
+              cell: { note: '' },
+              fields: 'note',
+            },
           });
         }
-        const requests = matches.slice(0, 500).flatMap((match) => {
+        requests.push(...matches.slice(0, 500).flatMap((match) => {
           const row = Number(match.row);
           const col = Number(match.nameColumn);
           if (!Number.isInteger(row) || row < 1 || !Number.isInteger(col) || col < 0) return [];
@@ -692,7 +714,12 @@ serve(async (req) => {
             { repeatCell: { range: cellRange, cell: { userEnteredFormat: { backgroundColor: { red: 0.84, green: 0.96, blue: 0.86 }, textFormat: { foregroundColor: { red: 0.04, green: 0.42, blue: 0.16 }, bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
             { repeatCell: { range: cellRange, cell: { note: String(match.note || '').slice(0, 45000) }, fields: 'note' } },
           ];
-        });
+        }));
+        if (requests.length === 0) {
+          return new Response(JSON.stringify({ success: true, marked: 0 }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
         const markResponse = await fetch(`${baseUrl}:batchUpdate`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
