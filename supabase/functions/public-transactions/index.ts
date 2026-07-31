@@ -32,10 +32,16 @@ type RegistrationSource = { id: string; spreadsheet_id: string; sheet_name: stri
 const transliteration: Record<string, string> = {
   а: 'a', б: 'b', в: 'v', г: 'h', ґ: 'g', д: 'd', е: 'e', ё: 'e', є: 'ie', ж: 'zh', з: 'z', и: 'y', і: 'i', ї: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'iu', я: 'ia',
 };
+// Google Forms data can be Cyrillic while the bank uses a Latin spelling.
+// Keep these as Unicode escapes so the Edge Function source is not affected by
+// an editor or deployment changing its text encoding.
+const cyrillicTransliteration: Record<string, string> = {
+  '\u0430': 'a', '\u0431': 'b', '\u0432': 'v', '\u0433': 'h', '\u0491': 'g', '\u0434': 'd', '\u0435': 'e', '\u0451': 'e', '\u0454': 'ie', '\u0436': 'zh', '\u0437': 'z', '\u0438': 'y', '\u0456': 'i', '\u0457': 'i', '\u0439': 'i', '\u043a': 'k', '\u043b': 'l', '\u043c': 'm', '\u043d': 'n', '\u043e': 'o', '\u043f': 'p', '\u0440': 'r', '\u0441': 's', '\u0442': 't', '\u0443': 'u', '\u0444': 'f', '\u0445': 'kh', '\u0446': 'ts', '\u0447': 'ch', '\u0448': 'sh', '\u0449': 'shch', '\u044a': '', '\u044b': 'y', '\u044c': '', '\u044d': 'e', '\u044e': 'iu', '\u044f': 'ia',
+};
 const normalizePerson = (value: unknown) => String(value || '')
   .toLowerCase()
   .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-  .split('').map(char => transliteration[char] ?? char).join('')
+  .split('').map(char => cyrillicTransliteration[char] ?? transliteration[char] ?? char).join('')
   .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
 // Makes transliterated variants such as Maria / Mariia comparable without
 // weakening surname matching to a generic substring search.
