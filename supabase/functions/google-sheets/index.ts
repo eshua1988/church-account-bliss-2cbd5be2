@@ -47,7 +47,7 @@ interface NoteData {
 }
 
 interface SheetRequest {
-  action: 'read' | 'write' | 'append' | 'delete' | 'diagnose' | 'mark-matches';
+  action: 'read' | 'write' | 'append' | 'delete' | 'diagnose' | 'mark-matches' | 'list-sheets';
   spreadsheetId: string;
   range: string;
   values?: string[][];
@@ -386,6 +386,11 @@ serve(async (req) => {
     }
     const meta = await metaResp.json();
     const sheetsInfo: SheetInfo[] = meta.sheets ?? [];
+    if (action === 'list-sheets') {
+      return new Response(JSON.stringify({ success: true, sheets: sheetsInfo.map(sheet => sheet.properties.title) }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     const firstSheetName = sheetsInfo[0]?.properties?.title ?? 'Sheet1';
 
     // Resolve the actual range: if configured sheet name doesn't exist → use first sheet

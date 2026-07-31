@@ -41,6 +41,8 @@ interface PublicTransactionsResponse {
     expense?: string[];
   };
   success?: boolean;
+  source?: { id: string };
+  sheets?: string[];
   addedTerms?: string[];
   existingTerms?: string[];
   imported?: number;
@@ -52,6 +54,7 @@ interface PublicTransactionsResponse {
     sheetName: string;
     sheetRange: string;
   };
+  exportSources?: Array<{ id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string }>;
   registrationSources?: Array<{ id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string; name_columns: string; amount_column: string }>;
 }
 
@@ -147,7 +150,12 @@ const PublicTransactions = () => {
   const [sheetName, setSheetName] = useState('');
   const [sheetRange, setSheetRange] = useState('A:Z');
   const [googleTablePurpose, setGoogleTablePurpose] = useState<'export' | 'reconciliation'>('export');
+  const [availableSheetNames, setAvailableSheetNames] = useState<string[]>([]);
+  const [isLoadingSheetNames, setIsLoadingSheetNames] = useState(false);
   const [isSavingSheetsSettings, setIsSavingSheetsSettings] = useState(false);
+  const [exportSources, setExportSources] = useState<NonNullable<PublicTransactionsResponse['exportSources']>>([]);
+  const [editingExportSourceId, setEditingExportSourceId] = useState<string | null>(null);
+  const [selectedExportSourceId, setSelectedExportSourceId] = useState('');
   const [registrationSources, setRegistrationSources] = useState<NonNullable<PublicTransactionsResponse['registrationSources']>>([]);
   const [registrationSpreadsheetId, setRegistrationSpreadsheetId] = useState('');
   const [registrationSheetName, setRegistrationSheetName] = useState('');
@@ -206,6 +214,7 @@ const PublicTransactions = () => {
           setSheetRange(data.sheetsSettings.sheetRange || 'A:Z');
         }
         if (!append) setRegistrationSources(data.registrationSources || []);
+        if (!append) setExportSources(data.exportSources || []);
         setHasMore(Boolean(data.hasMore));
         nextCursorRef.current = data.nextCursor || null;
         /*
@@ -580,15 +589,17 @@ const PublicTransactions = () => {
       toast({ title: 'Нет данных для экспорта', variant: 'destructive' });
       return;
     }
-    const settingsSaved = await saveSheetsSettings();
-    if (!settingsSaved) return;
+    if (!selectedExportSourceId) {
+      toast({ title: 'Выберите таблицу для экспорта', variant: 'destructive' });
+      return;
+    }
     if (!window.confirm(`Экспортировать ${rows.length} транзакций в настроенную Google Таблицу? Текущие данные листа будут заменены.`)) return;
 
     setIsExporting(true);
     try {
       const { data, error: functionError } = await supabase.functions.invoke<PublicTransactionsResponse>(
         'public-transactions',
-        { body: { action: 'export-sheets', token, transactionIds: rows.map(row => row.id) } },
+        { body: { action: 'export-sheets', token, targetId: selectedExportSourceId, transactionIds: rows.map(row => row.id) } },
       );
       if (functionError) throw functionError;
       if (!data?.success) throw new Error(data?.error || 'Не удалось экспортировать данные');
@@ -617,8 +628,9 @@ const PublicTransactions = () => {
         'public-transactions',
         {
           body: {
-            action: 'save-sheets-settings',
+            action: 'save-export-source',
             token,
+            sourceId: editingExportSourceId || undefined,
             spreadsheetId,
             sheetName,
             sheetRange,
@@ -627,12 +639,11 @@ const PublicTransactions = () => {
       );
       if (functionError) throw functionError;
       if (!data?.success) throw new Error(data?.error || 'Не удалось сохранить настройки Google Sheets');
-      if (data.sheetsSettings) {
-        setSpreadsheetId(data.sheetsSettings.spreadsheetId);
-        setSheetName(data.sheetsSettings.sheetName);
-        setSheetRange(data.sheetsSettings.sheetRange);
-      }
-      toast({ title: 'Настройки Google Sheets сохранены' });
+      setEditingExportSourceId(null);
+      setSpreadsheetId(''); setSheetName(''); setSheetRange('A:Z');
+      if (data.source?.id) setSelectedExportSourceId(data.source.id);
+      await loadData(false);
+      toast({ title: 'Таблица экспорта добавлена' });
       return true;
     } catch (settingsError) {
       toast({
@@ -646,12 +657,52 @@ const PublicTransactions = () => {
     }
   };
 
+  const editExportSource = (source: NonNullable<PublicTransactionsResponse['exportSources']>[number]) => {
+    setEditingExportSourceId(source.id);
+    setSpreadsheetId(source.spreadsheet_id);
+    setSheetName(source.sheet_name);
+    setSheetRange(source.sheet_range);
+    setSelectedExportSourceId(source.id);
+  };
+
+  const deleteExportSource = async (sourceId: string) => {
+    if (!token) return;
+    try {
+      const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse>('public-transactions', { body: { action: 'delete-export-source', token, sourceId } });
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || 'Не удалось удалить таблицу');
+      setExportSources(current => current.filter(source => source.id !== sourceId));
+      if (selectedExportSourceId === sourceId) setSelectedExportSourceId('');
+    } catch (error) { toast({ title: 'Ошибка удаления', description: error instanceof Error ? error.message : undefined, variant: 'destructive' }); }
+  };
+
+  const loadSheetNames = async (spreadsheetInput: string) => {
+    if (!token || !spreadsheetInput.trim()) return;
+    setIsLoadingSheetNames(true);
+    try {
+      const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse>('public-transactions', {
+        body: { action: 'list-sheets', token, spreadsheetId: spreadsheetInput },
+      });
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || 'Не удалось прочитать листы таблицы');
+      const names = data.sheets || [];
+      setAvailableSheetNames(names);
+      if (googleTablePurpose === 'export' && !sheetName && names[0]) setSheetName(names[0]);
+      if (googleTablePurpose === 'reconciliation' && !registrationSheetName && names[0]) setRegistrationSheetName(names[0]);
+    } catch (error) {
+      setAvailableSheetNames([]);
+      toast({ title: 'Не удалось получить листы', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
+    } finally {
+      setIsLoadingSheetNames(false);
+    }
+  };
+
   const saveRegistrationSource = async () => {
     if (!token || !registrationSpreadsheetId.trim()) return;
     setIsSavingRegistrationSource(true);
     try {
       const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse>('public-transactions', {
-        body: { action: 'save-registration-source', token, sourceId: editingRegistrationSourceId || undefined, spreadsheetId: registrationSpreadsheetId, sheetName: registrationSheetName, sheetRange: registrationSheetRange, nameColumns: registrationNameColumns, amountColumn: registrationAmountColumn },
+        body: { action: 'save-registration-source', token, sourceId: editingRegistrationSourceId || undefined, spreadsheetId: registrationSpreadsheetId, sheetName: registrationSheetName, sheetRange: registrationSheetRange, nameColumns: registrationSheetRange, amountColumn: registrationAmountColumn },
       });
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || 'Не удалось добавить таблицу');
@@ -1128,25 +1179,22 @@ const PublicTransactions = () => {
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">Слово будет отправлено владельцу на подтверждение и после подтверждения начнёт использоваться для поиска новых транзакций.</p>
-              {(otherRuleSearchTerms.income.length > 0 || otherRuleSearchTerms.expense.length > 0 || pendingRuleSearchTerms.income.length > 0 || pendingRuleSearchTerms.expense.length > 0) && (
-                <div className="flex flex-wrap gap-2 pt-1 text-xs">
-                  {Array.from(new Set([...otherRuleSearchTerms.income, ...otherRuleSearchTerms.expense])).map(term => <span key={`active-${term}`} className="rounded-full bg-primary/15 px-2 py-1 text-primary">{term}</span>)}
-                  {Array.from(new Set([...pendingRuleSearchTerms.income, ...pendingRuleSearchTerms.expense])).map(term => <span key={`pending-${term}`} className="rounded-full bg-muted px-2 py-1 text-muted-foreground">{term} · ожидает</span>)}
-                </div>
-              )}
             </div>
             <div className="rounded-lg border p-3 space-y-3">
               <div className="space-y-1">
                 <p className="font-medium">Google Таблица</p>
                 <p className="text-xs text-muted-foreground">Выберите назначение таблицы, затем заполните её параметры.</p>
               </div>
-              <Select value={googleTablePurpose} onValueChange={(value: 'export' | 'reconciliation') => setGoogleTablePurpose(value)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="export">Экспорт транзакций</SelectItem>
-                  <SelectItem value="reconciliation">Сверка регистраций</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <label className="flex items-center gap-2 rounded-md border px-3 py-2">
+                  <input type="checkbox" checked={googleTablePurpose === 'export'} onChange={() => setGoogleTablePurpose('export')} />
+                  Экспорт
+                </label>
+                <label className="flex items-center gap-2 rounded-md border px-3 py-2">
+                  <input type="checkbox" checked={googleTablePurpose === 'reconciliation'} onChange={() => setGoogleTablePurpose('reconciliation')} />
+                  Сверка регистраций
+                </label>
+              </div>
             </div>
             {googleTablePurpose === 'export' && <div className="rounded-lg border p-3">
               <div className="mb-4 space-y-3">
@@ -1156,18 +1204,19 @@ const PublicTransactions = () => {
                     id="public-spreadsheet-id"
                     value={spreadsheetId}
                     onChange={event => setSpreadsheetId(event.target.value)}
+                    onBlur={() => void loadSheetNames(spreadsheetId)}
                     placeholder="https://docs.google.com/spreadsheets/d/... или ID"
                   />
                   <p className="text-xs text-muted-foreground">Вставьте ссылку на Google Таблицу или только её ID.</p>
                 </div>
                 <div className="space-y-2">
                   <label htmlFor="public-sheet-name" className="text-sm font-medium">Название листа</label>
-                  <Input
-                    id="public-sheet-name"
-                    value={sheetName}
-                    onChange={event => setSheetName(event.target.value)}
-                    placeholder="Лист1"
-                  />
+                  {availableSheetNames.length > 0 ? (
+                    <select id="public-sheet-name" value={sheetName} onChange={event => setSheetName(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                      <option value="">Выберите лист</option>
+                      {availableSheetNames.map(name => <option key={name} value={name}>{name}</option>)}
+                    </select>
+                  ) : <Input id="public-sheet-name" value={sheetName} onChange={event => setSheetName(event.target.value)} placeholder={isLoadingSheetNames ? 'Загрузка листов…' : 'Вставьте ссылку для выбора листа'} />}
                 </div>
                 <div className="space-y-2">
                   <label htmlFor="public-sheet-range" className="text-sm font-medium">Диапазон листа</label>
@@ -1186,8 +1235,17 @@ const PublicTransactions = () => {
                   disabled={isSavingSheetsSettings}
                 >
                   {isSavingSheetsSettings && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Добавить Google Таблицу
+                  {editingExportSourceId ? 'Сохранить изменения' : 'Добавить Google Таблицу'}
                 </Button>
+                {exportSources.map(source => (
+                  <div key={source.id} className={`flex items-center justify-between gap-2 rounded border px-3 py-2 text-sm ${selectedExportSourceId === source.id ? 'border-primary' : ''}`}>
+                    <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => setSelectedExportSourceId(source.id)}>{source.sheet_name || 'Первый лист'} · {source.sheet_range}</button>
+                    <div className="flex shrink-0">
+                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => editExportSource(source)} aria-label="Редактировать таблицу"><Pencil className="h-4 w-4" /></Button>
+                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteExportSource(source.id)} aria-label="Удалить таблицу"><X className="h-4 w-4" /></Button>
+                    </div>
+                  </div>
+                ))}
               </div>
               <p className="mb-3 text-sm text-muted-foreground">
                 Экспортируется {hasActiveFilters ? `найденных строк: ${filteredTransactions.length}` : `загруженных строк: ${allTransactions.length}`}.
@@ -1197,7 +1255,7 @@ const PublicTransactions = () => {
                 type="button"
                 className="w-full"
                 onClick={exportToGoogleSheets}
-                disabled={isExporting || !hasConfirmedKeyword || filteredTransactions.length === 0}
+                disabled={isExporting || !hasConfirmedKeyword || filteredTransactions.length === 0 || !selectedExportSourceId}
               >
                 {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Table2 className="mr-2 h-4 w-4" />}
                 Экспортировать в Google Таблицу
@@ -1208,20 +1266,23 @@ const PublicTransactions = () => {
                 <p className="font-medium">Таблицы регистрации</p>
                 <p className="text-xs text-muted-foreground">Добавьте лист Google Forms с именем и фамилией. При сверке совпадения с входящими транзакциями выделяются зелёным, а в ячейку добавляется примечание с транзакцией.</p>
               </div>
-              <Input value={registrationSpreadsheetId} onChange={event => setRegistrationSpreadsheetId(event.target.value)} placeholder="Ссылка или ID таблицы регистрации" />
+              <Input value={registrationSpreadsheetId} onChange={event => setRegistrationSpreadsheetId(event.target.value)} onBlur={() => void loadSheetNames(registrationSpreadsheetId)} placeholder="Ссылка на Google Таблицу" />
               <div className="grid grid-cols-2 gap-2">
-                <Input value={registrationSheetName} onChange={event => setRegistrationSheetName(event.target.value)} placeholder="Название листа" />
-              <Input value={registrationSheetRange} onChange={event => setRegistrationSheetRange(event.target.value)} placeholder="Диапазон, например A:Z или C" />
+                {availableSheetNames.length > 0 ? (
+                  <select value={registrationSheetName} onChange={event => setRegistrationSheetName(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    <option value="">Выберите лист</option>
+                    {availableSheetNames.map(name => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                ) : <Input value={registrationSheetName} onChange={event => setRegistrationSheetName(event.target.value)} placeholder={isLoadingSheetNames ? 'Загрузка листов…' : 'Вставьте ссылку для выбора листа'} />}
+                <Input value={registrationSheetRange} onChange={event => setRegistrationSheetRange(event.target.value)} placeholder="Диапазон, например A:Z или C" />
               </div>
-              <Input value={registrationNameColumns} onChange={event => setRegistrationNameColumns(event.target.value)} placeholder="Колонка Фамилия Имя, например C" />
-              <Input value={registrationAmountColumn} onChange={event => setRegistrationAmountColumn(event.target.value)} placeholder="Колонка суммы (необязательно), например E" />
               <Button type="button" variant="outline" className="w-full" onClick={saveRegistrationSource} disabled={isSavingRegistrationSource || !registrationSpreadsheetId.trim()}>
                 {isSavingRegistrationSource && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} {editingRegistrationSourceId ? 'Сохранить изменения' : 'Добавить таблицу регистрации'}
               </Button>
               {editingRegistrationSourceId && <Button type="button" variant="ghost" className="w-full" onClick={cancelRegistrationSourceEdit}>Отменить редактирование</Button>}
               {registrationSources.map(source => (
                 <div key={source.id} className="flex items-center justify-between gap-2 rounded border px-3 py-2 text-sm">
-                  <span className="truncate">{source.sheet_name || 'Первый лист'} · {source.name_columns}{source.amount_column ? ` · сумма: ${source.amount_column}` : ''}</span>
+                  <span className="truncate">{source.sheet_name || 'Первый лист'} · {source.name_columns}</span>
                   <div className="flex shrink-0 items-center">
                     <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => editRegistrationSource(source)} aria-label="Редактировать таблицу" title="Редактировать таблицу"><Pencil className="h-4 w-4" /></Button>
                     <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteRegistrationSource(source.id)} aria-label="Удалить таблицу"><X className="h-4 w-4" /></Button>

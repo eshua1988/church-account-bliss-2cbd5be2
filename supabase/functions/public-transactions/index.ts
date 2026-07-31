@@ -8,7 +8,7 @@ const corsHeaders = {
 interface PublicTransactionsRequest {
   token: string;
   includeNotifications?: boolean;
-  action?: 'add-rule-terms' | 'sync-bank' | 'analytics' | 'export-sheets' | 'save-sheets-settings' | 'save-registration-source' | 'delete-registration-source' | 'reconcile-registration-sheets';
+  action?: 'add-rule-terms' | 'sync-bank' | 'export-sheets' | 'save-sheets-settings' | 'save-export-source' | 'delete-export-source' | 'save-registration-source' | 'delete-registration-source' | 'reconcile-registration-sheets' | 'list-sheets';
   fromDate?: string;
   cursor?: {
     date: string;
@@ -22,12 +22,14 @@ interface PublicTransactionsRequest {
   sheetName?: string;
   sheetRange?: string;
   sourceId?: string;
+  targetId?: string;
   nameColumns?: string;
   amountColumn?: string;
   keywords?: string[];
 }
 
 type RegistrationSource = { id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string; name_columns: string; amount_column: string };
+type ExportSource = { id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string };
 
 const transliteration: Record<string, string> = {
   а: 'a', б: 'b', в: 'v', г: 'h', ґ: 'g', д: 'd', е: 'e', ё: 'e', є: 'ie', ж: 'zh', з: 'z', и: 'y', і: 'i', ї: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'iu', я: 'ia',
@@ -293,17 +295,32 @@ Deno.serve(async (req) => {
       );
     }
 
+    if (body.action === 'list-sheets') {
+      const input = String(body.spreadsheetId || '').trim();
+      const spreadsheetId = (input.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)?.[1] || input).trim();
+      if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId)) {
+        return new Response(JSON.stringify({ valid: true, success: false, error: 'Укажите корректную ссылку или ID Google Таблицы.' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const response = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'x-owner-user-id': linkData.owner_user_id },
+        body: JSON.stringify({ action: 'list-sheets', spreadsheetId, range: 'A:Z' }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.success) throw new Error(result?.error || 'Не удалось получить список листов Google Таблицы.');
+      return new Response(JSON.stringify({ valid: true, success: true, sheets: result.sheets || [] }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     if (body.action === 'save-registration-source') {
       const input = String(body.spreadsheetId || '').trim();
       const spreadsheetId = (input.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)?.[1] || input).trim();
       const sheetName = String(body.sheetName || '').trim();
       const sheetRange = normalizeColumnRange(String(body.sheetRange || 'A:Z').trim().toUpperCase());
       const nameColumns = normalizeColumnRange(String(body.nameColumns || 'A:B').trim().toUpperCase());
-      const amountColumn = String(body.amountColumn || '').trim().toUpperCase();
-      if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId) || !/^[A-Z]+(?::[A-Z]+|[0-9]+:[A-Z]+[0-9]+)?$/.test(sheetRange) || !/^[A-Z]+(?::[A-Z]+)?$/.test(nameColumns) || (amountColumn && !/^[A-Z]+$/.test(amountColumn))) {
+      if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId) || !/^[A-Z]+(?::[A-Z]+|[0-9]+:[A-Z]+[0-9]+)?$/.test(sheetRange) || !/^[A-Z]+(?::[A-Z]+)?$/.test(nameColumns)) {
         return new Response(JSON.stringify({ valid: true, success: false, error: 'Проверьте ссылку, диапазон листа и колонки с именем.' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-      const record = { owner_user_id: linkData.owner_user_id, spreadsheet_id: spreadsheetId, sheet_name: sheetName, sheet_range: sheetRange, name_columns: nameColumns, amount_column: amountColumn };
+      const record = { owner_user_id: linkData.owner_user_id, spreadsheet_id: spreadsheetId, sheet_name: sheetName, sheet_range: sheetRange, name_columns: nameColumns, amount_column: '' };
       // Adding an already configured sheet updates its name columns instead of
       // failing on the unique source constraint. This makes correcting A:Z → C:C easy.
       const query = body.sourceId && /^[0-9a-f-]{36}$/i.test(body.sourceId)
@@ -314,6 +331,30 @@ Deno.serve(async (req) => {
       const { data, error } = await query;
       if (error) throw new Error(error.message);
       return new Response(JSON.stringify({ valid: true, success: true, source: data }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (body.action === 'save-export-source') {
+      const input = String(body.spreadsheetId || '').trim();
+      const spreadsheetId = (input.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)?.[1] || input).trim();
+      const sheetName = String(body.sheetName || '').trim();
+      const sheetRange = normalizeColumnRange(String(body.sheetRange || 'A:Z').trim().toUpperCase());
+      if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId) || !/^[A-Z]+(?::[A-Z]+|[0-9]+:[A-Z]+[0-9]+)?$/.test(sheetRange)) {
+        return new Response(JSON.stringify({ valid: true, success: false, error: 'Проверьте ссылку, лист и диапазон.' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const record = { owner_user_id: linkData.owner_user_id, spreadsheet_id: spreadsheetId, sheet_name: sheetName, sheet_range: sheetRange };
+      const query = body.sourceId && /^[0-9a-f-]{36}$/i.test(body.sourceId)
+        ? supabase.from('public_export_sheet_targets').update(record).eq('id', body.sourceId).eq('owner_user_id', linkData.owner_user_id).select().single()
+        : supabase.from('public_export_sheet_targets').upsert(record, { onConflict: 'owner_user_id,spreadsheet_id,sheet_name,sheet_range' }).select().single();
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ valid: true, success: true, source: data }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (body.action === 'delete-export-source') {
+      if (!body.sourceId || !/^[0-9a-f-]{36}$/i.test(body.sourceId)) throw new Error('Invalid source ID');
+      const { error } = await supabase.from('public_export_sheet_targets').delete().eq('id', body.sourceId).eq('owner_user_id', linkData.owner_user_id);
+      if (error) throw new Error(error.message);
+      return new Response(JSON.stringify({ valid: true, success: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     if (body.action === 'delete-registration-source') {
@@ -365,7 +406,6 @@ Deno.serve(async (req) => {
         const columns = (source.name_columns === 'A:Z' && (surnameHeaderIndex >= 0 || nameHeaderIndex >= 0))
           ? [surnameHeaderIndex >= 0 ? surnameHeaderIndex : nameHeaderIndex]
           : configuredColumns;
-        const amountColumnIndex = source.amount_column ? lettersToIndex(source.amount_column) : null;
         const marks = values.slice(1).flatMap((row, index) => {
           const person = normalizePerson(columns.map(column => row[column] || '').join(' '));
           const nameTokens = person.split(' ').filter(token => token.length >= 3);
@@ -376,9 +416,7 @@ Deno.serve(async (req) => {
             const text = normalizePerson(transaction.bank_title || transaction.title || transaction.description);
             const transactionTokens = text.split(' ').filter(token => token.length >= 3);
             if (!nameTokens.every(token => transactionTokens.some(candidate => personTokenMatches(token, candidate)))) return false;
-            if (amountColumnIndex === null) return true;
-            const expectedAmount = parseSheetAmount(row[amountColumnIndex]);
-            return expectedAmount !== null && Math.abs(Number(transaction.amount) - expectedAmount) < 0.01;
+            return true;
           });
           if (!tx) return [];
           matched += 1;
@@ -662,6 +700,11 @@ Deno.serve(async (req) => {
           });
         }
 
+        const { data: exportTarget, error: exportTargetError } = body.targetId && /^[0-9a-f-]{36}$/i.test(body.targetId)
+          ? await supabase.from('public_export_sheet_targets').select('spreadsheet_id, sheet_name, sheet_range').eq('id', body.targetId).eq('owner_user_id', linkData.owner_user_id).maybeSingle()
+          : { data: null, error: null };
+        if (exportTargetError) throw new Error(exportTargetError.message);
+        if (!exportTarget) throw new Error('Выберите добавленную таблицу для экспорта.');
         const { data: exportRows, error: exportError } = await supabase
           .from('transactions')
           .select('type,amount,currency,description,bank_title,bank_sender,bank_recipient,comment')
@@ -689,7 +732,7 @@ Deno.serve(async (req) => {
             'Content-Type': 'application/json',
             'x-owner-user-id': linkData.owner_user_id,
           },
-          body: JSON.stringify({ action: 'write', values, transactionTypeColors: true }),
+          body: JSON.stringify({ action: 'write', spreadsheetId: exportTarget.spreadsheet_id, range: sourceRange(exportTarget as ExportSource), values, transactionTypeColors: true }),
         });
         const responseText = await sheetsResponse.text();
         let sheetsResult: Record<string, any> = {};
@@ -713,7 +756,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    const [{ data: transactions, error: transactionsError }, { data: sheetsProfile }, { data: registrationSources }] = await Promise.all([
+    const [{ data: transactions, error: transactionsError }, { data: sheetsProfile }, { data: registrationSources }, { data: exportSources }] = await Promise.all([
       transactionsQuery,
       supabase
         .from('profiles')
@@ -723,6 +766,11 @@ Deno.serve(async (req) => {
       supabase
         .from('registration_sheet_sources')
         .select('id, spreadsheet_id, sheet_name, sheet_range, name_columns, amount_column')
+        .eq('owner_user_id', linkData.owner_user_id)
+        .order('created_at'),
+      supabase
+        .from('public_export_sheet_targets')
+        .select('id, spreadsheet_id, sheet_name, sheet_range')
         .eq('owner_user_id', linkData.owner_user_id)
         .order('created_at'),
     ]);
@@ -770,6 +818,7 @@ Deno.serve(async (req) => {
           sheetRange: configuredRangeMatch ? configuredRangeMatch[2] : configuredRange,
         },
         registrationSources: registrationSources || [],
+        exportSources: exportSources || [],
         notifications: (analyticsNotifications || []).map((notification: any) => ({
           type: notification.type,
           createdAt: notification.created_at,
