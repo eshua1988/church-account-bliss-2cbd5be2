@@ -146,6 +146,7 @@ const PublicTransactions = () => {
   const [spreadsheetId, setSpreadsheetId] = useState('');
   const [sheetName, setSheetName] = useState('');
   const [sheetRange, setSheetRange] = useState('A:Z');
+  const [googleTablePurpose, setGoogleTablePurpose] = useState<'export' | 'reconciliation'>('export');
   const [isSavingSheetsSettings, setIsSavingSheetsSettings] = useState(false);
   const [registrationSources, setRegistrationSources] = useState<NonNullable<PublicTransactionsResponse['registrationSources']>>([]);
   const [registrationSpreadsheetId, setRegistrationSpreadsheetId] = useState('');
@@ -429,7 +430,6 @@ const PublicTransactions = () => {
 
       const existingTerms = data.existingTerms || [];
       const addedTerms = data.addedTerms || terms;
-      if (existingTerms.length) setSearchText(existingTerms.join(' '));
       toast({
         title: addedTerms.length ? 'Запрос отправлен' : 'Ключевое слово уже подтверждено',
         description: addedTerms.length
@@ -481,16 +481,11 @@ const PublicTransactions = () => {
         .split(/[\s\-_.,;:'"«»()[\]{}\/]+/)
         .filter(word => word.length >= 2)
         .concat(compactSearchText(t.comment || ''));
-      const matchesComment = searchWords.every(searchWord =>
-        commentWords.some(commentWord => commentWord.includes(searchWord))
-      );
-      if (!isOtherTransaction(t) && !matchesComment) return false;
-
       const allowedRuleWords = getAllowedRuleWords(t.type);
-      if (!searchWords.every(searchWord =>
-        allowedRuleWords.has(searchWord) ||
-        commentWords.some(commentWord => commentWord.includes(searchWord))
-      )) return false;
+      // The first word is the approved event keyword (for example, "777").
+      // The following words narrow results by a name or transaction text.
+      const keyWord = searchWords[0];
+      if (!allowedRuleWords.has(keyWord) && !commentWords.some(commentWord => commentWord.includes(keyWord))) return false;
 
       // Combine all searchable text fields
       const fullSearchableText = [
@@ -554,6 +549,8 @@ const PublicTransactions = () => {
   const hasActiveFilters = searchText.trim() !== '';
   const allRuleTypes: Array<'income' | 'expense'> = ['income', 'expense'];
   const searchWordsForRules = getSearchWords(searchText);
+  const hasConfirmedKeyword = searchWordsForRules.length > 0
+    && allRuleTypes.some(type => getAllowedRuleWords(type).has(searchWordsForRules[0]));
   const canAddSearchTerms =
     searchWordsForRules.length > 0 &&
     searchWordsForRules.some(word =>
@@ -575,6 +572,10 @@ const PublicTransactions = () => {
 
   const exportToGoogleSheets = async () => {
     const rows = hasActiveFilters ? filteredTransactions : allTransactions;
+    if (!hasConfirmedKeyword) {
+      toast({ title: 'Введите подтверждённое ключевое слово в поиск', description: 'Например: 777 Marija. Экспорт работает только по выбранному ключевому слову.', variant: 'destructive' });
+      return;
+    }
     if (!token || rows.length === 0) {
       toast({ title: 'Нет данных для экспорта', variant: 'destructive' });
       return;
@@ -1127,8 +1128,27 @@ const PublicTransactions = () => {
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">Слово будет отправлено владельцу на подтверждение и после подтверждения начнёт использоваться для поиска новых транзакций.</p>
+              {(otherRuleSearchTerms.income.length > 0 || otherRuleSearchTerms.expense.length > 0 || pendingRuleSearchTerms.income.length > 0 || pendingRuleSearchTerms.expense.length > 0) && (
+                <div className="flex flex-wrap gap-2 pt-1 text-xs">
+                  {Array.from(new Set([...otherRuleSearchTerms.income, ...otherRuleSearchTerms.expense])).map(term => <span key={`active-${term}`} className="rounded-full bg-primary/15 px-2 py-1 text-primary">{term}</span>)}
+                  {Array.from(new Set([...pendingRuleSearchTerms.income, ...pendingRuleSearchTerms.expense])).map(term => <span key={`pending-${term}`} className="rounded-full bg-muted px-2 py-1 text-muted-foreground">{term} · ожидает</span>)}
+                </div>
+              )}
             </div>
-            <div className="rounded-lg border p-3">
+            <div className="rounded-lg border p-3 space-y-3">
+              <div className="space-y-1">
+                <p className="font-medium">Google Таблица</p>
+                <p className="text-xs text-muted-foreground">Выберите назначение таблицы, затем заполните её параметры.</p>
+              </div>
+              <Select value={googleTablePurpose} onValueChange={(value: 'export' | 'reconciliation') => setGoogleTablePurpose(value)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="export">Экспорт транзакций</SelectItem>
+                  <SelectItem value="reconciliation">Сверка регистраций</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {googleTablePurpose === 'export' && <div className="rounded-lg border p-3">
               <div className="mb-4 space-y-3">
                 <div className="space-y-2">
                   <label htmlFor="public-spreadsheet-id" className="text-sm font-medium">ID таблицы или ссылка</label>
@@ -1177,13 +1197,13 @@ const PublicTransactions = () => {
                 type="button"
                 className="w-full"
                 onClick={exportToGoogleSheets}
-                disabled={isExporting || (hasActiveFilters ? filteredTransactions.length === 0 : allTransactions.length === 0)}
+                disabled={isExporting || !hasConfirmedKeyword || filteredTransactions.length === 0}
               >
                 {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Table2 className="mr-2 h-4 w-4" />}
                 Экспортировать в Google Таблицу
               </Button>
-            </div>
-            <div className="rounded-lg border p-3 space-y-3">
+            </div>}
+            {googleTablePurpose === 'reconciliation' && <div className="rounded-lg border p-3 space-y-3">
               <div>
                 <p className="font-medium">Таблицы регистрации</p>
                 <p className="text-xs text-muted-foreground">Добавьте лист Google Forms с именем и фамилией. При сверке совпадения с входящими транзакциями выделяются зелёным, а в ячейку добавляется примечание с транзакцией.</p>
@@ -1211,7 +1231,7 @@ const PublicTransactions = () => {
               <Button type="button" className="w-full" onClick={reconcileRegistrationSheets} disabled={isReconciling || registrationSources.length === 0}>
                 {isReconciling && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Сверить регистрации с транзакциями
               </Button>
-            </div>
+            </div>}
           </div>
         </DialogContent>
       </Dialog>
