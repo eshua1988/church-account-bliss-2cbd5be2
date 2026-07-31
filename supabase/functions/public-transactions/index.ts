@@ -466,7 +466,12 @@ Deno.serve(async (req) => {
         // For example, for C:C the name is values[row][0], not values[row][2].
         const rangeStartColumn = source.sheet_range.match(/^([A-Z]+)/)?.[1] || 'A';
         const rangeStartIndex = lettersToIndex(rangeStartColumn);
-        const configuredColumns = source.name_columns.split(':').map(column => lettersToIndex(column) - rangeStartIndex);
+        // A single-column range is stored as C:C.  Treat it as one column,
+        // not two identical C entries, otherwise a surname can be compared
+        // against itself and create a false positive.
+        const configuredColumns = Array.from(new Set(
+          source.name_columns.split(':').map(column => lettersToIndex(column) - rangeStartIndex),
+        ));
         const header = values[0] || [];
         // Forms often keep full name in one column named "Фамилия, Имя".
         // Prefer it over an old broad A:Z setting, so only surname and name
@@ -490,13 +495,20 @@ Deno.serve(async (req) => {
             // is the shared surname, so pair it with each following name.
             // Do not compare arbitrary pairs of first names: that caused
             // false matches between different participants.
-            const candidatePairs = nameTokens.length === 2
-              ? [nameTokens]
+            const candidatePairs: Array<[string, string]> = nameTokens.length === 2
+              ? [[nameTokens[0], nameTokens[1]]]
               : nameTokens.slice(1).map(name => [nameTokens[0], name]);
-            return candidatePairs.some(pair => {
-              const scores = pair.map(token => Math.max(...transactionTokens.map(candidate => personTokenMatchScore(token, candidate))));
-              return scores.every(Boolean) && scores.reduce((total, score) => total + score, 0) >= 3;
-            });
+            return candidatePairs.some(([surname, firstName]) => transactionTokens.some((surnameCandidate, surnameIndex) => {
+              const surnameScore = personTokenMatchScore(surname, surnameCandidate);
+              if (!surnameScore) return false;
+              // The same bank token may not prove both surname and first name.
+              // This is essential for values such as C:C and for family names.
+              return transactionTokens.some((nameCandidate, nameIndex) => {
+                if (nameIndex === surnameIndex) return false;
+                const nameScore = personTokenMatchScore(firstName, nameCandidate);
+                return Boolean(nameScore) && surnameScore + nameScore >= 3;
+              });
+            }));
           });
           if (!tx) return [];
           matched += 1;
