@@ -168,6 +168,33 @@ const transactionPaymentText = (transaction: { bank_title?: string | null; title
     transaction.comment,
   ].filter(Boolean).join(' '));
 
+const transactionSenderText = (transaction: { bank_sender?: string | null }) =>
+  normalizePerson(transaction.bank_sender);
+
+// Match a registration only when its surname and first name are demonstrated
+// by two distinct transaction words. The stricter sender mode accepts only
+// exact/transliteration-equivalent tokens, because sender details are used as
+// a fallback when payment title/description do not identify the participant.
+const registrationMatchesTransactionText = (nameTokens: string[], text: string, senderFallback = false) => {
+  const transactionTokens = text.split(' ').filter(token => token.length >= 3);
+  const candidatePairs: Array<[string, string]> = nameTokens.length === 2
+    ? [[nameTokens[0], nameTokens[1]]]
+    : nameTokens.slice(1).map(name => [nameTokens[0], name]);
+
+  return candidatePairs.some(([surname, firstName]) => transactionTokens.some((surnameCandidate, surnameIndex) => {
+    const surnameScore = personTokenMatchScore(surname, surnameCandidate);
+    if (!surnameScore) return false;
+    return transactionTokens.some((nameCandidate, nameIndex) => {
+      if (nameIndex === surnameIndex) return false;
+      const nameScore = personTokenMatchScore(firstName, nameCandidate);
+      if (!nameScore) return false;
+      return senderFallback
+        ? surnameScore === 2 && nameScore === 2
+        : surnameScore + nameScore >= 3;
+    });
+  }));
+};
+
 const sendPushNotification = async (supabaseUrl: string, serviceKey: string, notificationId: string) => {
   try {
     const response = await fetch(`${supabaseUrl}/functions/v1/send-push-notification`, {
@@ -435,7 +462,7 @@ Deno.serve(async (req) => {
         supabase.from('registration_sheet_sources').select('id, spreadsheet_id, sheet_name, sheet_range, name_columns, amount_column').eq('owner_user_id', linkData.owner_user_id),
         // A person's name may be written in the payment title of either an
         // incoming or an outgoing bank transaction, so compare both types.
-        supabase.from('transactions').select('id, date, amount, currency, bank_sender, bank_recipient, bank_title, description, comment').eq('user_id', linkData.owner_user_id).order('date', { ascending: false }).limit(3000),
+        supabase.from('transactions').select('id, type, date, amount, currency, bank_sender, bank_recipient, bank_title, description, comment').eq('user_id', linkData.owner_user_id).order('date', { ascending: false }).limit(3000),
         supabase.from('department_rules').select('search_text, department_name, transaction_type').eq('user_id', linkData.owner_user_id),
       ]);
       if (sourceError || transactionError || keywordRulesError) throw new Error(sourceError?.message || transactionError?.message || keywordRulesError?.message);
@@ -457,6 +484,8 @@ Deno.serve(async (req) => {
           })
         : transactions || [];
       let matched = 0;
+      let matchedByPaymentText = 0;
+      let matchedBySender = 0;
       for (const source of (sources || []) as RegistrationSource[]) {
         const read = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, { method: 'POST', headers: { Authorization: `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'x-owner-user-id': linkData.owner_user_id }, body: JSON.stringify({ action: 'read', spreadsheetId: source.spreadsheet_id, range: sourceRange(source) }) });
         const result = await read.json().catch(() => ({}));
@@ -481,47 +510,50 @@ Deno.serve(async (req) => {
         const columns = (source.name_columns === 'A:Z' && (surnameHeaderIndex >= 0 || nameHeaderIndex >= 0))
           ? [surnameHeaderIndex >= 0 ? surnameHeaderIndex : nameHeaderIndex]
           : configuredColumns;
+        const registrationNames = values.slice(1)
+          .map(row => normalizePerson(columns.map(column => row[column] || '').join(' ')).split(' ').filter(token => token.length >= 3))
+          .filter(tokens => tokens.length >= 2);
+        // Do not use Nadawca if the payment title/description already names
+        // another registered person. Sender fallback is exclusively for bank
+        // records whose payment text contains no participant name at all.
+        const transactionsWithPaymentName = new Set(
+          transactionsForReconciliation
+            .filter(transaction => registrationNames.some(tokens =>
+              registrationMatchesTransactionText(tokens, transactionPaymentText(transaction)),
+            ))
+            .map(transaction => transaction.id),
+        );
         const marks = values.slice(1).flatMap((row, index) => {
           const person = normalizePerson(columns.map(column => row[column] || '').join(' '));
           const nameTokens = person.split(' ').filter(token => token.length >= 3);
           if (nameTokens.length < 2) return [];
-          const tx = transactionsForReconciliation.find(transaction => {
-            // Use only payment-purpose fields, where the person the payment is
-            // for is recorded. Sender/recipient may belong to somebody else.
-            const text = transactionPaymentText(transaction);
-            const transactionTokens = text.split(' ').filter(token => token.length >= 3);
-            // A registration may contain one surname and several names
-            // (for example, "Kapustian Aleksandr, Matvej"). The first word
-            // is the shared surname, so pair it with each following name.
-            // Do not compare arbitrary pairs of first names: that caused
-            // false matches between different participants.
-            const candidatePairs: Array<[string, string]> = nameTokens.length === 2
-              ? [[nameTokens[0], nameTokens[1]]]
-              : nameTokens.slice(1).map(name => [nameTokens[0], name]);
-            return candidatePairs.some(([surname, firstName]) => transactionTokens.some((surnameCandidate, surnameIndex) => {
-              const surnameScore = personTokenMatchScore(surname, surnameCandidate);
-              if (!surnameScore) return false;
-              // The same bank token may not prove both surname and first name.
-              // This is essential for values such as C:C and for family names.
-              return transactionTokens.some((nameCandidate, nameIndex) => {
-                if (nameIndex === surnameIndex) return false;
-                const nameScore = personTokenMatchScore(firstName, nameCandidate);
-                return Boolean(nameScore) && surnameScore + nameScore >= 3;
-              });
-            }));
-          });
+          // Primary source: title, description and comment. This is the
+          // existing reliable path and remains the preferred match.
+          const paymentTx = transactionsForReconciliation.find(transaction =>
+            registrationMatchesTransactionText(nameTokens, transactionPaymentText(transaction)),
+          );
+          // Fallback requested by the user: use Nadawca only when the person
+          // is absent from title/description. Limit it to incoming payments,
+          // where Nadawca is the payer, and require two exact name tokens.
+          const senderTx = paymentTx ? undefined : transactionsForReconciliation.find(transaction =>
+            transaction.type === 'income'
+            && !transactionsWithPaymentName.has(transaction.id)
+            && registrationMatchesTransactionText(nameTokens, transactionSenderText(transaction), true),
+          );
+          const tx = paymentTx || senderTx;
           if (!tx) return [];
           matched += 1;
+          if (paymentTx) matchedByPaymentText += 1;
+          else matchedBySender += 1;
           // Google batchUpdate uses absolute column indexes. `columns[0]` is
           // relative to the read range, so add its range offset back here.
-          return [{ row: index + 2, nameColumn: columns[0] + rangeStartIndex, note: `Найдена транзакция: ${tx.date} — ${tx.amount} ${tx.currency || ''}. ${transactionNoteText(tx)}`.trim() }];
+          const senderNote = senderTx ? ` · Nadawca: ${tx.bank_sender || ''}` : '';
+          return [{ row: index + 2, nameColumn: columns[0] + rangeStartIndex, note: `Найдена транзакция: ${tx.date} — ${tx.amount} ${tx.currency || ''}. ${transactionNoteText(tx)}${senderNote}`.trim() }];
         });
-        if (marks.length) {
-          const mark = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, { method: 'POST', headers: { Authorization: `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'x-owner-user-id': linkData.owner_user_id }, body: JSON.stringify({ action: 'mark-matches', spreadsheetId: source.spreadsheet_id, range: sourceRange(source), matches: marks, clearMatchNotes: { startRowIndex: 1, endRowIndex: values.length, columnIndex: columns[0] + rangeStartIndex } }) });
-          if (!mark.ok) { const detail = await mark.json().catch(() => ({})); throw new Error(detail?.error || 'Не удалось отметить совпадения'); }
-        }
+        const mark = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, { method: 'POST', headers: { Authorization: `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'x-owner-user-id': linkData.owner_user_id }, body: JSON.stringify({ action: 'mark-matches', spreadsheetId: source.spreadsheet_id, range: sourceRange(source), matches: marks, clearMatchNotes: { startRowIndex: 1, endRowIndex: values.length, columnIndex: columns[0] + rangeStartIndex } }) });
+        if (!mark.ok) { const detail = await mark.json().catch(() => ({})); throw new Error(detail?.error || 'Не удалось отметить совпадения'); }
       }
-      return new Response(JSON.stringify({ valid: true, success: true, matched }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ valid: true, success: true, matched, matchedByPaymentText, matchedBySender }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     if (body.action === 'save-sheets-settings') {
