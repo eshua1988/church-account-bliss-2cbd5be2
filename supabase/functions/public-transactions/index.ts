@@ -172,9 +172,11 @@ const transactionSenderText = (transaction: { bank_sender?: string | null }) =>
   normalizePerson(transaction.bank_sender);
 
 // Match a registration only when its surname and first name are demonstrated
-// by two distinct transaction words. The stricter sender mode accepts only
-// exact/transliteration-equivalent tokens, because sender details are used as
-// a fallback when payment title/description do not identify the participant.
+// by two distinct transaction words. Sender matching keeps the first name
+// exact, but permits a one-step surname variation (for example the family
+// forms Kharybin / Kharybina / Kharybiny). This lets one payment with a shared
+// surname and several given names credit every registered family member while
+// still preventing a match based on a surname alone.
 const registrationMatchesTransactionText = (nameTokens: string[], text: string, senderFallback = false) => {
   const transactionTokens = text.split(' ').filter(token => token.length >= 3);
   const candidatePairs: Array<[string, string]> = nameTokens.length === 2
@@ -189,7 +191,7 @@ const registrationMatchesTransactionText = (nameTokens: string[], text: string, 
       const nameScore = personTokenMatchScore(firstName, nameCandidate);
       if (!nameScore) return false;
       return senderFallback
-        ? surnameScore === 2 && nameScore === 2
+        ? nameScore === 2 && surnameScore >= 1
         : surnameScore + nameScore >= 3;
     });
   }));
