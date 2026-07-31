@@ -179,7 +179,7 @@ const registrationMatchesTransactionText = (nameTokens: string[], text: string, 
   const transactionTokens = text.split(' ').filter(token => token.length >= 3);
   const candidatePairs: Array<[string, string]> = nameTokens.length === 2
     ? [[nameTokens[0], nameTokens[1]]]
-    : nameTokens.slice(1).map(name => [nameTokens[0], name]);
+    : nameTokens.slice(1).map(name => [nameTokens[0], name] as [string, string]);
 
   return candidatePairs.some(([surname, firstName]) => transactionTokens.some((surnameCandidate, surnameIndex) => {
     const surnameScore = personTokenMatchScore(surname, surnameCandidate);
