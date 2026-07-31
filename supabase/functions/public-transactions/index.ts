@@ -155,11 +155,20 @@ const parseTerms = (terms: unknown) => {
     });
 };
 
-// Banks distribute the payment purpose between different fields.  Do not use
-// only the first non-empty one: a generic bank title such as "RETREAT." can
-// otherwise hide the participant name stored in the description.
-const transactionPaymentText = (transaction: { bank_title?: string | null; title?: string | null; description?: string | null; comment?: string | null }) =>
-  normalizePerson([transaction.bank_title, transaction.title, transaction.description, transaction.comment].filter(Boolean).join(' '));
+// Banks distribute the payment purpose and payer's name between different
+// fields.  Do not use only the first non-empty one: a generic bank title such
+// as "RETREAT." can otherwise hide the participant name in a description or
+// in the sender/recipient details.  A match below still requires a full name,
+// so these extra fields cannot produce a surname-only match.
+const transactionPaymentText = (transaction: { bank_title?: string | null; title?: string | null; description?: string | null; comment?: string | null; bank_sender?: string | null; bank_recipient?: string | null }) =>
+  normalizePerson([
+    transaction.bank_title,
+    transaction.title,
+    transaction.description,
+    transaction.comment,
+    transaction.bank_sender,
+    transaction.bank_recipient,
+  ].filter(Boolean).join(' '));
 
 const sendPushNotification = async (supabaseUrl: string, serviceKey: string, notificationId: string) => {
   try {
@@ -474,8 +483,9 @@ Deno.serve(async (req) => {
           const nameTokens = person.split(' ').filter(token => token.length >= 3);
           if (nameTokens.length < 2) return [];
           const tx = transactionsForReconciliation.find(transaction => {
-            // Use only the payment title/purpose: it is where "за кого платят"
-            // is recorded, while sender/recipient names may belong to another person.
+            // Use payment purpose together with payer/recipient fields.  Banks
+            // place the participant's full name in different fields depending
+            // on the transfer type.
             const text = transactionPaymentText(transaction);
             const transactionTokens = text.split(' ').filter(token => token.length >= 3);
             // A registration may contain one surname and several names
