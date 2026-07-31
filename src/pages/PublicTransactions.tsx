@@ -1068,20 +1068,17 @@ const PublicTransactions = () => {
                                 <p className="font-medium">{transaction.departmentName}</p>
                               </div>
                             )}
-                            {transaction.source === 'enablebanking' ? (
-                              transaction.bankTitle && (
-                                <div className="col-span-2 md:col-span-4">
-                                  <p className="text-muted-foreground text-xs">Назначение</p>
-                                  <p className="font-medium">{transaction.bankTitle}</p>
-                                </div>
-                              )
-                            ) : (
-                              transaction.description && (
-                                <div className="col-span-2 md:col-span-4">
-                                  <p className="text-muted-foreground text-xs">Описание</p>
-                                  <p className="font-medium">{transaction.description}</p>
-                                </div>
-                              )
+                            {transaction.bankTitle && (
+                              <div className="col-span-2 md:col-span-4">
+                                <p className="text-muted-foreground text-xs">Назначение</p>
+                                <p className="font-medium">{transaction.bankTitle}</p>
+                              </div>
+                            )}
+                            {transaction.description && transaction.description !== transaction.bankTitle && (
+                              <div className="col-span-2 md:col-span-4">
+                                <p className="text-muted-foreground text-xs">Описание</p>
+                                <p className="font-medium">{transaction.description}</p>
+                              </div>
                             )}
                             {transaction.bankSender && (
                               <div className="col-span-2 md:col-span-2">

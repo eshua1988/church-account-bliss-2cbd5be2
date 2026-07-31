@@ -51,6 +51,25 @@ const comparablePersonToken = (value: string) => value
   .replace(/([aeiouy])\1+/g, '$1')
   .replace(/ie/g, 'i')
   .replace(/ia/g, 'a');
+// A few registrations use familiar forms (for example, "Zhenia") while the
+// bank has the person's full passport spelling ("Yevheniia").  These aliases
+// are deliberately narrow: the other name token still has to identify the
+// same surname, so an alias can never match a person on its own.
+const personTokenVariants = (value: string) => {
+  const token = comparablePersonToken(value);
+  const variants = new Set([token]);
+  const aliases: Record<string, string[]> = {
+    andrei: ['andrii'],
+    daria: ['dariia'],
+    ilia: ['illia'],
+    iosif: ['joseph', 'josef', 'yosef'],
+    maria: ['mariia'],
+    pavel: ['pavlo'],
+    zhenia: ['yevheniia', 'evheniia', 'yevgeniia', 'evgeniia'],
+  };
+  for (const alias of aliases[token] || []) variants.add(comparablePersonToken(alias));
+  return [...variants];
+};
 const levenshteinDistance = (left: string, right: string) => {
   const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
   for (let i = 1; i <= left.length; i += 1) {
@@ -68,16 +87,28 @@ const levenshteinDistance = (left: string, right: string) => {
 // Reconciliation requires at least one exact token, preventing a person from
 // being matched just because two different names happen to be similarly spelt.
 const personTokenMatchScore = (expected: string, actual: string) => {
-  const left = comparablePersonToken(expected);
-  const right = comparablePersonToken(actual);
-  if (left.length < 3 || right.length < 3) return 0;
-  if (left === right) return 2;
-  // A partial token may occur when punctuation was omitted (for example
-  // RETREAT.VOLODYMYR). It remains a weak match and needs an exact partner.
-  if (left.includes(right) || right.includes(left)) return 1;
-  const allowedErrors = Math.max(left.length, right.length) >= 9 ? 2 : 1;
-  return Math.abs(left.length - right.length) <= allowedErrors
-    && levenshteinDistance(left, right) <= allowedErrors ? 1 : 0;
+  const expectedVariants = personTokenVariants(expected);
+  const actualVariants = personTokenVariants(actual);
+  let bestScore = 0;
+
+  for (const left of expectedVariants) {
+    for (const right of actualVariants) {
+      if (left.length < 3 || right.length < 3) continue;
+      if (left === right) return 2;
+      // A partial token may occur when punctuation was omitted (for example
+      // RETREAT.VOLODYMYR). It remains a weak match and needs an exact partner.
+      if (left.includes(right) || right.includes(left)) {
+        bestScore = Math.max(bestScore, 1);
+        continue;
+      }
+      const allowedErrors = Math.max(left.length, right.length) >= 9 ? 2 : 1;
+      if (Math.abs(left.length - right.length) <= allowedErrors
+        && levenshteinDistance(left, right) <= allowedErrors) {
+        bestScore = Math.max(bestScore, 1);
+      }
+    }
+  }
+  return bestScore;
 };
 const lettersToIndex = (column: string) => column.split('').reduce((value, char) => value * 26 + char.charCodeAt(0) - 64, 0) - 1;
 const sourceRange = (source: Pick<RegistrationSource, 'sheet_name' | 'sheet_range'>) => {
@@ -244,13 +275,24 @@ const cleanBankText = (value: unknown) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const transactionNoteText = (transaction: { bank_title?: string | null; title?: string | null; description?: string | null }) => {
+  const title = cleanBankText(transaction.bank_title || transaction.title);
+  const description = cleanBankText(transaction.description);
+  return [
+    title && `Назначение: ${title}`,
+    description && description !== title && `Описание: ${description}`,
+  ].filter(Boolean).join(' · ');
+};
+
 const mapTransaction = (tx: any, rules: any[] = []) => ({
   id: tx.id,
   type: tx.type,
   category: tx.category_id || 'other',
   amount: Number(tx.amount),
   currency: tx.currency,
-  description: cleanBankText(tx.bank_title) || cleanBankText(tx.description),
+  // Keep the original description separate from the bank payment title.  The
+  // previous fallback order made both fields display the participant's name.
+  description: cleanBankText(tx.description) || cleanBankText(tx.bank_title),
   date: tx.date,
   createdAt: tx.created_at,
   issuedTo: tx.issued_to || undefined,
@@ -453,7 +495,7 @@ Deno.serve(async (req) => {
           matched += 1;
           // Google batchUpdate uses absolute column indexes. `columns[0]` is
           // relative to the read range, so add its range offset back here.
-          return [{ row: index + 2, nameColumn: columns[0] + rangeStartIndex, note: `Найдена транзакция: ${tx.date} — ${tx.amount} ${tx.currency || ''}. ${tx.bank_title || tx.description || ''}`.trim() }];
+          return [{ row: index + 2, nameColumn: columns[0] + rangeStartIndex, note: `Найдена транзакция: ${tx.date} — ${tx.amount} ${tx.currency || ''}. ${transactionNoteText(tx)}`.trim() }];
         });
         if (marks.length) {
           const mark = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, { method: 'POST', headers: { Authorization: `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'x-owner-user-id': linkData.owner_user_id }, body: JSON.stringify({ action: 'mark-matches', spreadsheetId: source.spreadsheet_id, range: sourceRange(source), matches: marks }) });
