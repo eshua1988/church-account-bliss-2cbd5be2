@@ -64,16 +64,20 @@ const levenshteinDistance = (left: string, right: string) => {
   }
   return previous[right.length];
 };
-const personTokenMatches = (expected: string, actual: string) => {
+// Returns 2 for an exact transliterated token and 1 only for a small typo.
+// Reconciliation requires at least one exact token, preventing a person from
+// being matched just because two different names happen to be similarly spelt.
+const personTokenMatchScore = (expected: string, actual: string) => {
   const left = comparablePersonToken(expected);
   const right = comparablePersonToken(actual);
-  if (left.length < 3 || right.length < 3) return false;
-  if (left.includes(right) || right.includes(left)) return true;
-  // Accept only a small typo allowance. A full name still needs both tokens
-  // to match, so a single similar word cannot mark a registration by mistake.
+  if (left.length < 3 || right.length < 3) return 0;
+  if (left === right) return 2;
+  // A partial token may occur when punctuation was omitted (for example
+  // RETREAT.VOLODYMYR). It remains a weak match and needs an exact partner.
+  if (left.includes(right) || right.includes(left)) return 1;
   const allowedErrors = Math.max(left.length, right.length) >= 9 ? 2 : 1;
   return Math.abs(left.length - right.length) <= allowedErrors
-    && levenshteinDistance(left, right) <= allowedErrors;
+    && levenshteinDistance(left, right) <= allowedErrors ? 1 : 0;
 };
 const lettersToIndex = (column: string) => column.split('').reduce((value, char) => value * 26 + char.charCodeAt(0) - 64, 0) - 1;
 const sourceRange = (source: Pick<RegistrationSource, 'sheet_name' | 'sheet_range'>) => {
@@ -427,12 +431,17 @@ Deno.serve(async (req) => {
             const text = normalizePerson(transaction.bank_title || transaction.title || transaction.description);
             const transactionTokens = text.split(' ').filter(token => token.length >= 3);
             // A registration may contain one surname and several names
-            // (for example, "Kapustian Aleksandr, Matvej"). Match any
-            // surname/name pair, while still requiring two matching words.
+            // (for example, "Kapustian Aleksandr, Matvej"). The first word
+            // is the shared surname, so pair it with each following name.
+            // Do not compare arbitrary pairs of first names: that caused
+            // false matches between different participants.
             const candidatePairs = nameTokens.length === 2
               ? [nameTokens]
-              : nameTokens.flatMap((token, tokenIndex) => nameTokens.slice(tokenIndex + 1).map(other => [token, other]));
-            return candidatePairs.some(pair => pair.every(token => transactionTokens.some(candidate => personTokenMatches(token, candidate))));
+              : nameTokens.slice(1).map(name => [nameTokens[0], name]);
+            return candidatePairs.some(pair => {
+              const scores = pair.map(token => Math.max(...transactionTokens.map(candidate => personTokenMatchScore(token, candidate))));
+              return scores.every(Boolean) && scores.reduce((total, score) => total + score, 0) >= 3;
+            });
           });
           if (!tx) return [];
           matched += 1;
