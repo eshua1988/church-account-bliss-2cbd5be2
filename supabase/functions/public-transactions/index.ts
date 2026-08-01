@@ -209,6 +209,37 @@ const exportNameFromPaymentText = (transaction: { bank_title?: string | null; de
     .join(' · ');
 };
 
+// Export rows are transaction rows, not registration rows. Keep only the
+// person part of the payment text; generic bank wording must not stop the
+// Nadawca fallback from being used.
+const exportNonNameWords = new Set([
+  'retreat', 'payment', 'transfer', 'freedom', 'zwrot', 'refund', 'return',
+  'przelew', 'oplata', 'wplata', 'perevod', 'oplaty', 'vozvrat', 'dohod',
+  'rashod', 'drugoe', 'other', 'income', 'expense', 'blik', 'mobile', 'c2c',
+  'za', 'na', 'do', 'od', 'i', 'and',
+]);
+
+const paymentNamePart = (value: unknown) => {
+  const cleaned = cleanBankText(value);
+  const words = cleaned.match(/[A-Za-z\u00c0-\u024f\u0400-\u04ff]+/g) || [];
+  const personWords = words.filter(word => !exportNonNameWords.has(normalizePerson(word)));
+  // A single word is not enough: the requested fallback is used whenever the
+  // title/description does not demonstrate both a first and last name.
+  if (personWords.length < 2) return '';
+  return cleaned
+    .replace(/\b(?:777|retreat|payment|transfer|freedom|zwrot|zwrót|refund|return|przelew|opłata|oplata|wpłata|wplata|perevod|перевод|оплата|возврат|доход|расход|прочее|other|income|expense|blik|mobile|c2c|za|na|do|od|and|i)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s,;:·—–-]+|[\s,;:·—–-]+$/g, '')
+    .trim();
+};
+
+const exportParticipantName = (transaction: { bank_title?: string | null; description?: string | null; bank_sender?: string | null }) => {
+  const paymentNames = [paymentNamePart(transaction.bank_title), paymentNamePart(transaction.description)]
+    .filter((value, index, values) => Boolean(value) && values.indexOf(value) === index)
+    .join(' · ');
+  return paymentNames || cleanBankText(transaction.bank_sender);
+};
+
 // A registration cell may contain a family in several common forms:
 // "Sheremet Oksana, Joseph", "Iosif Sheremet, Sheremet Oksana", or a
 // mixture of both. Consider every two different name words as a possible
@@ -946,7 +977,7 @@ Deno.serve(async (req) => {
         const values = [
           ['Отправитель', 'Получатель', 'Сумма и валюта', 'Тип', 'Описание', 'Назначение', 'Комментарий'],
           ...(exportRows || []).map(row => [
-            exportNameFromPaymentText(row),
+            exportParticipantName(row),
             row.bank_recipient || '',
             `${row.amount ?? ''}${row.currency ? ` ${row.currency}` : ''}`.trim(),
             row.type === 'income' ? 'Доход' : 'Расход',
@@ -955,7 +986,31 @@ Deno.serve(async (req) => {
             row.comment || '',
           ]),
         ];
-        values[0][0] = '\u0418\u043c\u044f \u0438 \u0444\u0430\u043c\u0438\u043b\u0438\u044f (\u0438\u0437 \u0442\u0438\u0442\u0443\u043b\u0430 / \u043e\u043f\u0438\u0441\u0430\u043d\u0438\u044f)';
+        values[0][0] = '\u0418\u043c\u044f \u0438 \u0444\u0430\u043c\u0438\u043b\u0438\u044f (\u0442\u0438\u0442\u0443\u043b / \u043e\u043f\u0438\u0441\u0430\u043d\u0438\u0435; Nadawca \u0435\u0441\u043b\u0438 \u043d\u0435\u0442 \u0424\u0418\u041e)';
+        // The export contains exactly the transactions selected on the public
+        // page. Registration sheets are intentionally not read here.
+        const transactionSheetsResponse = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+            'Content-Type': 'application/json',
+            'x-owner-user-id': linkData.owner_user_id,
+          },
+          body: JSON.stringify({ action: 'write', spreadsheetId: exportTarget.spreadsheet_id, range: sourceRange(exportTarget as ExportSource), values }),
+        });
+        const transactionResponseText = await transactionSheetsResponse.text();
+        let transactionSheetsResult: Record<string, any> = {};
+        try { transactionSheetsResult = transactionResponseText ? JSON.parse(transactionResponseText) : {}; } catch { transactionSheetsResult = { error: transactionResponseText }; }
+        if (!transactionSheetsResponse.ok || !transactionSheetsResult?.success) {
+          const detail = transactionSheetsResult?.error || transactionSheetsResult?.message || `Google Sheets HTTP ${transactionSheetsResponse.status}`;
+          return new Response(JSON.stringify({ valid: true, success: false, error: detail }), {
+            status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify({
+          valid: true, success: true, exported: Math.max(0, values.length - 1),
+        }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
         const { data: reportSources, error: reportSourcesError } = await supabase
           .from('registration_sheet_sources')
           .select('spreadsheet_id, sheet_name, sheet_range, name_columns')
