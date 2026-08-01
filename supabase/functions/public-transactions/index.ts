@@ -171,6 +171,17 @@ const transactionPaymentText = (transaction: { bank_title?: string | null; title
 const transactionSenderText = (transaction: { bank_sender?: string | null }) =>
   normalizePerson(transaction.bank_sender);
 
+// Exports must identify the participant from the payment itself. Bank sender
+// details are intentionally excluded here: the account holder can be a parent,
+// employer or another payer rather than the participant named in the payment.
+const exportNameFromPaymentText = (transaction: { bank_title?: string | null; description?: string | null }) => {
+  const paymentTitle = cleanBankText(transaction.bank_title);
+  const description = cleanBankText(transaction.description);
+  return [paymentTitle, description]
+    .filter((value, index, values) => Boolean(value) && values.indexOf(value) === index)
+    .join(' · ');
+};
+
 // Match a registration only when its surname and first name are demonstrated
 // by two distinct transaction words. Sender matching keeps the first name
 // exact, but permits a one-step surname variation (for example the family
@@ -844,7 +855,7 @@ Deno.serve(async (req) => {
         const values = [
           ['Отправитель', 'Получатель', 'Сумма и валюта', 'Тип', 'Описание', 'Назначение', 'Комментарий'],
           ...(exportRows || []).map(row => [
-            row.bank_sender || '',
+            exportNameFromPaymentText(row),
             row.bank_recipient || '',
             `${row.amount ?? ''}${row.currency ? ` ${row.currency}` : ''}`.trim(),
             row.type === 'income' ? 'Доход' : 'Расход',
@@ -853,6 +864,7 @@ Deno.serve(async (req) => {
             row.comment || '',
           ]),
         ];
+        values[0][0] = '\u0418\u043c\u044f \u0438 \u0444\u0430\u043c\u0438\u043b\u0438\u044f (\u0438\u0437 \u0442\u0438\u0442\u0443\u043b\u0430 / \u043e\u043f\u0438\u0441\u0430\u043d\u0438\u044f)';
         const sheetsResponse = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, {
           method: 'POST',
           headers: {
