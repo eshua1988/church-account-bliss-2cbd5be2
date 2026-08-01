@@ -211,7 +211,8 @@ const exportNameFromPaymentText = (transaction: { bank_title?: string | null; de
 
 // Export rows are transaction rows, not registration rows. Keep only the
 // person part of the payment text; generic bank wording must not stop the
-// Nadawca fallback from being used.
+// Nadawca fallback from being used. A family title may therefore keep one
+// surname followed by every associated given name.
 const exportNonNameWords = new Set([
   'retreat', 'payment', 'transfer', 'freedom', 'zwrot', 'refund', 'return',
   'przelew', 'oplata', 'wplata', 'perevod', 'oplaty', 'vozvrat', 'dohod',
