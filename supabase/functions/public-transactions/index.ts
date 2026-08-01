@@ -50,7 +50,8 @@ const normalizePerson = (value: unknown) => String(value || '')
 const comparablePersonToken = (value: string) => value
   .replace(/([aeiouy])\1+/g, '$1')
   .replace(/ie/g, 'i')
-  .replace(/ia/g, 'a');
+  .replace(/ia/g, 'a')
+  .replace(/ya/g, 'a');
 // A few registrations use familiar forms (for example, "Zhenia") while the
 // bank has the person's full passport spelling ("Yevheniia").  These aliases
 // are deliberately narrow: the other name token still has to identify the
@@ -65,9 +66,28 @@ const personTokenVariants = (value: string) => {
     iosif: ['joseph', 'josef', 'yosef'],
     maria: ['mariia'],
     pavel: ['pavlo'],
+    snezhana: ['sniazhana'],
+    vasyliu: ['vasileiou'],
     zhenia: ['yevheniia', 'evheniia', 'yevgeniia', 'evgeniia'],
   };
-  for (const alias of aliases[token] || []) variants.add(comparablePersonToken(alias));
+
+  // The form uses Ukrainian/Russian spellings while payment text is often
+  // entered with a Polish or international transliteration. These are
+  // letter-for-letter alternatives (not loose fuzzy matching), so the second
+  // token of a name is still required before a transaction is credited.
+  for (const transform of [
+    (candidate: string) => candidate.replace(/h/g, 'g'),
+    (candidate: string) => candidate.replace(/g/g, 'h'),
+    (candidate: string) => candidate.replace(/y/g, 'i'),
+    (candidate: string) => candidate.replace(/i/g, 'y'),
+  ]) {
+    for (const candidate of [...variants]) {
+      variants.add(comparablePersonToken(transform(candidate)));
+    }
+  }
+  for (const candidate of [...variants]) {
+    for (const alias of aliases[candidate] || []) variants.add(comparablePersonToken(alias));
+  }
   return [...variants];
 };
 const levenshteinDistance = (left: string, right: string) => {
@@ -189,6 +209,63 @@ const exportNameFromPaymentText = (transaction: { bank_title?: string | null; de
     .join(' · ');
 };
 
+// A registration cell may contain a family in several common forms:
+// "Sheremet Oksana, Joseph", "Iosif Sheremet, Sheremet Oksana", or a
+// mixture of both. Consider every two different name words as a possible
+// surname/given-name pair. The transaction still needs two separate matching
+// words, so this is more flexible without allowing surname-only matches.
+const registrationNamePairs = (nameTokens: string[]): Array<[string, string]> => {
+  const tokens = [...new Set(nameTokens.filter(token => token.length >= 3))];
+  const pairs: Array<[string, string]> = [];
+  for (let left = 0; left < tokens.length; left += 1) {
+    for (let right = left + 1; right < tokens.length; right += 1) {
+      pairs.push([tokens[left], tokens[right]]);
+    }
+  }
+  return pairs;
+};
+
+const paymentDisplayWords = (transaction: { bank_title?: string | null; description?: string | null }) =>
+  [transaction.bank_title, transaction.description]
+    .filter(Boolean)
+    .join(' ')
+    .match(/[A-Za-z\u00c0-\u024f\u0400-\u04ff]+/g) || [];
+
+// For a family payment the bank usually lists one surname and several given
+// names. Column C must show that bank spelling, not a sender name and not a
+// transliteration from the registration form.
+const familyPaymentExplanation = (
+  transaction: { bank_title?: string | null; description?: string | null },
+  registrations: Array<{ tokens: string[] }>,
+) => {
+  if (registrations.length < 2) return '';
+  const words = paymentDisplayWords(transaction)
+    .map(display => ({ display, normalized: normalizePerson(display) }))
+    .filter(word => word.normalized.length >= 3)
+    .filter(word => registrations.some(registration => registration.tokens.some(token =>
+      personTokenMatchScore(token, word.normalized) > 0,
+    )));
+  const distinctWords = words.filter((word, index) =>
+    words.findIndex(candidate => candidate.normalized === word.normalized) === index,
+  );
+  if (distinctWords.length < 3) return '';
+
+  const surname = distinctWords
+    .map(word => ({
+      ...word,
+      registrations: registrations.filter(registration => registration.tokens.some(token =>
+        personTokenMatchScore(token, word.normalized) > 0,
+      )).length,
+    }))
+    .sort((left, right) => right.registrations - left.registrations)[0];
+  if (!surname || surname.registrations < 2) return '';
+
+  const givenNames = distinctWords.filter(word => word.normalized !== surname.normalized);
+  return givenNames.length >= 2
+    ? givenNames.map(word => `${surname.display} ${word.display}`).join(', ')
+    : '';
+};
+
 // Match a registration only when its surname and first name are demonstrated
 // by two distinct transaction words. Sender matching keeps the first name
 // exact, but permits a one-step surname variation (for example the family
@@ -197,20 +274,18 @@ const exportNameFromPaymentText = (transaction: { bank_title?: string | null; de
 // still preventing a match based on a surname alone.
 const registrationMatchesTransactionText = (nameTokens: string[], text: string, senderFallback = false) => {
   const transactionTokens = text.split(' ').filter(token => token.length >= 3);
-  const candidatePairs: Array<[string, string]> = nameTokens.length === 2
-    ? [[nameTokens[0], nameTokens[1]]]
-    : nameTokens.slice(1).map(name => [nameTokens[0], name] as [string, string]);
+  const candidatePairs = registrationNamePairs(nameTokens);
 
-  return candidatePairs.some(([surname, firstName]) => transactionTokens.some((surnameCandidate, surnameIndex) => {
-    const surnameScore = personTokenMatchScore(surname, surnameCandidate);
-    if (!surnameScore) return false;
-    return transactionTokens.some((nameCandidate, nameIndex) => {
-      if (nameIndex === surnameIndex) return false;
-      const nameScore = personTokenMatchScore(firstName, nameCandidate);
-      if (!nameScore) return false;
+  return candidatePairs.some(([first, second]) => transactionTokens.some((firstCandidate, firstIndex) => {
+    const firstScore = personTokenMatchScore(first, firstCandidate);
+    if (!firstScore) return false;
+    return transactionTokens.some((secondCandidate, secondIndex) => {
+      if (secondIndex === firstIndex) return false;
+      const secondScore = personTokenMatchScore(second, secondCandidate);
+      if (!secondScore) return false;
       return senderFallback
-        ? nameScore === 2 && surnameScore >= 1
-        : surnameScore + nameScore >= 3;
+        ? (firstScore === 2 && secondScore >= 1) || (secondScore === 2 && firstScore >= 1)
+        : firstScore + secondScore >= 3;
     });
   }));
 };
@@ -530,9 +605,18 @@ Deno.serve(async (req) => {
         const columns = (source.name_columns === 'A:Z' && (surnameHeaderIndex >= 0 || nameHeaderIndex >= 0))
           ? [surnameHeaderIndex >= 0 ? surnameHeaderIndex : nameHeaderIndex]
           : configuredColumns;
-        const registrationNames = values.slice(1)
-          .map(row => normalizePerson(columns.map(column => row[column] || '').join(' ')).split(' ').filter(token => token.length >= 3))
+        const sourceNames = values.slice(1)
+          .map(row => columns.map(column => String(row[column] || '')).join(' ').trim())
+          .filter(Boolean);
+        const registrationNames = sourceNames
+          .map(name => normalizePerson(name).split(' ').filter(token => token.length >= 3))
           .filter(tokens => tokens.length >= 2);
+        // A registration column must contain at least a first name and a
+        // surname. Silently accepting a date or first-name-only column creates
+        // a misleading empty reconciliation report.
+        if (sourceNames.length > 0 && registrationNames.length * 2 < sourceNames.length) {
+          throw new Error(`\u0412 \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0435 ${source.sheet_name || '\u0442\u0430\u0431\u043b\u0438\u0446\u0430'}:${source.name_columns} \u0431\u043e\u043b\u044c\u0448\u0438\u043d\u0441\u0442\u0432\u043e \u0441\u0442\u0440\u043e\u043a \u043d\u0435 \u0441\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u0438\u043c\u0435\u043d\u0438 \u0438 \u0444\u0430\u043c\u0438\u043b\u0438\u0438. \u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043a\u043e\u043b\u043e\u043d\u043a\u0443 \u0441 \u0418\u043c\u0435\u043d\u0435\u043c \u0438 \u0444\u0430\u043c\u0438\u043b\u0438\u0435\u0439 \u0443\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u0430.`);
+        }
         // Do not use Nadawca if the payment title/description already names
         // another registered person. Sender fallback is exclusively for bank
         // records whose payment text contains no participant name at all.
@@ -904,6 +988,15 @@ Deno.serve(async (req) => {
           const columns = source.name_columns === 'A:Z' && (surnameHeaderIndex >= 0 || nameHeaderIndex >= 0)
             ? [surnameHeaderIndex >= 0 ? surnameHeaderIndex : nameHeaderIndex]
             : configuredColumns;
+          const sourceNames = sheetValues.slice(1)
+            .map(row => columns.map(column => String(row[column] || '')).join(' ').trim())
+            .filter(Boolean);
+          const usableSourceNames = sourceNames.filter(name =>
+            normalizePerson(name).split(' ').filter(token => token.length >= 3).length >= 2,
+          );
+          if (sourceNames.length > 0 && usableSourceNames.length * 2 < sourceNames.length) {
+            throw new Error(`\u0412 \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0435 ${source.sheet_name || '\u0442\u0430\u0431\u043b\u0438\u0446\u0430'}:${source.name_columns} \u0431\u043e\u043b\u044c\u0448\u0438\u043d\u0441\u0442\u0432\u043e \u0441\u0442\u0440\u043e\u043a \u043d\u0435 \u0441\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u0438\u043c\u0435\u043d\u0438 \u0438 \u0444\u0430\u043c\u0438\u043b\u0438\u0438. \u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043a\u043e\u043b\u043e\u043d\u043a\u0443 \u0441 \u0418\u043c\u0435\u043d\u0435\u043c \u0438 \u0444\u0430\u043c\u0438\u043b\u0438\u0435\u0439 \u0443\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u0430.`);
+          }
           for (const row of sheetValues.slice(1)) {
             const name = columns.map(column => String(row[column] || '')).join(' ').trim();
             const tokens = normalizePerson(name).split(' ').filter(token => token.length >= 3);
@@ -918,11 +1011,11 @@ Deno.serve(async (req) => {
           )?.id || null,
         );
         const transactionsById = new Map(reportTransactions.map(transaction => [transaction.id, transaction]));
-        const paidForByTransactionId = new Map<string, string[]>();
+        const paidForByTransactionId = new Map<string, Array<{ name: string; tokens: string[] }>>();
         for (const [index, transactionId] of matchedTransactionIds.entries()) {
           if (!transactionId) continue;
           const paidFor = paidForByTransactionId.get(transactionId) || [];
-          paidFor.push(registrations[index].name);
+          paidFor.push(registrations[index]);
           paidForByTransactionId.set(transactionId, paidFor);
         }
         // Keep every registration as its own row. A family payment is repeated
@@ -933,10 +1026,14 @@ Deno.serve(async (req) => {
           if (!transactionId) return [registration.name, '', ''];
           const paidFor = paidForByTransactionId.get(transactionId) || [];
           const transaction = transactionsById.get(transactionId)!;
+          const explanation = paidFor.length > 1
+            ? familyPaymentExplanation(transaction, paidFor)
+              || `Оплата за: ${paidFor.map(person => person.name).join(', ')}`
+            : '';
           return [
             registration.name,
             exportNameFromPaymentText(transaction),
-            paidFor.length > 1 ? `Оплата за: ${paidFor.join(', ')}` : '',
+            explanation,
           ];
         });
         values.length = 0;
