@@ -168,6 +168,13 @@ const transactionPaymentText = (transaction: { bank_title?: string | null; title
     transaction.comment,
   ].filter(Boolean).join(' '));
 
+const transactionTitleOrDescriptionText = (transaction: { bank_title?: string | null; title?: string | null; description?: string | null }) =>
+  normalizePerson([
+    transaction.bank_title,
+    transaction.title,
+    transaction.description,
+  ].filter(Boolean).join(' '));
+
 const transactionSenderText = (transaction: { bank_sender?: string | null }) =>
   normalizePerson(transaction.bank_sender);
 
@@ -846,7 +853,7 @@ Deno.serve(async (req) => {
         if (!exportTarget) throw new Error('Выберите добавленную таблицу для экспорта.');
         const { data: exportRows, error: exportError } = await supabase
           .from('transactions')
-          .select('type,amount,currency,description,bank_title,bank_sender,bank_recipient,comment')
+          .select('id,type,amount,currency,description,bank_title,bank_sender,bank_recipient,comment')
           .eq('user_id', linkData.owner_user_id)
           .in('id', transactionIds)
           .order('date', { ascending: false });
@@ -865,6 +872,77 @@ Deno.serve(async (req) => {
           ]),
         ];
         values[0][0] = '\u0418\u043c\u044f \u0438 \u0444\u0430\u043c\u0438\u043b\u0438\u044f (\u0438\u0437 \u0442\u0438\u0442\u0443\u043b\u0430 / \u043e\u043f\u0438\u0441\u0430\u043d\u0438\u044f)';
+        const { data: reportSources, error: reportSourcesError } = await supabase
+          .from('registration_sheet_sources')
+          .select('spreadsheet_id, sheet_name, sheet_range, name_columns')
+          .eq('owner_user_id', linkData.owner_user_id);
+        if (reportSourcesError) throw new Error(reportSourcesError.message);
+        if (!reportSources?.length) throw new Error('Настройте таблицу регистрации перед экспортом сверки.');
+
+        const registrations: Array<{ name: string; tokens: string[] }> = [];
+        for (const source of reportSources as Array<Pick<RegistrationSource, 'spreadsheet_id' | 'sheet_name' | 'sheet_range' | 'name_columns'>>) {
+          const readResponse = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${supabaseServiceKey}`,
+              'Content-Type': 'application/json',
+              'x-owner-user-id': linkData.owner_user_id,
+            },
+            body: JSON.stringify({ action: 'read', spreadsheetId: source.spreadsheet_id, range: sourceRange(source) }),
+          });
+          const readResult = await readResponse.json().catch(() => ({}));
+          if (!readResponse.ok) throw new Error(readResult?.error || `Не удалось прочитать лист ${source.sheet_name}`);
+          const sheetValues: string[][] = readResult.values || [];
+          const rangeStartColumn = source.sheet_range.match(/^([A-Z]+)/)?.[1] || 'A';
+          const rangeStartIndex = lettersToIndex(rangeStartColumn);
+          const configuredColumns = Array.from(new Set(
+            source.name_columns.split(':').map(column => lettersToIndex(column) - rangeStartIndex),
+          ));
+          const header = sheetValues[0] || [];
+          const surnameHeaderIndex = header.findIndex(value => /фамил|прізв|surname|last.?name/i.test(String(value || '')));
+          const nameHeaderIndex = header.findIndex(value => /имя|ім.?я|first.?name|name/i.test(String(value || '')));
+          const columns = source.name_columns === 'A:Z' && (surnameHeaderIndex >= 0 || nameHeaderIndex >= 0)
+            ? [surnameHeaderIndex >= 0 ? surnameHeaderIndex : nameHeaderIndex]
+            : configuredColumns;
+          for (const row of sheetValues.slice(1)) {
+            const name = columns.map(column => String(row[column] || '')).join(' ').trim();
+            const tokens = normalizePerson(name).split(' ').filter(token => token.length >= 3);
+            if (name && tokens.length >= 2) registrations.push({ name, tokens });
+          }
+        }
+
+        const reportTransactions = (exportRows || []).filter(row => row.type === 'income');
+        const matchedTransactionIds = registrations.map(registration =>
+          reportTransactions.find(transaction =>
+            registrationMatchesTransactionText(registration.tokens, transactionTitleOrDescriptionText(transaction)),
+          )?.id || null,
+        );
+        const transactionsById = new Map(reportTransactions.map(transaction => [transaction.id, transaction]));
+        const emittedTransactionIds = new Set<string>();
+        const reconciliationRows = registrations.flatMap((registration, index): string[][] => {
+          const transactionId = matchedTransactionIds[index];
+          if (!transactionId) return [[registration.name, '', '']];
+          if (emittedTransactionIds.has(transactionId)) return [];
+          emittedTransactionIds.add(transactionId);
+          const paidFor = registrations
+            .filter((_, candidateIndex) => matchedTransactionIds[candidateIndex] === transactionId)
+            .map(candidate => candidate.name);
+          const transaction = transactionsById.get(transactionId)!;
+          return [[
+            paidFor.join(', '),
+            exportNameFromPaymentText(transaction),
+            paidFor.length > 1 ? `Оплата за: ${paidFor.join(', ')}` : '',
+          ]];
+        });
+        values.length = 0;
+        values.push(
+          [
+            '\u0417\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u043e\u0432\u0430\u043d\u043d\u044b\u0435 \u0443\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u0438',
+            '\u0422\u0440\u0430\u043d\u0437\u0430\u043a\u0446\u0438\u0438 \u0441 \u0442\u0438\u0442\u0443\u043b\u0430 \u0438 \u043e\u043f\u0438\u0441\u0430\u043d\u0438\u044f',
+            '\u041f\u043e\u044f\u0441\u043d\u0435\u043d\u0438\u0435',
+          ],
+          ...reconciliationRows,
+        );
         const sheetsResponse = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, {
           method: 'POST',
           headers: {
@@ -872,7 +950,7 @@ Deno.serve(async (req) => {
             'Content-Type': 'application/json',
             'x-owner-user-id': linkData.owner_user_id,
           },
-          body: JSON.stringify({ action: 'write', spreadsheetId: exportTarget.spreadsheet_id, range: sourceRange(exportTarget as ExportSource), values, transactionTypeColors: true }),
+          body: JSON.stringify({ action: 'write', spreadsheetId: exportTarget.spreadsheet_id, range: sourceRange(exportTarget as ExportSource), values }),
         });
         const responseText = await sheetsResponse.text();
         let sheetsResult: Record<string, any> = {};
