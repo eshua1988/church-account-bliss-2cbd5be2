@@ -918,21 +918,26 @@ Deno.serve(async (req) => {
           )?.id || null,
         );
         const transactionsById = new Map(reportTransactions.map(transaction => [transaction.id, transaction]));
-        const emittedTransactionIds = new Set<string>();
-        const reconciliationRows = registrations.flatMap((registration, index): string[][] => {
+        const paidForByTransactionId = new Map<string, string[]>();
+        for (const [index, transactionId] of matchedTransactionIds.entries()) {
+          if (!transactionId) continue;
+          const paidFor = paidForByTransactionId.get(transactionId) || [];
+          paidFor.push(registrations[index].name);
+          paidForByTransactionId.set(transactionId, paidFor);
+        }
+        // Keep every registration as its own row. A family payment is repeated
+        // for each participant and explained in column C instead of removing
+        // the other family members from the export.
+        const reconciliationRows = registrations.map((registration, index): string[] => {
           const transactionId = matchedTransactionIds[index];
-          if (!transactionId) return [[registration.name, '', '']];
-          if (emittedTransactionIds.has(transactionId)) return [];
-          emittedTransactionIds.add(transactionId);
-          const paidFor = registrations
-            .filter((_, candidateIndex) => matchedTransactionIds[candidateIndex] === transactionId)
-            .map(candidate => candidate.name);
+          if (!transactionId) return [registration.name, '', ''];
+          const paidFor = paidForByTransactionId.get(transactionId) || [];
           const transaction = transactionsById.get(transactionId)!;
-          return [[
-            paidFor.join(', '),
+          return [
+            registration.name,
             exportNameFromPaymentText(transaction),
             paidFor.length > 1 ? `Оплата за: ${paidFor.join(', ')}` : '',
-          ]];
+          ];
         });
         values.length = 0;
         values.push(
