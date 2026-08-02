@@ -218,7 +218,15 @@ const PublicTransactions = () => {
           setSheetRange(data.sheetsSettings.sheetRange || 'A:Z');
         }
         if (!append) setRegistrationSources(data.registrationSources || []);
-        if (!append) setExportSources(data.exportSources || []);
+        if (!append) {
+          const sources = data.exportSources || [];
+          setExportSources(sources);
+          // A saved destination must be usable immediately after a reload.
+          // Keep an existing selection, otherwise choose the first source.
+          setSelectedExportSourceId(current =>
+            sources.some(source => source.id === current) ? current : (sources[0]?.id || ''),
+          );
+        }
         setHasMore(Boolean(data.hasMore));
         nextCursorRef.current = data.nextCursor || null;
         /*
