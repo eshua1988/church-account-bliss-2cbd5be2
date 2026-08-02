@@ -531,6 +531,23 @@ serve(async (req) => {
               repeatCell: {
                 range: {
                   sheetId,
+                  startRowIndex: 0,
+                  endRowIndex: 1,
+                  startColumnIndex: rangeStartColumnIndex,
+                  endColumnIndex: rangeStartColumnIndex + maxDataCols,
+                },
+                cell: {
+                  userEnteredFormat: {
+                    textFormat: { bold: true, fontSize: 12 },
+                  },
+                },
+                fields: 'userEnteredFormat.textFormat',
+              },
+            },
+            {
+              repeatCell: {
+                range: {
+                  sheetId,
                   startRowIndex: 1,
                   endRowIndex: values.length,
                   startColumnIndex: rangeStartColumnIndex,
