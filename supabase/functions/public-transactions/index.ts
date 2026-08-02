@@ -220,8 +220,17 @@ const exportNonNameWords = new Set([
   'za', 'na', 'do', 'od', 'i', 'and',
 ]);
 
-const paymentNamePart = (value: unknown) => {
-  const cleaned = cleanBankText(value);
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const removeExportKeywords = (value: string, keywords: string[]) =>
+  keywords.reduce((result, keyword) => {
+    const words = keyword.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return result;
+    return result.replace(new RegExp(`\\b${words.map(escapeRegExp).join('\\s+')}\\b`, 'giu'), ' ');
+  }, value);
+
+const paymentNamePart = (value: unknown, excludedKeywords: string[] = []) => {
+  const cleaned = removeExportKeywords(cleanBankText(value), excludedKeywords);
   const words = cleaned.match(/[A-Za-z\u00c0-\u024f\u0400-\u04ff]+/g) || [];
   const personWords = words.filter(word => !exportNonNameWords.has(normalizePerson(word)));
   // A single word is not enough: the requested fallback is used whenever the
@@ -234,11 +243,11 @@ const paymentNamePart = (value: unknown) => {
     .trim();
 };
 
-const exportParticipantName = (transaction: { bank_title?: string | null; description?: string | null; bank_sender?: string | null }) => {
-  const paymentNames = [paymentNamePart(transaction.bank_title), paymentNamePart(transaction.description)]
+const exportParticipantName = (transaction: { bank_title?: string | null; description?: string | null; bank_sender?: string | null }, excludedKeywords: string[] = []) => {
+  const paymentNames = [paymentNamePart(transaction.bank_title, excludedKeywords), paymentNamePart(transaction.description, excludedKeywords)]
     .filter((value, index, values) => Boolean(value) && values.indexOf(value) === index)
     .join(' · ');
-  return paymentNames || cleanBankText(transaction.bank_sender);
+  return paymentNames || removeExportKeywords(cleanBankText(transaction.bank_sender), excludedKeywords).trim();
 };
 
 // A registration cell may contain a family in several common forms:
@@ -992,7 +1001,7 @@ Deno.serve(async (req) => {
         const values = [
           ['Отправитель', 'Получатель', 'Сумма и валюта', 'Тип', 'Описание', 'Назначение', 'Комментарий'],
           ...(exportRows || []).map(row => [
-            exportParticipantName(row),
+            exportParticipantName(row, parseTerms(body.exportKeywords).map(normalizePerson)),
             row.bank_recipient || '',
             `${row.amount ?? ''}${row.currency ? ` ${row.currency}` : ''}`.trim(),
             row.type === 'income' ? 'Доход' : 'Расход',

@@ -603,7 +603,16 @@ const PublicTransactions = () => {
     try {
       const { data, error: functionError } = await supabase.functions.invoke<PublicTransactionsResponse>(
         'public-transactions',
-        { body: { action: 'export-sheets', token, targetId: selectedExportSourceId, transactionIds: rows.map(row => row.id) } },
+        {
+          body: {
+            action: 'export-sheets',
+            token,
+            targetId: selectedExportSourceId,
+            transactionIds: rows.map(row => row.id),
+            // The phrase selects transactions but must not be part of the exported name.
+            exportKeywords: [searchText],
+          },
+        },
       );
       if (functionError) throw functionError;
       if (!data?.success) throw new Error(data?.error || 'Не удалось экспортировать данные');
