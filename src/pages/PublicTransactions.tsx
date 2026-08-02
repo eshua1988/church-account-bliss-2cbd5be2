@@ -1282,7 +1282,7 @@ const PublicTransactions = () => {
                   variant="outline"
                   className="w-full"
                   onClick={saveSheetsSettings}
-                  disabled={isSavingSheetsSettings}
+                  disabled={isSavingSheetsSettings || !exportSearchKeyword.trim()}
                 >
                   {isSavingSheetsSettings && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   {editingExportSourceId ? 'Сохранить изменения' : 'Добавить Google Таблицу'}
@@ -1318,8 +1318,11 @@ const PublicTransactions = () => {
                 ) : <Input value={registrationSheetName} onChange={event => setRegistrationSheetName(event.target.value)} placeholder={isLoadingSheetNames ? 'Загрузка листов…' : 'Вставьте ссылку для выбора листа'} />}
                 <Input value={registrationSheetRange} onChange={event => setRegistrationSheetRange(sanitizeColumnRange(event.target.value))} pattern="[A-Za-z:]*" placeholder="Диапазон, например A:Z или C" />
               </div>
-              <Input value={registrationSearchKeyword} onChange={event => setRegistrationSearchKeyword(event.target.value)} placeholder="Ключевое слово этой сверки, например 777" />
-              <Button type="button" variant="outline" className="w-full" onClick={saveRegistrationSource} disabled={isSavingRegistrationSource || !registrationSpreadsheetId.trim()}>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Ключевое слово этой регистрации</label>
+                <Input value={registrationSearchKeyword} onChange={event => setRegistrationSearchKeyword(event.target.value)} placeholder="Например: 777 или coram deo" />
+              </div>
+              <Button type="button" variant="outline" className="w-full" onClick={saveRegistrationSource} disabled={isSavingRegistrationSource || !registrationSpreadsheetId.trim() || !registrationSearchKeyword.trim()}>
                 {isSavingRegistrationSource && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} {editingRegistrationSourceId ? 'Сохранить изменения' : 'Добавить таблицу регистрации'}
               </Button>
               {editingRegistrationSourceId && <Button type="button" variant="ghost" className="w-full" onClick={cancelRegistrationSourceEdit}>Отменить редактирование</Button>}
