@@ -149,7 +149,7 @@ const PublicTransactions = () => {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [isBankSyncing, setIsBankSyncing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
+  const [exportingSourceId, setExportingSourceId] = useState<string | null>(null);
   const [spreadsheetId, setSpreadsheetId] = useState('');
   const [sheetName, setSheetName] = useState('');
   const [sheetRange, setSheetRange] = useState('A:Z');
@@ -171,7 +171,8 @@ const PublicTransactions = () => {
   const [editingRegistrationSourceId, setEditingRegistrationSourceId] = useState<string | null>(null);
   const [keywordDraft, setKeywordDraft] = useState('');
   const [isSavingRegistrationSource, setIsSavingRegistrationSource] = useState(false);
-  const [isReconciling, setIsReconciling] = useState(false);
+  const [reconcilingSourceId, setReconcilingSourceId] = useState<string | null>(null);
+  const sheetLoadTimeoutRef = useRef<number | undefined>(undefined);
   const [hasMore, setHasMore] = useState(false);
   const nextCursorRef = useRef<PublicTransactionsResponse['nextCursor']>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -620,7 +621,7 @@ const PublicTransactions = () => {
     }
     if (!window.confirm(`Экспортировать ${rows.length} транзакций в настроенную Google Таблицу? Текущие данные листа будут заменены.`)) return;
 
-    setIsExporting(true);
+    setExportingSourceId(source.id);
     try {
       const { data, error: functionError } = await supabase.functions.invoke<PublicTransactionsResponse>(
         'public-transactions',
@@ -645,7 +646,7 @@ const PublicTransactions = () => {
         variant: 'destructive',
       });
     } finally {
-      setIsExporting(false);
+      setExportingSourceId(null);
     }
   };
 
@@ -733,6 +734,19 @@ const PublicTransactions = () => {
     }
   };
 
+  const scheduleSheetNamesLoad = (spreadsheetInput: string, purpose: 'export' | 'reconciliation') => {
+    window.clearTimeout(sheetLoadTimeoutRef.current);
+    setAvailableSheetNames([]);
+    if (purpose === 'export') setSheetName('');
+    else setRegistrationSheetName('');
+    if (spreadsheetInput.trim().length < 20) {
+      setIsLoadingSheetNames(false);
+      return;
+    }
+    setIsLoadingSheetNames(true);
+    sheetLoadTimeoutRef.current = window.setTimeout(() => void loadSheetNames(spreadsheetInput), 250);
+  };
+
   const saveRegistrationSource = async () => {
     if (!token || !registrationSpreadsheetId.trim()) return;
     setIsSavingRegistrationSource(true);
@@ -786,7 +800,7 @@ const PublicTransactions = () => {
       toast({ title: 'Укажите ключевое слово для этой таблицы', variant: 'destructive' });
       return;
     }
-    setIsReconciling(true);
+    setReconcilingSourceId(source.id);
     try {
       const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse & { matched?: number }>('public-transactions', {
         body: {
@@ -799,7 +813,7 @@ const PublicTransactions = () => {
       if (!data?.success) throw new Error(data?.error || 'Не удалось выполнить сверку');
       toast({ title: 'Сверка завершена', description: `Совпадений отмечено: ${data.matched || 0}` });
     } catch (error) { toast({ title: 'Ошибка сверки', description: error instanceof Error ? error.message : undefined, variant: 'destructive' }); }
-    finally { setIsReconciling(false); }
+    finally { setReconcilingSourceId(null); }
   };
 
   if (loading) {
@@ -1248,20 +1262,25 @@ const PublicTransactions = () => {
                   <Input
                     id="public-spreadsheet-id"
                     value={spreadsheetId}
-                    onChange={event => setSpreadsheetId(event.target.value)}
-                    onBlur={() => void loadSheetNames(spreadsheetId)}
+                    onChange={event => {
+                      const value = event.target.value;
+                      setSpreadsheetId(value);
+                      scheduleSheetNamesLoad(value, 'export');
+                    }}
                     placeholder="https://docs.google.com/spreadsheets/d/... или ID"
                   />
                   <p className="text-xs text-muted-foreground">Вставьте ссылку на Google Таблицу или только её ID.</p>
                 </div>
                 <div className="space-y-2">
                   <label htmlFor="public-sheet-name" className="text-sm font-medium">Название листа</label>
-                  {availableSheetNames.length > 0 ? (
-                    <select id="public-sheet-name" value={sheetName} onChange={event => setSheetName(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                  {isLoadingSheetNames ? (
+                    <div className="flex h-10 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Загрузка листов…</div>
+                  ) : (
+                    <select id="public-sheet-name" value={sheetName} onChange={event => setSheetName(event.target.value)} disabled={availableSheetNames.length === 0} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60">
                       <option value="">Выберите лист</option>
                       {availableSheetNames.map(name => <option key={name} value={name}>{name}</option>)}
                     </select>
-                  ) : <Input id="public-sheet-name" value={sheetName} onChange={event => setSheetName(event.target.value)} placeholder={isLoadingSheetNames ? 'Загрузка листов…' : 'Вставьте ссылку для выбора листа'} />}
+                  )}
                 </div>
                 <div className="space-y-2">
                   <label htmlFor="public-sheet-range" className="text-sm font-medium">Диапазон листа</label>
@@ -1296,8 +1315,8 @@ const PublicTransactions = () => {
                       <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteExportSource(source.id)} aria-label="Удалить таблицу"><X className="h-4 w-4" /></Button>
                       </div>
                     </div>
-                    <Button type="button" className="w-full" onClick={() => exportToGoogleSheets(source)} disabled={isExporting || !source.search_keyword.trim() || rowsForSourceKeyword(source.search_keyword).length === 0}>
-                      {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Table2 className="mr-2 h-4 w-4" />} Экспортировать в эту Google Таблицу
+                    <Button type="button" className="w-full" onClick={() => exportToGoogleSheets(source)} disabled={Boolean(exportingSourceId) || !source.search_keyword.trim() || rowsForSourceKeyword(source.search_keyword).length === 0}>
+                      {exportingSourceId === source.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Table2 className="mr-2 h-4 w-4" />} Экспортировать в эту Google Таблицу
                     </Button>
                   </div>
                 ))}
@@ -1308,14 +1327,20 @@ const PublicTransactions = () => {
                 <p className="font-medium">Таблицы регистрации</p>
                 <p className="text-xs text-muted-foreground">Добавьте лист Google Forms с именем и фамилией. При сверке совпадения с входящими транзакциями выделяются зелёным, а в ячейку добавляется примечание с транзакцией.</p>
               </div>
-              <Input value={registrationSpreadsheetId} onChange={event => setRegistrationSpreadsheetId(event.target.value)} onBlur={() => void loadSheetNames(registrationSpreadsheetId)} placeholder="Ссылка на Google Таблицу" />
+              <Input value={registrationSpreadsheetId} onChange={event => {
+                const value = event.target.value;
+                setRegistrationSpreadsheetId(value);
+                scheduleSheetNamesLoad(value, 'reconciliation');
+              }} placeholder="Ссылка на Google Таблицу" />
               <div className="grid grid-cols-2 gap-2">
-                {availableSheetNames.length > 0 ? (
-                  <select value={registrationSheetName} onChange={event => setRegistrationSheetName(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                {isLoadingSheetNames ? (
+                  <div className="flex h-10 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Загрузка…</div>
+                ) : (
+                  <select value={registrationSheetName} onChange={event => setRegistrationSheetName(event.target.value)} disabled={availableSheetNames.length === 0} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60">
                     <option value="">Выберите лист</option>
                     {availableSheetNames.map(name => <option key={name} value={name}>{name}</option>)}
                   </select>
-                ) : <Input value={registrationSheetName} onChange={event => setRegistrationSheetName(event.target.value)} placeholder={isLoadingSheetNames ? 'Загрузка листов…' : 'Вставьте ссылку для выбора листа'} />}
+                )}
                 <Input value={registrationSheetRange} onChange={event => setRegistrationSheetRange(sanitizeColumnRange(event.target.value))} pattern="[A-Za-z:]*" placeholder="Диапазон, например A:Z или C" />
               </div>
               <div className="space-y-2">
@@ -1335,8 +1360,8 @@ const PublicTransactions = () => {
                     <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteRegistrationSource(source.id)} aria-label="Удалить таблицу"><X className="h-4 w-4" /></Button>
                     </div>
                   </div>
-                  <Button type="button" className="w-full" onClick={() => reconcileRegistrationSheets(source)} disabled={isReconciling || !source.search_keyword.trim()}>
-                    {isReconciling && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Сверить эту регистрацию с транзакциями
+                  <Button type="button" className="w-full" onClick={() => reconcileRegistrationSheets(source)} disabled={Boolean(reconcilingSourceId) || !source.search_keyword.trim()}>
+                    {reconcilingSourceId === source.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Сверить эту регистрацию с транзакциями
                   </Button>
                 </div>
               ))}
