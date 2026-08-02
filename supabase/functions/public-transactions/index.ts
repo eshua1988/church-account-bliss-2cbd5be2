@@ -665,26 +665,33 @@ Deno.serve(async (req) => {
           if (nameTokens.length < 2) return [];
           // Primary source: title, description and comment. This is the
           // existing reliable path and remains the preferred match.
-          const paymentTx = transactionsForReconciliation.find(transaction =>
+          const paymentTransactions = transactionsForReconciliation.filter(transaction =>
             registrationMatchesTransactionText(nameTokens, transactionPaymentText(transaction)),
           );
           // Fallback requested by the user: use Nadawca only when the person
           // is absent from title/description. Limit it to incoming payments,
           // where Nadawca is the payer, and require two exact name tokens.
-          const senderTx = paymentTx ? undefined : transactionsForReconciliation.find(transaction =>
+          const senderTransactions = paymentTransactions.length > 0 ? [] : transactionsForReconciliation.filter(transaction =>
             transaction.type === 'income'
             && !transactionsWithPaymentName.has(transaction.id)
             && registrationMatchesTransactionText(nameTokens, transactionSenderText(transaction), true),
           );
-          const tx = paymentTx || senderTx;
-          if (!tx) return [];
+          const personTransactions = paymentTransactions.length > 0 ? paymentTransactions : senderTransactions;
+          if (personTransactions.length === 0) return [];
           matched += 1;
-          if (paymentTx) matchedByPaymentText += 1;
+          if (paymentTransactions.length > 0) matchedByPaymentText += 1;
           else matchedBySender += 1;
           // Google batchUpdate uses absolute column indexes. `columns[0]` is
           // relative to the read range, so add its range offset back here.
-          const senderNote = senderTx ? ` · Nadawca: ${tx.bank_sender || ''}` : '';
-          return [{ row: index + 2, nameColumn: columns[0] + rangeStartIndex, note: `Найдена транзакция: ${tx.date} — ${tx.amount} ${tx.currency || ''}. ${transactionNoteText(tx)}${senderNote}`.trim() }];
+          const details = personTransactions.map(transaction => {
+            const senderNote = senderTransactions.length > 0 ? ` · Nadawca: ${transaction.bank_sender || ''}` : '';
+            return `${transaction.date} — ${transaction.amount} ${transaction.currency || ''}. ${transactionNoteText(transaction)}${senderNote}`.trim();
+          });
+          return [{
+            row: index + 2,
+            nameColumn: columns[0] + rangeStartIndex,
+            note: `Найдено транзакций: ${personTransactions.length}.\n${details.join('\n')}`,
+          }];
         });
         const mark = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, { method: 'POST', headers: { Authorization: `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'x-owner-user-id': linkData.owner_user_id }, body: JSON.stringify({ action: 'mark-matches', spreadsheetId: source.spreadsheet_id, range: sourceRange(source), matches: marks, clearMatchNotes: { startRowIndex: 1, endRowIndex: values.length, columnIndex: columns[0] + rangeStartIndex } }) });
         if (!mark.ok) { const detail = await mark.json().catch(() => ({})); throw new Error(detail?.error || 'Не удалось отметить совпадения'); }
@@ -1205,9 +1212,10 @@ Deno.serve(async (req) => {
     );
   } catch (error) {
     console.error('Unexpected error:', error);
+    const message = error instanceof Error ? error.message : String(error);
     return new Response(
-      JSON.stringify({ valid: false, error: 'Internal server error' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      JSON.stringify({ valid: true, success: false, error: message || 'Не удалось выполнить действие' }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }
 });
