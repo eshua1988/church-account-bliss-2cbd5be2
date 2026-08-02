@@ -597,7 +597,14 @@ Deno.serve(async (req) => {
         ...getOtherRuleSearchTerms(keywordRules || []).income,
         ...getOtherRuleSearchTerms(keywordRules || []).expense,
       ].map(term => normalizePerson(term)).filter(Boolean));
-      const requestedKeywords = parseTerms(body.keywords).map(term => normalizePerson(term)).filter(term => approvedKeywords.has(term));
+      const rawSearchText = normalizePerson(String(body.searchText || ''));
+      const requestedKeywords = [
+        // A phrase configured as one approved keyword must remain a phrase.
+        // The client also supplies individual words for its regular search,
+        // so retain the previous exact-match path for one-word keywords.
+        ...[...approvedKeywords].filter(term => rawSearchText.includes(term)),
+        ...parseTerms(body.keywords).map(term => normalizePerson(term)).filter(term => approvedKeywords.has(term)),
+      ].filter((term, index, terms) => terms.indexOf(term) === index);
       if (requestedKeywords.length === 0) {
         return new Response(
           JSON.stringify({ valid: true, success: false, error: 'Введите подтверждённое ключевое слово в строку поиска перед сверкой.' }),

@@ -750,7 +750,16 @@ const PublicTransactions = () => {
     if (!token || registrationSources.length === 0) return;
     setIsReconciling(true);
     try {
-      const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse & { matched?: number }>('public-transactions', { body: { action: 'reconcile-registration-sheets', token, keywords: getSearchWords(searchText) } });
+      const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse & { matched?: number }>('public-transactions', {
+        body: {
+          action: 'reconcile-registration-sheets',
+          token,
+          keywords: getSearchWords(searchText),
+          // Keep the original phrase as well: a confirmed keyword can contain
+          // spaces (for example, "coram deo").
+          searchText,
+        },
+      });
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || 'Не удалось выполнить сверку');
       toast({ title: 'Сверка завершена', description: `Совпадений отмечено: ${data.matched || 0}` });
