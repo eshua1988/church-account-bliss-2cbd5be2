@@ -54,8 +54,8 @@ interface PublicTransactionsResponse {
     sheetName: string;
     sheetRange: string;
   };
-  exportSources?: Array<{ id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string }>;
-  registrationSources?: Array<{ id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string; name_columns: string; amount_column: string }>;
+  exportSources?: Array<{ id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string; search_keyword: string }>;
+  registrationSources?: Array<{ id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string; name_columns: string; amount_column: string; search_keyword: string }>;
 }
 
 const DocumentKeywordIcon = ({ className }: { className?: string }) => (
@@ -153,6 +153,7 @@ const PublicTransactions = () => {
   const [spreadsheetId, setSpreadsheetId] = useState('');
   const [sheetName, setSheetName] = useState('');
   const [sheetRange, setSheetRange] = useState('A:Z');
+  const [exportSearchKeyword, setExportSearchKeyword] = useState('');
   const [googleTablePurpose, setGoogleTablePurpose] = useState<'export' | 'reconciliation'>('export');
   const [availableSheetNames, setAvailableSheetNames] = useState<string[]>([]);
   const [isLoadingSheetNames, setIsLoadingSheetNames] = useState(false);
@@ -166,6 +167,7 @@ const PublicTransactions = () => {
   const [registrationSheetRange, setRegistrationSheetRange] = useState('A:Z');
   const [registrationNameColumns, setRegistrationNameColumns] = useState('A:B');
   const [registrationAmountColumn, setRegistrationAmountColumn] = useState('');
+  const [registrationSearchKeyword, setRegistrationSearchKeyword] = useState('');
   const [editingRegistrationSourceId, setEditingRegistrationSourceId] = useState<string | null>(null);
   const [keywordDraft, setKeywordDraft] = useState('');
   const [isSavingRegistrationSource, setIsSavingRegistrationSource] = useState(false);
@@ -591,18 +593,29 @@ const PublicTransactions = () => {
     setShowAdvancedFilters(false);
   };
 
-  const exportToGoogleSheets = async () => {
-    const rows = hasActiveFilters ? filteredTransactions : allTransactions;
-    if (!hasConfirmedKeyword) {
-      toast({ title: 'Введите подтверждённое ключевое слово в поиск', description: 'Например: 777 Marija. Экспорт работает только по выбранному ключевому слову.', variant: 'destructive' });
+  const rowsForSourceKeyword = (keyword: string) => {
+    const words = getSearchWords(keyword);
+    if (words.length === 0) return [];
+    return allTransactions.filter(transaction => {
+      const text = normalizeSearchText([
+        transaction.description,
+        transaction.bankTitle,
+        transaction.bankSender,
+        transaction.bankRecipient,
+        transaction.comment,
+      ].filter(Boolean).join(' '));
+      return words.every(word => text.includes(word));
+    });
+  };
+
+  const exportToGoogleSheets = async (source: NonNullable<PublicTransactionsResponse['exportSources']>[number]) => {
+    const rows = rowsForSourceKeyword(source.search_keyword);
+    if (!source.search_keyword.trim()) {
+      toast({ title: 'Укажите ключевое слово для этой таблицы', variant: 'destructive' });
       return;
     }
     if (!token || rows.length === 0) {
       toast({ title: 'Нет данных для экспорта', variant: 'destructive' });
-      return;
-    }
-    if (!selectedExportSourceId) {
-      toast({ title: 'Выберите таблицу для экспорта', variant: 'destructive' });
       return;
     }
     if (!window.confirm(`Экспортировать ${rows.length} транзакций в настроенную Google Таблицу? Текущие данные листа будут заменены.`)) return;
@@ -615,10 +628,10 @@ const PublicTransactions = () => {
           body: {
             action: 'export-sheets',
             token,
-            targetId: selectedExportSourceId,
+            targetId: source.id,
             transactionIds: rows.map(row => row.id),
             // The phrase selects transactions but must not be part of the exported name.
-            exportKeywords: [searchText],
+            exportKeywords: [source.search_keyword],
           },
         },
       );
@@ -655,13 +668,14 @@ const PublicTransactions = () => {
             spreadsheetId,
             sheetName,
             sheetRange,
+            searchKeyword: exportSearchKeyword,
           },
         },
       );
       if (functionError) throw functionError;
       if (!data?.success) throw new Error(data?.error || 'Не удалось сохранить настройки Google Sheets');
       setEditingExportSourceId(null);
-      setSpreadsheetId(''); setSheetName(''); setSheetRange('A:Z');
+      setSpreadsheetId(''); setSheetName(''); setSheetRange('A:Z'); setExportSearchKeyword('');
       if (data.source?.id) setSelectedExportSourceId(data.source.id);
       await loadData(false);
       toast({ title: 'Таблица экспорта добавлена' });
@@ -683,6 +697,7 @@ const PublicTransactions = () => {
     setSpreadsheetId(source.spreadsheet_id);
     setSheetName(source.sheet_name);
     setSheetRange(source.sheet_range);
+    setExportSearchKeyword(source.search_keyword || '');
     setSelectedExportSourceId(source.id);
   };
 
@@ -723,11 +738,11 @@ const PublicTransactions = () => {
     setIsSavingRegistrationSource(true);
     try {
       const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse>('public-transactions', {
-        body: { action: 'save-registration-source', token, sourceId: editingRegistrationSourceId || undefined, spreadsheetId: registrationSpreadsheetId, sheetName: registrationSheetName, sheetRange: registrationSheetRange, nameColumns: registrationSheetRange, amountColumn: registrationAmountColumn },
+        body: { action: 'save-registration-source', token, sourceId: editingRegistrationSourceId || undefined, spreadsheetId: registrationSpreadsheetId, sheetName: registrationSheetName, sheetRange: registrationSheetRange, nameColumns: registrationSheetRange, amountColumn: registrationAmountColumn, searchKeyword: registrationSearchKeyword },
       });
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || 'Не удалось добавить таблицу');
-      setRegistrationSpreadsheetId(''); setRegistrationSheetName(''); setRegistrationSheetRange('A:Z'); setRegistrationNameColumns('A:B'); setRegistrationAmountColumn(''); setEditingRegistrationSourceId(null);
+      setRegistrationSpreadsheetId(''); setRegistrationSheetName(''); setRegistrationSheetRange('A:Z'); setRegistrationNameColumns('A:B'); setRegistrationAmountColumn(''); setRegistrationSearchKeyword(''); setEditingRegistrationSourceId(null);
       await loadData(false);
       toast({ title: editingRegistrationSourceId ? 'Настройки таблицы обновлены' : 'Таблица регистрации добавлена' });
     } catch (error) {
@@ -742,6 +757,7 @@ const PublicTransactions = () => {
     setRegistrationSheetRange(source.sheet_range);
     setRegistrationNameColumns(source.name_columns);
     setRegistrationAmountColumn(source.amount_column || '');
+    setRegistrationSearchKeyword(source.search_keyword || '');
   };
 
   const cancelRegistrationSourceEdit = () => {
@@ -751,6 +767,7 @@ const PublicTransactions = () => {
     setRegistrationSheetRange('A:Z');
     setRegistrationNameColumns('A:B');
     setRegistrationAmountColumn('');
+    setRegistrationSearchKeyword('');
   };
 
   const deleteRegistrationSource = async (sourceId: string) => {
@@ -763,18 +780,19 @@ const PublicTransactions = () => {
     } catch (error) { toast({ title: 'Ошибка удаления', description: error instanceof Error ? error.message : undefined, variant: 'destructive' }); }
   };
 
-  const reconcileRegistrationSheets = async () => {
-    if (!token || registrationSources.length === 0) return;
+  const reconcileRegistrationSheets = async (source: NonNullable<PublicTransactionsResponse['registrationSources']>[number]) => {
+    if (!token) return;
+    if (!source.search_keyword.trim()) {
+      toast({ title: 'Укажите ключевое слово для этой таблицы', variant: 'destructive' });
+      return;
+    }
     setIsReconciling(true);
     try {
       const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse & { matched?: number }>('public-transactions', {
         body: {
           action: 'reconcile-registration-sheets',
           token,
-          keywords: getSearchWords(searchText),
-          // Keep the original phrase as well: a confirmed keyword can contain
-          // spaces (for example, "coram deo").
-          searchText,
+          sourceId: source.id,
         },
       });
       if (error) throw error;
@@ -1255,6 +1273,10 @@ const PublicTransactions = () => {
                     placeholder="A:Z или B"
                   />
                 </div>
+                <div className="space-y-2">
+                  <label htmlFor="public-sheet-keyword" className="text-sm font-medium">Ключевое слово этой таблицы</label>
+                  <Input id="public-sheet-keyword" value={exportSearchKeyword} onChange={event => setExportSearchKeyword(event.target.value)} placeholder="Например: 777 или coram deo" />
+                </div>
                 <Button
                   type="button"
                   variant="outline"
@@ -1266,28 +1288,20 @@ const PublicTransactions = () => {
                   {editingExportSourceId ? 'Сохранить изменения' : 'Добавить Google Таблицу'}
                 </Button>
                 {exportSources.map(source => (
-                  <div key={source.id} className={`flex items-center justify-between gap-2 rounded border px-3 py-2 text-sm ${selectedExportSourceId === source.id ? 'border-primary' : ''}`}>
-                    <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => setSelectedExportSourceId(source.id)}>{source.sheet_name || 'Первый лист'} · {source.sheet_range}</button>
-                    <div className="flex shrink-0">
+                  <div key={source.id} className="space-y-2 rounded border p-3 text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 flex-1 truncate">{source.sheet_name || 'Первый лист'} · {source.sheet_range} · ключ: {source.search_keyword || 'не указан'}</span>
+                      <div className="flex shrink-0">
                       <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => editExportSource(source)} aria-label="Редактировать таблицу"><Pencil className="h-4 w-4" /></Button>
                       <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteExportSource(source.id)} aria-label="Удалить таблицу"><X className="h-4 w-4" /></Button>
+                      </div>
                     </div>
+                    <Button type="button" className="w-full" onClick={() => exportToGoogleSheets(source)} disabled={isExporting || !source.search_keyword.trim() || rowsForSourceKeyword(source.search_keyword).length === 0}>
+                      {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Table2 className="mr-2 h-4 w-4" />} Экспортировать в эту Google Таблицу
+                    </Button>
                   </div>
                 ))}
               </div>
-              <p className="mb-3 text-sm text-muted-foreground">
-                Экспортируется {hasActiveFilters ? `найденных строк: ${filteredTransactions.length}` : `загруженных строк: ${allTransactions.length}`}.
-                Данные текущего листа будут заменены.
-              </p>
-              <Button
-                type="button"
-                className="w-full"
-                onClick={exportToGoogleSheets}
-                disabled={isExporting || !hasConfirmedKeyword || filteredTransactions.length === 0 || !selectedExportSourceId}
-              >
-                {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Table2 className="mr-2 h-4 w-4" />}
-                Экспортировать в Google Таблицу
-              </Button>
             </div>}
             {googleTablePurpose === 'reconciliation' && <div className="rounded-lg border p-3 space-y-3">
               <div>
@@ -1304,22 +1318,25 @@ const PublicTransactions = () => {
                 ) : <Input value={registrationSheetName} onChange={event => setRegistrationSheetName(event.target.value)} placeholder={isLoadingSheetNames ? 'Загрузка листов…' : 'Вставьте ссылку для выбора листа'} />}
                 <Input value={registrationSheetRange} onChange={event => setRegistrationSheetRange(sanitizeColumnRange(event.target.value))} pattern="[A-Za-z:]*" placeholder="Диапазон, например A:Z или C" />
               </div>
+              <Input value={registrationSearchKeyword} onChange={event => setRegistrationSearchKeyword(event.target.value)} placeholder="Ключевое слово этой сверки, например 777" />
               <Button type="button" variant="outline" className="w-full" onClick={saveRegistrationSource} disabled={isSavingRegistrationSource || !registrationSpreadsheetId.trim()}>
                 {isSavingRegistrationSource && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} {editingRegistrationSourceId ? 'Сохранить изменения' : 'Добавить таблицу регистрации'}
               </Button>
               {editingRegistrationSourceId && <Button type="button" variant="ghost" className="w-full" onClick={cancelRegistrationSourceEdit}>Отменить редактирование</Button>}
               {registrationSources.map(source => (
-                <div key={source.id} className="flex items-center justify-between gap-2 rounded border px-3 py-2 text-sm">
-                  <span className="truncate">{source.sheet_name || 'Первый лист'} · {source.name_columns}</span>
-                  <div className="flex shrink-0 items-center">
+                <div key={source.id} className="space-y-2 rounded border p-3 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 flex-1 truncate">{source.sheet_name || 'Первый лист'} · {source.name_columns} · ключ: {source.search_keyword || 'не указан'}</span>
+                    <div className="flex shrink-0 items-center">
                     <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => editRegistrationSource(source)} aria-label="Редактировать таблицу" title="Редактировать таблицу"><Pencil className="h-4 w-4" /></Button>
                     <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteRegistrationSource(source.id)} aria-label="Удалить таблицу"><X className="h-4 w-4" /></Button>
+                    </div>
                   </div>
+                  <Button type="button" className="w-full" onClick={() => reconcileRegistrationSheets(source)} disabled={isReconciling || !source.search_keyword.trim()}>
+                    {isReconciling && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Сверить эту регистрацию с транзакциями
+                  </Button>
                 </div>
               ))}
-              <Button type="button" className="w-full" onClick={reconcileRegistrationSheets} disabled={isReconciling || registrationSources.length === 0}>
-                {isReconciling && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Сверить регистрации с транзакциями
-              </Button>
             </div>}
           </div>
         </DialogContent>

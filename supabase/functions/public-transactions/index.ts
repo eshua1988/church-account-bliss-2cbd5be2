@@ -26,10 +26,13 @@ interface PublicTransactionsRequest {
   nameColumns?: string;
   amountColumn?: string;
   keywords?: string[];
+  searchKeyword?: string;
+  searchText?: string;
+  exportKeywords?: string[];
 }
 
-type RegistrationSource = { id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string; name_columns: string; amount_column: string };
-type ExportSource = { id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string };
+type RegistrationSource = { id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string; name_columns: string; amount_column: string; search_keyword: string };
+type ExportSource = { id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string; search_keyword: string };
 
 const transliteration: Record<string, string> = {
   а: 'a', б: 'b', в: 'v', г: 'h', ґ: 'g', д: 'd', е: 'e', ё: 'e', є: 'ie', ж: 'zh', з: 'z', и: 'y', і: 'i', ї: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'iu', я: 'ia',
@@ -549,7 +552,7 @@ Deno.serve(async (req) => {
       if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId) || !sheetRange || !nameColumns) {
         return new Response(JSON.stringify({ valid: true, success: false, error: 'Проверьте ссылку, диапазон листа и колонки с именем.' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-      const record = { owner_user_id: linkData.owner_user_id, spreadsheet_id: spreadsheetId, sheet_name: sheetName, sheet_range: sheetRange, name_columns: nameColumns, amount_column: '' };
+      const record = { owner_user_id: linkData.owner_user_id, spreadsheet_id: spreadsheetId, sheet_name: sheetName, sheet_range: sheetRange, name_columns: nameColumns, amount_column: '', search_keyword: String(body.searchKeyword || '').trim().slice(0, 120) };
       // Adding an already configured sheet updates its name columns instead of
       // failing on the unique source constraint. This makes correcting A:Z → C:C easy.
       const query = body.sourceId && /^[0-9a-f-]{36}$/i.test(body.sourceId)
@@ -570,7 +573,7 @@ Deno.serve(async (req) => {
       if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId) || !sheetRange) {
         return new Response(JSON.stringify({ valid: true, success: false, error: 'Проверьте ссылку, лист и диапазон.' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-      const record = { owner_user_id: linkData.owner_user_id, spreadsheet_id: spreadsheetId, sheet_name: sheetName, sheet_range: sheetRange };
+      const record = { owner_user_id: linkData.owner_user_id, spreadsheet_id: spreadsheetId, sheet_name: sheetName, sheet_range: sheetRange, search_keyword: String(body.searchKeyword || '').trim().slice(0, 120) };
       const query = body.sourceId && /^[0-9a-f-]{36}$/i.test(body.sourceId)
         ? supabase.from('public_export_sheet_targets').update(record).eq('id', body.sourceId).eq('owner_user_id', linkData.owner_user_id).select().single()
         : supabase.from('public_export_sheet_targets').upsert(record, { onConflict: 'owner_user_id,spreadsheet_id,sheet_name,sheet_range' }).select().single();
@@ -595,7 +598,7 @@ Deno.serve(async (req) => {
 
     if (body.action === 'reconcile-registration-sheets') {
       const [{ data: sources, error: sourceError }, { data: transactions, error: transactionError }, { data: keywordRules, error: keywordRulesError }] = await Promise.all([
-        supabase.from('registration_sheet_sources').select('id, spreadsheet_id, sheet_name, sheet_range, name_columns, amount_column').eq('owner_user_id', linkData.owner_user_id),
+        supabase.from('registration_sheet_sources').select('id, spreadsheet_id, sheet_name, sheet_range, name_columns, amount_column, search_keyword').eq('owner_user_id', linkData.owner_user_id),
         // A person's name may be written in the payment title of either an
         // incoming or an outgoing bank transaction, so compare both types.
         supabase.from('transactions').select('id, type, date, amount, currency, bank_sender, bank_recipient, bank_title, description, comment').eq('user_id', linkData.owner_user_id).order('date', { ascending: false }).limit(3000),
@@ -606,6 +609,12 @@ Deno.serve(async (req) => {
         ...getOtherRuleSearchTerms(keywordRules || []).income,
         ...getOtherRuleSearchTerms(keywordRules || []).expense,
       ].map(term => normalizePerson(term)).filter(Boolean));
+      const sourceId = String(body.sourceId || '');
+      const selectedSources = sourceId
+        ? (sources || []).filter(source => source.id === sourceId)
+        : (sources || []);
+      if (sourceId && selectedSources.length === 0) throw new Error('Таблица регистрации не найдена.');
+      const sourceKeyword = selectedSources.length === 1 ? normalizePerson(selectedSources[0].search_keyword || '') : '';
       const rawSearchText = normalizePerson(String(body.searchText || ''));
       const requestedKeywords = [
         // A phrase configured as one approved keyword must remain a phrase.
@@ -613,6 +622,7 @@ Deno.serve(async (req) => {
         // so retain the previous exact-match path for one-word keywords.
         ...[...approvedKeywords].filter(term => rawSearchText.includes(term)),
         ...parseTerms(body.keywords).map(term => normalizePerson(term)).filter(term => approvedKeywords.has(term)),
+        ...(sourceKeyword ? [sourceKeyword] : []),
       ].filter((term, index, terms) => terms.indexOf(term) === index);
       if (requestedKeywords.length === 0) {
         return new Response(
@@ -629,7 +639,7 @@ Deno.serve(async (req) => {
       let matched = 0;
       let matchedByPaymentText = 0;
       let matchedBySender = 0;
-      for (const source of (sources || []) as RegistrationSource[]) {
+      for (const source of selectedSources as RegistrationSource[]) {
         const read = await fetch(`${supabaseUrl}/functions/v1/google-sheets`, { method: 'POST', headers: { Authorization: `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'x-owner-user-id': linkData.owner_user_id }, body: JSON.stringify({ action: 'read', spreadsheetId: source.spreadsheet_id, range: sourceRange(source) }) });
         const result = await read.json().catch(() => ({}));
         if (!read.ok) throw new Error(result?.error || `Не удалось прочитать лист ${source.sheet_name}`);
@@ -1171,12 +1181,12 @@ Deno.serve(async (req) => {
         .maybeSingle(),
       supabase
         .from('registration_sheet_sources')
-        .select('id, spreadsheet_id, sheet_name, sheet_range, name_columns, amount_column')
+        .select('id, spreadsheet_id, sheet_name, sheet_range, name_columns, amount_column, search_keyword')
         .eq('owner_user_id', linkData.owner_user_id)
         .order('created_at'),
       supabase
         .from('public_export_sheet_targets')
-        .select('id, spreadsheet_id, sheet_name, sheet_range')
+        .select('id, spreadsheet_id, sheet_name, sheet_range, search_keyword')
         .eq('owner_user_id', linkData.owner_user_id)
         .order('created_at'),
     ]);
