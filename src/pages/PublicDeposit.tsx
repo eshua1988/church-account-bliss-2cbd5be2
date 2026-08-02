@@ -37,6 +37,7 @@ interface DepositEntry {
 }
 
 const OTHER_BASIS = '__other__';
+const SIGNER_HISTORY_STORAGE_KEY = 'church-account:deposit-signer-history:v1';
 const createSigner = (): DepositSigner => ({ id: crypto.randomUUID(), fullName: '' });
 const createEntry = (): DepositEntry => ({
   id: crypto.randomUUID(),
@@ -64,6 +65,16 @@ const PublicDeposit = () => {
   const signedSignerIds = useRef(new Set<string>());
   const [error, setError] = useState('');
   const [invalidFields, setInvalidFields] = useState<Set<string>>(new Set());
+  const [signerHistory, setSignerHistory] = useState<string[]>([]);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SIGNER_HISTORY_STORAGE_KEY) || '[]');
+      if (Array.isArray(saved)) setSignerHistory(saved.filter(item => typeof item === 'string').slice(0, 50));
+    } catch {
+      // A malformed or unavailable browser storage must not block the form.
+    }
+  }, []);
 
   useEffect(() => {
     const depositPath = `/deposit/${token}`;
@@ -116,6 +127,16 @@ const PublicDeposit = () => {
     setEntries(current => current.map(entry => entry.id === entryId
       ? { ...entry, signers: entry.signers.map(signer => signer.id === signerId ? { ...signer, fullName } : signer) }
       : entry));
+  };
+
+  const rememberSignerName = (value: string) => {
+    const fullName = value.trim().replace(/\s+/g, ' ');
+    if (fullName.length < 3) return;
+    setSignerHistory(current => {
+      const next = [fullName, ...current.filter(name => name.localeCompare(fullName, undefined, { sensitivity: 'accent' }) !== 0)].slice(0, 50);
+      try { localStorage.setItem(SIGNER_HISTORY_STORAGE_KEY, JSON.stringify(next)); } catch { /* storage is optional */ }
+      return next;
+    });
   };
 
   const addSigner = (entryId: string) => {
@@ -341,6 +362,9 @@ const PublicDeposit = () => {
 
   return (
     <main className="min-h-screen bg-background px-1.5 py-3 sm:p-8">
+      <datalist id="deposit-signer-history">
+        {signerHistory.map(name => <option key={name} value={name} />)}
+      </datalist>
       <Card className="mx-auto w-full max-w-2xl overflow-hidden">
         <CardHeader className="px-3 py-5 sm:px-6 sm:py-6">
           <CardTitle className="flex items-center gap-2"><ReceiptText className="h-6 w-6" />Dowód wpłaty</CardTitle>
@@ -497,6 +521,9 @@ const PublicDeposit = () => {
                         className={invalidFields.has(`from-${signer.id}`) ? 'border-destructive ring-1 ring-destructive' : ''}
                         value={signer.fullName}
                         onChange={event => updateSigner(entry.id, signer.id, event.target.value)}
+                        onBlur={event => rememberSignerName(event.target.value)}
+                        list="deposit-signer-history"
+                        autoComplete="name"
                         required
                       />
                     </div>
