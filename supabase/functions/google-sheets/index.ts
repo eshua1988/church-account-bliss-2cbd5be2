@@ -54,6 +54,7 @@ interface SheetRequest {
   transactionId?: string;
   notes?: NoteData[];
   transactionTypeColors?: boolean;
+  transactionTypes?: Array<'income' | 'expense'>;
   matches?: Array<{ row: number; nameColumn: number; note: string }>;
   clearMatchNotes?: { startRowIndex: number; endRowIndex: number; columnIndex: number };
 }
@@ -533,7 +534,7 @@ serve(async (req) => {
                   startRowIndex: 1,
                   endRowIndex: values.length,
                   startColumnIndex: rangeStartColumnIndex,
-                  endColumnIndex: rangeStartColumnIndex + Math.min(4, maxDataCols),
+                  endColumnIndex: rangeStartColumnIndex + maxDataCols,
                 },
                 cell: {
                   userEnteredFormat: {
@@ -553,9 +554,11 @@ serve(async (req) => {
           let currentRun: { type: 'income' | 'expense'; start: number; end: number } | null = null;
 
           for (let rowIndex = 1; rowIndex < values.length; rowIndex += 1) {
-            const type = String(values[rowIndex]?.[3] || '').trim().toLowerCase() === 'доход'
+            let type = String(values[rowIndex]?.[3] || '').trim().toLowerCase() === 'доход'
               ? 'income'
               : 'expense';
+            const explicitType = body.transactionTypes?.[rowIndex - 1];
+            if (explicitType === 'income' || explicitType === 'expense') type = explicitType;
             if (currentRun?.type === type && currentRun.end === rowIndex) {
               currentRun.end = rowIndex + 1;
             } else {
@@ -581,9 +584,8 @@ serve(async (req) => {
 
           for (const run of colorRuns) {
             const format = run.type === 'income' ? greenFormat : redFormat;
-            const columnRanges = run.type === 'income'
-              ? [[0, 1], [2, 4]]
-              : [[1, 4]];
+            // Colour every exported column, including description, purpose and comment.
+            const columnRanges = [[0, maxDataCols]];
 
             for (const [startColumnIndex, endColumnIndex] of columnRanges) {
               formatRequests.push({

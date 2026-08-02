@@ -1020,7 +1020,14 @@ Deno.serve(async (req) => {
             'Content-Type': 'application/json',
             'x-owner-user-id': linkData.owner_user_id,
           },
-          body: JSON.stringify({ action: 'write', spreadsheetId: exportTarget.spreadsheet_id, range: sourceRange(exportTarget as ExportSource), values }),
+          body: JSON.stringify({
+            action: 'write',
+            spreadsheetId: exportTarget.spreadsheet_id,
+            range: sourceRange(exportTarget as ExportSource),
+            values,
+            transactionTypeColors: true,
+            transactionTypes: (exportRows || []).map(row => row.type === 'income' ? 'income' : 'expense'),
+          }),
         });
         const transactionResponseText = await transactionSheetsResponse.text();
         let transactionSheetsResult: Record<string, any> = {};
