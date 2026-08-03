@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, Banknote, BellRing, Archive, FolderArchive, FileText, ChevronDown, Building2, Pencil, RotateCcw } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, Banknote, BellRing, Archive, FolderArchive, FileText, ChevronDown, Building2, Pencil } from 'lucide-react';
 import JSZip from 'jszip';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { useAuth } from '@/contexts/AuthContext';
@@ -545,7 +545,6 @@ export const NotificationsPage = () => {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [swipedId, setSwipedId] = useState<string | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<Notification | null>(null);
-  const [isRestoringPayouts, setIsRestoringPayouts] = useState(false);
   const [departmentTarget, setDepartmentTarget] = useState<Notification | null>(null);
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [depositPdfTarget, setDepositPdfTarget] = useState<Notification | null>(null);
@@ -1028,33 +1027,6 @@ export const NotificationsPage = () => {
     }
   };
 
-  const restorePayoutNotifications = async () => {
-    setIsRestoringPayouts(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('restore-payout-notifications', {
-        method: 'POST',
-      });
-      if (error) throw error;
-      await refetchNotifications();
-      const recovered = Number(data?.recovered || 0);
-      toast({
-        title: recovered > 0 ? 'Ордера восстановлены' : 'Новых документов не найдено',
-        description: recovered > 0
-          ? `Восстановлено ордеров без чеков: ${recovered}`
-          : 'В хранилище нет документов, которые можно восстановить.',
-      });
-      if (recovered > 0) setActiveTab('no_photos');
-    } catch (error) {
-      toast({
-        title: 'Ошибка восстановления',
-        description: error instanceof Error ? error.message : String(error),
-        variant: 'destructive',
-      });
-    } finally {
-      setIsRestoringPayouts(false);
-    }
-  };
-
   const upsertOtherRuleTerms = async (transactionType: 'income' | 'expense', terms: string[]) => {
     if (!user) throw new Error('User not authenticated');
     const departmentName = OTHER_DEPARTMENT_BY_TYPE[transactionType];
@@ -1341,15 +1313,6 @@ export const NotificationsPage = () => {
           <Button variant="outline" size="sm" className="hidden sm:inline-flex" onClick={enablePushNotifications}>
             <BellRing className="h-4 w-4 mr-2" />
             {pushActionLabel}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={restorePayoutNotifications}
-            disabled={isRestoringPayouts}
-          >
-            {isRestoringPayouts ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RotateCcw className="h-4 w-4 mr-2" />}
-            Восстановить без чеков
           </Button>
           {unreadCount > 0 && (
             <Button variant="outline" size="sm" onClick={markAllAsRead}>
