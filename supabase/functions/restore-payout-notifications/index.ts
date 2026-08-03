@@ -66,10 +66,7 @@ Deno.serve(async (req) => {
       const { data: files, error: filesError } = await supabase.storage.from('documents').list(`${user.id}/${folderKey}`, { limit: 100 });
       if (filesError) throw filesError;
 
-      // Only restore Dowód wypłaty (expense payout) files. Dowód wpłaty
-      // deposit receipts use the separate `dowod_wplaty_` filename and must
-      // never appear in this work queue.
-      const pdf = (files || []).find(file => /^dowod_wyplaty_.*\.pdf$/i.test(file.name));
+      const pdf = (files || []).find(file => /\.pdf$/i.test(file.name));
       const hasImages = (files || []).some(file => imagePattern.test(file.name));
       if (!pdf || hasImages) continue;
 
