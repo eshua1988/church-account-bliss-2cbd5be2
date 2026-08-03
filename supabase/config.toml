@@ -24,11 +24,6 @@ verify_jwt = false
 [functions.add-images-to-payout]
 verify_jwt = false
 
-[functions.restore-payout-notifications]
-# CORS preflight requests do not carry a JWT. The function validates the
-# caller's bearer token itself before reading or restoring any documents.
-verify_jwt = false
-
 [functions.telegram-bot]
 verify_jwt = false
 
