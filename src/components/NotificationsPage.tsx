@@ -1222,11 +1222,10 @@ export const NotificationsPage = () => {
   const payoutNotifications = notifications.filter(
     n => !isDepositNotification(n) && !isRuleRequestNotification(n)
   );
-  // `images_skipped` was saved as false by older payout forms even when a
-  // photo was never attached. That makes it unsafe as a historical filter:
-  // keep every active payout visible in the "Без вложений" work queue rather
-  // than hiding important legacy orders.
-  const withoutPhotos = payoutNotifications.filter(n => !n.metadata?.archived_at);
+  // Missing images_skipped is the legacy format for a payout made without
+  // attachments. Only an explicit false value means that attachments exist.
+  const withoutPhotos = payoutNotifications.filter(n => n.metadata?.images_skipped !== false);
+  const withPhotos = payoutNotifications.filter(n => n.metadata?.images_skipped === false);
   const pushEnabled = pushPermission === 'granted' && hasPushSubscription;
   const pushActionLabel = pushEnabled ? 'Проверить push' : 'Включить push';
   const displayed =

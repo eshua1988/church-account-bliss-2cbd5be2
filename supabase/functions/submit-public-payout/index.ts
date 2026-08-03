@@ -642,9 +642,20 @@ Deno.serve(async (req) => {
     // Generate a unique folder key (no transaction created automatically)
     const folderKey = crypto.randomUUID();
 
-    // Keep every submitted payout notification. The old 25-item cap deleted
-    // the oldest active records and could permanently remove documents that
-    // still needed review.
+    // Enforce max 25 notifications per user
+    const { data: existingNotifs } = await supabase
+      .from('notifications').select('id, metadata')
+      .eq('user_id', linkData.owner_user_id)
+      .neq('type', 'push_subscription')
+      .order('created_at', { ascending: true });
+
+    const activeNotifs = (existingNotifs || []).filter((notification: any) => !notification.metadata?.archived_at);
+    if (activeNotifs.length >= 25) {
+      const toDeleteIds = activeNotifs.slice(0, activeNotifs.length - 24).map((n: any) => n.id);
+      if (toDeleteIds.length > 0) {
+        await supabase.from('notifications').delete().in('id', toDeleteIds);
+      }
+    }
 
     // Validate tempImgPaths
     const tempImgPaths = Array.isArray(body.tempImgPaths)
