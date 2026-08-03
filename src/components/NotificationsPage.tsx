@@ -157,7 +157,9 @@ const NotificationCard = ({
   const departmentName = (notification.metadata?.department_name as string | undefined) || resolvedDepartment;
   const amount = notification.metadata?.amount as number | undefined;
   const currency = notification.metadata?.currency as string | undefined;
-  const imagesSkipped = notification.metadata?.images_skipped as boolean | undefined;
+  // Older payout notifications predate the images_skipped flag. They were
+  // created without photo attachments, so treat a missing flag as skipped.
+  const imagesSkipped = notification.metadata?.images_skipped !== false;
   const baseUrl = window.location.origin + import.meta.env.BASE_URL.replace(/\/$/, '');
   const payoutUrl = payoutToken
     ? `${baseUrl}/payout/${payoutToken}?name=${encodeURIComponent(issuedTo || '')}`
@@ -1220,8 +1222,10 @@ export const NotificationsPage = () => {
   const payoutNotifications = notifications.filter(
     n => !isDepositNotification(n) && !isRuleRequestNotification(n)
   );
-  const withoutPhotos = payoutNotifications.filter(n => n.metadata?.images_skipped);
-  const withPhotos = payoutNotifications.filter(n => !n.metadata?.images_skipped);
+  // Missing images_skipped is the legacy format for a payout made without
+  // attachments. Only an explicit false value means that attachments exist.
+  const withoutPhotos = payoutNotifications.filter(n => n.metadata?.images_skipped !== false);
+  const withPhotos = payoutNotifications.filter(n => n.metadata?.images_skipped === false);
   const pushEnabled = pushPermission === 'granted' && hasPushSubscription;
   const pushActionLabel = pushEnabled ? 'Проверить push' : 'Включить push';
   const displayed =
@@ -1230,7 +1234,7 @@ export const NotificationsPage = () => {
       : activeTab === 'extension'
       ? ruleRequests
       : activeTab === 'all'
-        ? withPhotos
+        ? payoutNotifications
         : withoutPhotos;
   const incomeUnread = incomeNotifications.filter(n => !n.is_read).length;
   const noPhotosUnread = withoutPhotos.filter(n => !n.is_read).length;
@@ -1341,9 +1345,9 @@ export const NotificationsPage = () => {
           )}
         >
           Все
-          {withPhotos.length > 0 && (
+          {payoutNotifications.length > 0 && (
             <span className="ml-2 text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5">
-              {withPhotos.length}
+              {payoutNotifications.length}
             </span>
           )}
         </button>
