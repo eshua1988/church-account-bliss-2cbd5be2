@@ -482,7 +482,7 @@ const NotificationCard = ({
               </p>
               {isRuleRequest ? (
                 <p className="text-sm text-muted-foreground mt-0.5 truncate leading-snug">
-                  {requestedTerms || notification.message}
+                  {[String(notification.metadata?.requester_name || '').trim(), requestedTerms].filter(Boolean).join(' — ') || notification.message}
                 </p>
               ) : departmentName && (
                 <p className="text-sm text-muted-foreground mt-0.5 truncate leading-snug">

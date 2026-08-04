@@ -18,7 +18,6 @@ import { Toaster } from '@/components/ui/toaster';
 import { useToast } from '@/hooks/use-toast';
 import { CURRENCY_SYMBOLS, Transaction } from '@/types/transaction';
 import DateRangeFilter from '@/components/DateRangeFilter';
-import { CloudSyncIcon } from '@/components/icons/CloudSyncIcon';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 interface Category {
@@ -130,6 +129,9 @@ const PublicTransactions = () => {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [isBankSyncing, setIsBankSyncing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showSettingsAccess, setShowSettingsAccess] = useState(false);
+  const [settingsPersonName, setSettingsPersonName] = useState('');
+  const [settingsPersonNameDraft, setSettingsPersonNameDraft] = useState('');
   const [exportingSourceId, setExportingSourceId] = useState<string | null>(null);
   const [spreadsheetId, setSpreadsheetId] = useState('');
   const [sheetName, setSheetName] = useState('');
@@ -159,6 +161,13 @@ const PublicTransactions = () => {
   const [loadingMore, setLoadingMore] = useState(false);
   
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!token) return;
+    const savedName = localStorage.getItem(`public-transactions-settings-name:${token}`) || '';
+    setSettingsPersonName(savedName);
+    setSettingsPersonNameDraft(savedName);
+  }, [token]);
 
   const loadData = useCallback(async (showLoader = true, append = false) => {
       if (showLoader) setLoading(true);
@@ -269,9 +278,11 @@ const PublicTransactions = () => {
         }
         setAllTransactions(transactionsData || []);
         */
+        return data.transactions || [];
       } catch (err) {
         console.error('Error loading data:', err);
         setError('Ошибка при загрузке данных');
+        return null;
       } finally {
         setLoading(false);
         setLoadingMore(false);
@@ -282,7 +293,7 @@ const PublicTransactions = () => {
     void loadData();
   }, [loadData]);
 
-  const handleBankSync = async () => {
+  const handleBankSync = async (keyword = '') => {
     setIsBankSyncing(true);
     try {
       if (!token) throw new Error('Неправильная ссылка');
@@ -294,7 +305,15 @@ const PublicTransactions = () => {
       if (syncError) throw syncError;
       if (!result?.success) throw new Error(result?.error || 'Не удалось синхронизировать банк');
 
-      await loadData(false);
+      const refreshedTransactions = await loadData(false);
+      if (keyword.trim() && refreshedTransactions) {
+        const matchedCount = refreshedTransactions.filter(transaction => matchesKeywordSearch(transaction, keyword)).length;
+        toast({
+          title: 'Поиск обновлён',
+          description: `По ключевому слову «${keyword.trim()}» найдено транзакций: ${matchedCount}`,
+        });
+        return;
+      }
       toast({
         title: 'Синхронизация завершена',
         description: (result.imported || 0) > 0
@@ -365,6 +384,30 @@ const PublicTransactions = () => {
     return words;
   };
 
+  const matchesKeywordSearch = (transaction: Transaction, query: string) => {
+    const searchWords = getSearchWords(query);
+    if (searchWords.length === 0) return false;
+
+    // Match against data truly stored in the transaction. A saved rule alone
+    // must not make unrelated transactions appear in a keyword search.
+    const searchableText = [
+      transaction.description || '',
+      transaction.bankTitle || '',
+      transaction.bankSender || '',
+      transaction.bankRecipient || '',
+      transaction.issuedTo || '',
+      transaction.cashierName || '',
+      transaction.comment || '',
+      getTransactionDepartmentName(transaction),
+    ].join(' ');
+    const normalizedText = normalizeSearchText(searchableText);
+    const compactText = compactSearchText(searchableText);
+
+    return searchWords.every(word =>
+      normalizedText.includes(word) || compactText.includes(compactSearchText(word)),
+    );
+  };
+
   const appendPendingRuleTerms = (terms: string[], types: Array<'income' | 'expense'>) => {
     setPendingRuleSearchTerms(prev => {
       const next = {
@@ -406,6 +449,7 @@ const PublicTransactions = () => {
             token,
             terms,
             transactionTypes: types,
+            requesterName: settingsPersonName,
           },
         },
       );
@@ -464,6 +508,7 @@ const PublicTransactions = () => {
 
     // Apply text search - exact word match in description, bankTitle, and names
     if (searchText.trim()) {
+      if (!matchesKeywordSearch(t, searchText)) return false;
       const searchWords = getSearchWords(searchText); // Minimum 2 characters
 
       if (searchWords.length === 0) return false; // No valid search words
@@ -555,8 +600,26 @@ const PublicTransactions = () => {
   };
 
   const handleSearch = async () => {
-    setSearchText(searchDraft);
-    await handleBankSync();
+    const keyword = searchDraft.trim();
+    setSearchText(keyword);
+    await handleBankSync(keyword);
+  };
+
+  const requestSettingsAccess = () => {
+    setSettingsPersonNameDraft(settingsPersonName);
+    setShowSettingsAccess(true);
+  };
+
+  const confirmSettingsAccess = () => {
+    const name = settingsPersonNameDraft.trim().replace(/\s+/g, ' ');
+    if (name.split(' ').filter(Boolean).length < 2) {
+      toast({ title: 'Введите имя и фамилию', variant: 'destructive' });
+      return;
+    }
+    setSettingsPersonName(name);
+    if (token) localStorage.setItem(`public-transactions-settings-name:${token}`, name);
+    setShowSettingsAccess(false);
+    setShowSettings(true);
   };
 
   const rowsForSourceKeyword = (keyword: string) => {
@@ -824,24 +887,7 @@ const PublicTransactions = () => {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={handleBankSync}
-                  disabled={isBankSyncing}
-                  className="h-11 gap-1.5 whitespace-nowrap px-3 sm:px-4"
-                  aria-label="Обновить транзакции"
-                  title="Обновить транзакции"
-                >
-                  <CloudSyncIcon className={cn("h-5 w-5", isBankSyncing && "animate-pulse")} />
-                  <span className="hidden sm:inline">
-                    {isBankSyncing ? 'Обновление...' : 'Обновить транзакции'}
-                  </span>
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setShowSettings(true);
-                  }}
+                  onClick={requestSettingsAccess}
                   className="h-11 gap-2 whitespace-nowrap px-3 sm:px-4"
                   aria-label="Настройки"
                   title="Настройки"
@@ -1177,6 +1223,29 @@ const PublicTransactions = () => {
           )}
         </div>
       </div>
+      <Dialog open={showSettingsAccess} onOpenChange={setShowSettingsAccess}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Доступ к настройкам</DialogTitle>
+            <DialogDescription>Введите имя и фамилию. Настройки в этом браузере будут сохранены для указанного человека.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              value={settingsPersonNameDraft}
+              onChange={event => setSettingsPersonNameDraft(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  confirmSettingsAccess();
+                }
+              }}
+              placeholder="Имя и фамилия"
+              autoFocus
+            />
+            <Button type="button" className="w-full" onClick={confirmSettingsAccess}>Открыть настройки</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={showSettings} onOpenChange={setShowSettings}>
         <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
@@ -1187,6 +1256,7 @@ const PublicTransactions = () => {
           </DialogHeader>
 
           <div className="space-y-5">
+            <p className="text-sm text-muted-foreground">Настройки пользователя: <span className="font-medium text-foreground">{settingsPersonName}</span></p>
             <div className="rounded-lg border p-3 space-y-2">
               <label htmlFor="public-keyword" className="text-sm font-medium">Ключевое слово поиска</label>
               <div className="flex gap-2">

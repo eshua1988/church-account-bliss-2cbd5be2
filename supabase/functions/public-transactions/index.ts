@@ -29,6 +29,7 @@ interface PublicTransactionsRequest {
   searchKeyword?: string;
   searchText?: string;
   exportKeywords?: string[];
+  requesterName?: string;
 }
 
 type RegistrationSource = { id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string; name_columns: string; amount_column: string; search_keyword: string };
@@ -845,6 +846,7 @@ Deno.serve(async (req) => {
 
     if (body.action === 'add-rule-terms') {
       const terms = parseTerms(body.terms);
+      const requesterName = String(body.requesterName || '').trim().replace(/\s+/g, ' ').slice(0, 160);
       const requestedTypes = Array.isArray(body.transactionTypes)
         ? body.transactionTypes.filter((type) => type === 'income' || type === 'expense')
         : [];
@@ -884,7 +886,7 @@ Deno.serve(async (req) => {
         .insert({
           user_id: linkData.owner_user_id,
           title: 'Новые слова для поиска',
-          message: `Пользователь публичной ссылки предложил: ${termsForConfirmation.join(', ')}`,
+          message: `${requesterName || 'Пользователь публичной ссылки'} предложил(а) ключевое слово: ${termsForConfirmation.join(', ')}`,
           type: 'rule_request',
           is_read: false,
           metadata: {
@@ -894,6 +896,7 @@ Deno.serve(async (req) => {
             departments: transactionTypes.map((type) => OTHER_DEPARTMENT_BY_TYPE[type]),
             source: 'public_transactions',
             token: linkData.token,
+            requester_name: requesterName || null,
           },
         })
         .select('id')
@@ -920,6 +923,7 @@ Deno.serve(async (req) => {
                 departments: transactionTypes.map((type) => OTHER_DEPARTMENT_BY_TYPE[type]),
                 source: 'public_transactions',
                 token: linkData.token,
+                requester_name: requesterName || null,
                 push_last_result: pushResult,
                 push_last_checked_at: new Date().toISOString(),
               },
