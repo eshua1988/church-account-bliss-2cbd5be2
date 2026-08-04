@@ -1315,6 +1315,22 @@ export const NotificationsPage = () => {
       : activeTab === 'all'
         ? withPhotos
         : withoutPhotos;
+  const selectableNotifications = activeTab === 'extension' ? ruleRequests : displayed;
+  const selectedInCurrentTab = selectableNotifications.filter(notification => selectedNotificationIds.has(notification.id));
+  const areAllCurrentTabNotificationsSelected = selectableNotifications.length > 0
+    && selectedInCurrentTab.length === selectableNotifications.length;
+
+  const toggleSelectAllCurrentTab = () => {
+    setSelectedNotificationIds(previous => {
+      const next = new Set(previous);
+      if (areAllCurrentTabNotificationsSelected) {
+        selectableNotifications.forEach(notification => next.delete(notification.id));
+      } else {
+        selectableNotifications.forEach(notification => next.add(notification.id));
+      }
+      return next;
+    });
+  };
   const visibleExtensionIds = new Set(
     extensionNotifications.slice(0, visibleNotificationsLimit).map(notification => notification.id),
   );
@@ -1402,6 +1418,12 @@ export const NotificationsPage = () => {
             <BellRing className="h-4 w-4 mr-2" />
             {pushActionLabel}
           </Button>
+          {selectableNotifications.length > 0 && (
+            <Button variant="outline" size="sm" onClick={toggleSelectAllCurrentTab}>
+              <CheckCheck className="h-4 w-4 mr-2" />
+              {areAllCurrentTabNotificationsSelected ? 'Снять выбор' : 'Выбрать все'}
+            </Button>
+          )}
           {selectedNotifications.length > 0 && (
             <>
               <span className="w-full text-sm text-muted-foreground sm:w-auto">
