@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, Banknote, BellRing, Archive, FolderArchive, FileText, ChevronDown, Building2, Pencil } from 'lucide-react';
+import { Mail, Check, CheckCheck, Trash2, X, Download, Loader2, ImageOff, ImagePlus, PlusCircle, Banknote, BellRing, Archive, FolderArchive, FileText, ChevronDown, Building2, Pencil, Copy, Share2 } from 'lucide-react';
 import JSZip from 'jszip';
 import { useNotifications, Notification } from '@/hooks/useNotifications';
 import { useAuth } from '@/contexts/AuthContext';
@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   getNotificationArchiveMonth,
   getNotificationArchiveYear,
@@ -73,6 +74,8 @@ const NotificationCard = ({
   savingId,
   swipedId,
   onSwipe,
+  selected,
+  onSelectedChange,
 }: {
   notification: Notification;
   onMarkAsRead: (id: string) => void;
@@ -88,6 +91,8 @@ const NotificationCard = ({
   savingId?: string | null;
   swipedId?: string | null;
   onSwipe?: (id: string | null) => void;
+  selected?: boolean;
+  onSelectedChange?: (id: string, selected: boolean) => void;
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [swipeOffset, setSwipeOffset] = useState(0);
@@ -449,7 +454,9 @@ const NotificationCard = ({
       <div
         className={cn(
           'p-4 rounded-xl border transition-colors duration-200 hover:shadow-md bg-card',
-          !notification.is_read ? 'border-primary/40 border-l-4 border-l-primary' : 'border-border'
+          selected
+            ? 'border-primary ring-2 ring-primary/30'
+            : !notification.is_read ? 'border-primary/40 border-l-4 border-l-primary' : 'border-border'
         )}
         style={{
           transform: `translateX(-${swipeOffset}px)`,
@@ -459,6 +466,13 @@ const NotificationCard = ({
         {/* Top row: name + unread dot | amount+currency + delete */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-start gap-2 min-w-0">
+            <Checkbox
+              checked={selected}
+              onCheckedChange={(checked) => onSelectedChange?.(notification.id, checked === true)}
+              onClick={(event) => event.stopPropagation()}
+              aria-label="Выбрать уведомление"
+              className="mt-0.5 shrink-0"
+            />
             {!notification.is_read && (
               <div className="w-2.5 h-2.5 rounded-full bg-primary flex-shrink-0 mt-1.5" />
             )}
@@ -525,9 +539,7 @@ export const NotificationsPage = () => {
     unreadCount,
     isLoading,
     markAsRead,
-    markAllAsRead,
     deleteNotification,
-    clearAllNotifications,
     refetch: refetchNotifications,
     pushPermission,
     hasPushSubscription,
@@ -556,6 +568,71 @@ export const NotificationsPage = () => {
   const drawingCashierSignature = useRef(false);
   const [downloadingArchive, setDownloadingArchive] = useState<string | null>(null);
   const [expandedArchiveGroups, setExpandedArchiveGroups] = useState<Set<string>>(new Set());
+  const [selectedNotificationIds, setSelectedNotificationIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  const selectedNotifications = notifications.filter(notification => selectedNotificationIds.has(notification.id));
+
+  const toggleNotificationSelection = (id: string, selected: boolean) => {
+    setSelectedNotificationIds(previous => {
+      const next = new Set(previous);
+      if (selected) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedNotificationIds(new Set());
+
+  const selectedNotificationText = () => selectedNotifications
+    .map(notification => {
+      const metadata = notification.metadata || {};
+      const name = String(metadata.issued_to || notification.title || 'Уведомление');
+      const amount = metadata.amount != null ? ` — ${metadata.amount} ${metadata.currency || ''}`.trimEnd() : '';
+      const createdAt = format(new Date(notification.created_at), 'dd.MM.yyyy HH:mm');
+      return `${name}${amount} (${createdAt})`;
+    })
+    .join('\n');
+
+  const handleBulkMarkAsRead = async () => {
+    await Promise.all(selectedNotifications.filter(notification => !notification.is_read).map(notification => markAsRead(notification.id)));
+    clearSelection();
+  };
+
+  const handleCopySelected = async () => {
+    try {
+      await navigator.clipboard.writeText(selectedNotificationText());
+      toast({ title: 'Скопировано', description: `Уведомлений: ${selectedNotifications.length}` });
+    } catch {
+      toast({ title: 'Не удалось скопировать', variant: 'destructive' });
+    }
+  };
+
+  const handleShareSelected = async () => {
+    try {
+      const text = selectedNotificationText();
+      if (navigator.share) {
+        await navigator.share({ title: 'Уведомления', text });
+      } else {
+        await navigator.clipboard.writeText(text);
+        toast({ title: 'Скопировано', description: 'Передайте текст удобным способом.' });
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      toast({ title: 'Не удалось передать', variant: 'destructive' });
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    setIsBulkDeleting(true);
+    try {
+      await Promise.all(selectedNotifications.map(notification => deleteNotification(notification.id)));
+      toast({ title: 'Уведомления удалены', description: `Удалено: ${selectedNotifications.length}` });
+      clearSelection();
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
 
   const depositReceipts = depositPdfTarget && Array.isArray(depositPdfTarget.metadata?.receipts)
     ? depositPdfTarget.metadata.receipts as Array<Record<string, unknown>>
@@ -1325,22 +1402,38 @@ export const NotificationsPage = () => {
             <BellRing className="h-4 w-4 mr-2" />
             {pushActionLabel}
           </Button>
-          {unreadCount > 0 && (
-            <Button variant="outline" size="sm" onClick={markAllAsRead}>
-              <CheckCheck className="h-4 w-4 mr-2" />
-              Прочитать все
-            </Button>
-          )}
-          {notifications.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-destructive hover:text-destructive"
-              onClick={clearAllNotifications}
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Очистить
-            </Button>
+          {selectedNotifications.length > 0 && (
+            <>
+              <span className="w-full text-sm text-muted-foreground sm:w-auto">
+                Выбрано: {selectedNotifications.length}
+              </span>
+              <Button variant="outline" size="sm" onClick={handleBulkMarkAsRead}>
+                <CheckCheck className="h-4 w-4 mr-2" />
+                Прочитано
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleCopySelected}>
+                <Copy className="h-4 w-4 mr-2" />
+                Копировать
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleShareSelected}>
+                <Share2 className="h-4 w-4 mr-2" />
+                Передать
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={handleBulkDelete}
+                disabled={isBulkDeleting}
+              >
+                {isBulkDeleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                Удалить
+              </Button>
+              <Button variant="ghost" size="sm" onClick={clearSelection}>
+                <X className="h-4 w-4 mr-2" />
+                Снять выбор
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -1591,6 +1684,8 @@ export const NotificationsPage = () => {
               savingId={savingId}
               swipedId={swipedId}
               onSwipe={setSwipedId}
+              selected={selectedNotificationIds.has(notification.id)}
+              onSelectedChange={toggleNotificationSelection}
             />
           ))}
           {currentTabCount > NOTIFICATIONS_PAGE_SIZE && (
