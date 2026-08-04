@@ -539,6 +539,7 @@ export const NotificationsPage = () => {
     unreadCount,
     isLoading,
     markAsRead,
+    markAsUnread,
     deleteNotification,
     refetch: refetchNotifications,
     pushPermission,
@@ -596,6 +597,11 @@ export const NotificationsPage = () => {
 
   const handleBulkMarkAsRead = async () => {
     await Promise.all(selectedNotifications.filter(notification => !notification.is_read).map(notification => markAsRead(notification.id)));
+    clearSelection();
+  };
+
+  const handleBulkMarkAsUnread = async () => {
+    await Promise.all(selectedNotifications.filter(notification => notification.is_read).map(notification => markAsUnread(notification.id)));
     clearSelection();
   };
 
@@ -1432,6 +1438,10 @@ export const NotificationsPage = () => {
               <Button variant="outline" size="sm" onClick={handleBulkMarkAsRead}>
                 <CheckCheck className="h-4 w-4 mr-2" />
                 Прочитано
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleBulkMarkAsUnread}>
+                <Mail className="h-4 w-4 mr-2" />
+                Не прочитано
               </Button>
               <Button variant="outline" size="sm" onClick={handleCopySelected}>
                 <Copy className="h-4 w-4 mr-2" />

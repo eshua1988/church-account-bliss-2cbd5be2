@@ -348,6 +348,29 @@ export const useNotifications = () => {
     }
   }, []);
 
+  const markAsUnread = useCallback(async (notificationId: string) => {
+    try {
+      const notification = notifications.find(item => item.id === notificationId);
+      if (!notification || !notification.is_read) return;
+
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: false })
+        .eq('id', notificationId);
+
+      if (error) throw error;
+
+      setNotifications(prev =>
+        prev.map(item => (item.id === notificationId ? { ...item, is_read: false } : item))
+      );
+      if (!notification.metadata?.archived_at) {
+        setUnreadCount(prev => prev + 1);
+      }
+    } catch (error) {
+      console.error('Error marking notification as unread:', error);
+    }
+  }, [notifications]);
+
   const markAllAsRead = useCallback(async () => {
     if (!user) return;
 
@@ -515,6 +538,7 @@ export const useNotifications = () => {
     unreadCount,
     isLoading,
     markAsRead,
+    markAsUnread,
     markAllAsRead,
     deleteNotification,
     clearAllNotifications,
