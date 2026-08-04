@@ -58,26 +58,6 @@ interface PublicTransactionsResponse {
   registrationSources?: Array<{ id: string; spreadsheet_id: string; sheet_name: string; sheet_range: string; name_columns: string; amount_column: string; search_keyword: string }>;
 }
 
-const DocumentKeywordIcon = ({ className }: { className?: string }) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className={className}
-    aria-hidden="true"
-  >
-    <path d="M4 3h10a2 2 0 0 1 2 2v5" />
-    <path d="M4 3v16h6" />
-    <path d="M7 7h6M7 10h5M7 13h3" />
-    <circle cx="15" cy="15" r="5" />
-    <path d="m18.7 18.7 3 3" />
-    <path d="M13.2 16.6 15 12.8l1.8 3.8M13.8 15.4h2.4M18.2 13.5h2M19.2 12.5v2" />
-  </svg>
-);
-
 // Google Sheets column ranges accept C, c, C:C and c:c. Store one canonical
 // form and prevent accidentally typing Cyrillic letters, digits or spaces.
 const sanitizeColumnRange = (value: string) => value.replace(/[^a-zA-Z:]/g, '').toUpperCase();
@@ -142,6 +122,7 @@ const PublicTransactions = () => {
   
   // Filter states
   const [searchText, setSearchText] = useState('');
+  const [searchDraft, setSearchDraft] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [currencyFilter, setCurrencyFilter] = useState<string>('all');
   const [customDateRange, setCustomDateRange] = useState<{ from?: Date; to?: Date }>({});
@@ -384,19 +365,6 @@ const PublicTransactions = () => {
     return words;
   };
 
-  const getUnavailableRuleWords = (type: 'income' | 'expense') => {
-    const words = getAllowedRuleWords(type);
-
-    for (const term of pendingRuleSearchTerms[type]) {
-      const normalizedTerm = normalizeSearchText(term);
-      getSearchWords(term).forEach(word => words.add(word));
-      const compactTerm = compactSearchText(normalizedTerm);
-      if (compactTerm.length >= 2) words.add(compactTerm);
-    }
-
-    return words;
-  };
-
   const appendPendingRuleTerms = (terms: string[], types: Array<'income' | 'expense'>) => {
     setPendingRuleSearchTerms(prev => {
       const next = {
@@ -571,15 +539,6 @@ const PublicTransactions = () => {
 
   // Show transactions ONLY when search text is entered (filters apply only with search)
   const hasActiveFilters = searchText.trim() !== '';
-  const allRuleTypes: Array<'income' | 'expense'> = ['income', 'expense'];
-  const searchWordsForRules = getSearchWords(searchText);
-  const hasConfirmedKeyword = searchWordsForRules.length > 0
-    && allRuleTypes.some(type => getAllowedRuleWords(type).has(searchWordsForRules[0]));
-  const canAddSearchTerms =
-    searchWordsForRules.length > 0 &&
-    searchWordsForRules.some(word =>
-      allRuleTypes.every(type => !getUnavailableRuleWords(type).has(word))
-    );
   const hasSearchOrFilters =
     searchText.trim() !== '' ||
     typeFilter !== 'all' ||
@@ -588,10 +547,16 @@ const PublicTransactions = () => {
 
   const resetAllFilters = () => {
     setSearchText('');
+    setSearchDraft('');
     setTypeFilter('all');
     setCurrencyFilter('all');
     setCustomDateRange({});
     setShowAdvancedFilters(false);
+  };
+
+  const handleSearch = async () => {
+    setSearchText(searchDraft);
+    await handleBankSync();
   };
 
   const rowsForSourceKeyword = (keyword: string) => {
@@ -862,26 +827,13 @@ const PublicTransactions = () => {
                   onClick={handleBankSync}
                   disabled={isBankSyncing}
                   className="h-11 gap-1.5 whitespace-nowrap px-3 sm:px-4"
-                  aria-label="Поиск новых транзакций"
-                  title="Поиск новых транзакций"
+                  aria-label="Обновить транзакции"
+                  title="Обновить транзакции"
                 >
                   <CloudSyncIcon className={cn("h-5 w-5", isBankSyncing && "animate-pulse")} />
                   <span className="hidden sm:inline">
-                    {isBankSyncing ? 'Поиск...' : 'Поиск новых транзакций'}
+                    {isBankSyncing ? 'Обновление...' : 'Обновить транзакции'}
                   </span>
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={addSearchTermsToRules}
-                  disabled={!canAddSearchTerms || addingRuleTerms}
-                  className="h-11 gap-2 whitespace-nowrap px-3 sm:px-4"
-                  aria-label="Добавить слово для поиска"
-                  title="Добавить слово для поиска"
-                >
-                  <DocumentKeywordIcon className={cn("h-5 w-5", addingRuleTerms && "animate-pulse")} />
-                  <span className="hidden sm:inline">Добавить слово для поиска</span>
                 </Button>
 
                 <Button
@@ -903,13 +855,19 @@ const PublicTransactions = () => {
 
           {/* Search and filters */}
           <div className="mb-6 space-y-3">
-            <div className="relative">
-              <div className="relative">
+            <div className="flex gap-2">
+              <div className="relative min-w-0 flex-1">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   placeholder="Поиск транзакции по ключевому слову."
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
+                  value={searchDraft}
+                  onChange={(e) => setSearchDraft(e.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      void handleSearch();
+                    }
+                  }}
                   className={cn("h-12 pl-10 text-base", hasSearchOrFilters ? "pr-24" : "pr-12")}
                 />
                 <Button
@@ -940,6 +898,16 @@ const PublicTransactions = () => {
                   </Button>
                 )}
               </div>
+              <Button
+                type="button"
+                className="h-12 gap-2 px-4"
+                onClick={() => void handleSearch()}
+                disabled={isBankSyncing || !searchDraft.trim()}
+                aria-label="Поиск"
+              >
+                {isBankSyncing ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}
+                <span className="hidden sm:inline">Поиск</span>
+              </Button>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
