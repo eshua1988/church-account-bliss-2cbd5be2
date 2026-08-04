@@ -702,6 +702,14 @@ const PublicTransactions = () => {
     setSelectedExportSourceId(source.id);
   };
 
+  const cancelExportSourceEdit = () => {
+    setEditingExportSourceId(null);
+    setSpreadsheetId('');
+    setSheetName('');
+    setSheetRange('A:Z');
+    setExportSearchKeyword('');
+  };
+
   const deleteExportSource = async (sourceId: string) => {
     if (!token) return;
     try {
@@ -1271,26 +1279,28 @@ const PublicTransactions = () => {
                   />
                   <p className="text-xs text-muted-foreground">Вставьте ссылку на Google Таблицу или только её ID.</p>
                 </div>
-                <div className="space-y-2">
-                  <label htmlFor="public-sheet-name" className="text-sm font-medium">Название листа</label>
-                  {isLoadingSheetNames ? (
-                    <div className="flex h-10 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Загрузка листов…</div>
-                  ) : (
-                    <select id="public-sheet-name" value={sheetName} onChange={event => setSheetName(event.target.value)} disabled={availableSheetNames.length === 0} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60">
-                      <option value="">Выберите лист</option>
-                      {availableSheetNames.map(name => <option key={name} value={name}>{name}</option>)}
-                    </select>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor="public-sheet-range" className="text-sm font-medium">Диапазон листа</label>
-                  <Input
-                    id="public-sheet-range"
-                    value={sheetRange}
-                    onChange={event => setSheetRange(sanitizeColumnRange(event.target.value))}
-                    pattern="[A-Za-z:]*"
-                    placeholder="A:Z или B"
-                  />
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-2">
+                    <label htmlFor="public-sheet-name" className="text-sm font-medium">Название листа</label>
+                    {isLoadingSheetNames ? (
+                      <div className="flex h-10 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Загрузка…</div>
+                    ) : (
+                      <select id="public-sheet-name" value={sheetName} onChange={event => setSheetName(event.target.value)} disabled={availableSheetNames.length === 0} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60">
+                        <option value="">Выберите лист</option>
+                        {availableSheetNames.map(name => <option key={name} value={name}>{name}</option>)}
+                      </select>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="public-sheet-range" className="text-sm font-medium">Диапазон листа</label>
+                    <Input
+                      id="public-sheet-range"
+                      value={sheetRange}
+                      onChange={event => setSheetRange(sanitizeColumnRange(event.target.value))}
+                      pattern="[A-Za-z:]*"
+                      placeholder="A:Z или B"
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <label htmlFor="public-sheet-keyword" className="text-sm font-medium">Ключевое слово этой таблицы</label>
@@ -1306,6 +1316,7 @@ const PublicTransactions = () => {
                   {isSavingSheetsSettings && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   {editingExportSourceId ? 'Сохранить изменения' : 'Добавить Google Таблицу'}
                 </Button>
+                {editingExportSourceId && <Button type="button" variant="ghost" className="w-full" onClick={cancelExportSourceEdit}>Отменить редактирование</Button>}
                 {exportSources.map(source => (
                   <div key={source.id} className="space-y-2 rounded border p-3 text-sm">
                     <div className="flex items-center justify-between gap-2">
@@ -1333,15 +1344,21 @@ const PublicTransactions = () => {
                 scheduleSheetNamesLoad(value, 'reconciliation');
               }} placeholder="Ссылка на Google Таблицу" />
               <div className="grid grid-cols-2 gap-2">
-                {isLoadingSheetNames ? (
-                  <div className="flex h-10 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Загрузка…</div>
-                ) : (
-                  <select value={registrationSheetName} onChange={event => setRegistrationSheetName(event.target.value)} disabled={availableSheetNames.length === 0} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60">
-                    <option value="">Выберите лист</option>
-                    {availableSheetNames.map(name => <option key={name} value={name}>{name}</option>)}
-                  </select>
-                )}
-                <Input value={registrationSheetRange} onChange={event => setRegistrationSheetRange(sanitizeColumnRange(event.target.value))} pattern="[A-Za-z:]*" placeholder="Диапазон, например A:Z или C" />
+                <div className="space-y-2">
+                  <label htmlFor="registration-sheet-name" className="text-sm font-medium">Название листа</label>
+                  {isLoadingSheetNames ? (
+                    <div className="flex h-10 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Загрузка…</div>
+                  ) : (
+                    <select id="registration-sheet-name" value={registrationSheetName} onChange={event => setRegistrationSheetName(event.target.value)} disabled={availableSheetNames.length === 0} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60">
+                      <option value="">Выберите лист</option>
+                      {availableSheetNames.map(name => <option key={name} value={name}>{name}</option>)}
+                    </select>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="registration-sheet-range" className="text-sm font-medium">Диапазон листа</label>
+                  <Input id="registration-sheet-range" value={registrationSheetRange} onChange={event => setRegistrationSheetRange(sanitizeColumnRange(event.target.value))} pattern="[A-Za-z:]*" placeholder="Например A:Z или C" />
+                </div>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Ключевое слово этой регистрации</label>
