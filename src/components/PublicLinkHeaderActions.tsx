@@ -59,16 +59,15 @@ export const PublicLinkHeaderActions = ({ kind }: { kind: PublicLinkKind }) => {
         const { data } = await query;
         setLinks((data || []) as PublicLink[]);
       } else {
-        let query = supabase
+        const { data } = await supabase
           .from('shared_transaction_links')
           .select('id, token, name')
           .eq('owner_user_id', user.id)
           .order('created_at', { ascending: false });
-        query = kind === 'analytics'
-          ? query.like('name', '[Аналитика]%')
-          : query.not('name', 'like', '[Аналитика]%');
-        const { data } = await query;
-        setLinks((data || []) as PublicLink[]);
+        const transactionLinks = (data || []) as PublicLink[];
+        setLinks(transactionLinks.filter(link => kind === 'analytics'
+          ? Boolean(link.name?.startsWith('[Аналитика]'))
+          : !link.name?.startsWith('[Аналитика]')));
       }
       setLoading(false);
     };
