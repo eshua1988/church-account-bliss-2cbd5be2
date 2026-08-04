@@ -56,6 +56,8 @@ const isRuleRequestNotification = (notification: Notification) =>
 const isDepositNotification = (notification: Notification) =>
   notification.type === 'deposit' || notification.metadata?.document_type === 'deposit';
 
+const NOTIFICATIONS_PAGE_SIZE = 25;
+
 const NotificationCard = ({
   notification,
   onMarkAsRead,
@@ -538,6 +540,7 @@ export const NotificationsPage = () => {
   const { categories, getExpenseCategories } = useSupabaseCategories();
 
   const [activeTab, setActiveTab] = useState<'all' | 'income' | 'no_photos' | 'extension'>('all');
+  const [visibleNotificationsLimit, setVisibleNotificationsLimit] = useState(NOTIFICATIONS_PAGE_SIZE);
   const [deptMap, setDeptMap] = useState<Record<string, string>>({});
   const [fallbackToken, setFallbackToken] = useState<string | undefined>();
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -1222,6 +1225,9 @@ export const NotificationsPage = () => {
   );
   const withoutPhotos = payoutNotifications.filter(n => n.metadata?.images_skipped);
   const withPhotos = payoutNotifications.filter(n => !n.metadata?.images_skipped);
+  const extensionNotifications = Array.from(
+    new Map([...ruleRequests, ...archivedNotifications].map(notification => [notification.id, notification])).values(),
+  ).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   const pushEnabled = pushPermission === 'granted' && hasPushSubscription;
   const pushActionLabel = pushEnabled ? 'Проверить push' : 'Включить push';
   const displayed =
@@ -1232,10 +1238,20 @@ export const NotificationsPage = () => {
       : activeTab === 'all'
         ? withPhotos
         : withoutPhotos;
+  const visibleExtensionIds = new Set(
+    extensionNotifications.slice(0, visibleNotificationsLimit).map(notification => notification.id),
+  );
+  const visibleNotifications = activeTab === 'extension'
+    ? ruleRequests.filter(notification => visibleExtensionIds.has(notification.id))
+    : displayed.slice(0, visibleNotificationsLimit);
+  const visibleArchivedNotifications = archivedNotifications.filter(notification => visibleExtensionIds.has(notification.id));
+  const currentTabCount = activeTab === 'extension' ? extensionNotifications.length : displayed.length;
+  const hasMoreNotifications = currentTabCount > visibleNotificationsLimit;
+  const isNotificationsExpanded = visibleNotificationsLimit > NOTIFICATIONS_PAGE_SIZE;
   const incomeUnread = incomeNotifications.filter(n => !n.is_read).length;
   const noPhotosUnread = withoutPhotos.filter(n => !n.is_read).length;
   const ruleRequestsUnread = ruleRequests.filter(n => !n.is_read).length;
-  const archiveGroups = archivedNotifications.reduce<Record<string, Notification[]>>((groups, notification) => {
+  const archiveGroups = visibleArchivedNotifications.reduce<Record<string, Notification[]>>((groups, notification) => {
     const type = notification.metadata?.archive_type === 'income' ? 'income' : 'expense';
     const year = Number(notification.metadata?.archive_year) || getNotificationArchiveYear(notification);
     const key = `${year}-${type}`;
@@ -1332,7 +1348,7 @@ export const NotificationsPage = () => {
       {/* Tabs */}
       <div className="mb-5 flex max-w-full gap-1 overflow-x-auto overscroll-x-contain border-b border-border">
         <button
-          onClick={() => setActiveTab('all')}
+          onClick={() => { setActiveTab('all'); setVisibleNotificationsLimit(NOTIFICATIONS_PAGE_SIZE); }}
           className={cn(
             'order-0 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
             activeTab === 'all'
@@ -1340,7 +1356,7 @@ export const NotificationsPage = () => {
               : 'border-transparent text-muted-foreground hover:text-foreground'
           )}
         >
-          Все
+          Расходы
           {withPhotos.length > 0 && (
             <span className="ml-2 text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5">
               {withPhotos.length}
@@ -1348,7 +1364,7 @@ export const NotificationsPage = () => {
           )}
         </button>
         <button
-          onClick={() => setActiveTab('income')}
+          onClick={() => { setActiveTab('income'); setVisibleNotificationsLimit(NOTIFICATIONS_PAGE_SIZE); }}
           className={cn(
             'order-2 flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
             activeTab === 'income'
@@ -1370,7 +1386,7 @@ export const NotificationsPage = () => {
           )}
         </button>
         <button
-          onClick={() => setActiveTab('no_photos')}
+          onClick={() => { setActiveTab('no_photos'); setVisibleNotificationsLimit(NOTIFICATIONS_PAGE_SIZE); }}
           className={cn(
             'order-1 flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
             activeTab === 'no_photos'
@@ -1392,7 +1408,7 @@ export const NotificationsPage = () => {
           )}
         </button>
         <button
-          onClick={() => setActiveTab('extension')}
+          onClick={() => { setActiveTab('extension'); setVisibleNotificationsLimit(NOTIFICATIONS_PAGE_SIZE); }}
           className={cn(
             'order-3 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
             activeTab === 'extension'
@@ -1418,7 +1434,7 @@ export const NotificationsPage = () => {
         <div className="p-12 text-center text-muted-foreground">
           Загрузка...
         </div>
-      ) : displayed.length === 0 && !(activeTab === 'extension' && archivedNotifications.length > 0) ? (
+      ) : displayed.length === 0 && !(activeTab === 'extension' && extensionNotifications.length > 0) ? (
         <div className="p-12 text-center text-muted-foreground">
           <Mail className="h-16 w-16 mx-auto mb-4 opacity-30" />
           {activeTab === 'all' ? (
@@ -1549,7 +1565,7 @@ export const NotificationsPage = () => {
               </div>
             );
           })}
-          {displayed.map((notification) => (
+          {visibleNotifications.map((notification) => (
             <NotificationCard
               key={notification.id}
               notification={notification}
@@ -1577,8 +1593,24 @@ export const NotificationsPage = () => {
               onSwipe={setSwipedId}
             />
           ))}
+          {currentTabCount > NOTIFICATIONS_PAGE_SIZE && (
+            <div className="flex justify-center pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setVisibleNotificationsLimit(
+                  isNotificationsExpanded
+                    ? NOTIFICATIONS_PAGE_SIZE
+                    : visibleNotificationsLimit + NOTIFICATIONS_PAGE_SIZE,
+                )}
+              >
+                {hasMoreNotifications
+                  ? `Показать ещё ${Math.min(NOTIFICATIONS_PAGE_SIZE, currentTabCount - visibleNotificationsLimit)}`
+                  : 'Свернуть'}
+              </Button>
+            </div>
+          )}
           <p className="text-xs text-center text-muted-foreground pt-2">
-            Отображается до 25 последних уведомлений
+            Показано {Math.min(visibleNotificationsLimit, currentTabCount)} из {currentTabCount} уведомлений
           </p>
         </div>
       )}
