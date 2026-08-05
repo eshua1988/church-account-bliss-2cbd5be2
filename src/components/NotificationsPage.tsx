@@ -180,7 +180,7 @@ const NotificationCard = ({
     ((pdfPath || transactionId) ? 1 : 0) +
     (onArchive && !isArchived && (pdfPath || transactionId) ? 1 : 0) +
     (onChangeDepartment && notification.type === 'payout' && !isRuleRequest ? 1 : 0) +
-    (onEditDepositPdf && isDeposit && !isRuleRequest ? 1 : 0);
+    (onEditDepositPdf && (isDeposit || notification.type === 'payout') && !isRuleRequest ? 1 : 0);
   const SWIPE_MAX = mobileButtonCount * BTN_W;
   const SWIPE_THRESHOLD = 50;
 
@@ -245,7 +245,7 @@ const NotificationCard = ({
           PDF
         </Button>
       )}
-      {onEditDepositPdf && isDeposit && !isRuleRequest && (
+      {onEditDepositPdf && (isDeposit || notification.type === 'payout') && !isRuleRequest && (
         <Button
           variant="outline"
           size="sm"
@@ -254,7 +254,7 @@ const NotificationCard = ({
           disabled={isSaving}
         >
           <Pencil className="h-3 w-3" />
-          PDF
+          Кассир
         </Button>
       )}
       {onAddToTransaction && !transactionId && !isRuleRequest && (
@@ -355,7 +355,7 @@ const NotificationCard = ({
             <span className="text-[11px] font-medium leading-none">PDF</span>
           </button>
         )}
-        {onEditDepositPdf && isDeposit && !isRuleRequest && (
+        {onEditDepositPdf && (isDeposit || notification.type === 'payout') && !isRuleRequest && (
           <button
             className="flex flex-col items-center justify-center gap-1 text-white bg-violet-600 active:bg-violet-700"
             style={{ width: `${BTN_W}px` }}
@@ -363,7 +363,7 @@ const NotificationCard = ({
             disabled={isSaving}
           >
             <Pencil className="h-5 w-5" />
-            <span className="text-[11px] font-medium leading-none">PDF</span>
+            <span className="text-[11px] font-medium leading-none">Кассир</span>
           </button>
         )}
         {onAddToTransaction && !transactionId && !isRuleRequest && (
@@ -697,8 +697,99 @@ export const NotificationsPage = () => {
     requestAnimationFrame(clearCashierSignature);
   };
 
+  const savePayoutCashierPdf = async () => {
+    if (!depositPdfTarget || !cashierName.trim()) return;
+    const meta = depositPdfTarget.metadata || {};
+    const pdfPath = String(meta.pdf_path || '');
+    if (!pdfPath) throw new Error('PDF не найден');
+
+    const supabaseUrl = (supabase as any).supabaseUrl as string;
+    const supabaseKey = (supabase as any).supabaseKey as string;
+    const edgeHeaders = { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` };
+    const signParams = new URLSearchParams({ action: 'sign', filePath: pdfPath, userId: depositPdfTarget.user_id });
+    const signResponse = await fetch(`${supabaseUrl}/functions/v1/upload-payout-pdf?${signParams}`, { headers: edgeHeaders });
+    const signResult = await signResponse.json();
+    if (!signResponse.ok || !signResult.signedUrl) throw new Error(signResult.error || 'Не удалось открыть PDF');
+    const sourceResponse = await fetch(signResult.signedUrl);
+    if (!sourceResponse.ok) throw new Error(`Ошибка загрузки PDF: HTTP ${sourceResponse.status}`);
+
+    const originalBytes = new Uint8Array(await sourceResponse.arrayBuffer());
+    const [{ PDFDocument, rgb }, pdfjsLib] = await Promise.all([import('pdf-lib'), import('pdfjs-dist')]);
+    const pdfDoc = await PDFDocument.load(originalBytes);
+    const page = pdfDoc.getPage(0);
+    const { width: pageWidth, height: pageHeight } = page.getSize();
+    const mmX = pageWidth / 210;
+    const mmY = pageHeight / 297;
+    let cashierBaseline = pageHeight - 180 * mmY;
+    try {
+      const sourcePdf = await pdfjsLib.getDocument({ data: originalBytes.slice() }).promise;
+      const textContent = await (await sourcePdf.getPage(1)).getTextContent();
+      const cashierLabel = textContent.items.find((item: any) =>
+        String(item.str || '').toLocaleLowerCase('pl').includes('kasjer'),
+      ) as any;
+      if (cashierLabel?.transform) cashierBaseline = Number(cashierLabel.transform[5]);
+      await sourcePdf.destroy();
+    } catch (error) {
+      console.warn('Could not locate cashier line in payout PDF, using standard layout:', error);
+    }
+
+    const signature = cashierSignatureRef.current;
+    const nameArea = document.createElement('canvas');
+    nameArea.width = 1000;
+    nameArea.height = 150;
+    const nameContext = nameArea.getContext('2d');
+    if (!nameContext) throw new Error('Не удалось подготовить имя кассира');
+    nameContext.clearRect(0, 0, nameArea.width, nameArea.height);
+    nameContext.fillStyle = '#111111';
+    nameContext.font = '44px Arial, sans-serif';
+    nameContext.textBaseline = 'middle';
+    nameContext.fillText(cashierName.trim(), 4, nameArea.height / 2);
+    const nameImage = await pdfDoc.embedPng(nameArea.toDataURL('image/png'));
+    page.drawRectangle({ x: 44 * mmX, y: cashierBaseline - 5 * mmY, width: 56 * mmX, height: 8 * mmY, color: rgb(1, 1, 1) });
+    page.drawImage(nameImage, { x: 44 * mmX, y: cashierBaseline - 5 * mmY, width: 56 * mmX, height: 8 * mmY });
+    if (signature) {
+      const signatureImage = await pdfDoc.embedPng(signature.toDataURL('image/png'));
+      page.drawRectangle({ x: 116 * mmX, y: cashierBaseline - 5 * mmY, width: 62 * mmX, height: 8 * mmY, color: rgb(1, 1, 1) });
+      page.drawImage(signatureImage, { x: 116 * mmX, y: cashierBaseline - 5 * mmY, width: 62 * mmX, height: 8 * mmY });
+    }
+
+    const token = String(meta.link_token || fallbackToken || '');
+    if (!token) throw new Error('Не найден ключ для обновления PDF');
+    const uploadParams = new URLSearchParams({ action: 'upload-url', filePath: pdfPath, token });
+    const uploadResponse = await fetch(`${supabaseUrl}/functions/v1/upload-payout-pdf?${uploadParams}`, { headers: edgeHeaders });
+    const uploadResult = await uploadResponse.json();
+    if (!uploadResponse.ok || !uploadResult.path || !uploadResult.token) throw new Error(uploadResult.error || 'Не удалось получить доступ для сохранения PDF');
+    const { error: uploadError } = await supabase.storage
+      .from('documents')
+      .uploadToSignedUrl(uploadResult.path, uploadResult.token, new Blob([await pdfDoc.save() as BlobPart], { type: 'application/pdf' }), { contentType: 'application/pdf' });
+    if (uploadError) throw uploadError;
+
+    const updatedMetadata = { ...meta, cashier: cashierName.trim(), cashier_signed: true };
+    const { error: notificationError } = await supabase.from('notifications').update({ metadata: updatedMetadata }).eq('id', depositPdfTarget.id);
+    if (notificationError) throw notificationError;
+    const transactionId = String(meta.transaction_id || '');
+    if (transactionId) {
+      const { error: transactionError } = await supabase.from('transactions').update({ cashier_name: cashierName.trim() }).eq('id', transactionId);
+      if (transactionError) console.warn('Linked transaction cashier was not updated:', transactionError);
+    }
+  };
+
   const saveDepositPdf = async () => {
     if (!depositPdfTarget || !cashierName.trim()) return;
+    if (depositPdfTarget.type === 'payout') {
+      setSavingId(depositPdfTarget.id);
+      try {
+        await savePayoutCashierPdf();
+        setDepositPdfTarget(null);
+        await refetchNotifications();
+        toast({ title: 'PDF обновлён', description: 'Имя и подпись кассира сохранены в расходном ордере.' });
+      } catch (error) {
+        toast({ title: 'Не удалось обновить PDF', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+      } finally {
+        setSavingId(null);
+      }
+      return;
+    }
     const receiptIndex = Number(selectedReceiptIndex);
     const meta = depositPdfTarget.metadata || {};
     const pdfPath = String(meta.pdf_path || '');
@@ -1756,7 +1847,7 @@ export const NotificationsPage = () => {
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Редактировать Dowód wpłaty</DialogTitle>
+            <DialogTitle>{depositPdfTarget?.type === 'payout' ? 'Подписать расходный ордер' : 'Редактировать Dowód wpłaty'}</DialogTitle>
           </DialogHeader>
           {depositReceipts.length > 1 && (
             <div className="space-y-2">
