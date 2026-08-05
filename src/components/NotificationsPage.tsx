@@ -697,8 +697,8 @@ export const NotificationsPage = () => {
     requestAnimationFrame(clearCashierSignature);
   };
 
-  const savePayoutCashierPdf = async () => {
-    if (!depositPdfTarget || !cashierName.trim()) return;
+  const savePayoutCashierPdf = async (clearSignature = false) => {
+    if (!depositPdfTarget || (!clearSignature && !cashierName.trim())) return;
     const meta = depositPdfTarget.metadata || {};
     const pdfPath = String(meta.pdf_path || '');
     if (!pdfPath) throw new Error('PDF не найден');
@@ -734,22 +734,24 @@ export const NotificationsPage = () => {
     }
 
     const signature = cashierSignatureRef.current;
-    const nameArea = document.createElement('canvas');
-    nameArea.width = 1000;
-    nameArea.height = 150;
-    const nameContext = nameArea.getContext('2d');
-    if (!nameContext) throw new Error('Не удалось подготовить имя кассира');
-    nameContext.clearRect(0, 0, nameArea.width, nameArea.height);
-    nameContext.fillStyle = '#111111';
-    nameContext.font = '44px Arial, sans-serif';
-    nameContext.textBaseline = 'middle';
-    nameContext.fillText(cashierName.trim(), 4, nameArea.height / 2);
-    const nameImage = await pdfDoc.embedPng(nameArea.toDataURL('image/png'));
     page.drawRectangle({ x: 44 * mmX, y: cashierBaseline - 5 * mmY, width: 56 * mmX, height: 8 * mmY, color: rgb(1, 1, 1) });
-    page.drawImage(nameImage, { x: 44 * mmX, y: cashierBaseline - 5 * mmY, width: 56 * mmX, height: 8 * mmY });
-    if (signature) {
+    page.drawRectangle({ x: 116 * mmX, y: cashierBaseline - 5 * mmY, width: 62 * mmX, height: 8 * mmY, color: rgb(1, 1, 1) });
+    if (!clearSignature) {
+      const nameArea = document.createElement('canvas');
+      nameArea.width = 1000;
+      nameArea.height = 150;
+      const nameContext = nameArea.getContext('2d');
+      if (!nameContext) throw new Error('Не удалось подготовить имя кассира');
+      nameContext.clearRect(0, 0, nameArea.width, nameArea.height);
+      nameContext.fillStyle = '#111111';
+      nameContext.font = '44px Arial, sans-serif';
+      nameContext.textBaseline = 'middle';
+      nameContext.fillText(cashierName.trim(), 4, nameArea.height / 2);
+      const nameImage = await pdfDoc.embedPng(nameArea.toDataURL('image/png'));
+      page.drawImage(nameImage, { x: 44 * mmX, y: cashierBaseline - 5 * mmY, width: 56 * mmX, height: 8 * mmY });
+    }
+    if (!clearSignature && signature) {
       const signatureImage = await pdfDoc.embedPng(signature.toDataURL('image/png'));
-      page.drawRectangle({ x: 116 * mmX, y: cashierBaseline - 5 * mmY, width: 62 * mmX, height: 8 * mmY, color: rgb(1, 1, 1) });
       page.drawImage(signatureImage, { x: 116 * mmX, y: cashierBaseline - 5 * mmY, width: 62 * mmX, height: 8 * mmY });
     }
 
@@ -764,25 +766,30 @@ export const NotificationsPage = () => {
       .uploadToSignedUrl(uploadResult.path, uploadResult.token, new Blob([await pdfDoc.save() as BlobPart], { type: 'application/pdf' }), { contentType: 'application/pdf' });
     if (uploadError) throw uploadError;
 
-    const updatedMetadata = { ...meta, cashier: cashierName.trim(), cashier_signed: true };
+    const updatedMetadata = clearSignature
+      ? { ...meta, cashier: null, cashier_signed: false }
+      : { ...meta, cashier: cashierName.trim(), cashier_signed: true };
     const { error: notificationError } = await supabase.from('notifications').update({ metadata: updatedMetadata }).eq('id', depositPdfTarget.id);
     if (notificationError) throw notificationError;
     const transactionId = String(meta.transaction_id || '');
     if (transactionId) {
-      const { error: transactionError } = await supabase.from('transactions').update({ cashier_name: cashierName.trim() }).eq('id', transactionId);
+      const { error: transactionError } = await supabase.from('transactions').update({ cashier_name: clearSignature ? null : cashierName.trim() }).eq('id', transactionId);
       if (transactionError) console.warn('Linked transaction cashier was not updated:', transactionError);
     }
   };
 
-  const saveDepositPdf = async () => {
-    if (!depositPdfTarget || !cashierName.trim()) return;
+  const saveDepositPdf = async (clearSignature = false) => {
+    if (!depositPdfTarget || (!clearSignature && !cashierName.trim())) return;
     if (depositPdfTarget.type === 'payout') {
       setSavingId(depositPdfTarget.id);
       try {
-        await savePayoutCashierPdf();
+        await savePayoutCashierPdf(clearSignature);
         setDepositPdfTarget(null);
         await refetchNotifications();
-        toast({ title: 'PDF обновлён', description: 'Имя и подпись кассира сохранены в расходном ордере.' });
+        toast({
+          title: clearSignature ? 'Подпись отменена' : 'PDF обновлён',
+          description: clearSignature ? 'Подпись кассира удалена из расходного ордера.' : 'Имя и подпись кассира сохранены в расходном ордере.',
+        });
       } catch (error) {
         toast({ title: 'Не удалось обновить PDF', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
       } finally {
@@ -846,9 +853,9 @@ export const NotificationsPage = () => {
       context.textBaseline = 'middle';
       context.fillText('Kasjer:', 14, area.height / 2);
       context.font = '36px Arial, sans-serif';
-      context.fillText(cashierName.trim(), 155, area.height / 2, signatureStart - 175);
+      if (!clearSignature) context.fillText(cashierName.trim(), 155, area.height / 2, signatureStart - 175);
       const signature = cashierSignatureRef.current;
-      if (signature) {
+      if (!clearSignature && signature) {
         context.drawImage(
           signature,
           signatureStart + 12,
@@ -907,11 +914,15 @@ export const NotificationsPage = () => {
 
       const receipts = Array.isArray(meta.receipts)
         ? (meta.receipts as Array<Record<string, unknown>>).map((receipt, index) =>
-            receiptIndexes.includes(index) ? { ...receipt, cashier: cashierName.trim(), cashier_signed: true } : receipt)
+            receiptIndexes.includes(index)
+              ? { ...receipt, cashier: clearSignature ? null : cashierName.trim(), cashier_signed: !clearSignature }
+              : receipt)
         : undefined;
       const updatedMetadata = {
         ...meta,
-        ...(receipts ? { receipts } : { cashier: cashierName.trim(), cashier_signed: true }),
+        ...(receipts
+          ? { receipts }
+          : { cashier: clearSignature ? null : cashierName.trim(), cashier_signed: !clearSignature }),
       };
       const { error: updateError } = await supabase
         .from('notifications')
@@ -922,8 +933,10 @@ export const NotificationsPage = () => {
       setDepositPdfTarget(null);
       await refetchNotifications();
       toast({
-        title: 'PDF обновлён',
-        description: signAllDepositReceipts
+        title: clearSignature ? 'Подпись отменена' : 'PDF обновлён',
+        description: clearSignature
+          ? 'Подпись кассира удалена из PDF.'
+          : signAllDepositReceipts
           ? 'Имя кассира и подпись сохранены во всех квитанциях PDF.'
           : 'Имя кассира и подпись сохранены в выбранной квитанции.',
       });
@@ -1927,13 +1940,7 @@ export const NotificationsPage = () => {
           <Button
             type="button"
             variant="outline"
-            onClick={() => {
-              setDepositPdfTarget(null);
-              setSelectedReceiptIndex('0');
-              setCashierName('');
-              setSignAllDepositReceipts(false);
-              clearCashierSignature();
-            }}
+            onClick={() => void saveDepositPdf(true)}
             disabled={Boolean(savingId)}
           >
             Отменить подпись
