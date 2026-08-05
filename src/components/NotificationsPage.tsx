@@ -1924,6 +1924,20 @@ export const NotificationsPage = () => {
             {savingId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
             Сохранить в PDF
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setDepositPdfTarget(null);
+              setSelectedReceiptIndex('0');
+              setCashierName('');
+              setSignAllDepositReceipts(false);
+              clearCashierSignature();
+            }}
+            disabled={Boolean(savingId)}
+          >
+            Отменить подпись
+          </Button>
         </DialogContent>
       </Dialog>
 
