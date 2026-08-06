@@ -451,11 +451,43 @@ export const PayoutGenerator = () => {
     doc.text(wordsLines, leftMargin + labelColWidth + cellPadding, yPos + cellPadding + 6);
     yPos += wordsHeight + 15;
     
-    // Cashier line
+    // Cashier box: show cashier label and name; try to embed saved cashier signature if available
+    const cashierBoxHeight = 26;
+    const cashierBoxX = leftMargin;
+    const cashierBoxW = 155;
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.5);
+    doc.rect(cashierBoxX, yPos, cashierBoxW, cashierBoxHeight, 'S');
     doc.setFontSize(10);
-    doc.text('Kasjer: ________________________________', leftMargin, yPos);
-    doc.text('Podpis kasjera: ________________________________', pageWidth / 2, yPos);
-    yPos += 15;
+    doc.text('Kasjer', cashierBoxX + 3, yPos + 6);
+    const cashierName = user?.user_metadata?.display_name || user?.email || '';
+    if (cashierName) {
+      doc.setFontSize(9);
+      doc.text(cashierName, cashierBoxX + 3, yPos + 14);
+    }
+
+    // Try to embed a saved cashier signature at a well-known location
+    try {
+      if (user?.id) {
+        const { data: sigBlob } = await supabase.storage.from('documents').download(`${user.id}/cashier_signature.png`);
+        if (sigBlob) {
+          const buf = await sigBlob.arrayBuffer();
+          const bytes = new Uint8Array(buf);
+          let binary = '';
+          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+          const sigBase64 = btoa(binary);
+          const sigW = 55;
+          const sigH = cashierBoxHeight - 6;
+          const sigX = cashierBoxX + cashierBoxW - sigW - 5;
+          const sigY = yPos + 3;
+          try { doc.addImage(`data:image/png;base64,${sigBase64}`, 'PNG', sigX, sigY, sigW, sigH); } catch (e) { console.error('Embed cashier sig failed', e); }
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    yPos += cashierBoxHeight + 6;
     
     // Recipient signature
     doc.setFontSize(11);

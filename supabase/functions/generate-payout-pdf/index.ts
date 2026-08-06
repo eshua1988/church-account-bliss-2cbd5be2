@@ -131,14 +131,47 @@ Deno.serve(async (req) => {
     }
     yPos += wordsHeight + 15;
 
-    // A single cashier box keeps the cashier name and signature separate
-    // from the recipient's signature box below.
+    // Cashier box: show cashier label, name (if present) and optional cashier signature
     const cashierBoxHeight = 26;
+    const cashierBoxX = leftMargin;
+    const cashierBoxW = 155;
     doc.setDrawColor(0);
     doc.setLineWidth(0.5);
-    doc.rect(leftMargin, yPos, 155, cashierBoxHeight, 'S');
+    doc.rect(cashierBoxX, yPos, cashierBoxW, cashierBoxHeight, 'S');
     doc.setFontSize(10);
-    doc.text('Kasjer:', leftMargin + 3, yPos + 6);
+    doc.text('Kasjer', cashierBoxX + 3, yPos + 6);
+    if (tx.cashier_name) {
+      doc.setFontSize(9);
+      doc.text(tx.cashier_name, cashierBoxX + 3, yPos + 14);
+    }
+
+    // Try to embed a cashier signature if present at a conventional path
+    try {
+      const cashierSigPath = `${ownerUserId}/${transactionId}/cashier_signature.png`;
+      const { data: cashierSigData } = await supabase.storage
+        .from('documents')
+        .download(cashierSigPath);
+      if (cashierSigData) {
+        const sigArrayBuffer = await cashierSigData.arrayBuffer();
+        const sigBytes = new Uint8Array(sigArrayBuffer);
+        let binary = '';
+        for (let i = 0; i < sigBytes.length; i++) binary += String.fromCharCode(sigBytes[i]);
+        const sigBase64 = btoa(binary);
+        // Place signature on the right side of the cashier box
+        const sigW = 55;
+        const sigH = cashierBoxHeight - 6;
+        const sigX = cashierBoxX + cashierBoxW - sigW - 5;
+        const sigY = yPos + 3;
+        try {
+          doc.addImage(`data:image/png;base64,${sigBase64}`, 'PNG', sigX, sigY, sigW, sigH);
+        } catch (e) {
+          console.error('Failed to embed cashier signature:', e);
+        }
+      }
+    } catch (e) {
+      // ignore missing cashier signature
+    }
+
     yPos += cashierBoxHeight + 6;
 
     doc.setFontSize(11);

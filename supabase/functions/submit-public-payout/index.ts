@@ -363,14 +363,40 @@ async function generateAndUploadPdf(
     drawMultilineCell(leftMargin + labelColWidth, yPos, valueColWidth, wordsHeight, data.amountInWords || '');
     yPos += wordsHeight + 10;
 
-    // Cashier field: one separate box for the cashier name and signature.
-    // It deliberately stays outside of the recipient signature field below.
+    // Cashier field: boxed area to hold cashier label, name and optional signature.
     const cashierBoxHeight = 26;
+    const cashierBoxX = leftMargin;
+    const cashierBoxW = 155;
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.5);
-    doc.rect(leftMargin, yPos, 155, cashierBoxHeight, 'S');
+    doc.rect(cashierBoxX, yPos, cashierBoxW, cashierBoxHeight, 'S');
     doc.setFontSize(9);
-    doc.text(safeText(L.cashier), leftMargin + 3, yPos + 6);
+    doc.text(safeText(L.cashier), cashierBoxX + 3, yPos + 6);
+    // If a cashier name was provided in data (or elsewhere), render it
+    if ((data as any).cashierName) {
+      doc.setFontSize(8);
+      doc.text(safeText((data as any).cashierName), cashierBoxX + 3, yPos + 14);
+    }
+
+    // Try to embed cashier signature from Storage at conventional path
+    try {
+      const cashierSigPath = `${ownerUserId}/${transactionId}/cashier_signature.png`;
+      const { data: cashierSigBlob } = await supabase.storage.from('documents').download(cashierSigPath);
+      if (cashierSigBlob) {
+        const buf = await cashierSigBlob.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        const sigBase64 = btoa(binary);
+        const sigW = 55;
+        const sigH = cashierBoxHeight - 6;
+        const sigX = cashierBoxX + cashierBoxW - sigW - 5;
+        const sigY = yPos + 3;
+        try { doc.addImage(`data:image/png;base64,${sigBase64}`, 'PNG', sigX, sigY, sigW, sigH); } catch (e) { console.error('Cashier sig embed failed', e); }
+      }
+    } catch (e) {
+      // ignore missing cashier signature
+    }
 
     yPos += cashierBoxHeight + 6;
 

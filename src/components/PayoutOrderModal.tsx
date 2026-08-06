@@ -51,6 +51,7 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
   const [pdfSignedUrl, setPdfSignedUrl] = useState<string | null>(null);
   const [attachedImageUrls, setAttachedImageUrls] = useState<string[]>([]);
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
+  const [cashierSignatureUrl, setCashierSignatureUrl] = useState<string | null>(null);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
@@ -96,10 +97,11 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
             return;
           }
 
-          // Find PDF, images and signature
+          // Find PDF, images and signatures
           const pdfFile = files.find(f => f.name.endsWith('.pdf'));
           const imageFiles = files.filter(f => /^image_\d+\.(jpg|jpeg|png)$/i.test(f.name));
           const sigFile = files.find(f => f.name === 'signature.png');
+          const cashierSigFile = files.find(f => f.name === 'cashier_signature.png');
 
           // PDF signed URL
           if (pdfFile) {
@@ -125,6 +127,13 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
               .from('documents')
               .createSignedUrl(`${folderPath}/signature.png`, 60 * 60 * 24 * 7);
             if (urlData?.signedUrl) setSignatureUrl(urlData.signedUrl);
+          }
+          // Cashier signature signed URL
+          if (cashierSigFile) {
+            const { data: urlData } = await supabase.storage
+              .from('documents')
+              .createSignedUrl(`${folderPath}/cashier_signature.png`, 60 * 60 * 24 * 7);
+            if (urlData?.signedUrl) setCashierSignatureUrl(urlData.signedUrl);
           }
         } catch (e) {
           console.error('Error loading files:', e);
@@ -283,10 +292,43 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
     doc.text(wordsLines, leftMargin + labelColWidth + cellPadding, yPos + cellPadding + 6);
     yPos += wordsHeight + 15;
 
+    // Cashier box: label + name + optional cashier signature
+    const cashierBoxHeight = 26;
+    const cashierBoxX = leftMargin;
+    const cashierBoxW = 155;
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.5);
+    doc.rect(cashierBoxX, yPos, cashierBoxW, cashierBoxHeight, 'S');
     doc.setFontSize(10);
-    doc.text('Kasjer: ________________________________', leftMargin, yPos);
-    doc.text('Podpis kasjera: ________________________________', pageWidth / 2, yPos);
-    yPos += 15;
+    doc.text('Kasjer', cashierBoxX + 3, yPos + 6);
+    if (orderData.cashier_name) {
+      doc.setFontSize(9);
+      doc.text(orderData.cashier_name, cashierBoxX + 3, yPos + 14);
+    }
+
+    // If a cashier signature URL was loaded, fetch and embed it into the box
+    if (cashierSignatureUrl) {
+      try {
+        const res = await fetch(cashierSignatureUrl);
+        if (res.ok) {
+          const blob = await res.blob();
+          const arrayBuf = await blob.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuf);
+          let binary = '';
+          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+          const sigBase64 = btoa(binary);
+          const sigW = 55;
+          const sigH = cashierBoxHeight - 6;
+          const sigX = cashierBoxX + cashierBoxW - sigW - 5;
+          const sigY = yPos + 3;
+          try { doc.addImage(`data:image/png;base64,${sigBase64}`, 'PNG', sigX, sigY, sigW, sigH); } catch (e) { console.error('Embed cashier sig failed', e); }
+        }
+      } catch (e) {
+        console.error('Failed to fetch cashier signature URL', e);
+      }
+    }
+
+    yPos += cashierBoxHeight + 6;
 
     doc.setFontSize(11);
     doc.text('Podpis odbiorcy', leftMargin, yPos);
