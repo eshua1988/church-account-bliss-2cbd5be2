@@ -131,10 +131,15 @@ Deno.serve(async (req) => {
     }
     yPos += wordsHeight + 15;
 
+    // A single cashier box keeps the cashier name and signature separate
+    // from the recipient's signature box below.
+    const cashierBoxHeight = 26;
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.5);
+    doc.rect(leftMargin, yPos, 155, cashierBoxHeight, 'S');
     doc.setFontSize(10);
-    doc.text('Kasjer: ________________________________', leftMargin, yPos);
-    doc.text('Podpis kasjera: ________________________________', pageWidth / 2, yPos);
-    yPos += 15;
+    doc.text('Kasjer:', leftMargin + 3, yPos + 6);
+    yPos += cashierBoxHeight + 6;
 
     doc.setFontSize(11);
     doc.text('Podpis odbiorcy:', leftMargin, yPos);

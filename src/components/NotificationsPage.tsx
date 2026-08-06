@@ -724,6 +724,7 @@ export const NotificationsPage = () => {
     // is above the recipient's signature box; never use the recipient box for
     // the cashier name/signature.
     let cashierBaseline = pageHeight - 146 * mmY;
+    let recipientBaseline: number | null = null;
     try {
       const sourcePdf = await pdfjsLib.getDocument({ data: originalBytes.slice() }).promise;
       const textContent = await (await sourcePdf.getPage(1)).getTextContent();
@@ -732,6 +733,7 @@ export const NotificationsPage = () => {
       ) as any;
       const cashierLabel = findLabel('kasjer');
       const recipientLabel = findLabel('podpis odbiorcy');
+      if (recipientLabel?.transform) recipientBaseline = Number(recipientLabel.transform[5]);
       if (cashierLabel?.transform) {
         cashierBaseline = Number(cashierLabel.transform[5]);
       } else if (recipientLabel?.transform) {
@@ -746,45 +748,63 @@ export const NotificationsPage = () => {
     }
 
     const signature = cashierSignatureRef.current;
-    const cashierNameX = 36 * mmX;
-    const cashierNameWidth = 60 * mmX;
-    const cashierSignatureX = 138 * mmX;
-    const cashierSignatureWidth = 50 * mmX;
-    const fieldY = cashierBaseline - 5 * mmY;
-    const fieldHeight = 8 * mmY;
-    // Clear only the two underscored cashier fields, preserving the recipient
-    // signature area located immediately below.
-    page.drawRectangle({ x: cashierNameX, y: fieldY, width: cashierNameWidth, height: fieldHeight, color: rgb(1, 1, 1) });
-    page.drawRectangle({ x: cashierSignatureX, y: fieldY, width: cashierSignatureWidth, height: fieldHeight, color: rgb(1, 1, 1) });
-    page.drawLine({
-      start: { x: cashierNameX, y: cashierBaseline - 1.2 * mmY },
-      end: { x: cashierNameX + cashierNameWidth, y: cashierBaseline - 1.2 * mmY },
-      thickness: 0.45,
-      color: rgb(0, 0, 0),
-    });
-    page.drawLine({
-      start: { x: cashierSignatureX, y: cashierBaseline - 1.2 * mmY },
-      end: { x: cashierSignatureX + cashierSignatureWidth, y: cashierBaseline - 1.2 * mmY },
-      thickness: 0.45,
-      color: rgb(0, 0, 0),
-    });
-    if (!clearSignature) {
-      const nameArea = document.createElement('canvas');
-      nameArea.width = 1000;
-      nameArea.height = 150;
-      const nameContext = nameArea.getContext('2d');
-      if (!nameContext) throw new Error('Не удалось подготовить имя кассира');
-      nameContext.clearRect(0, 0, nameArea.width, nameArea.height);
-      nameContext.fillStyle = '#111111';
-      nameContext.font = '44px Arial, sans-serif';
-      nameContext.textBaseline = 'middle';
-      nameContext.fillText(cashierName.trim(), 4, nameArea.height / 2);
-      const nameImage = await pdfDoc.embedPng(nameArea.toDataURL('image/png'));
-      page.drawImage(nameImage, { x: cashierNameX, y: fieldY, width: cashierNameWidth, height: fieldHeight });
-    }
-    if (!clearSignature && signature) {
-      const signatureImage = await pdfDoc.embedPng(signature.toDataURL('image/png'));
-      page.drawImage(signatureImage, { x: cashierSignatureX, y: fieldY, width: cashierSignatureWidth, height: fieldHeight });
+    // New payout PDFs reserve 26 mm for the cashier box.  Legacy PDFs have
+    // only 12–15 mm until the recipient label, so we preserve their layout.
+    const hasCashierBox = recipientBaseline !== null && cashierBaseline - recipientBaseline >= 27 * mmY;
+    if (hasCashierBox) {
+      const cashierBoxX = 20 * mmX;
+      const cashierBoxWidth = 155 * mmX;
+      const cashierBoxHeight = 26 * mmY;
+      const cashierBoxY = cashierBaseline - 20 * mmY;
+      const cashierArea = document.createElement('canvas');
+      cashierArea.width = 1860;
+      cashierArea.height = 312;
+      const context = cashierArea.getContext('2d');
+      if (!context) throw new Error('Не удалось подготовить поле кассира');
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, cashierArea.width, cashierArea.height);
+      context.strokeStyle = '#111111';
+      context.lineWidth = 3;
+      context.strokeRect(1.5, 1.5, cashierArea.width - 3, cashierArea.height - 3);
+      context.fillStyle = '#111111';
+      context.font = 'bold 40px Arial, sans-serif';
+      context.textBaseline = 'middle';
+      context.fillText('Kasjer:', 18, 45);
+      if (!clearSignature) {
+        context.font = '40px Arial, sans-serif';
+        context.fillText(cashierName.trim(), 18, 98, 780);
+        if (signature) context.drawImage(signature, 420, 54, cashierArea.width - 450, cashierArea.height - 72);
+      }
+      const cashierImage = await pdfDoc.embedPng(cashierArea.toDataURL('image/png'));
+      page.drawImage(cashierImage, { x: cashierBoxX, y: cashierBoxY, width: cashierBoxWidth, height: cashierBoxHeight });
+    } else {
+      // Existing PDFs from the former layout retain their two short lines to
+      // avoid covering an already present recipient signature.
+      const cashierNameX = 36 * mmX;
+      const cashierNameWidth = 60 * mmX;
+      const cashierSignatureX = 138 * mmX;
+      const cashierSignatureWidth = 50 * mmX;
+      const fieldY = cashierBaseline - 5 * mmY;
+      const fieldHeight = 8 * mmY;
+      page.drawRectangle({ x: cashierNameX, y: fieldY, width: cashierNameWidth, height: fieldHeight, color: rgb(1, 1, 1) });
+      page.drawRectangle({ x: cashierSignatureX, y: fieldY, width: cashierSignatureWidth, height: fieldHeight, color: rgb(1, 1, 1) });
+      if (!clearSignature) {
+        const nameArea = document.createElement('canvas');
+        nameArea.width = 1000;
+        nameArea.height = 150;
+        const nameContext = nameArea.getContext('2d');
+        if (!nameContext) throw new Error('Не удалось подготовить имя кассира');
+        nameContext.fillStyle = '#111111';
+        nameContext.font = '44px Arial, sans-serif';
+        nameContext.textBaseline = 'middle';
+        nameContext.fillText(cashierName.trim(), 4, nameArea.height / 2);
+        const nameImage = await pdfDoc.embedPng(nameArea.toDataURL('image/png'));
+        page.drawImage(nameImage, { x: cashierNameX, y: fieldY, width: cashierNameWidth, height: fieldHeight });
+      }
+      if (!clearSignature && signature) {
+        const signatureImage = await pdfDoc.embedPng(signature.toDataURL('image/png'));
+        page.drawImage(signatureImage, { x: cashierSignatureX, y: fieldY, width: cashierSignatureWidth, height: fieldHeight });
+      }
     }
 
     const token = String(meta.link_token || fallbackToken || '');

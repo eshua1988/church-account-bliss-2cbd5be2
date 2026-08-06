@@ -363,13 +363,16 @@ async function generateAndUploadPdf(
     drawMultilineCell(leftMargin + labelColWidth, yPos, valueColWidth, wordsHeight, data.amountInWords || '');
     yPos += wordsHeight + 10;
 
-    // Signatures line
-    doc.setFontSize(9);
+    // Cashier field: one separate box for the cashier name and signature.
+    // It deliberately stays outside of the recipient signature field below.
+    const cashierBoxHeight = 26;
     doc.setDrawColor(0, 0, 0);
-    doc.text(safeText(L.cashier) + ' _______________________________', leftMargin, yPos);
-    doc.text(safeText(L.cashierSig) + ' _______________________________', pageWidth / 2 + 5, yPos);
+    doc.setLineWidth(0.5);
+    doc.rect(leftMargin, yPos, 155, cashierBoxHeight, 'S');
+    doc.setFontSize(9);
+    doc.text(safeText(L.cashier), leftMargin + 3, yPos + 6);
 
-    yPos += 12;
+    yPos += cashierBoxHeight + 6;
 
     // Recipient signature box
     doc.setFontSize(10);
