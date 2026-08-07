@@ -132,11 +132,13 @@ Deno.serve(async (req) => {
     yPos += wordsHeight + 15;
 
     // Recipient signature box
-    const signatureBoxWidth = 150;
-    const signatureBoxHeight = 40;
+    const signatureBoxWidth = 155;
+    const signatureBoxHeight = 26;
     doc.setDrawColor(0);
     doc.setLineWidth(0.5);
     doc.rect(leftMargin, yPos, signatureBoxWidth, signatureBoxHeight, 'S');
+    const signatureDividerX = leftMargin + Math.round(signatureBoxWidth * 0.6);
+    doc.line(signatureDividerX, yPos, signatureDividerX, yPos + signatureBoxHeight);
     doc.setFontSize(10);
     doc.text('Podpis odbiorcy:', leftMargin + 3, yPos + 8);
 

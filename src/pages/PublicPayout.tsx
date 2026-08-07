@@ -1302,20 +1302,21 @@ const PublicPayout = () => {
     yPos += wordsHeight + 15;
     
 // Recipient signature box
-    const signatureBoxWidth = 150;
-    const signatureBoxHeight = 40;
+    const signatureBoxWidth = 155;
+    const signatureBoxHeight = 26;
     doc.setDrawColor(0);
     doc.setLineWidth(0.5);
     doc.rect(leftMargin, yPos, signatureBoxWidth, signatureBoxHeight, 'S');
+    const signatureDividerX = leftMargin + Math.round(signatureBoxWidth * 0.6);
+    doc.line(signatureDividerX, yPos, signatureDividerX, yPos + signatureBoxHeight);
     doc.setFontSize(10);
     doc.text('Podpis odbiorcy:', leftMargin + 3, yPos + 8);
-    
+
     // Use saved signatureDataUrl (persists even when canvas is unmounted on step 4)
     const sigData = signatureDataUrl || (signatureCanvasRef.current ? signatureCanvasRef.current.toDataURL('image/png') : null);
     if (sigData) {
       try {
-        doc.addImage(sigData, 'PNG', leftMargin + 5, yPos + 2, signatureBoxWidth - 10, signatureBoxHeight - 4);
-      } catch (e) {
+        doc.addImage(sigData, 'PNG', signatureDividerX + 5, yPos + 4, signatureBoxWidth - (signatureDividerX - leftMargin) - 10, signatureBoxHeight - 8);
         console.warn('Could not add signature image:', e);
       }
     }

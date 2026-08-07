@@ -752,9 +752,10 @@ export const NotificationsPage = () => {
     const cashierBoxWidth = 155 * mmX;
     const cashierBoxHeight = 26 * mmY;
     const recipientBoxGap = 10 * mmY;
-    const recipientBoxHeight = 40 * mmY;
+    const recipientBoxHeight = 26 * mmY;
+    const recipientBaselineOffset = 18 * mmY;
     const cashierBoxY = recipientBaseline !== null
-      ? recipientBaseline - recipientBoxHeight - recipientBoxGap
+      ? recipientBaseline - recipientBaselineOffset - recipientBoxHeight - recipientBoxGap
       : cashierBaseline - 20 * mmY;
 
     const cashierArea = document.createElement('canvas');

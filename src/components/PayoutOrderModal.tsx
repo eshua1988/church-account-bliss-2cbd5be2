@@ -293,17 +293,19 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
     yPos += wordsHeight + 15;
 
     // Recipient signature box
-    const signatureBoxWidth = 150;
-    const signatureBoxHeight = 40;
+    const signatureBoxWidth = 155;
+    const signatureBoxHeight = 26;
     doc.setDrawColor(0);
     doc.setLineWidth(0.5);
     doc.rect(leftMargin, yPos, signatureBoxWidth, signatureBoxHeight, 'S');
+    const signatureDividerX = leftMargin + Math.round(signatureBoxWidth * 0.6);
+    doc.line(signatureDividerX, yPos, signatureDividerX, yPos + signatureBoxHeight);
     doc.setFontSize(10);
     doc.text('Podpis odbiorcy', leftMargin + 3, yPos + 8);
 
     if (hasSignature && signatureCanvasRef.current) {
       const signatureData = signatureCanvasRef.current.toDataURL('image/png');
-      doc.addImage(signatureData, 'PNG', leftMargin + 5, yPos + 14, signatureBoxWidth - 10, signatureBoxHeight - 18);
+      doc.addImage(signatureData, 'PNG', signatureDividerX + 5, yPos + 4, signatureBoxWidth - (signatureDividerX - leftMargin) - 10, signatureBoxHeight - 8);
     }
 
     yPos += signatureBoxHeight + 6;

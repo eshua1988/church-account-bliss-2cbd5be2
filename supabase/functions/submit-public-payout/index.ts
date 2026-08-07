@@ -364,9 +364,13 @@ async function generateAndUploadPdf(
     yPos += wordsHeight + 10;
 
     // Recipient signature box
+    const signatureBoxWidth = 155;
+    const signatureBoxHeight = 26;
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.5);
-    doc.rect(leftMargin, yPos, 155, 40, 'S');
+    doc.rect(leftMargin, yPos, signatureBoxWidth, signatureBoxHeight, 'S');
+    const signatureDividerX = leftMargin + Math.round(signatureBoxWidth * 0.6);
+    doc.line(signatureDividerX, yPos, signatureDividerX, yPos + signatureBoxHeight);
     doc.setFontSize(9);
     doc.text(safeText(L.recipientSig), leftMargin + 3, yPos + 8);
 
