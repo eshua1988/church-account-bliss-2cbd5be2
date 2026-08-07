@@ -1317,6 +1317,7 @@ const PublicPayout = () => {
     if (sigData) {
       try {
         doc.addImage(sigData, 'PNG', signatureDividerX + 5, yPos + 4, signatureBoxWidth - (signatureDividerX - leftMargin) - 10, signatureBoxHeight - 8);
+      } catch (e) {
         console.warn('Could not add signature image:', e);
       }
     }

@@ -466,6 +466,8 @@ export const PayoutGenerator = () => {
       const signatureData = signatureCanvasRef.current.toDataURL('image/png');
       doc.addImage(signatureData, 'PNG', signatureDividerX + 5, yPos + 4, signatureBoxWidth - (signatureDividerX - leftMargin) - 10, signatureBoxHeight - 8);
 
+    }
+
     yPos += signatureBoxHeight + 6;
 
     // Add each attached image on a new page
