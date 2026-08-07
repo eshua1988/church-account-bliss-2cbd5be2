@@ -451,60 +451,21 @@ export const PayoutGenerator = () => {
     doc.text(wordsLines, leftMargin + labelColWidth + cellPadding, yPos + cellPadding + 6);
     yPos += wordsHeight + 15;
     
-    // Cashier box: show cashier label and name; try to embed saved cashier signature if available
-    const cashierBoxHeight = 26;
-    const cashierBoxX = leftMargin;
-    const cashierBoxW = 155;
-    doc.setDrawColor(0);
-    doc.setLineWidth(0.5);
-    doc.rect(cashierBoxX, yPos, cashierBoxW, cashierBoxHeight, 'S');
-    doc.setFontSize(10);
-    doc.text('Kasjer', cashierBoxX + 3, yPos + 6);
-    const cashierName = user?.user_metadata?.display_name || user?.email || '';
-    if (cashierName) {
-      doc.setFontSize(9);
-      doc.text(cashierName, cashierBoxX + 3, yPos + 14);
-    }
-
-    // Try to embed a saved cashier signature at a well-known location
-    try {
-      if (user?.id) {
-        const { data: sigBlob } = await supabase.storage.from('documents').download(`${user.id}/cashier_signature.png`);
-        if (sigBlob) {
-          const buf = await sigBlob.arrayBuffer();
-          const bytes = new Uint8Array(buf);
-          let binary = '';
-          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-          const sigBase64 = btoa(binary);
-          const sigW = 55;
-          const sigH = cashierBoxHeight - 6;
-          const sigX = cashierBoxX + cashierBoxW - sigW - 5;
-          const sigY = yPos + 3;
-          try { doc.addImage(`data:image/png;base64,${sigBase64}`, 'PNG', sigX, sigY, sigW, sigH); } catch (e) { console.error('Embed cashier sig failed', e); }
-        }
-      }
-    } catch (e) {
-      // ignore
-    }
-
-    yPos += cashierBoxHeight + 6;
-    
-    // Recipient signature
-    doc.setFontSize(11);
-    doc.text('Podpis odbiorcy', leftMargin, yPos);
-    yPos += 5;
-    
-    // Signature box
+    // Recipient signature box
     const signatureBoxWidth = 150;
     const signatureBoxHeight = 40;
     doc.setDrawColor(0);
     doc.setLineWidth(0.5);
     doc.rect(leftMargin, yPos, signatureBoxWidth, signatureBoxHeight, 'S');
+    doc.setFontSize(10);
+    doc.text('Podpis odbiorcy', leftMargin + 3, yPos + 8);
     
     if (hasSignature && signatureCanvasRef.current) {
       const signatureData = signatureCanvasRef.current.toDataURL('image/png');
-      doc.addImage(signatureData, 'PNG', leftMargin + 5, yPos + 2, signatureBoxWidth - 10, signatureBoxHeight - 4);
+      doc.addImage(signatureData, 'PNG', leftMargin + 5, yPos + 14, signatureBoxWidth - 10, signatureBoxHeight - 18);
     }
+
+    yPos += signatureBoxHeight + 6;
 
     // Add each attached image on a new page
     for (const img of attachedImages) {

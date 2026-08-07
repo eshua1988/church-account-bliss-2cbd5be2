@@ -292,58 +292,21 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
     doc.text(wordsLines, leftMargin + labelColWidth + cellPadding, yPos + cellPadding + 6);
     yPos += wordsHeight + 15;
 
-    // Cashier box: label + name + optional cashier signature
-    const cashierBoxHeight = 26;
-    const cashierBoxX = leftMargin;
-    const cashierBoxW = 155;
-    doc.setDrawColor(0);
-    doc.setLineWidth(0.5);
-    doc.rect(cashierBoxX, yPos, cashierBoxW, cashierBoxHeight, 'S');
-    doc.setFontSize(10);
-    doc.text('Kasjer', cashierBoxX + 3, yPos + 6);
-    if (orderData.cashier_name) {
-      doc.setFontSize(9);
-      doc.text(orderData.cashier_name, cashierBoxX + 3, yPos + 14);
-    }
-
-    // If a cashier signature URL was loaded, fetch and embed it into the box
-    if (cashierSignatureUrl) {
-      try {
-        const res = await fetch(cashierSignatureUrl);
-        if (res.ok) {
-          const blob = await res.blob();
-          const arrayBuf = await blob.arrayBuffer();
-          const bytes = new Uint8Array(arrayBuf);
-          let binary = '';
-          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-          const sigBase64 = btoa(binary);
-          const sigW = 55;
-          const sigH = cashierBoxHeight - 6;
-          const sigX = cashierBoxX + cashierBoxW - sigW - 5;
-          const sigY = yPos + 3;
-          try { doc.addImage(`data:image/png;base64,${sigBase64}`, 'PNG', sigX, sigY, sigW, sigH); } catch (e) { console.error('Embed cashier sig failed', e); }
-        }
-      } catch (e) {
-        console.error('Failed to fetch cashier signature URL', e);
-      }
-    }
-
-    yPos += cashierBoxHeight + 6;
-
-    doc.setFontSize(11);
-    doc.text('Podpis odbiorcy', leftMargin, yPos);
-    yPos += 5;
-
+    // Recipient signature box
     const signatureBoxWidth = 150;
     const signatureBoxHeight = 40;
     doc.setDrawColor(0);
     doc.setLineWidth(0.5);
     doc.rect(leftMargin, yPos, signatureBoxWidth, signatureBoxHeight, 'S');
+    doc.setFontSize(10);
+    doc.text('Podpis odbiorcy', leftMargin + 3, yPos + 8);
 
     if (hasSignature && signatureCanvasRef.current) {
       const signatureData = signatureCanvasRef.current.toDataURL('image/png');
-      doc.addImage(signatureData, 'PNG', leftMargin + 5, yPos + 2, signatureBoxWidth - 10, signatureBoxHeight - 4);
+      doc.addImage(signatureData, 'PNG', leftMargin + 5, yPos + 14, signatureBoxWidth - 10, signatureBoxHeight - 18);
     }
+
+    yPos += signatureBoxHeight + 6;
 
     const issuedTo = (orderData.issued_to || 'dokument').replace(/\s/g, '_');
     const dateForFile = orderData.date ? format(new Date(orderData.date), 'yyyy-MM-dd') : 'date';

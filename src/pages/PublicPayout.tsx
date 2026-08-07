@@ -1301,33 +1301,14 @@ const PublicPayout = () => {
     doc.text(wordsLines, leftMargin + labelColWidth + cellPadding, yPos + cellPadding + 6);
     yPos += wordsHeight + 15;
     
-    // Cashier box: label + optional name + try to embed saved cashier signature
-    const cashierBoxHeight = 26;
-    const cashierBoxX = leftMargin;
-    const cashierBoxW = 155;
-    doc.setDrawColor(0);
-    doc.setLineWidth(0.5);
-    doc.rect(cashierBoxX, yPos, cashierBoxW, cashierBoxHeight, 'S');
-    doc.setFontSize(10);
-    doc.text('Kasjer', cashierBoxX + 3, yPos + 6);
-    // If the form provided a cashier name, render it
-    if ((formData as any).cashierName) {
-      doc.setFontSize(9);
-      doc.text((formData as any).cashierName, cashierBoxX + 3, yPos + 14);
-    }
-    yPos += cashierBoxHeight + 6;
-    
-    // Recipient signature
-    doc.setFontSize(11);
-    doc.text('Podpis odbiorcy:', leftMargin, yPos);
-    yPos += 5;
-    
-    // Signature box
+// Recipient signature box
     const signatureBoxWidth = 150;
     const signatureBoxHeight = 40;
     doc.setDrawColor(0);
     doc.setLineWidth(0.5);
     doc.rect(leftMargin, yPos, signatureBoxWidth, signatureBoxHeight, 'S');
+    doc.setFontSize(10);
+    doc.text('Podpis odbiorcy:', leftMargin + 3, yPos + 8);
     
     // Use saved signatureDataUrl (persists even when canvas is unmounted on step 4)
     const sigData = signatureDataUrl || (signatureCanvasRef.current ? signatureCanvasRef.current.toDataURL('image/png') : null);
