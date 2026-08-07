@@ -750,17 +750,13 @@ export const NotificationsPage = () => {
     const signature = cashierSignatureRef.current;
     const cashierBoxX = 20 * mmX;
     const cashierBoxWidth = 155 * mmX;
-    const cashierBoxHeight = 26 * mmY;
-    const recipientBoxGap = 10 * mmY;
-    const recipientBoxHeight = 26 * mmY;
-    const recipientBaselineOffset = 18 * mmY;
-    const cashierBoxY = recipientBaseline !== null
-      ? recipientBaseline - recipientBaselineOffset - recipientBoxHeight - recipientBoxGap
-      : cashierBaseline - 20 * mmY;
+    const cashierBoxHeight = 40 * mmY;
+    const minCashierY = 20 * mmY;
+    const cashierBoxY = Math.max(minCashierY, cashierBaseline - 20 * mmY);
 
     const cashierArea = document.createElement('canvas');
     cashierArea.width = 1860;
-    cashierArea.height = 312;
+    cashierArea.height = 400;
     const context = cashierArea.getContext('2d');
     if (!context) throw new Error('Не удалось подготовить поле кассира');
     context.fillStyle = '#ffffff';
@@ -774,14 +770,14 @@ export const NotificationsPage = () => {
     context.lineTo(signatureStart, cashierArea.height);
     context.stroke();
     context.fillStyle = '#111111';
-    context.font = 'bold 40px Arial, sans-serif';
+    context.font = 'bold 36px Arial, sans-serif';
     context.textBaseline = 'middle';
-    context.fillText('Kasjer:', 18, cashierArea.height / 2);
+    context.fillText('Kasjer:', 18, cashierArea.height / 4);
     if (!clearSignature) {
-      context.font = '40px Arial, sans-serif';
-      context.fillText(cashierName.trim(), 155, cashierArea.height / 2, signatureStart - 175);
+      context.font = '34px Arial, sans-serif';
+      context.fillText(cashierName.trim(), 18, cashierArea.height / 2, signatureStart - 36);
       if (signature) {
-        context.drawImage(signature, signatureStart + 12, 8, cashierArea.width - signatureStart - 24, cashierArea.height - 16);
+        context.drawImage(signature, signatureStart + 12, cashierArea.height / 2 - 40, cashierArea.width - signatureStart - 24, 80);
       }
     }
     const cashierImage = await pdfDoc.embedPng(cashierArea.toDataURL('image/png'));
