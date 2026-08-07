@@ -748,64 +748,43 @@ export const NotificationsPage = () => {
     }
 
     const signature = cashierSignatureRef.current;
-    // New payout PDFs reserve 26 mm for the cashier box.  Legacy PDFs have
-    // only 12–15 mm until the recipient label, so we preserve their layout.
-    const hasCashierBox = recipientBaseline !== null && cashierBaseline - recipientBaseline >= 27 * mmY;
-    if (hasCashierBox) {
-      const cashierBoxX = 20 * mmX;
-      const cashierBoxWidth = 155 * mmX;
-      const cashierBoxHeight = 26 * mmY;
-      const cashierBoxY = cashierBaseline - 20 * mmY;
-      const cashierArea = document.createElement('canvas');
-      cashierArea.width = 1860;
-      cashierArea.height = 312;
-      const context = cashierArea.getContext('2d');
-      if (!context) throw new Error('Не удалось подготовить поле кассира');
-      context.fillStyle = '#ffffff';
-      context.fillRect(0, 0, cashierArea.width, cashierArea.height);
-      context.strokeStyle = '#111111';
-      context.lineWidth = 3;
-      context.strokeRect(1.5, 1.5, cashierArea.width - 3, cashierArea.height - 3);
-      context.fillStyle = '#111111';
-      context.font = 'bold 40px Arial, sans-serif';
-      context.textBaseline = 'middle';
-      context.fillText('Kasjer:', 18, 45);
-      if (!clearSignature) {
-        context.font = '40px Arial, sans-serif';
-        context.fillText(cashierName.trim(), 18, 98, 780);
-        if (signature) context.drawImage(signature, 420, 54, cashierArea.width - 450, cashierArea.height - 72);
-      }
-      const cashierImage = await pdfDoc.embedPng(cashierArea.toDataURL('image/png'));
-      page.drawImage(cashierImage, { x: cashierBoxX, y: cashierBoxY, width: cashierBoxWidth, height: cashierBoxHeight });
-    } else {
-      // Existing PDFs from the former layout retain their two short lines to
-      // avoid covering an already present recipient signature.
-      const cashierNameX = 36 * mmX;
-      const cashierNameWidth = 60 * mmX;
-      const cashierSignatureX = 138 * mmX;
-      const cashierSignatureWidth = 50 * mmX;
-      const fieldY = cashierBaseline - 5 * mmY;
-      const fieldHeight = 8 * mmY;
-      page.drawRectangle({ x: cashierNameX, y: fieldY, width: cashierNameWidth, height: fieldHeight, color: rgb(1, 1, 1) });
-      page.drawRectangle({ x: cashierSignatureX, y: fieldY, width: cashierSignatureWidth, height: fieldHeight, color: rgb(1, 1, 1) });
-      if (!clearSignature) {
-        const nameArea = document.createElement('canvas');
-        nameArea.width = 1000;
-        nameArea.height = 150;
-        const nameContext = nameArea.getContext('2d');
-        if (!nameContext) throw new Error('Не удалось подготовить имя кассира');
-        nameContext.fillStyle = '#111111';
-        nameContext.font = '44px Arial, sans-serif';
-        nameContext.textBaseline = 'middle';
-        nameContext.fillText(cashierName.trim(), 4, nameArea.height / 2);
-        const nameImage = await pdfDoc.embedPng(nameArea.toDataURL('image/png'));
-        page.drawImage(nameImage, { x: cashierNameX, y: fieldY, width: cashierNameWidth, height: fieldHeight });
-      }
-      if (!clearSignature && signature) {
-        const signatureImage = await pdfDoc.embedPng(signature.toDataURL('image/png'));
-        page.drawImage(signatureImage, { x: cashierSignatureX, y: fieldY, width: cashierSignatureWidth, height: fieldHeight });
+    const cashierBoxX = 20 * mmX;
+    const cashierBoxWidth = 155 * mmX;
+    const cashierBoxHeight = 26 * mmY;
+    const recipientBoxGap = 10 * mmY;
+    const recipientBoxHeight = 40 * mmY;
+    const cashierBoxY = recipientBaseline !== null
+      ? recipientBaseline - recipientBoxHeight - recipientBoxGap
+      : cashierBaseline - 20 * mmY;
+
+    const cashierArea = document.createElement('canvas');
+    cashierArea.width = 1860;
+    cashierArea.height = 312;
+    const context = cashierArea.getContext('2d');
+    if (!context) throw new Error('Не удалось подготовить поле кассира');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, cashierArea.width, cashierArea.height);
+    context.strokeStyle = '#111111';
+    context.lineWidth = 3;
+    context.strokeRect(1.5, 1.5, cashierArea.width - 3, cashierArea.height - 3);
+    const signatureStart = Math.round(cashierArea.width * 0.68);
+    context.beginPath();
+    context.moveTo(signatureStart, 0);
+    context.lineTo(signatureStart, cashierArea.height);
+    context.stroke();
+    context.fillStyle = '#111111';
+    context.font = 'bold 40px Arial, sans-serif';
+    context.textBaseline = 'middle';
+    context.fillText('Kasjer:', 18, cashierArea.height / 2);
+    if (!clearSignature) {
+      context.font = '40px Arial, sans-serif';
+      context.fillText(cashierName.trim(), 155, cashierArea.height / 2, signatureStart - 175);
+      if (signature) {
+        context.drawImage(signature, signatureStart + 12, 8, cashierArea.width - signatureStart - 24, cashierArea.height - 16);
       }
     }
+    const cashierImage = await pdfDoc.embedPng(cashierArea.toDataURL('image/png'));
+    page.drawImage(cashierImage, { x: cashierBoxX, y: cashierBoxY, width: cashierBoxWidth, height: cashierBoxHeight });
 
     const token = String(meta.link_token || fallbackToken || '');
     if (!token) throw new Error('Не найден ключ для обновления PDF');
