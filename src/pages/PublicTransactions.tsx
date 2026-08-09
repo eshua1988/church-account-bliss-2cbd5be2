@@ -162,6 +162,14 @@ const PublicTransactions = () => {
   
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
+  const formatPersonName = (value: string) => value
+    .trim()
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map(word => word.charAt(0).toLocaleUpperCase() + word.slice(1).toLocaleLowerCase())
+    .join(' ');
+
   useEffect(() => {
     if (!token) return;
     const savedName = localStorage.getItem(`public-transactions-settings-name:${token}`) || '';
@@ -180,7 +188,7 @@ const PublicTransactions = () => {
       try {
         const { data, error: functionError } = await supabase.functions.invoke<PublicTransactionsResponse>(
           'public-transactions',
-          { body: { token, cursor: append ? nextCursorRef.current : undefined } },
+          { body: { token, cursor: append ? nextCursorRef.current : undefined, requesterName: settingsPersonName } },
         );
 
         if (functionError) {
@@ -287,7 +295,7 @@ const PublicTransactions = () => {
         setLoading(false);
         setLoadingMore(false);
       }
-  }, [token]);
+  }, [token, settingsPersonName]);
 
   useEffect(() => {
     void loadData();
@@ -611,7 +619,7 @@ const PublicTransactions = () => {
   };
 
   const confirmSettingsAccess = () => {
-    const name = settingsPersonNameDraft.trim().replace(/\s+/g, ' ');
+    const name = formatPersonName(settingsPersonNameDraft);
     if (name.split(' ').filter(Boolean).length < 2) {
       toast({ title: 'Введите имя и фамилию', variant: 'destructive' });
       return;
@@ -620,6 +628,7 @@ const PublicTransactions = () => {
     if (token) localStorage.setItem(`public-transactions-settings-name:${token}`, name);
     setShowSettingsAccess(false);
     setShowSettings(true);
+    void loadData(false);
   };
 
   const rowsForSourceKeyword = (keyword: string) => {
@@ -661,6 +670,7 @@ const PublicTransactions = () => {
             transactionIds: rows.map(row => row.id),
             // The phrase selects transactions but must not be part of the exported name.
             exportKeywords: [source.search_keyword],
+            requesterName: settingsPersonName,
           },
         },
       );
@@ -698,6 +708,7 @@ const PublicTransactions = () => {
             sheetName,
             sheetRange,
             searchKeyword: exportSearchKeyword,
+            requesterName: settingsPersonName,
           },
         },
       );
@@ -741,7 +752,7 @@ const PublicTransactions = () => {
   const deleteExportSource = async (sourceId: string) => {
     if (!token) return;
     try {
-      const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse>('public-transactions', { body: { action: 'delete-export-source', token, sourceId } });
+      const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse>('public-transactions', { body: { action: 'delete-export-source', token, sourceId, requesterName: settingsPersonName } });
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || 'Не удалось удалить таблицу');
       setExportSources(current => current.filter(source => source.id !== sourceId));
@@ -788,7 +799,7 @@ const PublicTransactions = () => {
     setIsSavingRegistrationSource(true);
     try {
       const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse>('public-transactions', {
-        body: { action: 'save-registration-source', token, sourceId: editingRegistrationSourceId || undefined, spreadsheetId: registrationSpreadsheetId, sheetName: registrationSheetName, sheetRange: registrationSheetRange, nameColumns: registrationSheetRange, amountColumn: registrationAmountColumn, searchKeyword: registrationSearchKeyword },
+        body: { action: 'save-registration-source', token, sourceId: editingRegistrationSourceId || undefined, spreadsheetId: registrationSpreadsheetId, sheetName: registrationSheetName, sheetRange: registrationSheetRange, nameColumns: registrationSheetRange, amountColumn: registrationAmountColumn, searchKeyword: registrationSearchKeyword, requesterName: settingsPersonName },
       });
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || 'Не удалось добавить таблицу');
@@ -823,7 +834,7 @@ const PublicTransactions = () => {
   const deleteRegistrationSource = async (sourceId: string) => {
     if (!token) return;
     try {
-      const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse>('public-transactions', { body: { action: 'delete-registration-source', token, sourceId } });
+      const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse>('public-transactions', { body: { action: 'delete-registration-source', token, sourceId, requesterName: settingsPersonName } });
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || 'Не удалось удалить таблицу');
       setRegistrationSources(current => current.filter(source => source.id !== sourceId));
@@ -843,6 +854,7 @@ const PublicTransactions = () => {
           action: 'reconcile-registration-sheets',
           token,
           sourceId: source.id,
+          requesterName: settingsPersonName,
         },
       });
       if (error) throw error;
@@ -1232,7 +1244,7 @@ const PublicTransactions = () => {
           <div className="space-y-3">
             <Input
               value={settingsPersonNameDraft}
-              onChange={event => setSettingsPersonNameDraft(event.target.value)}
+              onChange={event => setSettingsPersonNameDraft(formatPersonName(event.target.value))}
               onKeyDown={event => {
                 if (event.key === 'Enter') {
                   event.preventDefault();
@@ -1270,7 +1282,7 @@ const PublicTransactions = () => {
                       void addSearchTermsToRules(keywordDraft);
                     }
                   }}
-                  placeholder="Например: 777"
+                  placeholder="Ввод"
                 />
                 <Button
                   type="button"
@@ -1342,7 +1354,7 @@ const PublicTransactions = () => {
                 </div>
                 <div className="space-y-2">
                   <label htmlFor="public-sheet-keyword" className="text-sm font-medium">Ключевое слово этой таблицы</label>
-                  <Input id="public-sheet-keyword" value={exportSearchKeyword} onChange={event => setExportSearchKeyword(event.target.value)} placeholder="Например: 777 или coram deo" />
+                  <Input id="public-sheet-keyword" value={exportSearchKeyword} onChange={event => setExportSearchKeyword(event.target.value)} placeholder="Ввод" />
                 </div>
                 <Button
                   type="button"
@@ -1400,7 +1412,7 @@ const PublicTransactions = () => {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Ключевое слово этой регистрации</label>
-                <Input value={registrationSearchKeyword} onChange={event => setRegistrationSearchKeyword(event.target.value)} placeholder="Например: 777 или coram deo" />
+                <Input value={registrationSearchKeyword} onChange={event => setRegistrationSearchKeyword(event.target.value)} placeholder="Ввод" />
               </div>
               <Button type="button" variant="outline" className="w-full" onClick={saveRegistrationSource} disabled={isSavingRegistrationSource || !registrationSpreadsheetId.trim() || !registrationSearchKeyword.trim()}>
                 {isSavingRegistrationSource && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} {editingRegistrationSourceId ? 'Сохранить изменения' : 'Добавить таблицу регистрации'}

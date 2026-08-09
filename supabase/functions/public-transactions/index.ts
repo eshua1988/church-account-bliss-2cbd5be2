@@ -528,6 +528,15 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Google Sheet settings belong to the visitor of the public link, not to
+    // the link owner.  A normalized value keeps the same person identifiable
+    // when they type their name with different capitalization.
+    const requesterName = normalizePerson(body.requesterName).slice(0, 160);
+    const needsRequesterName = ['save-export-source', 'delete-export-source', 'save-registration-source', 'delete-registration-source', 'export-sheets', 'reconcile-registration-sheets'].includes(body.action || '');
+    if (needsRequesterName && !requesterName) {
+      return new Response(JSON.stringify({ valid: true, success: false, error: 'Введите имя и фамилию.' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     if (body.action === 'list-sheets') {
       const input = String(body.spreadsheetId || '').trim();
       const spreadsheetId = (input.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)?.[1] || input).trim();
@@ -553,13 +562,13 @@ Deno.serve(async (req) => {
       if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId) || !sheetRange || !nameColumns) {
         return new Response(JSON.stringify({ valid: true, success: false, error: 'Проверьте ссылку, диапазон листа и колонки с именем.' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-      const record = { owner_user_id: linkData.owner_user_id, spreadsheet_id: spreadsheetId, sheet_name: sheetName, sheet_range: sheetRange, name_columns: nameColumns, amount_column: '', search_keyword: String(body.searchKeyword || '').trim().slice(0, 120) };
+      const record = { owner_user_id: linkData.owner_user_id, requester_name: requesterName, spreadsheet_id: spreadsheetId, sheet_name: sheetName, sheet_range: sheetRange, name_columns: nameColumns, amount_column: '', search_keyword: String(body.searchKeyword || '').trim().slice(0, 120) };
       // Adding an already configured sheet updates its name columns instead of
       // failing on the unique source constraint. This makes correcting A:Z → C:C easy.
       const query = body.sourceId && /^[0-9a-f-]{36}$/i.test(body.sourceId)
-        ? supabase.from('registration_sheet_sources').update(record).eq('id', body.sourceId).eq('owner_user_id', linkData.owner_user_id).select().single()
+        ? supabase.from('registration_sheet_sources').update(record).eq('id', body.sourceId).eq('owner_user_id', linkData.owner_user_id).eq('requester_name', requesterName).select().single()
         : supabase.from('registration_sheet_sources').upsert(record, {
-            onConflict: 'owner_user_id,spreadsheet_id,sheet_name,sheet_range',
+            onConflict: 'owner_user_id,requester_name,spreadsheet_id,sheet_name,sheet_range',
           }).select().single();
       const { data, error } = await query;
       if (error) throw new Error(error.message);
@@ -574,10 +583,10 @@ Deno.serve(async (req) => {
       if (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId) || !sheetRange) {
         return new Response(JSON.stringify({ valid: true, success: false, error: 'Проверьте ссылку, лист и диапазон.' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-      const record = { owner_user_id: linkData.owner_user_id, spreadsheet_id: spreadsheetId, sheet_name: sheetName, sheet_range: sheetRange, search_keyword: String(body.searchKeyword || '').trim().slice(0, 120) };
+      const record = { owner_user_id: linkData.owner_user_id, requester_name: requesterName, spreadsheet_id: spreadsheetId, sheet_name: sheetName, sheet_range: sheetRange, search_keyword: String(body.searchKeyword || '').trim().slice(0, 120) };
       const query = body.sourceId && /^[0-9a-f-]{36}$/i.test(body.sourceId)
-        ? supabase.from('public_export_sheet_targets').update(record).eq('id', body.sourceId).eq('owner_user_id', linkData.owner_user_id).select().single()
-        : supabase.from('public_export_sheet_targets').upsert(record, { onConflict: 'owner_user_id,spreadsheet_id,sheet_name,sheet_range' }).select().single();
+        ? supabase.from('public_export_sheet_targets').update(record).eq('id', body.sourceId).eq('owner_user_id', linkData.owner_user_id).eq('requester_name', requesterName).select().single()
+        : supabase.from('public_export_sheet_targets').upsert(record, { onConflict: 'owner_user_id,requester_name,spreadsheet_id,sheet_name,sheet_range' }).select().single();
       const { data, error } = await query;
       if (error) throw new Error(error.message);
       return new Response(JSON.stringify({ valid: true, success: true, source: data }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -585,21 +594,21 @@ Deno.serve(async (req) => {
 
     if (body.action === 'delete-export-source') {
       if (!body.sourceId || !/^[0-9a-f-]{36}$/i.test(body.sourceId)) throw new Error('Invalid source ID');
-      const { error } = await supabase.from('public_export_sheet_targets').delete().eq('id', body.sourceId).eq('owner_user_id', linkData.owner_user_id);
+      const { error } = await supabase.from('public_export_sheet_targets').delete().eq('id', body.sourceId).eq('owner_user_id', linkData.owner_user_id).eq('requester_name', requesterName);
       if (error) throw new Error(error.message);
       return new Response(JSON.stringify({ valid: true, success: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     if (body.action === 'delete-registration-source') {
       if (!body.sourceId || !/^[0-9a-f-]{36}$/i.test(body.sourceId)) throw new Error('Invalid source ID');
-      const { error } = await supabase.from('registration_sheet_sources').delete().eq('id', body.sourceId).eq('owner_user_id', linkData.owner_user_id);
+      const { error } = await supabase.from('registration_sheet_sources').delete().eq('id', body.sourceId).eq('owner_user_id', linkData.owner_user_id).eq('requester_name', requesterName);
       if (error) throw new Error(error.message);
       return new Response(JSON.stringify({ valid: true, success: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     if (body.action === 'reconcile-registration-sheets') {
       const [{ data: sources, error: sourceError }, { data: transactions, error: transactionError }, { data: keywordRules, error: keywordRulesError }] = await Promise.all([
-        supabase.from('registration_sheet_sources').select('id, spreadsheet_id, sheet_name, sheet_range, name_columns, amount_column, search_keyword').eq('owner_user_id', linkData.owner_user_id),
+        supabase.from('registration_sheet_sources').select('id, spreadsheet_id, sheet_name, sheet_range, name_columns, amount_column, search_keyword').eq('owner_user_id', linkData.owner_user_id).eq('requester_name', requesterName),
         // A person's name may be written in the payment title of either an
         // incoming or an outgoing bank transaction, so compare both types.
         supabase.from('transactions').select('id, type, date, amount, currency, bank_sender, bank_recipient, bank_title, description, comment').eq('user_id', linkData.owner_user_id).order('date', { ascending: false }).limit(3000),
@@ -1000,7 +1009,7 @@ Deno.serve(async (req) => {
         }
 
         const { data: exportTarget, error: exportTargetError } = body.targetId && /^[0-9a-f-]{36}$/i.test(body.targetId)
-          ? await supabase.from('public_export_sheet_targets').select('spreadsheet_id, sheet_name, sheet_range').eq('id', body.targetId).eq('owner_user_id', linkData.owner_user_id).maybeSingle()
+          ? await supabase.from('public_export_sheet_targets').select('spreadsheet_id, sheet_name, sheet_range').eq('id', body.targetId).eq('owner_user_id', linkData.owner_user_id).eq('requester_name', requesterName).maybeSingle()
           : { data: null, error: null };
         if (exportTargetError) throw new Error(exportTargetError.message);
         if (!exportTarget) throw new Error('Выберите добавленную таблицу для экспорта.');
@@ -1187,11 +1196,13 @@ Deno.serve(async (req) => {
         .from('registration_sheet_sources')
         .select('id, spreadsheet_id, sheet_name, sheet_range, name_columns, amount_column, search_keyword')
         .eq('owner_user_id', linkData.owner_user_id)
+        .eq('requester_name', requesterName)
         .order('created_at'),
       supabase
         .from('public_export_sheet_targets')
         .select('id, spreadsheet_id, sheet_name, sheet_range, search_keyword')
         .eq('owner_user_id', linkData.owner_user_id)
+        .eq('requester_name', requesterName)
         .order('created_at'),
     ]);
 
@@ -1233,9 +1244,10 @@ Deno.serve(async (req) => {
           id: lastTransaction.id,
         } : null,
         sheetsSettings: {
-          spreadsheetId: sheetsProfile?.spreadsheet_id || '',
-          sheetName: configuredRangeMatch ? configuredRangeMatch[1].replace(/''/g, "'") : '',
-          sheetRange: configuredRangeMatch ? configuredRangeMatch[2] : configuredRange,
+          // Legacy owner-wide settings must never prefill a visitor's form.
+          spreadsheetId: '',
+          sheetName: '',
+          sheetRange: 'A:Z',
         },
         registrationSources: registrationSources || [],
         exportSources: exportSources || [],
