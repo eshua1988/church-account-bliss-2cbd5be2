@@ -162,13 +162,17 @@ const PublicTransactions = () => {
   
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  const formatPersonName = (value: string) => value
+  const formatPersonName = (value: string) => {
+    const hasTrailingSpace = /\s$/.test(value);
+    const formattedName = value
     .trim()
     .replace(/\s+/g, ' ')
     .split(' ')
     .filter(Boolean)
     .map(word => word.charAt(0).toLocaleUpperCase() + word.slice(1).toLocaleLowerCase())
     .join(' ');
+    return hasTrailingSpace && formattedName ? `${formattedName} ` : formattedName;
+  };
 
   useEffect(() => {
     if (!token) return;
