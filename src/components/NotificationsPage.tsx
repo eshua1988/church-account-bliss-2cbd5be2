@@ -773,11 +773,12 @@ export const NotificationsPage = () => {
     context.font = 'bold 36px Arial, sans-serif';
     context.textBaseline = 'middle';
     context.fillText('Kasjer:', 18, cashierArea.height / 4);
+    context.fillText('Podpis kasjera:', signatureStart + 18, cashierArea.height / 4);
     if (!clearSignature) {
       context.font = '34px Arial, sans-serif';
-      context.fillText(cashierName.trim(), 18, cashierArea.height / 2, signatureStart - 36);
+      context.fillText(cashierName.trim(), 18, cashierArea.height * 0.72, signatureStart - 36);
       if (signature) {
-        context.drawImage(signature, signatureStart + 12, cashierArea.height / 2 - 40, cashierArea.width - signatureStart - 24, 80);
+        context.drawImage(signature, signatureStart + 12, cashierArea.height * 0.45, cashierArea.width - signatureStart - 24, cashierArea.height * 0.45);
       }
     }
     const cashierImage = await pdfDoc.embedPng(cashierArea.toDataURL('image/png'));
@@ -1915,6 +1916,7 @@ export const NotificationsPage = () => {
               </Select>
             </div>
           )}
+          <div className="space-y-3 rounded-md border p-3">
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-4">
               <Label htmlFor="deposit-cashier-name">Кассир - Имя Фамилия</Label>
@@ -1956,6 +1958,7 @@ export const NotificationsPage = () => {
               onPointerCancel={() => { drawingCashierSignature.current = false; }}
               onPointerLeave={() => { drawingCashierSignature.current = false; }}
             />
+          </div>
           </div>
           <Button
             className="gap-2"
