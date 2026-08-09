@@ -38,6 +38,17 @@ interface DepositEntry {
 
 const OTHER_BASIS = '__other__';
 const SIGNER_HISTORY_STORAGE_KEY = 'church-account:deposit-signer-history:v1';
+const formatPersonName = (value: string) => {
+  const hasTrailingSpace = /\s$/.test(value);
+  const formattedName = value
+    .trim()
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map(word => word.charAt(0).toLocaleUpperCase() + word.slice(1).toLocaleLowerCase())
+    .join(' ');
+  return hasTrailingSpace && formattedName ? `${formattedName} ` : formattedName;
+};
 const createSigner = (): DepositSigner => ({ id: crypto.randomUUID(), fullName: '' });
 const createEntry = (): DepositEntry => ({
   id: crypto.randomUUID(),
@@ -130,7 +141,7 @@ const PublicDeposit = () => {
   };
 
   const rememberSignerName = (value: string) => {
-    const fullName = value.trim().replace(/\s+/g, ' ');
+    const fullName = formatPersonName(value).trim();
     if (fullName.length < 3) return;
     setSignerHistory(current => {
       const next = [fullName, ...current.filter(name => name.localeCompare(fullName, undefined, { sensitivity: 'accent' }) !== 0)].slice(0, 50);
@@ -520,7 +531,7 @@ const PublicDeposit = () => {
                         aria-invalid={invalidFields.has(`from-${signer.id}`)}
                         className={invalidFields.has(`from-${signer.id}`) ? 'border-destructive ring-1 ring-destructive' : ''}
                         value={signer.fullName}
-                        onChange={event => updateSigner(entry.id, signer.id, event.target.value)}
+                        onChange={event => updateSigner(entry.id, signer.id, formatPersonName(event.target.value))}
                         onBlur={event => rememberSignerName(event.target.value)}
                         list="deposit-signer-history"
                         autoComplete="name"
