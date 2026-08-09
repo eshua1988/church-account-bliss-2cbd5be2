@@ -176,7 +176,11 @@ const PublicTransactions = () => {
 
   useEffect(() => {
     if (!token) return;
-    const savedName = localStorage.getItem(`public-transactions-settings-name:${token}`) || '';
+    const settingsNameKey = `public-transactions-settings-name:${token}`;
+    // Names are private to the open application session. Remove the old
+    // persistent value so another person cannot inherit this session later.
+    localStorage.removeItem(settingsNameKey);
+    const savedName = sessionStorage.getItem(settingsNameKey) || '';
     setSettingsPersonName(savedName);
     setSettingsPersonNameDraft(savedName);
   }, [token]);
@@ -618,6 +622,10 @@ const PublicTransactions = () => {
   };
 
   const requestSettingsAccess = () => {
+    if (settingsPersonName) {
+      setShowSettings(true);
+      return;
+    }
     setSettingsPersonNameDraft(settingsPersonName);
     setShowSettingsAccess(true);
   };
@@ -629,7 +637,7 @@ const PublicTransactions = () => {
       return;
     }
     setSettingsPersonName(name);
-    if (token) localStorage.setItem(`public-transactions-settings-name:${token}`, name);
+    if (token) sessionStorage.setItem(`public-transactions-settings-name:${token}`, name);
     setShowSettingsAccess(false);
     setShowSettings(true);
     void loadData(false);
@@ -1243,7 +1251,7 @@ const PublicTransactions = () => {
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Доступ к настройкам</DialogTitle>
-            <DialogDescription>Введите имя и фамилию. Настройки в этом браузере будут сохранены для указанного человека.</DialogDescription>
+            <DialogDescription>Введите имя и фамилию. Доступ сохранится только до закрытия приложения.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <Input
