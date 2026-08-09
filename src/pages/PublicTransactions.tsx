@@ -1249,6 +1249,7 @@ const PublicTransactions = () => {
             <Input
               value={settingsPersonNameDraft}
               onChange={event => setSettingsPersonNameDraft(formatPersonName(event.target.value))}
+              autoComplete="off"
               onKeyDown={event => {
                 if (event.key === 'Enter') {
                   event.preventDefault();
@@ -1330,6 +1331,8 @@ const PublicTransactions = () => {
                       scheduleSheetNamesLoad(value, 'export');
                     }}
                     placeholder="https://docs.google.com/spreadsheets/d/... или ID"
+                    autoComplete="new-password"
+                    data-1p-ignore="true"
                   />
                   <p className="text-xs text-muted-foreground">Вставьте ссылку на Google Таблицу или только её ID.</p>
                 </div>
@@ -1396,7 +1399,7 @@ const PublicTransactions = () => {
                 const value = event.target.value;
                 setRegistrationSpreadsheetId(value);
                 scheduleSheetNamesLoad(value, 'reconciliation');
-              }} placeholder="Ссылка на Google Таблицу" />
+              }} placeholder="Ссылка на Google Таблицу" autoComplete="new-password" data-1p-ignore="true" />
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-2">
                   <label htmlFor="registration-sheet-name" className="text-sm font-medium">Название листа</label>
