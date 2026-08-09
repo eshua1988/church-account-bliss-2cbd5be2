@@ -1283,7 +1283,7 @@ const PublicTransactions = () => {
           <div className="space-y-5">
             <p className="text-sm text-muted-foreground">Настройки пользователя: <span className="font-medium text-foreground">{settingsPersonName}</span></p>
             <div className="rounded-lg border p-3 space-y-2">
-              <label htmlFor="public-keyword" className="text-sm font-medium">Ключевое слово поиска</label>
+              <label htmlFor="public-keyword" className="text-sm font-medium">Зарегистрировать ключевое слово</label>
               <div className="flex gap-2">
                 <Input
                   id="public-keyword"
