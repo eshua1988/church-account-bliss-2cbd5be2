@@ -1299,35 +1299,28 @@ const PublicPayout = () => {
     doc.rect(leftMargin + labelColWidth, yPos, valueColWidth, wordsHeight, 'S');
     doc.setFontSize(10);
     doc.text(wordsLines, leftMargin + labelColWidth + cellPadding, yPos + cellPadding + 6);
-    yPos += wordsHeight + 8;
-
-    const signatureBoxWidth = tableWidth;
+    yPos += wordsHeight + 15;
+    
+// Recipient signature box
+    const signatureBoxWidth = 155;
     const signatureBoxHeight = 26;
-    const signatureDividerX = leftMargin + Math.round(signatureBoxWidth * 0.58);
-    const drawSignatureRow = (label: string, name: string) => {
-      doc.setDrawColor(0);
-      doc.setLineWidth(0.4);
-      doc.rect(leftMargin, yPos, signatureBoxWidth, signatureBoxHeight, 'S');
-      doc.line(signatureDividerX, yPos, signatureDividerX, yPos + signatureBoxHeight);
-      doc.setFontSize(9);
-      doc.text(label, leftMargin + 3, yPos + 7);
-      if (name) doc.text(name, leftMargin + 3, yPos + 15, { maxWidth: signatureDividerX - leftMargin - 6 });
-    };
-
-    drawSignatureRow('Odbiorca / podpis odbiorcy', formData.issuedTo || '');
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.5);
+    doc.rect(leftMargin, yPos, signatureBoxWidth, signatureBoxHeight, 'S');
+    const signatureDividerX = leftMargin + Math.round(signatureBoxWidth * 0.6);
+    doc.line(signatureDividerX, yPos, signatureDividerX, yPos + signatureBoxHeight);
+    doc.setFontSize(10);
+    doc.text('Podpis odbiorcy:', leftMargin + 3, yPos + 8);
 
     // Use saved signatureDataUrl (persists even when canvas is unmounted on step 4)
     const sigData = signatureDataUrl || (signatureCanvasRef.current ? signatureCanvasRef.current.toDataURL('image/png') : null);
     if (sigData) {
       try {
-        doc.addImage(sigData, 'PNG', signatureDividerX + 4, yPos + 3, leftMargin + signatureBoxWidth - signatureDividerX - 8, signatureBoxHeight - 6);
+        doc.addImage(sigData, 'PNG', signatureDividerX + 5, yPos + 4, signatureBoxWidth - (signatureDividerX - leftMargin) - 10, signatureBoxHeight - 8);
       } catch (e) {
         console.warn('Could not add signature image:', e);
       }
     }
-    yPos += signatureBoxHeight + 5;
-    drawSignatureRow('Kasjer / podpis kasjera', '');
-    yPos += signatureBoxHeight + 6;
 
     // Add each attached image on a new page (compressed)
     for (const img of attachedImages) {

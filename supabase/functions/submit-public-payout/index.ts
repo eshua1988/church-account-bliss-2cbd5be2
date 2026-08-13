@@ -343,7 +343,6 @@ async function generateAndUploadPdf(
       yPos += rowHeight;
     };
 
-    drawRow(L.issuedTo, data.issuedTo || '');
     drawRow(L.account, data.decisionNumber || '');
     drawRow(L.department, data.departmentName || '');
 
@@ -363,7 +362,7 @@ async function generateAndUploadPdf(
     drawMultilineCell(leftMargin + labelColWidth, yPos, valueColWidth, wordsHeight, data.amountInWords || '');
     yPos += wordsHeight + 10;
 
-    // Recipient signature box
+    // Recipient name and signature belong in one framed block.
     const signatureBoxWidth = 155;
     const signatureBoxHeight = 26;
     doc.setDrawColor(0, 0, 0);
@@ -372,7 +371,8 @@ async function generateAndUploadPdf(
     const signatureDividerX = leftMargin + Math.round(signatureBoxWidth * 0.6);
     doc.line(signatureDividerX, yPos, signatureDividerX, yPos + signatureBoxHeight);
     doc.setFontSize(9);
-    doc.text(safeText(L.recipientSig), leftMargin + 3, yPos + 8);
+    doc.text(safeText(`Odbiorcy: ${data.issuedTo || ''}`), leftMargin + 3, yPos + 8);
+    doc.text(safeText(L.recipientSig), signatureDividerX + 3, yPos + 8);
 
     // Embed signature: prefer direct base64 payload, fall back to Storage path
     let sigBase64ForEmbed: string | null = null;
@@ -418,11 +418,21 @@ async function generateAndUploadPdf(
 
     if (sigBase64ForEmbed) {
       try {
-        doc.addImage(`data:image/png;base64,${sigBase64ForEmbed}`, 'PNG', leftMargin + 5, yPos + 2, 145, 36);
+        doc.addImage(`data:image/png;base64,${sigBase64ForEmbed}`, 'PNG', signatureDividerX + 3, yPos + 10, signatureBoxWidth - (signatureDividerX - leftMargin) - 6, signatureBoxHeight - 12);
       } catch (e) {
         console.error('Failed to embed signature in PDF:', e);
       }
     }
+
+    // Cashier information is also written only in a framed block. The
+    // desktop approval screen fills it with the cashier's name and signature.
+    yPos += signatureBoxHeight + 6;
+    const cashierBoxHeight = 40;
+    doc.rect(leftMargin, yPos, signatureBoxWidth, cashierBoxHeight, 'S');
+    doc.line(signatureDividerX, yPos, signatureDividerX, yPos + cashierBoxHeight);
+    doc.setFontSize(9);
+    doc.text(safeText(L.cashier), leftMargin + 3, yPos + 8);
+    doc.text(safeText(L.cashierSig), signatureDividerX + 3, yPos + 8);
 
     // Embed attached images: prefer direct base64 payload, fall back to Storage paths
     const pageW = doc.internal.pageSize.getWidth();
