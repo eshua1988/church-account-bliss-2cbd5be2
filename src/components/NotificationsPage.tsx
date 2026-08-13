@@ -720,69 +720,46 @@ export const NotificationsPage = () => {
     const { width: pageWidth, height: pageHeight } = page.getSize();
     const mmX = pageWidth / 210;
     const mmY = pageHeight / 297;
-    // The payout template has two separate signature areas.  The cashier line
-    // is above the recipient's signature box; never use the recipient box for
-    // the cashier name/signature.
-    let cashierBaseline = pageHeight - 146 * mmY;
-    let recipientBaseline: number | null = null;
+    // The payout template already has a cashier row. Only fill its existing
+    // cells; never paint another large frame over the recipient row.
+    let cashierLabelY: number | null = null;
     try {
       const sourcePdf = await pdfjsLib.getDocument({ data: originalBytes.slice() }).promise;
       const textContent = await (await sourcePdf.getPage(1)).getTextContent();
-      const findLabel = (needle: string) => textContent.items.find((item: any) =>
-        String(item.str || '').toLocaleLowerCase('pl').includes(needle),
-      ) as any;
-      const cashierLabel = findLabel('kasjer');
-      const recipientLabel = findLabel('podpis odbiorcy');
-      if (recipientLabel?.transform) recipientBaseline = Number(recipientLabel.transform[5]);
-      if (cashierLabel?.transform) {
-        cashierBaseline = Number(cashierLabel.transform[5]);
-      } else if (recipientLabel?.transform) {
-        // Both versions of the generated template put this line 12–15 mm
-        // above the recipient label.  This fallback is more reliable than
-        // writing inside the large recipient-signature rectangle.
-        cashierBaseline = Number(recipientLabel.transform[5]) + 13.5 * mmY;
-      }
+      const cashierLabel = textContent.items.find((item: any) => {
+        const label = String(item.str || '').toLocaleLowerCase('pl');
+        return (label.includes('kasjer') || label.includes('кассир') || label.includes('cashier'))
+          && (label.includes('podpis') || label.includes('подпис') || label.includes('signature'));
+      }) as any;
+      if (cashierLabel?.transform) cashierLabelY = Number(cashierLabel.transform[5]);
       await sourcePdf.destroy();
     } catch (error) {
-      console.warn('Could not locate cashier line in payout PDF, using standard layout:', error);
+      console.warn('Could not locate cashier row in payout PDF:', error);
+    }
+
+    if (cashierLabelY === null) {
+      throw new Error('Nie znaleziono pola kasjera w tym PDF. Wygeneruj dokument ponownie przed podpisaniem.');
     }
 
     const signature = cashierSignatureRef.current;
-    const cashierBoxX = 20 * mmX;
-    const cashierBoxWidth = 155 * mmX;
-    const cashierBoxHeight = 40 * mmY;
-    const minCashierY = 20 * mmY;
-    const cashierBoxY = Math.max(minCashierY, cashierBaseline - 20 * mmY);
+    const rowX = 20 * mmX;
+    const rowWidth = 170 * mmX;
+    const rowHeight = 26 * mmY;
+    const dividerX = rowX + rowWidth * 0.58;
+    const rowTop = cashierLabelY + 7 * mmY;
+    const rowBottom = rowTop - rowHeight;
+    const contentBottom = rowBottom + 3 * mmY;
+    const contentHeight = 15 * mmY;
 
-    const cashierArea = document.createElement('canvas');
-    cashierArea.width = 1860;
-    cashierArea.height = 400;
-    const context = cashierArea.getContext('2d');
-    if (!context) throw new Error('Не удалось подготовить поле кассира');
-    context.fillStyle = '#ffffff';
-    context.fillRect(0, 0, cashierArea.width, cashierArea.height);
-    context.strokeStyle = '#111111';
-    context.lineWidth = 3;
-    context.strokeRect(1.5, 1.5, cashierArea.width - 3, cashierArea.height - 3);
-    const signatureStart = Math.round(cashierArea.width * 0.68);
-    context.beginPath();
-    context.moveTo(signatureStart, 0);
-    context.lineTo(signatureStart, cashierArea.height);
-    context.stroke();
-    context.fillStyle = '#111111';
-    context.font = 'bold 36px Arial, sans-serif';
-    context.textBaseline = 'middle';
-    context.fillText('Kasjer:', 18, cashierArea.height / 4);
-    context.fillText('Podpis kasjera:', signatureStart + 18, cashierArea.height / 4);
+    page.drawRectangle({ x: rowX + 2 * mmX, y: contentBottom, width: dividerX - rowX - 4 * mmX, height: contentHeight, color: rgb(1, 1, 1) });
+    page.drawRectangle({ x: dividerX + 2 * mmX, y: rowBottom + 2 * mmY, width: rowX + rowWidth - dividerX - 4 * mmX, height: rowHeight - 4 * mmY, color: rgb(1, 1, 1) });
     if (!clearSignature) {
-      context.font = '34px Arial, sans-serif';
-      context.fillText(cashierName.trim(), 18, cashierArea.height * 0.72, signatureStart - 36);
+      page.drawText(cashierName.trim(), { x: rowX + 3 * mmX, y: contentBottom + 5 * mmY, size: 9, maxWidth: dividerX - rowX - 6 * mmX });
       if (signature) {
-        context.drawImage(signature, signatureStart + 12, cashierArea.height * 0.45, cashierArea.width - signatureStart - 24, cashierArea.height * 0.45);
+        const cashierImage = await pdfDoc.embedPng(signature.toDataURL('image/png'));
+        page.drawImage(cashierImage, { x: dividerX + 3 * mmX, y: rowBottom + 3 * mmY, width: rowX + rowWidth - dividerX - 6 * mmX, height: rowHeight - 6 * mmY });
       }
     }
-    const cashierImage = await pdfDoc.embedPng(cashierArea.toDataURL('image/png'));
-    page.drawImage(cashierImage, { x: cashierBoxX, y: cashierBoxY, width: cashierBoxWidth, height: cashierBoxHeight });
 
     const token = String(meta.link_token || fallbackToken || '');
     if (!token) throw new Error('Не найден ключ для обновления PDF');
