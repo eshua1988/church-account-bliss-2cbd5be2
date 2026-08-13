@@ -360,19 +360,23 @@ async function generateAndUploadPdf(
     const wordsHeight = Math.max(rowHeight * 2, Math.min(wordsLines.length * 5.5 + cellPadding * 2 + 2, 40));
     drawCell(leftMargin, yPos, labelColWidth, wordsHeight, safeText(L.amountInWords), true, true);
     drawMultilineCell(leftMargin + labelColWidth, yPos, valueColWidth, wordsHeight, data.amountInWords || '');
-    yPos += wordsHeight + 10;
+    yPos += wordsHeight + 8;
 
-    // Recipient name and signature belong in one framed block.
-    const signatureBoxWidth = 155;
+    // Recipient and cashier use separate rows; an embedded signature only ever
+    // occupies the right side of the recipient row.
+    const signatureBoxWidth = tableWidth;
     const signatureBoxHeight = 26;
-    doc.setDrawColor(0, 0, 0);
-    doc.setLineWidth(0.5);
-    doc.rect(leftMargin, yPos, signatureBoxWidth, signatureBoxHeight, 'S');
-    const signatureDividerX = leftMargin + Math.round(signatureBoxWidth * 0.6);
-    doc.line(signatureDividerX, yPos, signatureDividerX, yPos + signatureBoxHeight);
-    doc.setFontSize(9);
-    doc.text(safeText(`Odbiorcy: ${data.issuedTo || ''}`), leftMargin + 3, yPos + 8);
-    doc.text(safeText(L.recipientSig), signatureDividerX + 3, yPos + 8);
+    const signatureDividerX = leftMargin + Math.round(signatureBoxWidth * 0.58);
+    const drawSignatureRow = (label: string, name: string) => {
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.4);
+      doc.rect(leftMargin, yPos, signatureBoxWidth, signatureBoxHeight, 'S');
+      doc.line(signatureDividerX, yPos, signatureDividerX, yPos + signatureBoxHeight);
+      doc.setFontSize(9);
+      doc.text(safeText(label), leftMargin + 3, yPos + 7);
+      if (name) doc.text(safeText(name), leftMargin + 3, yPos + 15, { maxWidth: signatureDividerX - leftMargin - 6 });
+    };
+    drawSignatureRow(`${L.recipientSig} / odbiorca`, data.issuedTo || '');
 
     // Embed signature: prefer direct base64 payload, fall back to Storage path
     let sigBase64ForEmbed: string | null = null;
@@ -418,21 +422,15 @@ async function generateAndUploadPdf(
 
     if (sigBase64ForEmbed) {
       try {
-        doc.addImage(`data:image/png;base64,${sigBase64ForEmbed}`, 'PNG', signatureDividerX + 3, yPos + 10, signatureBoxWidth - (signatureDividerX - leftMargin) - 6, signatureBoxHeight - 12);
+        doc.addImage(`data:image/png;base64,${sigBase64ForEmbed}`, 'PNG', signatureDividerX + 4, yPos + 3, leftMargin + signatureBoxWidth - signatureDividerX - 8, signatureBoxHeight - 6);
       } catch (e) {
         console.error('Failed to embed signature in PDF:', e);
       }
     }
 
-    // Cashier information is also written only in a framed block. The
-    // desktop approval screen fills it with the cashier's name and signature.
+    yPos += signatureBoxHeight + 5;
+    drawSignatureRow(`${L.cashier} / ${L.cashierSig}`, '');
     yPos += signatureBoxHeight + 6;
-    const cashierBoxHeight = 40;
-    doc.rect(leftMargin, yPos, signatureBoxWidth, cashierBoxHeight, 'S');
-    doc.line(signatureDividerX, yPos, signatureDividerX, yPos + cashierBoxHeight);
-    doc.setFontSize(9);
-    doc.text(safeText(L.cashier), leftMargin + 3, yPos + 8);
-    doc.text(safeText(L.cashierSig), signatureDividerX + 3, yPos + 8);
 
     // Embed attached images: prefer direct base64 payload, fall back to Storage paths
     const pageW = doc.internal.pageSize.getWidth();
