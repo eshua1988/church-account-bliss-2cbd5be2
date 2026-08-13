@@ -140,7 +140,15 @@ Deno.serve(async (req) => {
     const signatureDividerX = leftMargin + Math.round(signatureBoxWidth * 0.6);
     doc.line(signatureDividerX, yPos, signatureDividerX, yPos + signatureBoxHeight);
     doc.setFontSize(10);
-    doc.text('Podpis odbiorcy:', leftMargin + 3, yPos + 8);
+    doc.text('Odbiorca:', leftMargin + 3, yPos + 8);
+    if (tx.issued_to) {
+      doc.setFontSize(9);
+      doc.text(tx.issued_to, leftMargin + 3, yPos + 16, {
+        maxWidth: signatureDividerX - leftMargin - 6,
+      });
+    }
+    doc.setFontSize(10);
+    doc.text('Podpis odbiorcy:', signatureDividerX + 3, yPos + 8);
 
     // Check if signature exists in Storage
     const sigPath = `${ownerUserId}/${transactionId}/signature.png`;
@@ -162,6 +170,18 @@ Deno.serve(async (req) => {
         console.error('Failed to embed signature:', e);
       }
     }
+
+    // Separate cashier area below the recipient row. The notification editor
+    // writes the cashier's name and signature into these existing cells.
+    yPos += signatureBoxHeight + 6;
+    const cashierBoxHeight = 26;
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.5);
+    doc.rect(leftMargin, yPos, signatureBoxWidth, cashierBoxHeight, 'S');
+    doc.line(signatureDividerX, yPos, signatureDividerX, yPos + cashierBoxHeight);
+    doc.setFontSize(10);
+    doc.text('Kasjer:', leftMargin + 3, yPos + 8);
+    doc.text('Podpis kasjera:', signatureDividerX + 3, yPos + 8);
 
     // Return PDF as base64
     const pdfBase64 = doc.output('datauristring').split(',')[1];
