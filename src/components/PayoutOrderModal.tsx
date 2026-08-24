@@ -310,6 +310,13 @@ export const PayoutOrderModal = ({ transactionId, open, onClose, onBack, backLab
 
     yPos += signatureBoxHeight + 6;
 
+    // Cashier signature box — identical to the recipient block above.
+    doc.rect(leftMargin, yPos, signatureBoxWidth, signatureBoxHeight, 'S');
+    doc.line(signatureDividerX, yPos, signatureDividerX, yPos + signatureBoxHeight);
+    doc.setFontSize(10);
+    doc.text('Kasjer:', leftMargin + 3, yPos + 8);
+    doc.text('Podpis kasjera:', signatureDividerX + 3, yPos + 8);
+
     const issuedTo = (orderData.issued_to || 'dokument').replace(/\s/g, '_');
     const dateForFile = orderData.date ? format(new Date(orderData.date), 'yyyy-MM-dd') : 'date';
     const fileName = `dowod_wyplaty_${dateForFile}_${issuedTo}.pdf`;

@@ -1322,6 +1322,14 @@ const PublicPayout = () => {
       }
     }
 
+    // Cashier signature box — identical to the recipient block above.
+    yPos += signatureBoxHeight + 6;
+    doc.rect(leftMargin, yPos, signatureBoxWidth, signatureBoxHeight, 'S');
+    doc.line(signatureDividerX, yPos, signatureDividerX, yPos + signatureBoxHeight);
+    doc.setFontSize(10);
+    doc.text('Kasjer:', leftMargin + 3, yPos + 8);
+    doc.text('Podpis kasjera:', signatureDividerX + 3, yPos + 8);
+
     // Add each attached image on a new page (compressed)
     for (const img of attachedImages) {
       doc.addPage();

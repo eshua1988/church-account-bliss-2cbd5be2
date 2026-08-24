@@ -424,12 +424,11 @@ async function generateAndUploadPdf(
       }
     }
 
-    // Cashier information is also written only in a framed block. The
-    // desktop approval screen fills it with the cashier's name and signature.
+    // The cashier uses the same two-column signature block as the recipient.
+    // The desktop approval screen fills its cells with the cashier's name and signature.
     yPos += signatureBoxHeight + 6;
-    const cashierBoxHeight = 40;
-    doc.rect(leftMargin, yPos, signatureBoxWidth, cashierBoxHeight, 'S');
-    doc.line(signatureDividerX, yPos, signatureDividerX, yPos + cashierBoxHeight);
+    doc.rect(leftMargin, yPos, signatureBoxWidth, signatureBoxHeight, 'S');
+    doc.line(signatureDividerX, yPos, signatureDividerX, yPos + signatureBoxHeight);
     doc.setFontSize(9);
     doc.text(safeText(L.cashier), leftMargin + 3, yPos + 8);
     doc.text(safeText(L.cashierSig), signatureDividerX + 3, yPos + 8);
