@@ -147,7 +147,9 @@ const NotificationCard = ({
       const json = await res.json();
 
       if (json.signedUrl) {
-        openPdfUrl(json.signedUrl);
+        // Storage keeps the same PDF path after a cashier signature is saved.
+        // A cache-busting query ensures Chrome does not show its old copy.
+        openPdfUrl(`${json.signedUrl}${json.signedUrl.includes('?') ? '&' : '?'}v=${Date.now()}`);
       } else {
         console.error('[PDF sign] error from edge function:', json);
         toast({ title: 'Ошибка', description: json.error || 'Не удалось получить ссылку на PDF', variant: 'destructive' });
@@ -916,10 +918,13 @@ export const NotificationsPage = () => {
           ? Number(receiptLayout.cashier_top_mm)
           : (Array.isArray(meta.receipts) ? receiptOffset + 98 : 137);
         const detectedTops = cashierTopsByPage.get(pageIndex) || [];
+        const fallbackTopMm = isMultiReceiptLayout && storedTopMm < 125
+          ? storedTopMm + 30
+          : storedTopMm;
         const topMm = detectedTops.length > 0
           ? detectedTops.reduce((nearest, candidate) =>
-              Math.abs(candidate - storedTopMm) < Math.abs(nearest - storedTopMm) ? candidate : nearest)
-          : storedTopMm;
+              Math.abs(candidate - fallbackTopMm) < Math.abs(nearest - fallbackTopMm) ? candidate : nearest)
+          : fallbackTopMm;
         const heightMm = Number.isFinite(Number(receiptLayout.cashier_height_mm))
           ? Number(receiptLayout.cashier_height_mm)
           : selectedHeightMm;
