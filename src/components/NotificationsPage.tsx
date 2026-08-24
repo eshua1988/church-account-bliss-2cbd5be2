@@ -829,8 +829,12 @@ export const NotificationsPage = () => {
       const sourceResponse = await fetch(signResult.signedUrl);
       if (!sourceResponse.ok) throw new Error(`Ошибка загрузки PDF: HTTP ${sourceResponse.status}`);
 
-      const { PDFDocument } = await import('pdf-lib');
-      const pdfDoc = await PDFDocument.load(await sourceResponse.arrayBuffer());
+      const originalBytes = new Uint8Array(await sourceResponse.arrayBuffer());
+      const [{ PDFDocument }, pdfjsLib] = await Promise.all([
+        import('pdf-lib'),
+        import('pdfjs-dist'),
+      ]);
+      const pdfDoc = await PDFDocument.load(originalBytes);
       const receiptIndexes = signAllDepositReceipts
         ? depositReceipts.map((_, index) => index)
         : [receiptIndex];
@@ -877,6 +881,26 @@ export const NotificationsPage = () => {
         );
       }
       const areaImage = await pdfDoc.embedPng(area.toDataURL('image/png'));
+      // Older deposit PDFs stored an incorrect cashier_top_mm. Read the actual
+      // "Kasjer:" label from the PDF so the overlay always lands in its row.
+      const cashierTopsByPage = new Map<number, number[]>();
+      try {
+        const sourcePdf = await pdfjsLib.getDocument({ data: originalBytes.slice() }).promise;
+        for (let pageIndex = 0; pageIndex < sourcePdf.numPages; pageIndex += 1) {
+          const sourcePage = await sourcePdf.getPage(pageIndex + 1);
+          const textContent = await sourcePage.getTextContent();
+          const { height } = pdfDoc.getPage(pageIndex).getSize();
+          const mmY = height / 297;
+          const tops = textContent.items
+            .filter((item: any) => /^(kasjer|кассир|cashier)\s*:?$/i.test(String(item.str || '').trim()))
+            .map((item: any) => (height - (Number(item.transform?.[5]) + 4 * mmY)) / mmY)
+            .filter((top: number) => Number.isFinite(top));
+          if (tops.length > 0) cashierTopsByPage.set(pageIndex, tops);
+        }
+        await sourcePdf.destroy();
+      } catch (error) {
+        console.warn('Could not locate cashier rows in deposit PDF:', error);
+      }
       receiptIndexes.forEach(index => {
         const receiptLayout = depositReceipts[index] || {};
         const pageIndex = Number.isFinite(Number(receiptLayout.page_index))
@@ -888,9 +912,14 @@ export const NotificationsPage = () => {
         const mmX = pageWidth / 210;
         const mmY = pageHeight / 297;
         const receiptOffset = index % 2 === 0 ? 10 : 153;
-        const topMm = Number.isFinite(Number(receiptLayout.cashier_top_mm))
+        const storedTopMm = Number.isFinite(Number(receiptLayout.cashier_top_mm))
           ? Number(receiptLayout.cashier_top_mm)
           : (Array.isArray(meta.receipts) ? receiptOffset + 98 : 137);
+        const detectedTops = cashierTopsByPage.get(pageIndex) || [];
+        const topMm = detectedTops.length > 0
+          ? detectedTops.reduce((nearest, candidate) =>
+              Math.abs(candidate - storedTopMm) < Math.abs(nearest - storedTopMm) ? candidate : nearest)
+          : storedTopMm;
         const heightMm = Number.isFinite(Number(receiptLayout.cashier_height_mm))
           ? Number(receiptLayout.cashier_height_mm)
           : selectedHeightMm;
