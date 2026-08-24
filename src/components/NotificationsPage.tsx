@@ -839,8 +839,14 @@ export const NotificationsPage = () => {
         ? Number(selectedLayout.cashier_height_mm)
         : (Array.isArray(meta.receipts) ? 12 : 16);
 
+      // A single receipt uses the 20–190 mm cashier row visible in the PDF.
+      // The older two-receipts-per-page layout has its own wider row.
+      const isMultiReceiptLayout = Array.isArray(meta.receipts);
+      const cashierRowLeftMm = isMultiReceiptLayout ? 12 : 20;
+      const cashierRowWidthMm = isMultiReceiptLayout ? 186 : 170;
+      const cashierDividerRatio = isMultiReceiptLayout ? 0.68 : 0.6;
       const area = document.createElement('canvas');
-      area.width = 1860;
+      area.width = Math.round(cashierRowWidthMm * 10);
       area.height = Math.round(selectedHeightMm * 10);
       const context = area.getContext('2d');
       if (!context) throw new Error('Не удалось подготовить область кассира');
@@ -849,7 +855,7 @@ export const NotificationsPage = () => {
       context.strokeStyle = '#111111';
       context.lineWidth = 3;
       context.strokeRect(1.5, 1.5, area.width - 3, area.height - 3);
-      const signatureStart = Math.round(area.width * 0.68);
+      const signatureStart = Math.round(area.width * cashierDividerRatio);
       context.beginPath();
       context.moveTo(signatureStart, 0);
       context.lineTo(signatureStart, area.height);
@@ -889,9 +895,9 @@ export const NotificationsPage = () => {
           ? Number(receiptLayout.cashier_height_mm)
           : selectedHeightMm;
         page.drawImage(areaImage, {
-          x: 12 * mmX,
+          x: cashierRowLeftMm * mmX,
           y: pageHeight - (topMm + heightMm) * mmY,
-          width: 186 * mmX,
+          width: cashierRowWidthMm * mmX,
           height: heightMm * mmY,
         });
       });
