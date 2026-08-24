@@ -895,7 +895,8 @@ export const NotificationsPage = () => {
           const mmY = height / 297;
           const tops = textContent.items
             .filter((item: any) => /^(kasjer|кассир|cashier)\s*:?$/i.test(String(item.str || '').trim()))
-            .map((item: any) => (height - (Number(item.transform?.[5]) + 4 * mmY)) / mmY)
+            // PDF text Y is the label baseline; the cashier row starts 8 mm above it.
+            .map((item: any) => (height - Number(item.transform?.[5])) / mmY - 8)
             .filter((top: number) => Number.isFinite(top));
           if (tops.length > 0) cashierTopsByPage.set(pageIndex, tops);
         }
@@ -918,8 +919,10 @@ export const NotificationsPage = () => {
           ? Number(receiptLayout.cashier_top_mm)
           : (Array.isArray(meta.receipts) ? receiptOffset + 98 : 137);
         const detectedTops = cashierTopsByPage.get(pageIndex) || [];
-        const fallbackTopMm = isMultiReceiptLayout && storedTopMm < 125
-          ? storedTopMm + 30
+        // Existing deposit metadata stores the Kasjer label baseline, while
+        // drawImage needs the top edge of the 12 mm cashier row.
+        const fallbackTopMm = isMultiReceiptLayout
+          ? storedTopMm - 8
           : storedTopMm;
         const topMm = detectedTops.length > 0
           ? detectedTops.reduce((nearest, candidate) =>
