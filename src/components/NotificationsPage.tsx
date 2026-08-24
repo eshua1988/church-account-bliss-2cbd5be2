@@ -832,18 +832,13 @@ export const NotificationsPage = () => {
       if (!sourceResponse.ok) throw new Error(`Ошибка загрузки PDF: HTTP ${sourceResponse.status}`);
 
       const originalBytes = new Uint8Array(await sourceResponse.arrayBuffer());
-      const [{ PDFDocument }, pdfjsLib] = await Promise.all([
-        import('pdf-lib'),
-        import('pdfjs-dist'),
-      ]);
+      const { PDFDocument } = await import('pdf-lib');
       const pdfDoc = await PDFDocument.load(originalBytes);
       const receiptIndexes = signAllDepositReceipts
         ? depositReceipts.map((_, index) => index)
         : [receiptIndex];
       const selectedLayout = depositReceipts[receiptIndex] || {};
-      const selectedHeightMm = Number.isFinite(Number(selectedLayout.cashier_height_mm))
-        ? Number(selectedLayout.cashier_height_mm)
-        : (Array.isArray(meta.receipts) ? 12 : 16);
+      const selectedHeightMm = Array.isArray(meta.receipts) ? 16 : 16;
 
       // A single receipt uses the 20–190 mm cashier row visible in the PDF.
       // The older two-receipts-per-page layout has its own wider row.
@@ -883,27 +878,6 @@ export const NotificationsPage = () => {
         );
       }
       const areaImage = await pdfDoc.embedPng(area.toDataURL('image/png'));
-      // Older deposit PDFs stored an incorrect cashier_top_mm. Read the actual
-      // "Kasjer:" label from the PDF so the overlay always lands in its row.
-      const cashierTopsByPage = new Map<number, number[]>();
-      try {
-        const sourcePdf = await pdfjsLib.getDocument({ data: originalBytes.slice() }).promise;
-        for (let pageIndex = 0; pageIndex < sourcePdf.numPages; pageIndex += 1) {
-          const sourcePage = await sourcePdf.getPage(pageIndex + 1);
-          const textContent = await sourcePage.getTextContent();
-          const { height } = pdfDoc.getPage(pageIndex).getSize();
-          const mmY = height / 297;
-          const tops = textContent.items
-            .filter((item: any) => /^(kasjer|кассир|cashier)\s*:?$/i.test(String(item.str || '').trim()))
-            // PDF text Y is the label baseline; the cashier row starts 8 mm above it.
-            .map((item: any) => (height - Number(item.transform?.[5])) / mmY - 8)
-            .filter((top: number) => Number.isFinite(top));
-          if (tops.length > 0) cashierTopsByPage.set(pageIndex, tops);
-        }
-        await sourcePdf.destroy();
-      } catch (error) {
-        console.warn('Could not locate cashier rows in deposit PDF:', error);
-      }
       receiptIndexes.forEach(index => {
         const receiptLayout = depositReceipts[index] || {};
         const pageIndex = Number.isFinite(Number(receiptLayout.page_index))
@@ -914,23 +888,14 @@ export const NotificationsPage = () => {
         const { width: pageWidth, height: pageHeight } = page.getSize();
         const mmX = pageWidth / 210;
         const mmY = pageHeight / 297;
-        const receiptOffset = index % 2 === 0 ? 10 : 153;
-        const storedTopMm = Number.isFinite(Number(receiptLayout.cashier_top_mm))
-          ? Number(receiptLayout.cashier_top_mm)
-          : (Array.isArray(meta.receipts) ? receiptOffset + 98 : 137);
-        const detectedTops = cashierTopsByPage.get(pageIndex) || [];
-        // Existing deposit metadata stores the Kasjer label baseline, while
-        // drawImage needs the top edge of the 12 mm cashier row.
-        const fallbackTopMm = isMultiReceiptLayout
-          ? storedTopMm - 8
-          : storedTopMm;
-        const topMm = detectedTops.length > 0
-          ? detectedTops.reduce((nearest, candidate) =>
-              Math.abs(candidate - fallbackTopMm) < Math.abs(nearest - fallbackTopMm) ? candidate : nearest)
-          : fallbackTopMm;
-        const heightMm = Number.isFinite(Number(receiptLayout.cashier_height_mm))
-          ? Number(receiptLayout.cashier_height_mm)
-          : selectedHeightMm;
+        // Deposit receipts use a fixed layout: after a 62 mm header, each
+        // sender occupies 26 mm, then the 16 mm cashier row begins.
+        const receiptOffset = Number(receiptLayout.offset_y_mm) || (index % 2 === 0 ? 10 : 153);
+        const senderCount = Array.isArray(receiptLayout.senders) ? receiptLayout.senders.length : 2;
+        const topMm = isMultiReceiptLayout
+          ? receiptOffset + 62 + senderCount * 26
+          : 137;
+        const heightMm = selectedHeightMm;
         page.drawImage(areaImage, {
           x: cashierRowLeftMm * mmX,
           y: pageHeight - (topMm + heightMm) * mmY,
