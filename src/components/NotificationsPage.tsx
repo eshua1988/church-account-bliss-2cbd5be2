@@ -800,6 +800,10 @@ export const NotificationsPage = () => {
 
   const saveDepositPdf = async (clearSignature = false) => {
     if (!depositPdfTarget || (!clearSignature && !cashierName.trim())) return;
+    const cashierNameToSave = cashierName.trim();
+    const cashierSignatureDataUrl = !clearSignature && cashierSignatureRef.current
+      ? cashierSignatureRef.current.toDataURL('image/png')
+      : null;
     if (depositPdfTarget.type === 'payout') {
       setSavingId(depositPdfTarget.id);
       try {
@@ -878,9 +882,14 @@ export const NotificationsPage = () => {
       context.textBaseline = 'middle';
       context.fillText('Kasjer:', 14, area.height / 2);
       context.font = '36px Arial, sans-serif';
-      if (!clearSignature) context.fillText(cashierName.trim(), 155, area.height / 2, signatureStart - 175);
-      const signature = cashierSignatureRef.current;
-      if (!clearSignature && signature) {
+      if (!clearSignature) context.fillText(cashierNameToSave, 155, area.height / 2, signatureStart - 175);
+      if (cashierSignatureDataUrl) {
+        const signature = new Image();
+        await new Promise<void>((resolve, reject) => {
+          signature.onload = () => resolve();
+          signature.onerror = () => reject(new Error('Не удалось прочитать подпись кассира'));
+          signature.src = cashierSignatureDataUrl;
+        });
         context.drawImage(
           signature,
           signatureStart + 12,
@@ -955,14 +964,14 @@ export const NotificationsPage = () => {
       const receipts = Array.isArray(meta.receipts)
         ? (meta.receipts as Array<Record<string, unknown>>).map((receipt, index) =>
             receiptIndexes.includes(index)
-              ? { ...receipt, cashier: clearSignature ? null : cashierName.trim(), cashier_signed: !clearSignature }
+              ? { ...receipt, cashier: clearSignature ? null : cashierNameToSave, cashier_signed: !clearSignature }
               : receipt)
         : undefined;
       const updatedMetadata = {
         ...meta,
         ...(receipts
           ? { receipts }
-          : { cashier: clearSignature ? null : cashierName.trim(), cashier_signed: !clearSignature }),
+          : { cashier: clearSignature ? null : cashierNameToSave, cashier_signed: !clearSignature }),
       };
       const { error: updateError } = await supabase
         .from('notifications')
