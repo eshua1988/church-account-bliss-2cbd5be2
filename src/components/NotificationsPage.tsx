@@ -777,6 +777,8 @@ export const NotificationsPage = () => {
     });
     page.drawRectangle({ x: rowX, y: rowBottom, width: rowWidth, height: rowHeight, borderColor: rgb(0, 0, 0), borderWidth: 0.5 });
     page.drawLine({ start: { x: dividerX, y: rowBottom }, end: { x: dividerX, y: rowTop }, thickness: 0.5, color: rgb(0, 0, 0) });
+    page.drawText('Kasjer:', { font: cashierFont, x: rowX + 3 * mmX, y: rowBottom + rowHeight - 8 * mmY, size: 9 });
+    page.drawText('Podpis kasjera:', { font: cashierFont, x: dividerX + 3 * mmX, y: rowBottom + rowHeight - 8 * mmY, size: 9 });
     if (!clearSignature) {
       page.drawText(cashierNameToSave, { font: cashierFont, x: rowX + 3 * mmX, y: rowBottom + 9 * mmY, size: 9, maxWidth: dividerX - rowX - 6 * mmX });
       if (cashierSignatureDataUrl) {
