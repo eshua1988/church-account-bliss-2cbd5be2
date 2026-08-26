@@ -1,0 +1,31 @@
+project_id = "htepbcotdqrewbxmasbf"
+
+[functions.google-sheets]
+verify_jwt = false
+
+[functions.validate-payout-token]
+verify_jwt = false
+
+[functions.submit-public-payout]
+verify_jwt = false
+
+[functions.submit-public-deposit]
+verify_jwt = false
+
+[functions.public-transactions]
+verify_jwt = false
+
+[functions.send-push-notification]
+verify_jwt = false
+
+[functions.check-pending-payouts]
+verify_jwt = false
+
+[functions.add-images-to-payout]
+verify_jwt = false
+
+[functions.telegram-bot]
+verify_jwt = false
+
+[functions.generate-payout-pdf]
+verify_jwt = false

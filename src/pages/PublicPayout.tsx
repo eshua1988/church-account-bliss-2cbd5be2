@@ -1,0 +1,3024 @@
+import { useState, useRef, useEffect } from 'react';
+import { openPdfUrl } from '@/lib/pdfDownload';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { format } from 'date-fns';
+import { Calendar, Eraser, Save, Loader2, CheckCircle, ImagePlus, X, Globe, ArrowLeft, ArrowRight, Send, ExternalLink, Copy, Link, Search, ChevronDown, Check, Maximize2 } from 'lucide-react';
+import currencyConvertIcon from '@/assets/currency-convert-icon.png';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
+import { Switch } from '@/components/ui/switch';
+import { Progress } from '@/components/ui/progress';
+import { cn } from '@/lib/utils';
+import jsPDF from 'jspdf';
+import { ROBOTO_FONT_BASE64 } from '@/lib/robotoFont';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { Toaster } from '@/components/ui/toaster';
+import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
+import { CurrencyConverter } from '@/components/CurrencyConverter';
+import { loadHeaderSettings } from '@/components/Header';
+import * as pdfjsLib from 'pdfjs-dist';
+
+type Language = 'pl' | 'ru' | 'en' | 'uk';
+type LinkType = 'standard' | 'stepwise';
+
+const LANGUAGE_NAMES: Record<Language, string> = {
+  pl: 'Polski',
+  ru: 'Русский',
+  en: 'English',
+  uk: 'Українська',
+};
+
+const languageFlags: Record<Language, string> = {
+  pl: '🇵🇱',
+  ru: '🇷🇺',
+  en: '🇬🇧',
+  uk: '🇺🇦',
+};
+
+// Translations for all UI text
+const translations: Record<Language, Record<string, string>> = {
+  pl: {
+    title: 'Dowód wypłaty',
+    subtitle: 'ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE',
+    requiredFields: '* Pola obowiązkowe do wypełnienia',
+    date: 'Data',
+    amount: 'Suma',
+    issuedTo: 'Wydano (imię i nazwisko)',
+    bankAccount: 'Konto do przelewu',
+    bankAccountPlaceholder: 'Wpisz numer konta lub telefonu...',
+    department: 'Nazwa oddziału',
+    selectCategory: 'Wybierz kategorię',
+    basis: 'Podstawa (na jakie potrzeby)',
+    basisPlaceholder: 'Wpisz podstawę wypłaty...',
+    amountInWords: 'Suma słownie',
+    attachments: 'Załączniki (zdjęcia)',
+    required: 'Obowiązkowe',
+    optional: 'Nieobowiązkowe',
+    addPhotos: 'Dodaj zdjęcia',
+    photoNote: 'Każde zdjęcie zostanie umieszczone na osobnej stronie PDF',
+    signature: 'Podpis odbiorcy',
+    clear: 'Wyczyść',
+    saveAndDownload: 'Wyślij',
+    saving: 'Wysyłanie...',
+    success: 'Wysłano!',
+    successMessage: 'Dokument został zapisany. Możesz zamknąć tę stronę.',
+    createAnother: 'Utwórz kolejny dokument',
+    saveLink: 'Zapisz link, aby dodać zdjęcia później',
+    saveLinkDesc: 'Twój dokument został zapisany bez zdjęć. Skopiuj poniższy link i wróć do tej strony, aby dodać zdjęcia.',
+    copyLink: 'Kopiuj link',
+    linkCopied: 'Skopiowano!',
+    noPhotosWarning: 'Dokument bez zdjęć',
+    savedWithoutPhotos: 'Dokument zapisany bez zdjęć. Możesz wrócić później.',
+    returnAndEnterName: 'Wróć na ten link i wpisz swoje imię i nazwisko, aby dodać zdjęcia.',
+    loading: 'Ładowanie...',
+    invalidLink: 'Nieprawidłowy link',
+    linkInactive: 'Link jest nieaktywny lub nie istnieje',
+    cannotLoad: 'Nie można załadować danych',
+    enterData: 'Wprowadź swoje dane',
+    enterDataDesc: 'Aby kontynuować, podaj imię i nazwisko',
+    firstName: 'Imię',
+    lastName: 'Nazwisko',
+    continue: 'Kontynuuj',
+    checking: 'Sprawdzanie...',
+    foundDocuments: 'Znaleźliśmy dokumenty bez zdjęć',
+    selectDocument: 'Wybierz dokument, aby dodać zdjęcia, lub utwórz nowy',
+    createNew: 'Utwórz nowy dokument',
+    noDescription: 'Bez opisu',
+    addPhotosTitle: 'Dodaj zdjęcia do dokumentu',
+    documentData: 'Dane dokumentu:',
+    recipient: 'Odbiorca:',
+    basisLabel: 'Podstawa:',
+    photosAdded: 'Zdjęcia zostały dodane do dokumentu',
+    enterFirstName: 'Wpisz imię...',
+    enterLastName: 'Wpisz nazwisko...',
+    enterName: 'Wpisz imię i nazwisko...',
+    back: 'Wstecz',
+    next: 'Dalej',
+    step: 'Krok',
+    stepBasicInfo: 'Podstawowe dane',
+    stepCategory: 'Kategoria i opis',
+    stepPhotos: 'Zdjęcia',
+    stepSignature: 'Podpis',
+    stepReview: 'Podsumowanie',
+    downloadPdf: 'Wyślij',
+    reviewTitle: 'Sprawdź dane przed wysłaniem',
+    viewPdf: 'Otwórz PDF',
+    editFields: 'Edytuj dane',
+    chooseAction: 'Wybierz akcję',
+    editExistingPdf: 'Dodaj zdjęcia do istniejącego PDF',
+    editExistingPdfDesc: 'Otwórz dokument bez zdjęć i dodaj brakujące załączniki',
+    createNewOrder: 'Utwórz nowy dowód wypłaty',
+    createNewOrderDesc: 'Wypełnij nowy formularz dowodu wypłaty od podstaw',
+    pendingCount: 'dokumentów oczekuje na zdjęcia',
+  },
+  ru: {
+    title: 'Расходный ордер',
+    subtitle: 'ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE',
+    requiredFields: '* Обязательные поля для заполнения',
+    date: 'Дата',
+    amount: 'Сумма',
+    issuedTo: 'Выдано (имя и фамилия)',
+    bankAccount: 'Счёт для перевода',
+    bankAccountPlaceholder: 'Введите номер счёта или телефон...',
+    department: 'Название отдела',
+    selectCategory: 'Выберите категорию',
+    basis: 'Основание (на какие нужды)',
+    basisPlaceholder: 'Введите основание выплаты...',
+    amountInWords: 'Сумма прописью',
+    attachments: 'Вложения (фото)',
+    required: 'Обязательно',
+    optional: 'Необязательно',
+    addPhotos: 'Добавить фото',
+    photoNote: 'Каждое фото будет размещено на отдельной странице PDF',
+    signature: 'Подпись получателя',
+    clear: 'Очистить',
+    saveAndDownload: 'Отправить',
+    saving: 'Отправка...',
+    success: 'Отправлено!',
+    successMessage: 'Документ сохранён. Можете закрыть эту страницу.',
+    createAnother: 'Создать ещё один документ',
+    saveLink: 'Сохраните ссылку, чтобы добавить фото позже',
+    saveLinkDesc: 'Документ сохранён без фото. Скопируйте ссылку и вернитесь на эту страницу, чтобы добавить фото.',
+    copyLink: 'Скопировать ссылку',
+    linkCopied: 'Скопировано!',
+    noPhotosWarning: 'Документ без фото',
+    savedWithoutPhotos: 'Документ сохранён без фото. Вы можете вернуться позже.',
+    returnAndEnterName: 'Вернитесь по этой ссылке и введите имя и фамилию, чтобы добавить фото.',
+    loading: 'Загрузка...',
+    invalidLink: 'Неверная ссылка',
+    linkInactive: 'Ссылка неактивна или не существует',
+    cannotLoad: 'Не удалось загрузить данные',
+    enterData: 'Введите свои данные',
+    enterDataDesc: 'Чтобы продолжить, укажите имя и фамилию',
+    firstName: 'Имя',
+    lastName: 'Фамилия',
+    continue: 'Продолжить',
+    checking: 'Проверка...',
+    foundDocuments: 'Найдены документы без фото',
+    selectDocument: 'Выберите документ для добавления фото или создайте новый',
+    createNew: 'Создать новый документ',
+    noDescription: 'Без описания',
+    addPhotosTitle: 'Добавить фото к документу',
+    documentData: 'Данные документа:',
+    recipient: 'Получатель:',
+    basisLabel: 'Основание:',
+    photosAdded: 'Фото добавлены к документу',
+    enterFirstName: 'Введите имя...',
+    enterLastName: 'Введите фамилию...',
+    enterName: 'Введите имя и фамилию...',
+    back: 'Назад',
+    next: 'Далее',
+    step: 'Шаг',
+    stepBasicInfo: 'Основные данные',
+    stepCategory: 'Категория и описание',
+    stepPhotos: 'Фото и вложения',
+    stepSignature: 'Подпись',
+    stepReview: 'Итоги',
+    downloadPdf: 'Отправить',
+    reviewTitle: 'Проверьте данные перед отправкой',
+    viewPdf: 'Открыть PDF',
+    editFields: 'Редактировать данные',
+    chooseAction: 'Выберите действие',
+    editExistingPdf: 'Добавить фото к существующему PDF',
+    editExistingPdfDesc: 'Открыть документ без фото и добавить вложения',
+    createNewOrder: 'Открыть новый ордер',
+    createNewOrderDesc: 'Заполнить новый расходный ордер с нуля',
+    pendingCount: 'документ(ов) ожидают фото',
+  },
+  en: {
+    title: 'Payment Voucher',
+    subtitle: 'ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE',
+    requiredFields: '* Required fields',
+    date: 'Date',
+    amount: 'Amount',
+    issuedTo: 'Issued to (full name)',
+    bankAccount: 'Bank account',
+    bankAccountPlaceholder: 'Enter account number or phone...',
+    department: 'Department name',
+    selectCategory: 'Select category',
+    basis: 'Purpose (for what needs)',
+    basisPlaceholder: 'Enter payment purpose...',
+    amountInWords: 'Amount in words',
+    attachments: 'Attachments (photos)',
+    required: 'Required',
+    optional: 'Optional',
+    addPhotos: 'Add photos',
+    photoNote: 'Each photo will be placed on a separate PDF page',
+    signature: 'Recipient signature',
+    clear: 'Clear',
+    saveAndDownload: 'Send',
+    saving: 'Sending...',
+    success: 'Sent!',
+    successMessage: 'Document sent. You can close this page.',
+    createAnother: 'Create another document',
+    saveLink: 'Save link to add photos later',
+    saveLinkDesc: 'Document saved without photos. Copy the link below and return to this page to add photos.',
+    copyLink: 'Copy link',
+    linkCopied: 'Copied!',
+    noPhotosWarning: 'Document without photos',
+    savedWithoutPhotos: 'Document saved without photos. You can return later.',
+    returnAndEnterName: 'Return to this link and enter your name to add photos.',
+    loading: 'Loading...',
+    invalidLink: 'Invalid link',
+    linkInactive: 'Link is inactive or does not exist',
+    cannotLoad: 'Failed to load data',
+    enterData: 'Enter your details',
+    enterDataDesc: 'To continue, enter your first and last name',
+    firstName: 'First name',
+    lastName: 'Last name',
+    continue: 'Continue',
+    checking: 'Checking...',
+    foundDocuments: 'Found documents without photos',
+    selectDocument: 'Select a document to add photos, or create new',
+    createNew: 'Create new document',
+    noDescription: 'No description',
+    addPhotosTitle: 'Add photos to document',
+    documentData: 'Document data:',
+    recipient: 'Recipient:',
+    basisLabel: 'Purpose:',
+    photosAdded: 'Photos added to document',
+    enterFirstName: 'Enter first name...',
+    enterLastName: 'Enter last name...',
+    enterName: 'Enter full name...',
+    back: 'Back',
+    next: 'Next',
+    step: 'Step',
+    stepBasicInfo: 'Basic info',
+    stepCategory: 'Category & description',
+    stepPhotos: 'Photos',
+    stepSignature: 'Signature',
+    stepReview: 'Review',
+    downloadPdf: 'Send',
+    reviewTitle: 'Review before sending',
+    viewPdf: 'Open PDF',
+    editFields: 'Edit fields',
+    chooseAction: 'Choose action',
+    editExistingPdf: 'Add photos to existing PDF',
+    editExistingPdfDesc: 'Open a document without photos and add missing attachments',
+    createNewOrder: 'Create new order',
+    createNewOrderDesc: 'Fill out a new payment voucher from scratch',
+    pendingCount: 'document(s) waiting for photos',
+  },
+  uk: {
+    title: 'Видатковий ордер',
+    subtitle: 'ZBÓR BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE',
+    requiredFields: '* Обов\'язкові поля для заповнення',
+    date: 'Дата',
+    amount: 'Сума',
+    issuedTo: 'Видано (ім\'я та прізвище)',
+    bankAccount: 'Рахунок для переказу',
+    bankAccountPlaceholder: 'Введіть номер рахунку або телефон...',
+    department: 'Назва відділу',
+    selectCategory: 'Виберіть категорію',
+    basis: 'Підстава (на які потреби)',
+    basisPlaceholder: 'Введіть підставу виплати...',
+    amountInWords: 'Сума прописом',
+    attachments: 'Вкладення (фото)',
+    required: 'Обов\'язково',
+    optional: 'Необов\'язково',
+    addPhotos: 'Додати фото',
+    photoNote: 'Кожне фото буде розміщено на окремій сторінці PDF',
+    signature: 'Підпис отримувача',
+    clear: 'Очистити',
+    saveAndDownload: 'Надіслати',
+    saving: 'Надсилання...',
+    success: 'Надіслано!',
+    successMessage: 'Документ збережено. Можете закрити цю сторінку.',
+    createAnother: 'Створити ще один документ',
+    saveLink: 'Збережіть посилання для додавання фото пізніше',
+    saveLinkDesc: 'Документ збережено без фото. Скопіюйте посилання і поверніться на цю сторінку, щоб додати фото.',
+    copyLink: 'Скопіювати посилання',
+    linkCopied: 'Скопійовано!',
+    noPhotosWarning: 'Документ без фото',
+    savedWithoutPhotos: 'Документ збережено без фото. Ви можете повернутись пізніше.',
+    returnAndEnterName: 'Поверніться за цим посиланням і введіть ім’я та прізвище, щоб додати фото.',
+    loading: 'Завантаження...',
+    invalidLink: 'Невірне посилання',
+    linkInactive: 'Посилання неактивне або не існує',
+    cannotLoad: 'Не вдалося завантажити дані',
+    enterData: 'Введіть свої дані',
+    enterDataDesc: 'Щоб продовжити, вкажіть ім\'я та прізвище',
+    firstName: 'Ім\'я',
+    lastName: 'Прізвище',
+    continue: 'Продовжити',
+    checking: 'Перевірка...',
+    foundDocuments: 'Знайдено документи без фото',
+    selectDocument: 'Виберіть документ для додавання фото або створіть новий',
+    createNew: 'Створити новий документ',
+    noDescription: 'Без опису',
+    addPhotosTitle: 'Додати фото до документу',
+    documentData: 'Дані документу:',
+    recipient: 'Отримувач:',
+    basisLabel: 'Підстава:',
+    photosAdded: 'Фото додано до документу',
+    enterFirstName: 'Введіть ім\'я...',
+    enterLastName: 'Введіть прізвище...',
+    enterName: 'Введіть ім\'я та прізвище...',
+    back: 'Назад',
+    next: 'Далі',
+    step: 'Крок',
+    stepBasicInfo: 'Основні дані',
+    stepCategory: 'Категорія та опис',
+    stepPhotos: 'Фото та вкладення',
+    stepSignature: 'Підпис',
+    stepReview: 'Підсумок',
+    downloadPdf: 'Надіслати',
+    reviewTitle: 'Перевірте дані перед відправкою',
+    viewPdf: 'Відкрити PDF',
+    editFields: 'Редагувати дані',
+    chooseAction: 'Виберіть дію',
+    editExistingPdf: 'Додати фото до існуючого PDF',
+    editExistingPdfDesc: 'Відкрити документ без фото і додати вкладення',
+    createNewOrder: 'Відкрити новий ордер',
+    createNewOrderDesc: 'Заповнити новий видатковий ордер з нуля',
+    pendingCount: 'документ(ів) очікують фото',
+  },
+};
+
+interface AttachedImage {
+  file: File;
+  preview: string;
+  isFromPdf?: boolean;
+  pageNumber?: number;
+}
+
+interface PayoutFormData {
+  date: Date;
+  currency: string;
+  amount: string;
+  issuedTo: string;
+  bankAccount: string;
+  departmentName: string;
+  basis: string;
+  amountInWords: string;
+}
+
+interface Category {
+  id: string;
+  name: string;
+  type: string;
+}
+
+interface SharedLink {
+  id: string;
+  owner_user_id: string;
+  token: string;
+  name: string | null;
+  is_active: boolean;
+  organizationName?: string | null;
+}
+
+// Helper function to load font as base64
+// Number to words conversion
+const numberToWords = (num: number, currency: string, lang: string = 'pl'): string => {
+  if (isNaN(num) || num === 0) return '';
+  
+  const currencyNames: Record<string, Record<string, { singular: string; plural: string; genitive: string }>> = {
+    PLN: {
+      pl: { singular: 'złoty', plural: 'złotych', genitive: 'złote' },
+      ru: { singular: 'злотый', plural: 'злотых', genitive: 'злотых' },
+      uk: { singular: 'злотий', plural: 'злотих', genitive: 'злотих' },
+      en: { singular: 'zloty', plural: 'zlotys', genitive: 'zlotys' },
+    },
+    EUR: {
+      pl: { singular: 'euro', plural: 'euro', genitive: 'euro' },
+      ru: { singular: 'евро', plural: 'евро', genitive: 'евро' },
+      uk: { singular: 'євро', plural: 'євро', genitive: 'євро' },
+      en: { singular: 'euro', plural: 'euros', genitive: 'euros' },
+    },
+    USD: {
+      pl: { singular: 'dolar', plural: 'dolarów', genitive: 'dolary' },
+      ru: { singular: 'доллар', plural: 'долларов', genitive: 'доллара' },
+      uk: { singular: 'долар', plural: 'доларів', genitive: 'долари' },
+      en: { singular: 'dollar', plural: 'dollars', genitive: 'dollars' },
+    },
+    UAH: {
+      pl: { singular: 'hrywna', plural: 'hrywien', genitive: 'hrywny' },
+      ru: { singular: 'гривна', plural: 'гривен', genitive: 'гривны' },
+      uk: { singular: 'гривня', plural: 'гривень', genitive: 'гривні' },
+      en: { singular: 'hryvnia', plural: 'hryvnias', genitive: 'hryvnias' },
+    },
+    RUB: {
+      pl: { singular: 'rubel', plural: 'rubli', genitive: 'ruble' },
+      ru: { singular: 'рубль', plural: 'рублей', genitive: 'рубля' },
+      uk: { singular: 'рубль', plural: 'рублів', genitive: 'рублі' },
+      en: { singular: 'ruble', plural: 'rubles', genitive: 'rubles' },
+    },
+    BYN: {
+      pl: { singular: 'rubel białoruski', plural: 'rubli białoruskich', genitive: 'ruble białoruskie' },
+      ru: { singular: 'белорусский рубль', plural: 'белорусских рублей', genitive: 'белорусских рубля' },
+      uk: { singular: 'білоруський рубль', plural: 'білоруських рублів', genitive: 'білоруських рублі' },
+      en: { singular: 'Belarusian ruble', plural: 'Belarusian rubles', genitive: 'Belarusian rubles' },
+    },
+  };
+
+  const ones: Record<string, string[]> = {
+    pl: ['', 'jeden', 'dwa', 'trzy', 'cztery', 'pięć', 'sześć', 'siedem', 'osiem', 'dziewięć', 'dziesięć', 'jedenaście', 'dwanaście', 'trzynaście', 'czternaście', 'piętnaście', 'szesnaście', 'siedemnaście', 'osiemnaście', 'dziewiętnaście'],
+    ru: ['', 'один', 'два', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять', 'десять', 'одиннадцать', 'двенадцать', 'тринадцать', 'четырнадцать', 'пятнадцать', 'шестнадцать', 'семнадцать', 'восемнадцать', 'девятнадцать'],
+    uk: ['', 'один', 'два', 'три', 'чотири', 'п\'ять', 'шість', 'сім', 'вісім', 'дев\'ять', 'десять', 'одинадцять', 'дванадцять', 'тринадцять', 'чотирнадцять', 'п\'ятнадцять', 'шістнадцять', 'сімнадцять', 'вісімнадцять', 'дев\'ятнадцять'],
+    en: ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'],
+  };
+
+  const tens: Record<string, string[]> = {
+    pl: ['', '', 'dwadzieścia', 'trzydzieści', 'czterdzieści', 'pięćdziesiąt', 'sześćdziesiąt', 'siedemdziesiąt', 'osiemdziesiąt', 'dziewięćdziesiąt'],
+    ru: ['', '', 'двадцать', 'тридцать', 'сорок', 'пятьдесят', 'шестьдесят', 'семьдесят', 'восемьдесят', 'девяносто'],
+    uk: ['', '', 'двадцять', 'тридцять', 'сорок', 'п\'ятдесят', 'шістдесят', 'сімдесят', 'вісімдесят', 'дев\'яносто'],
+    en: ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'],
+  };
+
+  const hundreds: Record<string, string[]> = {
+    pl: ['', 'sto', 'dwieście', 'trzysta', 'czterysta', 'pięćset', 'sześćset', 'siedemset', 'osiemset', 'dziewięćset'],
+    ru: ['', 'сто', 'двести', 'триста', 'четыреста', 'пятьсот', 'шестьсот', 'семьсот', 'восемьсот', 'девятьсот'],
+    uk: ['', 'сто', 'двісті', 'триста', 'чотириста', 'п\'ятсот', 'шістсот', 'сімсот', 'вісімсот', 'дев\'ятсот'],
+    en: ['', 'one hundred', 'two hundred', 'three hundred', 'four hundred', 'five hundred', 'six hundred', 'seven hundred', 'eight hundred', 'nine hundred'],
+  };
+
+  const thousands: Record<string, { singular: string; plural: string; genitive: string }> = {
+    pl: { singular: 'tysiąc', plural: 'tysięcy', genitive: 'tysiące' },
+    ru: { singular: 'тысяча', plural: 'тысяч', genitive: 'тысячи' },
+    uk: { singular: 'тисяча', plural: 'тисяч', genitive: 'тисячі' },
+    en: { singular: 'thousand', plural: 'thousand', genitive: 'thousand' },
+  };
+
+  const l = lang in ones ? lang : 'pl';
+  const intPart = Math.floor(num);
+  const decPart = Math.round((num - intPart) * 100);
+  
+  const convertHundreds = (n: number): string => {
+    if (n === 0) return '';
+    if (n < 20) return ones[l][n];
+    if (n < 100) {
+      const t = Math.floor(n / 10);
+      const o = n % 10;
+      return tens[l][t] + (o > 0 ? ' ' + ones[l][o] : '');
+    }
+    const h = Math.floor(n / 100);
+    const rest = n % 100;
+    return hundreds[l][h] + (rest > 0 ? ' ' + convertHundreds(rest) : '');
+  };
+
+  const getThousandWord = (n: number): string => {
+    const lastTwo = n % 100;
+    const lastOne = n % 10;
+    if (lastTwo >= 11 && lastTwo <= 19) return thousands[l].plural;
+    if (lastOne === 1) return thousands[l].singular;
+    if (lastOne >= 2 && lastOne <= 4) return thousands[l].genitive;
+    return thousands[l].plural;
+  };
+
+  const getCurrencyWord = (n: number): string => {
+    const lastTwo = n % 100;
+    const lastOne = n % 10;
+    const curr = currencyNames[currency]?.[l] || currencyNames['PLN'][l];
+    if (lastTwo >= 11 && lastTwo <= 19) return curr.plural;
+    if (lastOne === 1) return curr.singular;
+    if (lastOne >= 2 && lastOne <= 4) return curr.genitive;
+    return curr.plural;
+  };
+
+  let result = '';
+  const th = Math.floor(intPart / 1000);
+  const rest = intPart % 1000;
+
+  if (th > 0) {
+    result += convertHundreds(th) + ' ' + getThousandWord(th) + ' ';
+  }
+  if (rest > 0 || th === 0) {
+    result += convertHundreds(rest);
+  }
+
+  result = result.trim() + ' ' + getCurrencyWord(intPart);
+
+  if (decPart > 0) {
+    // Fractional unit names per currency and language
+    const fractionalWords: Record<string, Record<string, string>> = {
+      PLN: { pl: 'groszy', ru: 'грошей', uk: 'грошів', en: 'groszy' },
+      EUR: { pl: 'centów', ru: 'центов', uk: 'центів', en: 'cents' },
+      USD: { pl: 'centów', ru: 'центов', uk: 'центів', en: 'cents' },
+      UAH: { pl: 'kopiejek', ru: 'копеек', uk: 'копійок', en: 'kopiyok' },
+      RUB: { pl: 'kopiejek', ru: 'копеек', uk: 'копійок', en: 'kopecks' },
+      BYN: { pl: 'kopiejek', ru: 'копеек', uk: 'копійок', en: 'kopecks' },
+    };
+    const fractUnit = fractionalWords[currency]?.[l] || fractionalWords['PLN'][l];
+    const decWords = convertHundreds(decPart);
+    result += ` ${decWords} ${fractUnit}`;
+  }
+
+  return result.charAt(0).toUpperCase() + result.slice(1);
+};
+
+const PublicPayout = () => {
+  const { token } = useParams<{ token: string }>();
+  const [searchParams] = useSearchParams();
+  const autoTxId = searchParams.get('txid');
+  const autoName = searchParams.get('name') || '';
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  
+  const [sharedLink, setSharedLink] = useState<SharedLink | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [categorySearchOpen, setCategorySearchOpen] = useState(false);
+  const [categorySearchQuery, setCategorySearchQuery] = useState('');
+
+  const filteredCategories = [...categories]
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+    .filter(c => c.name.toLowerCase().startsWith(categorySearchQuery.toLowerCase()));
+
+  const handleCategorySelect = (name: string) => {
+    handleInputChange('departmentName', name);
+    setCategorySearchOpen(false);
+    setCategorySearchQuery('');
+  };
+  const [isCopied, setIsCopied] = useState(false);
+  // Auth state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [submitterFirstName, setSubmitterFirstName] = useState('');
+  const [submitterLastName, setSubmitterLastName] = useState('');
+  const [isCheckingPending, setIsCheckingPending] = useState(false);
+  
+  // Pending payouts state
+  interface PendingPayout {
+    id: string;
+    amount: number;
+    currency: string;
+    description: string | null;
+    date: string;
+    issued_to: string | null;
+    amount_in_words: string | null;
+    category_id: string | null;
+    cashier_name: string | null;
+    bank_account?: string | null;
+    created_at: string;
+    pdfUrl?: string | null;
+  }
+  const [pendingPayouts, setPendingPayouts] = useState<PendingPayout[]>([]);
+  const [showPendingSelection, setShowPendingSelection] = useState(false);
+  const [continuingPayout, setContinuingPayout] = useState<PendingPayout | null>(null);
+  const [isAddingImages, setIsAddingImages] = useState(false);
+  
+  // Navigation history: tracks where user came from for proper back navigation
+  type NavigationScreen = 'login' | 'choice' | 'pending' | 'form' | 'continuing';
+  const [navigationHistory, setNavigationHistory] = useState<NavigationScreen[]>(['login']);
+  const [showPendingChoice, setShowPendingChoice] = useState(false);
+  
+  const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
+  const signatureFullCanvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [isDrawingFull, setIsDrawingFull] = useState(false);
+  const [hasSignature, setHasSignature] = useState(false);
+  const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
+  const [showFullSignature, setShowFullSignature] = useState(false);
+  // Restore signSid from sessionStorage in case iOS reloaded the page while Safari was open
+  const [signSid, setSignSidState] = useState<string | null>(() => {
+    try { return sessionStorage.getItem('sign_sid') || null; } catch { return null; }
+  });
+  const [waitingExternalSign, setWaitingExternalSign] = useState<boolean>(() => {
+    try { return !!sessionStorage.getItem('sign_sid'); } catch { return false; }
+  });
+
+  const setSignSid = (sid: string | null) => {
+    setSignSidState(sid);
+    try {
+      if (sid) sessionStorage.setItem('sign_sid', sid);
+      else sessionStorage.removeItem('sign_sid');
+    } catch (_) {}
+  };
+
+  const EXCHANGE_URL = 'https://htepbcotdqrewbxmasbf.supabase.co/functions/v1/sign-exchange';
+  const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0ZXBiY290ZHFyZXdieG1hc2JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2MTUzNDMsImV4cCI6MjA4MDE5MTM0M30.kHkWLZgXSZ93njS2JpTsWvQ4VKHJZb4ptuWq3ob_FsI';
+
+  // Poll the sign-exchange Edge Function every 1.5s until signature arrives
+  useEffect(() => {
+    if (!signSid) return;
+    let active = true;
+
+    const checkNow = async () => {
+      if (!active) return;
+      try {
+        const res = await fetch(`${EXCHANGE_URL}?sid=${signSid}`, {
+          headers: { 'apikey': ANON_KEY, 'Authorization': `Bearer ${ANON_KEY}` },
+        });
+        const json = await res.json();
+        if (json.data_url) {
+          active = false;
+          clearInterval(poll);
+          applySignature(json.data_url);
+          fetch(`${EXCHANGE_URL}?sid=${signSid}`, {
+            method: 'DELETE',
+            headers: { 'apikey': ANON_KEY, 'Authorization': `Bearer ${ANON_KEY}` },
+          });
+        }
+      } catch (_) {}
+    };
+
+    const poll = setInterval(checkNow, 1500);
+
+    // Immediate poll when user returns to this tab (iOS suspends JS in background)
+    const onVisible = () => { if (document.visibilityState === 'visible') checkNow(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', checkNow);
+
+    // localStorage fallback for same-origin non-Telegram
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key !== `sig_result_${signSid}` || !e.newValue) return;
+      active = false;
+      clearInterval(poll);
+      applySignature(e.newValue);
+      try { localStorage.removeItem(e.key); } catch (_) {}
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      active = false;
+      clearInterval(poll);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', checkNow);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [signSid]);
+
+  const applySignature = (dataUrl: string) => {
+    setSignatureDataUrl(dataUrl);
+    setHasSignature(true);
+    setWaitingExternalSign(false);
+    setSignSid(null); // also clears sessionStorage
+    const main = signatureCanvasRef.current;
+    if (main) {
+      const ctx = main.getContext('2d');
+      if (ctx) {
+        const img = new Image();
+        img.onload = () => ctx.drawImage(img, 0, 0, main.width, main.height);
+        img.src = dataUrl;
+      }
+    }
+  };
+  const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
+  const [language, setLanguage] = useState<Language>('ru');
+  const [imagesOptional, setImagesOptional] = useState(false); // false = images required by default
+  const [showConverter, setShowConverter] = useState(false);
+  const [conversionInfo, setConversionInfo] = useState<{ fromAmount: string; fromCurrency: string; toAmount: string; toCurrency: string; rate: string } | null>(null);
+  
+  // Link type and stepwise mode
+  const [linkType, setLinkType] = useState<LinkType>('standard');
+  const [currentStep, setCurrentStep] = useState(1);
+  const totalSteps = 5;
+  
+  // Translation helper
+  const t = translations[language];
+  const getLocalOrganizationName = () => loadHeaderSettings()?.subtitle?.trim() || t.subtitle;
+  const [organizationName, setOrganizationName] = useState(() => getLocalOrganizationName());
+
+  useEffect(() => {
+    if (!sharedLink?.organizationName) {
+      setOrganizationName(getLocalOrganizationName());
+    }
+  }, [language, sharedLink?.organizationName, t.subtitle]);
+
+  const [formData, setFormData] = useState<PayoutFormData>({
+    date: new Date(),
+    currency: 'PLN',
+    amount: '',
+    issuedTo: '',
+    bankAccount: '',
+    departmentName: '',
+    basis: '',
+    amountInWords: '',
+  });
+
+  const currencies = [
+    { value: 'PLN', label: 'zł' },
+    { value: 'EUR', label: '€' },
+    { value: 'USD', label: '$' },
+    { value: 'UAH', label: '₴' },
+    { value: 'RUB', label: '₽' },
+    { value: 'BYN', label: 'Br' },
+  ];
+
+  // Load shared link and categories via secure edge function
+  useEffect(() => {
+    // Initialize PDF.js worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    
+    const loadData = async () => {
+      if (!token) {
+        setError('Nieprawidłowy link');
+        setLoading(false);
+        return;
+      }
+
+      try {
+        // Validate token via secure edge function (doesn't expose tokens or user IDs)
+        const { data: validationData, error: validationError } = await supabase.functions.invoke('validate-payout-token', {
+          body: { token }
+        });
+
+        if (validationError) throw validationError;
+        
+        if (!validationData?.valid) {
+          setError(validationData?.error || 'Link jest nieaktywny lub nie istnieje');
+          setLoading(false);
+          return;
+        }
+
+        // Set link info (token is stored locally, not fetched from DB)
+        setSharedLink({
+          id: '', // Not needed for submission
+          owner_user_id: '', // Not exposed by edge function
+          token: token,
+          name: validationData.linkName,
+          is_active: true,
+          organizationName: validationData.organizationName || null,
+        });
+        setOrganizationName(validationData.organizationName || getLocalOrganizationName());
+
+        // Set link type
+        setLinkType((validationData.linkType || 'standard') as LinkType);
+
+        setCategories(validationData.categories || []);
+      } catch (err) {
+        console.error('Error loading data:', err);
+        setError('Nie można załadować danych');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [token]);
+
+  // Auto-navigate: if txid param is present, skip login/choice and go directly to photo editor
+  useEffect(() => {
+    if (!autoTxId || !sharedLink || loading) return;
+    let cancelled = false;
+    const autoOpen = async () => {
+      try {
+        const { data } = await supabase.functions.invoke('check-pending-payouts', {
+          body: { token: sharedLink.token, submitterName: autoName || 'auto', transactionId: autoTxId },
+        });
+        if (cancelled) return;
+        if (data?.pendingPayouts?.length) {
+          const payout = data.pendingPayouts[0];
+          const nameParts = (autoName || payout.issued_to || 'Auto').trim().split(' ');
+          const firstName = nameParts[0] || '';
+          const lastName = nameParts.slice(1).join(' ') || '';
+          setSubmitterFirstName(firstName);
+          setSubmitterLastName(lastName);
+          setIsAuthenticated(true);
+          setPendingPayouts(data.pendingPayouts);
+          const cat = categories.find((c: { id: string }) => c.id === payout.category_id);
+          const cleanDesc = payout.description?.replace(/\s*\[Bez zalacznikow - [^\]]+\]/g, '').trim() || '';
+          setFormData({
+            date: new Date(payout.date),
+            currency: payout.currency,
+            amount: payout.amount.toString(),
+            issuedTo: payout.issued_to || autoName || `${firstName} ${lastName}`,
+            bankAccount: payout.bank_account || '',
+            departmentName: cat?.name || '',
+            basis: cleanDesc,
+            amountInWords: payout.amount_in_words || '',
+          });
+          setContinuingPayout(payout);
+          setImagesOptional(false);
+          setNavigationHistory(['login', 'continuing']);
+        }
+      } catch (e) {
+        console.error('Auto-open error:', e);
+      }
+    };
+    autoOpen();
+    return () => { cancelled = true; };
+  }, [autoTxId, sharedLink, loading]);
+
+  // Auto-auth from ?name= param (from "Добавить фото" notification button, no specific txid)
+  // Skips the login screen and opens the pending documents list directly
+  useEffect(() => {
+    if (!autoName || autoTxId || !sharedLink || loading) return;
+    let cancelled = false;
+    const autoAuth = async () => {
+      try {
+        const nameParts = autoName.trim().split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+        setSubmitterFirstName(firstName);
+        setSubmitterLastName(lastName);
+
+        const { data } = await supabase.functions.invoke('check-pending-payouts', {
+          body: { token: sharedLink.token, submitterName: autoName.trim() },
+        });
+        if (cancelled) return;
+
+        if (data?.pendingPayouts && data.pendingPayouts.length > 0) {
+          setPendingPayouts(data.pendingPayouts);
+          setShowPendingChoice(false);
+          setShowPendingSelection(true);
+          setFormData(prev => ({ ...prev, issuedTo: autoName.trim() }));
+          setNavigationHistory(['login', 'pending']);
+        } else {
+          // No pending docs — show selection screen (empty), user can click "Create new"
+          setPendingPayouts([]);
+          setShowPendingChoice(false);
+          setShowPendingSelection(true);
+          setFormData(prev => ({ ...prev, issuedTo: autoName.trim() }));
+          setNavigationHistory(['login', 'pending']);
+        }
+      } catch (e) {
+        console.error('Auto-auth error:', e);
+      }
+    };
+    autoAuth();
+    return () => { cancelled = true; };
+  }, [autoName, autoTxId, sharedLink, loading]);
+
+  // Auto-generate amount in words
+  useEffect(() => {
+    if (formData.amount) {
+      const numAmount = parseFloat(formData.amount);
+      if (!isNaN(numAmount) && numAmount > 0) {
+        const words = numberToWords(numAmount, formData.currency, language);
+        setFormData(prev => ({ ...prev, amountInWords: words }));
+      }
+    } else {
+      setFormData(prev => ({ ...prev, amountInWords: '' }));
+    }
+  }, [formData.amount, formData.currency, language]);
+
+  const handleInputChange = (field: keyof PayoutFormData, value: string | Date) => {
+    if (field === 'amountInWords') return;
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Canvas drawing handlers
+  const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    if ('touches' in e) {
+      return {
+        x: (e.touches[0].clientX - rect.left) * scaleX,
+        y: (e.touches[0].clientY - rect.top) * scaleY,
+      };
+    }
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    };
+  };
+
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const canvas = signatureCanvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!ctx) return;
+    
+    setIsDrawing(true);
+    const { x, y } = getCoordinates(e);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  };
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    if (!isDrawing) return;
+    
+    const canvas = signatureCanvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!ctx) return;
+    
+    const { x, y } = getCoordinates(e);
+    ctx.lineTo(x, y);
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    setHasSignature(true);
+  };
+
+  const stopDrawing = () => {
+    setIsDrawing(false);
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) return;
+    // Always check canvas pixel data directly (avoids React async setState race condition)
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const hasContent = imageData.data.some((v, i) => i % 4 === 3 && v > 0);
+      if (hasContent) {
+        const dataUrl = canvas.toDataURL('image/png');
+        setHasSignature(true);
+        setSignatureDataUrl(dataUrl);
+      }
+    }
+  };
+
+  const clearSignature = () => {
+    const canvas = signatureCanvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!ctx || !canvas) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setHasSignature(false);
+    setSignatureDataUrl(null);
+  };
+
+  // Fullscreen signature pad
+  const openFullSignature = () => {
+    setShowFullSignature(true);
+    // Block all scrolling
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.width = '100%';
+    document.documentElement.style.overflow = 'hidden';
+    // Expand Telegram WebApp if available
+    try { (window as any).Telegram?.WebApp?.expand(); } catch (_) {}
+    // Pre-draw existing signature into fullscreen canvas after mount
+    setTimeout(() => {
+      const full = signatureFullCanvasRef.current;
+      if (!full) return;
+      const ctx = full.getContext('2d');
+      if (!ctx) return;
+      ctx.clearRect(0, 0, full.width, full.height);
+      if (signatureDataUrl) {
+        const img = new Image();
+        img.onload = () => ctx.drawImage(img, 0, 0, full.width, full.height);
+        img.src = signatureDataUrl;
+      }
+    }, 50);
+  };
+
+  const closeFullSignature = () => {
+    setShowFullSignature(false);
+    document.body.style.overflow = '';
+    document.body.style.position = '';
+    document.body.style.width = '';
+    document.documentElement.style.overflow = '';
+  };
+
+  // Open signature in a real browser tab (Safari/Chrome)
+  const openExternalSignature = () => {
+    const sid = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const base = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
+    const url = `${window.location.origin}${base}/sign?sid=${sid}`;
+
+    // For Telegram WebApp - openLink forces the real system browser (Safari/Chrome)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const twa = (window as any).Telegram?.WebApp;
+    if (twa?.openLink) {
+      twa.openLink(url);
+    } else {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    // Set state AFTER opening — saves to sessionStorage so iOS reload can recover it
+    setSignSid(sid);
+    setWaitingExternalSign(true);
+  };
+
+  const confirmFullSignature = () => {
+    const full = signatureFullCanvasRef.current;
+    if (!full) { closeFullSignature(); return; }
+    const ctx = full.getContext('2d');
+    if (ctx) {
+      const imageData = ctx.getImageData(0, 0, full.width, full.height);
+      const hasContent = imageData.data.some((v, i) => i % 4 === 3 && v > 0);
+      if (hasContent) {
+        const dataUrl = full.toDataURL('image/png');
+        setSignatureDataUrl(dataUrl);
+        setHasSignature(true);
+        // Copy to main canvas
+        const main = signatureCanvasRef.current;
+        if (main) {
+          const mCtx = main.getContext('2d');
+          if (mCtx) {
+            mCtx.clearRect(0, 0, main.width, main.height);
+            const img = new Image();
+            img.onload = () => mCtx.drawImage(img, 0, 0, main.width, main.height);
+            img.src = dataUrl;
+          }
+        }
+      }
+    }
+    closeFullSignature();
+  };
+
+  const clearFullSignature = () => {
+    const full = signatureFullCanvasRef.current;
+    if (!full) return;
+    const ctx = full.getContext('2d');
+    ctx?.clearRect(0, 0, full.width, full.height);
+  };
+
+  const getCoordinatesFull = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = signatureFullCanvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    if ('touches' in e) {
+      return { x: (e.touches[0].clientX - rect.left) * scaleX, y: (e.touches[0].clientY - rect.top) * scaleY };
+    }
+    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+  };
+
+  const startDrawingFull = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const canvas = signatureFullCanvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!ctx) return;
+    setIsDrawingFull(true);
+    const { x, y } = getCoordinatesFull(e);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  };
+
+  const drawFull = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    if (!isDrawingFull) return;
+    const canvas = signatureFullCanvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!ctx) return;
+    const { x, y } = getCoordinatesFull(e);
+    ctx.lineTo(x, y);
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+  };
+
+  const stopDrawingFull = () => setIsDrawingFull(false);
+
+  // Image attachment handlers with PDF support
+  const convertPdfToImages = async (file: File): Promise<AttachedImage[]> => {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const images: AttachedImage[] = [];
+      
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        const canvas = document.createElement('canvas');
+        const scale = 2;
+        const viewport = page.getViewport({ scale });
+        
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        
+        const context = canvas.getContext('2d');
+        if (!context) continue;
+        
+        await page.render({
+          canvasContext: context,
+          viewport: viewport,
+        }).promise;
+        
+        const preview = canvas.toDataURL('image/png');
+        images.push({
+          file,
+          preview,
+          isFromPdf: true,
+          pageNumber: pageNum,
+        });
+      }
+      
+      return images;
+    } catch (error) {
+      console.error('Error converting PDF to images:', error);
+      return [];
+    }
+  };
+
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    const newImages: AttachedImage[] = [];
+    
+    for (const file of Array.from(files)) {
+      if (file.type.startsWith('image/')) {
+        const preview = URL.createObjectURL(file);
+        newImages.push({ file, preview });
+      } else if (file.type === 'application/pdf') {
+        const pdfImages = await convertPdfToImages(file);
+        newImages.push(...pdfImages);
+      }
+    }
+
+    setAttachedImages(prev => [...prev, ...newImages]);
+    
+    // Reset input to allow selecting same files again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setAttachedImages(prev => {
+      const newImages = [...prev];
+      URL.revokeObjectURL(newImages[index].preview);
+      newImages.splice(index, 1);
+      return newImages;
+    });
+  };
+
+  // Cleanup previews on unmount
+  useEffect(() => {
+    return () => {
+      attachedImages.forEach(img => URL.revokeObjectURL(img.preview));
+    };
+  }, []);
+
+  // Transliterate Cyrillic and sanitize a string for use in a Storage path/filename
+  const sanitizeForFilename = (str: string): string => {
+    const cyrillicMap: Record<string, string> = {
+      'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'yo','ж':'zh','з':'z','и':'i',
+      'й':'y','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t',
+      'у':'u','ф':'f','х':'kh','ц':'ts','ч':'ch','ш':'sh','щ':'shch','ъ':'','ы':'y',
+      'ь':'','э':'e','ю':'yu','я':'ya',
+      'А':'A','Б':'B','В':'V','Г':'G','Д':'D','Е':'E','Ё':'Yo','Ж':'Zh','З':'Z','И':'I',
+      'Й':'Y','К':'K','Л':'L','М':'M','Н':'N','О':'O','П':'P','Р':'R','С':'S','Т':'T',
+      'У':'U','Ф':'F','Х':'Kh','Ц':'Ts','Ч':'Ch','Ш':'Sh','Щ':'Shch','Ъ':'','Ы':'Y',
+      'Ь':'','Э':'E','Ю':'Yu','Я':'Ya',
+    };
+    return str
+      .split('')
+      .map(ch => cyrillicMap[ch] ?? ch)
+      .join('')
+      .replace(/[^a-zA-Z0-9_\-]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '')
+      || 'dokument';
+  };
+
+  const generatePDF = async () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    
+    doc.addFileToVFS('Roboto-Regular.ttf', ROBOTO_FONT_BASE64);
+    doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
+    doc.setFont('Roboto');
+    
+    const leftMargin = 20;
+    const rightMargin = 20;
+    const tableWidth = pageWidth - leftMargin - rightMargin;
+    const labelColWidth = 50;
+    const valueColWidth = tableWidth - labelColWidth;
+    const rowHeight = 10;
+    const cellPadding = 3;
+    
+    // Helper function to draw a cell with borders
+    const drawCell = (x: number, y: number, width: number, height: number, text: string, options?: { 
+      fill?: boolean, 
+      align?: 'left' | 'center' | 'right',
+      fontSize?: number 
+    }) => {
+      const { fill = false, align = 'left', fontSize = 10 } = options || {};
+      
+      // Draw fill
+      if (fill) {
+        doc.setFillColor(240, 240, 240);
+        doc.rect(x, y, width, height, 'F');
+      }
+      
+      // Draw border
+      doc.setDrawColor(0);
+      doc.setLineWidth(0.3);
+      doc.rect(x, y, width, height, 'S');
+      
+      // Draw text
+      doc.setFontSize(fontSize);
+      const textX = align === 'center' ? x + width / 2 : x + cellPadding;
+      const textY = y + height / 2 + 3;
+      
+      // Wrap text if needed
+      const maxWidth = width - cellPadding * 2;
+      const lines = doc.splitTextToSize(text, maxWidth);
+      
+      if (align === 'center') {
+        doc.text(lines[0] || '', textX, textY, { align: 'center' });
+      } else {
+        doc.text(lines[0] || '', textX, textY);
+      }
+    };
+    
+    // Helper function to draw a row with label and value
+    const drawTableRow = (y: number, label: string, value: string, height: number = rowHeight) => {
+      drawCell(leftMargin, y, labelColWidth, height, label, { fill: true });
+      drawCell(leftMargin + labelColWidth, y, valueColWidth, height, value);
+    };
+    
+    // Header
+    doc.setFontSize(11);
+    doc.text(organizationName, pageWidth / 2, 20, { align: 'center' });
+    
+    // Title
+    doc.setFontSize(16);
+    doc.setFont('Roboto', 'normal');
+    doc.text('Dowód wypłaty', pageWidth / 2, 32, { align: 'center' });
+    
+    let yPos = 45;
+    
+    // Date and Amount row (two small tables side by side)
+    const smallTableWidth = (tableWidth - 10) / 2;
+    const smallLabelWidth = 35;
+    const smallValueWidth = smallTableWidth - smallLabelWidth;
+    
+    // Date table
+    drawCell(leftMargin, yPos, smallLabelWidth, rowHeight, 'Data', { fill: true });
+    drawCell(leftMargin + smallLabelWidth, yPos, smallValueWidth, rowHeight, format(formData.date, 'yyyy-MM-dd'));
+    
+    // Amount table  
+    const currencySymbol = currencies.find(c => c.value === formData.currency)?.label || formData.currency;
+    const amountTableX = leftMargin + smallTableWidth + 10;
+    drawCell(amountTableX, yPos, smallLabelWidth + 10, rowHeight, `Kwota (${formData.currency})`, { fill: true });
+    drawCell(amountTableX + smallLabelWidth + 10, yPos, smallValueWidth - 10, rowHeight, `${currencySymbol} ${formData.amount}`);
+    
+    yPos += rowHeight + 4;
+
+    // Conversion info row (if currency was converted)
+    if (conversionInfo) {
+      const convLabelWidth = 50;
+      drawCell(leftMargin, yPos, convLabelWidth, rowHeight, 'Przeliczenie walut', { fill: true });
+      drawCell(leftMargin + convLabelWidth, yPos, tableWidth - convLabelWidth, rowHeight, `${conversionInfo.fromAmount} ${conversionInfo.fromCurrency} → ${conversionInfo.toAmount} ${conversionInfo.toCurrency}  (1 ${conversionInfo.fromCurrency} = ${conversionInfo.rate} ${conversionInfo.toCurrency})`);
+      yPos += rowHeight + 4;
+    } else {
+      yPos += 4;
+    }
+    
+    // Main table rows
+    drawTableRow(yPos, 'Wydano (imię i nazwisko)', formData.issuedTo);
+    yPos += rowHeight;
+    
+    drawTableRow(yPos, 'Konto do przelewu', formData.bankAccount);
+    yPos += rowHeight;
+    
+    drawTableRow(yPos, 'Nazwa działu', formData.departmentName);
+    yPos += rowHeight;
+
+    // Basis (multi-line)
+    const basisLines = doc.splitTextToSize(formData.basis, valueColWidth - cellPadding * 2);
+    const basisHeight = Math.max(rowHeight * 2, basisLines.length * 6 + cellPadding * 2);
+    
+    drawCell(leftMargin, yPos, labelColWidth, basisHeight, 'Na podstawie', { fill: true });
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.3);
+    doc.rect(leftMargin + labelColWidth, yPos, valueColWidth, basisHeight, 'S');
+    doc.setFontSize(10);
+    doc.text(basisLines, leftMargin + labelColWidth + cellPadding, yPos + cellPadding + 6);
+    yPos += basisHeight;
+    
+    // Amount in words (multi-line)
+    const wordsLines = doc.splitTextToSize(formData.amountInWords, valueColWidth - cellPadding * 2);
+    const wordsHeight = Math.max(rowHeight * 2, wordsLines.length * 6 + cellPadding * 2);
+    
+    drawCell(leftMargin, yPos, labelColWidth, wordsHeight, 'Kwota słownie', { fill: true });
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.3);
+    doc.rect(leftMargin + labelColWidth, yPos, valueColWidth, wordsHeight, 'S');
+    doc.setFontSize(10);
+    doc.text(wordsLines, leftMargin + labelColWidth + cellPadding, yPos + cellPadding + 6);
+    yPos += wordsHeight + 15;
+    
+// Recipient signature box
+    const signatureBoxWidth = 155;
+    const signatureBoxHeight = 26;
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.5);
+    doc.rect(leftMargin, yPos, signatureBoxWidth, signatureBoxHeight, 'S');
+    const signatureDividerX = leftMargin + Math.round(signatureBoxWidth * 0.6);
+    doc.line(signatureDividerX, yPos, signatureDividerX, yPos + signatureBoxHeight);
+    doc.setFontSize(10);
+    doc.text('Podpis odbiorcy:', leftMargin + 3, yPos + 8);
+
+    // Use saved signatureDataUrl (persists even when canvas is unmounted on step 4)
+    const sigData = signatureDataUrl || (signatureCanvasRef.current ? signatureCanvasRef.current.toDataURL('image/png') : null);
+    if (sigData) {
+      try {
+        doc.addImage(sigData, 'PNG', signatureDividerX + 5, yPos + 4, signatureBoxWidth - (signatureDividerX - leftMargin) - 10, signatureBoxHeight - 8);
+      } catch (e) {
+        console.warn('Could not add signature image:', e);
+      }
+    }
+
+    // Cashier signature box — identical to the recipient block above.
+    yPos += signatureBoxHeight + 6;
+    doc.rect(leftMargin, yPos, signatureBoxWidth, signatureBoxHeight, 'S');
+    doc.line(signatureDividerX, yPos, signatureDividerX, yPos + signatureBoxHeight);
+    doc.setFontSize(10);
+    doc.text('Kasjer:', leftMargin + 3, yPos + 8);
+    doc.text('Podpis kasjera:', signatureDividerX + 3, yPos + 8);
+
+    // Add each attached image on a new page (compressed)
+    for (const img of attachedImages) {
+      doc.addPage();
+
+      // Load original image
+      const originalDataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(img.file);
+      });
+
+      const imgElement = await new Promise<HTMLImageElement>((resolve) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.src = originalDataUrl;
+      });
+
+      // Resize to max 800px on the longest side to keep PDF size small
+      const MAX_PX = 800;
+      let srcW = imgElement.naturalWidth;
+      let srcH = imgElement.naturalHeight;
+      if (srcW > MAX_PX || srcH > MAX_PX) {
+        if (srcW >= srcH) {
+          srcH = Math.round((srcH / srcW) * MAX_PX);
+          srcW = MAX_PX;
+        } else {
+          srcW = Math.round((srcW / srcH) * MAX_PX);
+          srcH = MAX_PX;
+        }
+      }
+
+      // Draw to offscreen canvas and export as JPEG quality 0.55
+      const canvas = document.createElement('canvas');
+      canvas.width = srcW;
+      canvas.height = srcH;
+      const ctx2d = canvas.getContext('2d')!;
+      ctx2d.drawImage(imgElement, 0, 0, srcW, srcH);
+      const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.55);
+
+      // Fit into PDF page
+      const imgMargin = 15;
+      const maxWidth = pageWidth - 2 * imgMargin;
+      const maxHeight = pageHeight - 2 * imgMargin;
+      let finalWidth = maxWidth;
+      let finalHeight = (srcH / srcW) * finalWidth;
+      if (finalHeight > maxHeight) {
+        finalHeight = maxHeight;
+        finalWidth = (srcW / srcH) * finalHeight;
+      }
+
+      const xPos = (pageWidth - finalWidth) / 2;
+      const imgYPos = (pageHeight - finalHeight) / 2;
+      doc.addImage(compressedDataUrl, 'JPEG', xPos, imgYPos, finalWidth, finalHeight);
+    }
+    
+    const fileName = `dowod_wyplaty_${format(formData.date, 'yyyy-MM-dd')}_${sanitizeForFilename(formData.issuedTo)}.pdf`;
+
+    // Return blob + base64 WITHOUT downloading yet
+    // Download is triggered separately AFTER the transaction is saved
+    const pdfBlob = doc.output('blob');
+    const pdfBase64 = doc.output('datauristring').split(',')[1];
+    return { pdfBase64, fileName, pdfBlob };
+  };
+
+  const handleSubmit = async () => {
+    if (!token) return;
+
+    setIsSaving(true);
+
+    // Helper: wrap a promise with timeout for mobile reliability
+    const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> =>
+      Promise.race([
+        promise,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Превышено время ожидания. Проверьте интернет и попробуйте ещё раз.')), ms)),
+      ]);
+
+    const verifyRecentSubmission = async (submitterName: string) => {
+      try {
+        const { data } = await supabase.functions.invoke('check-pending-payouts', {
+          body: {
+            token,
+            submitterName,
+            amount: parseFloat(formData.amount),
+            date: format(formData.date, 'yyyy-MM-dd'),
+          },
+        });
+        return Boolean(data?.recentSubmissionExists);
+      } catch (verifyError) {
+        console.warn('Recent payout verification failed:', verifyError);
+        return false;
+      }
+    };
+
+    try {
+      // If continuing an existing payout, update it instead of creating new
+      if (continuingPayout) {
+        // Extract the submitter name from the stored description tag to ensure exact match
+        const storedNameMatch = continuingPayout.description?.match(/\[Bez zalacznikow - ([^\]]+)\]/);
+        const exactSubmitterName = storedNameMatch
+          ? storedNameMatch[1]
+          : `${submitterFirstName.trim()} ${submitterLastName.trim()}`;
+
+        // Find category id for the selected department
+        const selectedCategory = categories.find(c => c.name === formData.departmentName);
+
+        const pdfResult = await generatePDF();
+
+        const updateResult = await withTimeout(supabase.functions.invoke('add-images-to-payout', {
+          body: {
+            token,
+            transactionId: continuingPayout.id,
+            submitterName: exactSubmitterName,
+            updatedBasis: formData.basis,
+            updatedIssuedTo: formData.issuedTo,
+            updatedAmountInWords: formData.amountInWords,
+            updatedDate: format(formData.date, 'yyyy-MM-dd'),
+            updatedAmount: parseFloat(formData.amount),
+            updatedCurrency: formData.currency,
+            updatedDecisionNumber: formData.bankAccount,
+            updatedDepartmentName: formData.departmentName,
+            updatedCategoryId: selectedCategory?.id ?? null,
+          },
+        }), 120000);
+
+        if (updateResult.error) throw updateResult.error;
+        if (updateResult.data?.error) throw new Error(updateResult.data.error);
+
+        // Upload PDF via service_role signed URL (anonymous client cannot write to Storage directly)
+        // The edge function returns uploadPdfPath and knows owner_user_id — we only need token + path
+        const uploadPdfPath: string | undefined = updateResult.data?.uploadPdfPath;
+        if (pdfResult?.pdfBlob && uploadPdfPath) {
+          try {
+            const supaUrl = (supabase as any).supabaseUrl as string;
+            const supaKey = (supabase as any).supabaseKey as string;
+            const params = new URLSearchParams({
+              action: 'upload-url',
+              filePath: uploadPdfPath,
+              token,
+            });
+            const urlRes = await fetch(`${supaUrl}/functions/v1/upload-payout-pdf?${params}`, {
+              headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` },
+            });
+            const urlData = await urlRes.json();
+            if (urlData.signedUrl) {
+              const putRes = await fetch(urlData.signedUrl, {
+                method: 'PUT',
+                body: pdfResult.pdfBlob,
+                headers: { 'Content-Type': 'application/pdf' },
+              });
+              if (!putRes.ok) {
+                console.error('[PDF upload] PUT failed:', putRes.status, await putRes.text());
+              }
+            } else {
+              console.error('[PDF upload] failed to get signedUrl:', urlData);
+            }
+          } catch (pdfErr) {
+            console.error('[PDF upload] signed URL upload failed:', pdfErr);
+          }
+        } else {
+          console.warn('[PDF upload] skipped: pdfBlob=', !!pdfResult?.pdfBlob, 'uploadPdfPath=', uploadPdfPath);
+        }
+
+        setIsSuccess(true);
+        toast({ title: t.success, description: t.photosAdded });
+        return;
+      }
+
+      // 1. Encode signature and images as base64 to send directly to the server
+      //    (anonymous users cannot upload to Storage, so we bypass it entirely)
+      const category = categories.find(c => c.name === formData.departmentName);
+      const submitterName = `${submitterFirstName} ${submitterLastName}`;
+
+      // Encode signature as base64 string (strip data: prefix)
+      const signatureBase64 = signatureDataUrl ? signatureDataUrl.split(',')[1] : undefined;
+
+      // Compress and encode each image as JPEG base64 (max 600px, quality 0.45)
+      // Only needed as fallback — if clientPdfBase64 succeeds, images are already embedded
+      const imagesBase64: string[] = [];
+      if (attachedImages.length > 0 && !imagesOptional) {
+        for (const img of attachedImages) {
+          try {
+            const canvas = document.createElement('canvas');
+            const image = new Image();
+            await new Promise<void>(resolve => {
+              image.onload = () => resolve();
+              image.src = img.preview;
+            });
+            const MAX = 600;
+            let w = image.naturalWidth || image.width;
+            let h = image.naturalHeight || image.height;
+            if (w > MAX || h > MAX) {
+              if (w >= h) { h = Math.round(h / w * MAX); w = MAX; }
+              else { w = Math.round(w / h * MAX); h = MAX; }
+            }
+            canvas.width = w;
+            canvas.height = h;
+            canvas.getContext('2d')!.drawImage(image, 0, 0, w, h);
+            const b64 = canvas.toDataURL('image/jpeg', 0.45).split(',')[1];
+            imagesBase64.push(b64);
+          } catch (e) {
+            console.error('Image compress error:', e);
+          }
+        }
+      }
+
+      // 2. Generate PDF client-side before submitting — ensures correct font rendering
+      //    (prevents Cyrillic transliteration that occurs when server font fails to load)
+      let clientPdfBase64: string | undefined;
+      try {
+        const pdfResult = await generatePDF();
+        clientPdfBase64 = pdfResult?.pdfBase64;
+      } catch (e) {
+        console.error('Client PDF generation failed, server will generate fallback:', e);
+      }
+
+      // 3. Submit transaction — server stores PDF (client-generated or server fallback)
+      //    When client PDF is available, skip sending imagesBase64 to reduce payload size
+      const submitResult = await withTimeout(supabase.functions.invoke('submit-public-payout', {
+        body: {
+          token,
+          amount: parseFloat(formData.amount),
+          currency: formData.currency,
+          categoryId: category?.id || null,
+          description: formData.basis,
+          date: format(formData.date, 'yyyy-MM-dd'),
+          issuedTo: formData.issuedTo,
+          amountInWords: formData.amountInWords,
+          submitterName,
+          imagesSkipped: imagesOptional,
+          departmentName: formData.departmentName,
+          decisionNumber: formData.bankAccount,
+          bankAccount: formData.bankAccount,
+          signatureBase64: signatureBase64 || undefined,
+          imagesBase64: !clientPdfBase64 && imagesBase64.length > 0 ? imagesBase64 : undefined,
+          language: language,
+          organizationName,
+          clientPdfBase64,
+        }
+      }), 120000);
+
+      if (submitResult.error) throw submitResult.error;
+      if (submitResult.data?.error) throw new Error(submitResult.data.error);
+
+      const transactionId = submitResult.data?.transactionId;
+
+      // Signature was already uploaded to temp path and moved by the server.
+      // Images were pre-uploaded as tempImgPaths and embedded by the server.
+      // No additional file uploads needed here.
+
+
+      setIsSuccess(true);
+      toast({ title: t.success, description: t.successMessage });
+    } catch (err) {
+      console.error('Save error:', err);
+      const submitterName = `${submitterFirstName.trim()} ${submitterLastName.trim()}`.trim();
+      if (err instanceof Error && err.message.includes('Превышено время ожидания') && submitterName) {
+        const saved = await verifyRecentSubmission(submitterName);
+        if (saved) {
+          setIsSuccess(true);
+          toast({ title: t.success, description: t.successMessage });
+          return;
+        }
+      }
+      const errorMessage = err instanceof Error ? err.message : t.cannotLoad;
+      toast({
+        title: 'Błąd',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // For continuing payout, require images
+  const isFormValid = continuingPayout 
+    ? attachedImages.length > 0 
+    : (formData.amount && formData.issuedTo && formData.departmentName && formData.basis && formData.amountInWords && (imagesOptional || attachedImages.length > 0));
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="max-w-md w-full">
+          <CardContent className="pt-6 text-center">
+            <p className="text-destructive text-lg">{error}</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Handle create another document - reset to login screen
+  const handleCreateAnother = () => {
+    // Reset success state
+    setIsSuccess(false);
+    
+    // Reset authentication - go back to login
+    setIsAuthenticated(false);
+    setSubmitterFirstName('');
+    setSubmitterLastName('');
+    
+    // Reset navigation
+    setNavigationHistory(['login']);
+    
+    // Reset pending payout states
+    setContinuingPayout(null);
+    setShowPendingChoice(false);
+    setShowPendingSelection(false);
+    setPendingPayouts([]);
+    
+    // Reset stepwise mode
+    setCurrentStep(1);
+    
+    // Reset form data
+    setFormData({
+      date: new Date(),
+      currency: 'PLN',
+      amount: '',
+      issuedTo: '',
+      bankAccount: '',
+      departmentName: '',
+      basis: '',
+      amountInWords: '',
+    });
+    
+    // Reset conversion info
+    setConversionInfo(null);
+    
+    // Reset images and signature
+    attachedImages.forEach(img => URL.revokeObjectURL(img.preview));
+    setAttachedImages([]);
+    setHasSignature(false);
+    setSignatureDataUrl(null);
+    setImagesOptional(false);
+  };
+
+  if (isSuccess) {
+    const currentUrl = window.location.href;
+    const handleCopyLink = () => {
+      navigator.clipboard.writeText(currentUrl).then(() => {
+        setIsCopied(true);
+        setTimeout(() => setIsCopied(false), 3000);
+      });
+    };
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Toaster />
+        <Card className="max-w-md w-full">
+          <CardContent className="pt-6 text-center space-y-4">
+            <CheckCircle className="w-16 h-16 text-primary mx-auto" />
+            <h2 className="text-xl font-bold">{t.success}</h2>
+            <p className="text-muted-foreground">
+              {imagesOptional ? t.savedWithoutPhotos : t.successMessage}
+            </p>
+
+            {imagesOptional && (
+              <div className="mt-2 rounded-xl border-2 border-yellow-500/40 bg-yellow-500/5 p-4 text-left space-y-3">
+                <div className="flex items-center gap-2 text-yellow-500">
+                  <Link className="w-4 h-4 shrink-0" />
+                  <span className="font-semibold text-sm">{t.saveLink}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">{t.returnAndEnterName}</p>
+                <div className="flex items-center gap-2 bg-background rounded-lg border border-border p-2">
+                  <span className="flex-1 text-xs text-muted-foreground truncate" title={currentUrl}>
+                    {currentUrl}
+                  </span>
+                  <button
+                    onClick={handleCopyLink}
+                    className="shrink-0 flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors px-2 py-1 rounded-md hover:bg-primary/10"
+                  >
+                    {isCopied ? (
+                      <><CheckCircle className="w-3.5 h-3.5" />{t.linkCopied}</>
+                    ) : (
+                      <><Copy className="w-3.5 h-3.5" />{t.copyLink}</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <Button onClick={handleCreateAnother} variant="outline">
+              {t.createAnother}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Navigation helper: push to history
+  const navigateTo = (screen: NavigationScreen) => {
+    setNavigationHistory(prev => [...prev, screen]);
+  };
+
+  // Navigation helper: go back
+  const goBack = () => {
+    setNavigationHistory(prev => {
+      if (prev.length <= 1) return prev;
+      return prev.slice(0, -1);
+    });
+    
+    // Get the previous screen (before current)
+    const prevScreen = navigationHistory.length > 1 ? navigationHistory[navigationHistory.length - 2] : 'login';
+    
+    // Reset form state
+    setAttachedImages([]);
+    setHasSignature(false);
+    setSignatureDataUrl(null);
+    clearSignature();
+    
+    switch (prevScreen) {
+      case 'login':
+        setIsAuthenticated(false);
+        setShowPendingChoice(false);
+        setShowPendingSelection(false);
+        setContinuingPayout(null);
+        break;
+      case 'choice':
+        setIsAuthenticated(false);
+        setShowPendingChoice(true);
+        setShowPendingSelection(false);
+        setContinuingPayout(null);
+        break;
+      case 'pending':
+        // Go back to pending selection
+        setIsAuthenticated(false);
+        setShowPendingChoice(false);
+        setShowPendingSelection(true);
+        setContinuingPayout(null);
+        break;
+      case 'form':
+        setShowPendingSelection(false);
+        setContinuingPayout(null);
+        setIsAuthenticated(true);
+        break;
+      case 'continuing':
+        // This case shouldn't normally happen
+        break;
+    }
+  };
+
+  // Authentication form
+  if (!isAuthenticated) {
+    const handleAuth = async () => {
+      if (!submitterFirstName.trim() || !submitterLastName.trim()) return;
+      
+      const fullName = `${submitterFirstName.trim()} ${submitterLastName.trim()}`;
+      
+      setIsCheckingPending(true);
+      
+      try {
+        // Check for pending payouts (transactions without images)
+        const { data, error } = await supabase.functions.invoke('check-pending-payouts', {
+          body: { 
+            token, 
+            submitterName: fullName 
+          }
+        });
+        
+        if (error) {
+          console.error('Error checking pending payouts:', error);
+          // On error — still show selection screen
+          setPendingPayouts([]);
+          setShowPendingChoice(false);
+          setShowPendingSelection(true);
+          setFormData(prev => ({ ...prev, issuedTo: fullName }));
+          navigateTo('pending');
+          return;
+        }
+        
+        // Always go to the selection screen — either with pending list or empty (user clicks "Create new")
+        setPendingPayouts(data?.pendingPayouts || []);
+        setShowPendingChoice(false);
+        setShowPendingSelection(true);
+        setFormData(prev => ({ ...prev, issuedTo: fullName }));
+        navigateTo('pending');
+      } catch (err) {
+        console.error('Error checking pending:', err);
+        // On exception — still show selection screen
+        setPendingPayouts([]);
+        setShowPendingChoice(false);
+        setShowPendingSelection(true);
+        setFormData(prev => ({ ...prev, issuedTo: fullName }));
+        navigateTo('pending');
+      } finally {
+        setIsCheckingPending(false);
+      }
+    };
+
+    const handleShowPendingList = () => {
+      setShowPendingChoice(false);
+      setShowPendingSelection(true);
+      navigateTo('pending');
+    };
+
+    const handleSelectPending = (payout: PendingPayout) => {
+      setContinuingPayout(payout);
+      setShowPendingSelection(false);
+      setIsAuthenticated(true);
+      navigateTo('continuing');
+      
+      // Pre-fill form with existing transaction data
+      const category = categories.find(c => c.id === payout.category_id);
+      const cleanDescription = payout.description?.replace(/\s*\[Bez zalacznikow - [^\]]+\]/g, '').trim() || '';
+      
+      setFormData({
+        date: new Date(payout.date),
+        currency: payout.currency,
+        amount: payout.amount.toString(),
+        issuedTo: payout.issued_to || `${submitterFirstName.trim()} ${submitterLastName.trim()}`,
+        bankAccount: payout.bank_account || '',
+        departmentName: category?.name || '',
+        basis: cleanDescription,
+        amountInWords: payout.amount_in_words || '',
+      });
+      
+      // Force images required for continuation
+      setImagesOptional(false);
+    };
+
+    const handleCreateNew = () => {
+      setShowPendingChoice(false);
+      setShowPendingSelection(false);
+      setIsAuthenticated(true);
+      navigateTo('form');
+      setFormData(prev => ({
+        ...prev,
+        issuedTo: `${submitterFirstName.trim()} ${submitterLastName.trim()}`
+      }));
+    };
+
+    const handleBackToLogin = () => {
+      goBack();
+    };
+    // Choice screen: edit existing PDF or create new order
+    if (showPendingChoice && pendingPayouts.length > 0) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background p-4">
+          <Toaster />
+          <Card className="max-w-lg w-full shadow-lg">
+            <CardHeader className="text-center border-b pb-4">
+              <div className="flex justify-end mb-2">
+                <Select value={language} onValueChange={(v) => setLanguage(v as Language)}>
+                  <SelectTrigger className="w-[140px] bg-card border-border">
+                    <Globe className="w-4 h-4 mr-2 text-muted-foreground" />
+                    <SelectValue>
+                      <span className="flex items-center gap-2">
+                        <span>{languageFlags[language]}</span>
+                        <span>{LANGUAGE_NAMES[language]}</span>
+                      </span>
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(['pl', 'ru', 'en', 'uk'] as Language[]).map((lang) => (
+                      <SelectItem key={lang} value={lang}>
+                        <span className="flex items-center gap-2">
+                          <span>{languageFlags[lang]}</span>
+                          <span>{LANGUAGE_NAMES[lang]}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <CardTitle className="text-xl sm:text-2xl font-bold text-primary">
+                {t.title}
+              </CardTitle>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                {organizationName}
+              </p>
+            </CardHeader>
+            <CardContent className="pt-6 space-y-4">
+              <div className="text-center mb-2">
+                <h3 className="text-lg font-semibold">{t.chooseAction}</h3>
+              </div>
+
+              {/* Option 1: Edit existing PDF */}
+              <button
+                onClick={handleShowPendingList}
+                className="w-full border-2 border-primary/30 rounded-xl p-5 text-left hover:border-primary hover:bg-primary/5 transition-all group"
+              >
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
+                    <ImagePlus className="w-6 h-6 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-base">{t.editExistingPdf}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{t.editExistingPdfDesc}</p>
+                    <span className="inline-block mt-2 text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                      {pendingPayouts.length} {t.pendingCount}
+                    </span>
+                  </div>
+                </div>
+              </button>
+
+              {/* Option 2: Create new order */}
+              <button
+                onClick={handleCreateNew}
+                className="w-full border-2 border-border rounded-xl p-5 text-left hover:border-muted-foreground hover:bg-accent/50 transition-all group"
+              >
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center shrink-0 group-hover:bg-muted/80 transition-colors">
+                    <ArrowRight className="w-6 h-6 text-muted-foreground" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-base">{t.createNewOrder}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{t.createNewOrderDesc}</p>
+                  </div>
+                </div>
+              </button>
+
+              <div className="border-t pt-3">
+                <Button
+                  onClick={handleBackToLogin}
+                  variant="ghost"
+                  className="w-full"
+                  size="lg"
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  {t.back}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    if (showPendingSelection) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background p-4">
+          <Toaster />
+          <Card className="max-w-lg w-full shadow-lg">
+            <CardHeader className="text-center border-b pb-4">
+              <div className="flex justify-end mb-2">
+                <Select value={language} onValueChange={(v) => setLanguage(v as Language)}>
+                  <SelectTrigger className="w-[140px] bg-card border-border">
+                    <Globe className="w-4 h-4 mr-2 text-muted-foreground" />
+                    <SelectValue>
+                      <span className="flex items-center gap-2">
+                        <span>{languageFlags[language]}</span>
+                        <span>{LANGUAGE_NAMES[language]}</span>
+                      </span>
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(['pl', 'ru', 'en', 'uk'] as Language[]).map((lang) => (
+                      <SelectItem key={lang} value={lang}>
+                        <span className="flex items-center gap-2">
+                          <span>{languageFlags[lang]}</span>
+                          <span>{LANGUAGE_NAMES[lang]}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <CardTitle className="text-xl sm:text-2xl font-bold text-primary">
+                {t.title}
+              </CardTitle>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                {organizationName}
+              </p>
+            </CardHeader>
+            <CardContent className="pt-6 space-y-4">
+              <div className="text-center mb-4">
+                <h3 className="text-lg font-semibold">
+                  {pendingPayouts.length > 0 ? t.foundDocuments : t.createNew}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {pendingPayouts.length > 0 ? t.selectDocument : ''}
+                </p>
+              </div>
+              
+              <div className="space-y-3 max-h-64 overflow-y-auto">
+                {pendingPayouts.map((payout) => {
+                  const cleanDesc = payout.description?.replace(/\s*\[Bez zalacznikow - [^\]]+\]/g, '').trim() || '';
+                  const currencySymbol = currencies.find(c => c.value === payout.currency)?.label || payout.currency;
+                  
+                  return (
+                    <div
+                      key={payout.id}
+                      className="border border-border rounded-lg hover:bg-accent/50 transition-colors"
+                    >
+                      <button
+                        onClick={() => handleSelectPending(payout)}
+                        className="w-full p-3 text-left"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1 min-w-0 pr-3">
+                            <p className="font-medium">{payout.cashier_name || t.department}</p>
+                            {cleanDesc && (
+                              <p className="text-sm text-muted-foreground mt-0.5">
+                                <span className="font-medium text-muted-foreground">{t.basis.split('(')[0].trim()}:</span> {cleanDesc}
+                              </p>
+                            )}
+                          </div>
+                          <span className="font-semibold text-primary shrink-0">
+                            {currencySymbol} {payout.amount.toFixed(2)}
+                          </span>
+                        </div>
+                      </button>
+                      <div className="px-3 pb-3 pt-0 flex items-center justify-between">
+                        {payout.pdfUrl ? (
+                          <a
+                            href={payout.pdfUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            {t.viewPdf}
+                          </a>
+                        ) : (
+                          <span />
+                        )}
+                        <span className="text-xs text-muted-foreground">
+                          {format(new Date(payout.date), 'dd.MM.yyyy')}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              
+              <div className="border-t pt-4 space-y-3">
+                <Button
+                  onClick={handleCreateNew}
+                  variant="outline"
+                  className="w-full"
+                  size="lg"
+                >
+                  {t.createNew}
+                </Button>
+                <Button
+                  onClick={handleBackToLogin}
+                  variant="ghost"
+                  className="w-full"
+                  size="lg"
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  {t.back}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Toaster />
+        <Card className="max-w-md w-full shadow-lg">
+          <CardHeader className="text-center border-b pb-4">
+            <div className="flex justify-end mb-2">
+              <Select value={language} onValueChange={(v) => setLanguage(v as Language)}>
+                <SelectTrigger className="w-[140px] bg-card border-border">
+                  <Globe className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue>
+                    <span className="flex items-center gap-2">
+                      <span>{languageFlags[language]}</span>
+                      <span>{LANGUAGE_NAMES[language]}</span>
+                    </span>
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {(['pl', 'ru', 'en', 'uk'] as Language[]).map((lang) => (
+                    <SelectItem key={lang} value={lang}>
+                      <span className="flex items-center gap-2">
+                        <span>{languageFlags[lang]}</span>
+                        <span>{LANGUAGE_NAMES[lang]}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <CardTitle className="text-xl sm:text-2xl font-bold text-primary">
+              {t.title}
+            </CardTitle>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+              {organizationName}
+            </p>
+          </CardHeader>
+          <CardContent className="pt-6 space-y-4">
+            <div className="text-center mb-4">
+              <h3 className="text-lg font-semibold">{t.enterData}</h3>
+              <p className="text-sm text-muted-foreground">
+                {t.enterDataDesc}
+              </p>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="firstName">{t.firstName} *</Label>
+                <Input
+                  id="firstName"
+                  placeholder={t.enterFirstName}
+                  value={submitterFirstName}
+                  onChange={(e) => setSubmitterFirstName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAuth()}
+                  disabled={isCheckingPending}
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="lastName">{t.lastName} *</Label>
+                <Input
+                  id="lastName"
+                  placeholder={t.enterLastName}
+                  value={submitterLastName}
+                  onChange={(e) => setSubmitterLastName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAuth()}
+                  disabled={isCheckingPending}
+                />
+              </div>
+            </div>
+            
+            <Button
+              onClick={handleAuth}
+              disabled={!submitterFirstName.trim() || !submitterLastName.trim() || isCheckingPending}
+              className="w-full"
+              size="lg"
+            >
+              {isCheckingPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {t.checking}
+                </>
+              ) : (
+                t.continue
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background p-4">
+      <Toaster />
+
+      {/* Fullscreen signature overlay */}
+      {showFullSignature && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100%',
+            height: '100dvh',
+            zIndex: 9999,
+            display: 'flex',
+            flexDirection: 'column',
+            backgroundColor: '#ffffff',
+            touchAction: 'none',
+            overscrollBehavior: 'none',
+            WebkitOverflowScrolling: 'touch',
+          } as React.CSSProperties}
+        >
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid #e5e7eb', backgroundColor: '#ffffff', flexShrink: 0 }}>
+            <button onClick={closeFullSignature} style={{ padding: 8, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', fontSize: 24, lineHeight: 1 }}>
+              <X className="w-6 h-6" />
+            </button>
+            <span style={{ fontWeight: 600, fontSize: 16 }}>{t.signature}</span>
+            <button onClick={clearFullSignature} style={{ padding: 8, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Eraser className="w-5 h-5" />
+            </button>
+          </div>
+          {/* Canvas area */}
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f9fafb', padding: 12, overflow: 'hidden' }}>
+            <canvas
+              ref={signatureFullCanvasRef}
+              width={900}
+              height={500}
+              style={{
+                width: '100%',
+                maxHeight: 'calc(100dvh - 180px)',
+                height: 'auto',
+                backgroundColor: 'white',
+                touchAction: 'none',
+                display: 'block',
+                borderRadius: 12,
+                border: '2px dashed #818cf8',
+              }}
+              onMouseDown={startDrawingFull}
+              onMouseMove={drawFull}
+              onMouseUp={stopDrawingFull}
+              onMouseLeave={stopDrawingFull}
+              onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); startDrawingFull(e); }}
+              onTouchMove={(e) => { e.stopPropagation(); e.preventDefault(); drawFull(e); }}
+              onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); stopDrawingFull(); }}
+            />
+          </div>
+          <p style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af', paddingBottom: 4, flexShrink: 0 }}>Нарисуйте подпись пальцем</p>
+          {/* Confirm button */}
+          <div style={{ padding: '8px 16px 32px', flexShrink: 0 }}>
+            <Button onClick={confirmFullSignature} className="w-full" size="lg">
+              <CheckCircle className="w-5 h-5 mr-2" />
+              Подтвердить подпись
+            </Button>
+          </div>
+        </div>
+      )}
+      <div className="max-w-3xl mx-auto">
+        <Card className="shadow-lg">
+          <CardHeader className="border-b pb-4">
+            <div className="flex items-center justify-between">
+              <div className="flex-1" />
+              <div className="text-center flex-1">
+                <CardTitle className="text-xl sm:text-2xl font-bold text-primary">
+                  {continuingPayout ? t.addPhotosTitle : t.title}
+                </CardTitle>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                  {organizationName}
+                </p>
+              </div>
+              <div className="flex-1 flex justify-end">
+                <Select value={language} onValueChange={(v) => setLanguage(v as Language)}>
+                  <SelectTrigger className="w-[140px] bg-card border-border">
+                    <Globe className="w-4 h-4 mr-2 text-muted-foreground" />
+                    <SelectValue>
+                      <span className="flex items-center gap-2">
+                        <span>{languageFlags[language]}</span>
+                        <span>{LANGUAGE_NAMES[language]}</span>
+                      </span>
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(['pl', 'ru', 'en', 'uk'] as Language[]).map((lang) => (
+                      <SelectItem key={lang} value={lang}>
+                        <span className="flex items-center gap-2">
+                          <span>{languageFlags[lang]}</span>
+                          <span>{LANGUAGE_NAMES[lang]}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardHeader>
+          
+          <CardContent className="pt-6 space-y-6">
+            {/* Stepwise mode - progress indicator + navigation buttons */}
+            {linkType === 'stepwise' && !continuingPayout && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{t.step} {currentStep} / {totalSteps}</span>
+                  <span className="font-medium">
+                    {currentStep === 1 && t.stepBasicInfo}
+                    {currentStep === 2 && t.stepCategory}
+                    {currentStep === 3 && t.stepPhotos}
+                    {currentStep === 4 && t.stepSignature}
+                    {currentStep === 5 && t.stepReview}
+                  </span>
+                </div>
+                <Progress value={(currentStep / totalSteps) * 100} className="h-2" />
+                
+                {/* Navigation buttons right below progress bar */}
+                <div className="flex items-center justify-between gap-3 pt-1">
+                  <Button
+                    onClick={() => {
+                      if (currentStep > 1) {
+                        setCurrentStep(currentStep - 1);
+                      } else {
+                        goBack();
+                      }
+                    }}
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    {t.back}
+                  </Button>
+
+                  {currentStep < totalSteps && (
+                    <Button
+                      onClick={() => setCurrentStep(currentStep + 1)}
+                      disabled={
+                        (currentStep === 1 && (!formData.amount || !formData.issuedTo)) ||
+                        (currentStep === 2 && (!formData.departmentName || !formData.basis)) ||
+                        (currentStep === 3 && (!imagesOptional && attachedImages.length === 0)) ||
+                        (currentStep === 4 && !hasSignature)
+                      }
+                      size="sm"
+                      className="gap-1"
+                    >
+                      {t.next}
+                      <ArrowRight className="w-4 h-4" />
+                    </Button>
+                  )}
+
+                  {currentStep === totalSteps && (
+                    <Button
+                      onClick={handleSubmit}
+                      disabled={!isFormValid || !hasSignature || isSaving}
+                      size="sm"
+                      className="gap-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+                    >
+                      {isSaving ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
+                      {t.downloadPdf}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {/* Continuing payout - editable form + photos + signature */}
+            {continuingPayout ? (
+              <>
+                <div className="flex items-center justify-between mb-3">
+                  <Button onClick={goBack} variant="ghost" size="sm">
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    {t.back}
+                  </Button>
+                </div>
+
+                {/* Editable document fields */}
+                <p className="text-sm font-medium text-muted-foreground">{t.editFields}</p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>{t.date} *</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="w-full justify-start text-left font-normal">
+                          <Calendar className="mr-2 h-4 w-4" />
+                          {format(formData.date, 'dd.MM.yyyy')}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <CalendarComponent mode="single" selected={formData.date} onSelect={(d) => d && handleInputChange('date', d)} initialFocus />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t.amount} *</Label>
+                    <div className="flex gap-2">
+                      <Select value={formData.currency} onValueChange={(v) => handleInputChange('currency', v)}>
+                        <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
+                        <SelectContent>{currencies.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
+                      </Select>
+                      <Input type="number" step="0.01" placeholder="0.00" value={formData.amount} onChange={(e) => handleInputChange('amount', e.target.value)} className="flex-1" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t.issuedTo} *</Label>
+                    <Input value={formData.issuedTo} onChange={(e) => handleInputChange('issuedTo', e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>{t.bankAccount}</Label>
+                    <Input placeholder={t.bankAccountPlaceholder} value={formData.bankAccount} onChange={(e) => handleInputChange('bankAccount', e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t.department} *</Label>
+                    <Popover open={categorySearchOpen} onOpenChange={(open) => { setCategorySearchOpen(open); if (!open) setCategorySearchQuery(''); }}>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          className={cn(
+                            'flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+                            !formData.departmentName && 'text-muted-foreground'
+                          )}
+                        >
+                          <span className="truncate">{formData.departmentName || t.selectCategory}</span>
+                          <ChevronDown className="h-4 w-4 opacity-50 shrink-0 ml-2" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                        <div className="flex items-center border-b px-3">
+                          <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+                          <input
+                            className="flex h-10 w-full bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                            placeholder={t.selectCategory + '...'}
+                            value={categorySearchQuery}
+                            onChange={(e) => setCategorySearchQuery(e.target.value)}
+                            autoFocus
+                          />
+                          {categorySearchQuery && (
+                            <button type="button" onClick={() => setCategorySearchQuery('')} className="opacity-50 hover:opacity-100">
+                              <X className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                        <div className="max-h-60 overflow-y-auto p-1">
+                          {filteredCategories.length === 0 ? (
+                            <div className="py-6 text-center text-sm text-muted-foreground">
+                              {categorySearchQuery ? `Ничего не найдено` : 'Нет категорий'}
+                            </div>
+                          ) : (
+                            filteredCategories.map((category) => (
+                              <button
+                                key={category.id}
+                                type="button"
+                                className={cn(
+                                  'relative flex w-full cursor-default select-none items-center rounded-sm px-3 py-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground',
+                                  formData.departmentName === category.name && 'bg-accent font-medium'
+                                )}
+                                onClick={() => handleCategorySelect(category.name)}
+                              >
+                                {formData.departmentName === category.name && (
+                                  <Check className="mr-2 h-4 w-4 shrink-0" />
+                                )}
+                                {formData.departmentName !== category.name && (
+                                  <span className="mr-6" />
+                                )}
+                                {category.name}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>{t.basis} *</Label>
+                  <Textarea value={formData.basis} onChange={(e) => handleInputChange('basis', e.target.value)} rows={3} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>{t.amountInWords}</Label>
+                  <Input value={formData.amountInWords} onChange={(e) => setFormData(prev => ({ ...prev, amountInWords: e.target.value }))} />
+                </div>
+                
+                {/* Image Attachments - Required for continuation */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label>{t.attachments} *</Label>
+                    <span className="text-xs text-muted-foreground">{t.required}</span>
+                  </div>
+                  <div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*,.pdf"
+                      multiple
+                      onChange={handleImageSelect}
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full border-dashed"
+                    >
+                      <ImagePlus className="w-4 h-4 mr-2" />
+                      {t.addPhotos}
+                    </Button>
+                    
+                    {attachedImages.length > 0 && (
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
+                        {attachedImages.map((img, index) => (
+                          <div key={index} className="relative group">
+                            <img
+                              src={img.preview}
+                              alt={`${t.attachments} ${index + 1}`}
+                              className="w-full h-20 object-cover rounded-lg border border-border"
+                            />
+                            {img.isFromPdf && (
+                              <div className="absolute top-1 left-1 bg-primary/80 text-white text-xs px-1.5 py-0.5 rounded">
+                                P{img.pageNumber}
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => removeImage(index)}
+                              className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-2">
+                      {t.photoNote}
+                    </p>
+                  </div>
+                </div>
+                
+                {/* Signature - Required for continuation */}
+                <div className="space-y-3">
+                  <Label>{t.signature} *</Label>
+
+                  {/* Big sign button */}
+                  <button
+                    type="button"
+                    onClick={openFullSignature}
+                    className="w-full flex items-center justify-center gap-3 py-4 rounded-xl font-semibold text-lg bg-primary text-primary-foreground shadow-lg active:scale-95 transition-transform"
+                  >
+                    <ExternalLink className="w-6 h-6" />
+                    Подписать
+                  </button>
+
+                  {/* Small preview (read-only) */}
+                  <div className="relative border-2 border-dashed border-primary/30 rounded-xl bg-white overflow-hidden" style={{ height: 90 }}>
+                    {signatureDataUrl ? (
+                      <img src={signatureDataUrl} alt="Подпись" className="w-full h-full object-contain p-1" />
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-muted-foreground text-sm select-none">
+                        Подпись появится здесь
+                      </div>
+                    )}
+                    {signatureDataUrl && (
+                      <button
+                        type="button"
+                        onClick={clearSignature}
+                        className="absolute top-1 right-1 bg-destructive/80 text-white rounded-full p-1"
+                        title="Очистить"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+
+                  {hasSignature && <p className="text-xs text-success">✓ Подпись добавлена</p>}
+                  {waitingExternalSign && (
+                    <p className="text-xs text-primary animate-pulse">⌨️ Ожидаем подпись из другой вкладки...</p>
+                  )}
+                  {/* Hidden canvas for compatibility */}
+                  <canvas ref={signatureCanvasRef} width={600} height={150} className="hidden" />
+                </div>
+                
+                {/* Submit Button */}
+                <div className="flex">
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={!isFormValid || !hasSignature || isSaving}
+                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+                    size="lg"
+                  >
+                    {isSaving ? (
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    ) : (
+                      <Send className="w-5 h-5 mr-2" />
+                    )}
+                    {t.saveAndDownload}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Back button removed - moved to navigation row */}
+                
+                {/* Standard mode OR Stepwise Step 1: Basic Info */}
+                {(linkType === 'standard' || currentStep === 1) && (
+                  <>
+                    <p className="text-sm text-muted-foreground">{t.requiredFields}</p>
+                    
+                    {/* Date, Currency, Amount, Issued To */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label>{t.date} *</Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                'w-full justify-start text-left font-normal',
+                                !formData.date && 'text-muted-foreground'
+                              )}
+                            >
+                              <Calendar className="mr-2 h-4 w-4" />
+                              {format(formData.date, 'dd.MM.yyyy')}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0">
+                            <CalendarComponent
+                              mode="single"
+                              selected={formData.date}
+                              onSelect={(date) => date && handleInputChange('date', date)}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>{t.amount} *</Label>
+                        <div className="flex gap-2">
+                          <Select value={formData.currency} onValueChange={(v) => { handleInputChange('currency', v); setConversionInfo(null); }}>
+                            <SelectTrigger className="w-20">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {currencies.map(c => (
+                                <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={formData.amount}
+                            onChange={(e) => { handleInputChange('amount', e.target.value); setConversionInfo(null); }}
+                            className="flex-1"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>{t.issuedTo} *</Label>
+                        <Input
+                          placeholder={t.enterName}
+                          value={formData.issuedTo}
+                          onChange={(e) => handleInputChange('issuedTo', e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Currency Converter Button - standalone row */}
+                    <div className="flex items-center gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setShowConverter(true)}
+                        className="flex items-center gap-2 px-4 py-2 h-10"
+                      >
+                        <img src={currencyConvertIcon} alt="Convert" className="w-5 h-5" />
+                        <span className="text-sm font-medium">
+                          {language === 'ru' ? 'Конвертировать валюту' :
+                           language === 'uk' ? 'Конвертувати валюту' :
+                           language === 'pl' ? 'Konwertuj walutę' :
+                           'Convert currency'}
+                        </span>
+                      </Button>
+                      {conversionInfo && (
+                        <span className="text-sm text-muted-foreground">
+                          {conversionInfo.fromAmount} {conversionInfo.fromCurrency} → {conversionInfo.toAmount} {conversionInfo.toCurrency}
+                          {' '}(1 {conversionInfo.fromCurrency} = {conversionInfo.rate} {conversionInfo.toCurrency})
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Currency Converter Dialog */}
+                    <CurrencyConverter
+                      isOpen={showConverter}
+                      onClose={() => setShowConverter(false)}
+                      onApply={(toAmount, toCurrency, fromAmt, fromCurr, rate) => {
+                        setConversionInfo({ fromAmount: fromAmt, fromCurrency: fromCurr, toAmount: toAmount, toCurrency: toCurrency, rate });
+                        handleInputChange('amount', toAmount);
+                        handleInputChange('currency', toCurrency);
+                      }}
+                      currentAmount={formData.amount}
+                      currentCurrency={formData.currency}
+                      language={language}
+                    />
+                    
+                    {/* Bank Account - digits and + only */}
+                    <div className="space-y-2">
+                      <Label>{t.bankAccount}</Label>
+                      <Input
+                        placeholder={t.bankAccountPlaceholder}
+                        value={formData.bankAccount}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9A-Za-z+ ]/g, '').toUpperCase();
+                          handleInputChange('bankAccount', val);
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
+                
+                {/* Standard mode OR Stepwise Step 2: Category & Basis */}
+                {(linkType === 'standard' || currentStep === 2) && (
+                  <>
+                    {/* Department Name */}
+                    <div className="space-y-2">
+                      <Label>{t.department} *</Label>
+                      <Popover open={categorySearchOpen} onOpenChange={(open) => { setCategorySearchOpen(open); if (!open) setCategorySearchQuery(''); }}>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className={cn(
+                              'flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+                              !formData.departmentName && 'text-muted-foreground'
+                            )}
+                          >
+                            <span className="truncate">{formData.departmentName || t.selectCategory}</span>
+                            <ChevronDown className="h-4 w-4 opacity-50 shrink-0 ml-2" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                          <div className="flex items-center border-b px-3">
+                            <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+                            <input
+                              className="flex h-10 w-full bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                              placeholder={t.selectCategory + '...'}
+                              value={categorySearchQuery}
+                              onChange={(e) => setCategorySearchQuery(e.target.value)}
+                              autoFocus
+                            />
+                            {categorySearchQuery && (
+                              <button type="button" onClick={() => setCategorySearchQuery('')} className="opacity-50 hover:opacity-100">
+                                <X className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                          <div className="max-h-60 overflow-y-auto p-1">
+                            {filteredCategories.length === 0 ? (
+                              <div className="py-6 text-center text-sm text-muted-foreground">
+                                {categorySearchQuery ? `Ничего не найдено` : 'Нет категорий'}
+                              </div>
+                            ) : (
+                              filteredCategories.map((category) => (
+                                <button
+                                  key={category.id}
+                                  type="button"
+                                  className={cn(
+                                    'relative flex w-full cursor-default select-none items-center rounded-sm px-3 py-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground',
+                                    formData.departmentName === category.name && 'bg-accent font-medium'
+                                  )}
+                                  onClick={() => handleCategorySelect(category.name)}
+                                >
+                                  {formData.departmentName === category.name && (
+                                    <Check className="mr-2 h-4 w-4 shrink-0" />
+                                  )}
+                                  {formData.departmentName !== category.name && (
+                                    <span className="mr-6" />
+                                  )}
+                                  {category.name}
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                    
+                    {/* Basis */}
+                    <div className="space-y-2">
+                      <Label>{t.basis} *</Label>
+                      <Textarea
+                        placeholder={t.basisPlaceholder}
+                        value={formData.basis}
+                        onChange={(e) => handleInputChange('basis', e.target.value)}
+                        rows={3}
+                      />
+                    </div>
+                    
+                    {/* Amount in Words - hidden in stepwise mode (shown only in review step) */}
+                    {linkType === 'standard' && (
+                      <div className="space-y-2">
+                        <Label>{t.amountInWords} *</Label>
+                        <Textarea
+                          value={formData.amountInWords}
+                          readOnly
+                          rows={2}
+                          className="bg-muted cursor-not-allowed"
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+                
+                {/* Standard mode OR Stepwise Step 3: Photos only */}
+                {(linkType === 'standard' || currentStep === 3) && (
+                  <>
+                    {/* Image Attachments Toggle */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="allow-images-public">{t.attachments} {!imagesOptional && '*'}</Label>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">{imagesOptional ? t.optional : t.required}</span>
+                          <Switch
+                            id="allow-images-public"
+                            checked={imagesOptional}
+                            onCheckedChange={(checked) => {
+                              setImagesOptional(checked);
+                              if (checked) {
+                                attachedImages.forEach(img => URL.revokeObjectURL(img.preview));
+                                setAttachedImages([]);
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className={cn(
+                        "transition-all duration-200",
+                        imagesOptional && "opacity-50 pointer-events-none"
+                      )}>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          onChange={handleImageSelect}
+                          className="hidden"
+                          disabled={imagesOptional}
+                        />
+                        {/* Wide, prominent photo button */}
+                        <button
+                          type="button"
+                          onClick={() => !imagesOptional && fileInputRef.current?.click()}
+                          disabled={imagesOptional}
+                          className={cn(
+                            "w-full flex flex-col items-center justify-center gap-2 py-6 px-4 rounded-xl border-2 border-dashed transition-all duration-200",
+                            imagesOptional
+                              ? "border-border text-muted-foreground cursor-not-allowed"
+                              : "border-primary/50 text-primary hover:border-primary hover:bg-primary/5 active:bg-primary/10 cursor-pointer"
+                          )}
+                        >
+                          <ImagePlus className="w-8 h-8" />
+                          <span className="text-base font-semibold">{t.addPhotos}</span>
+                          <span className="text-xs text-muted-foreground">{t.photoNote}</span>
+                        </button>
+                        
+                        {attachedImages.length > 0 && (
+                          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
+                            {attachedImages.map((img, index) => (
+                              <div key={index} className="relative group">
+                                <img
+                                  src={img.preview}
+                                  alt={`${t.attachments} ${index + 1}`}
+                                  className="w-full h-24 object-cover rounded-lg border border-border"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => removeImage(index)}
+                                  className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 shadow-md"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+                
+                {/* Standard mode OR Stepwise Step 4: Signature only */}
+                {(linkType === 'standard' || currentStep === 4) && (
+                  <>
+                    {/* Signature */}
+                    <div className="space-y-3">
+                      <Label>{t.signature} *</Label>
+
+                      {/* Big sign button */}
+                      <button
+                        type="button"
+                        onClick={openFullSignature}
+                        className="w-full flex items-center justify-center gap-3 py-4 rounded-xl font-semibold text-lg bg-primary text-primary-foreground shadow-lg active:scale-95 transition-transform"
+                      >
+                        <ExternalLink className="w-6 h-6" />
+                        Подписать
+                      </button>
+
+                      {/* Small preview (read-only) */}
+                      <div className="relative border-2 border-dashed border-primary/30 rounded-xl bg-white overflow-hidden" style={{ height: 90 }}>
+                        {signatureDataUrl ? (
+                          <img src={signatureDataUrl} alt="Подпись" className="w-full h-full object-contain p-1" />
+                        ) : (
+                          <div className="flex items-center justify-center h-full text-muted-foreground text-sm select-none">
+                            Подпись появится здесь
+                          </div>
+                        )}
+                        {signatureDataUrl && (
+                          <button
+                            type="button"
+                            onClick={clearSignature}
+                            className="absolute top-1 right-1 bg-destructive/80 text-white rounded-full p-1"
+                            title="Очистить"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+
+                      {hasSignature && <p className="text-xs text-success">✓ Подпись добавлена</p>}
+                      {waitingExternalSign && (
+                        <p className="text-xs text-primary animate-pulse">⌨️ Ожидаем подпись из другой вкладки...</p>
+                      )}
+                      {/* Hidden canvas for compatibility */}
+                      <canvas ref={signatureCanvasRef} width={600} height={200} className="hidden" />
+                    </div>
+                  </>
+                )}
+                
+                {/* Stepwise Step 4: Review */}
+                {linkType === 'stepwise' && currentStep === 5 && (
+                  <div className="space-y-4">
+                    <h3 className="font-semibold">{t.reviewTitle}</h3>
+                    <div className="bg-muted/50 p-4 rounded-lg space-y-3">
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <span className="text-muted-foreground">{t.date}:</span>
+                        <span>{format(formData.date, 'dd.MM.yyyy')}</span>
+                        
+                        <span className="text-muted-foreground">{t.amount}:</span>
+                        <span>{currencies.find(c => c.value === formData.currency)?.label} {formData.amount}</span>
+                        
+                        <span className="text-muted-foreground">{t.issuedTo}:</span>
+                        <span>{formData.issuedTo}</span>
+                        
+                        {formData.bankAccount && (
+                          <>
+                            <span className="text-muted-foreground">{t.bankAccount}:</span>
+                            <span>{formData.bankAccount}</span>
+                          </>
+                        )}
+                        
+                        <span className="text-muted-foreground">{t.department}:</span>
+                        <span>{formData.departmentName}</span>
+                        
+                        <span className="text-muted-foreground">{t.basis}:</span>
+                        <span className="col-span-1">{formData.basis}</span>
+                      </div>
+                      
+                      <div className="pt-2 border-t">
+                        <span className="text-muted-foreground text-sm">{t.amountInWords}:</span>
+                        <p className="font-medium">{formData.amountInWords}</p>
+                      </div>
+                      
+                      {attachedImages.length > 0 && (
+                        <div className="pt-2 border-t">
+                          <span className="text-muted-foreground text-sm">{t.attachments}: {attachedImages.length}</span>
+                        </div>
+                      )}
+                      
+                      {hasSignature && (
+                        <div className="pt-2 border-t">
+                          <span className="text-muted-foreground text-sm">{t.signature}: ✓</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Navigation Buttons - standard mode only (stepwise uses buttons near progress bar) */}
+                {linkType !== 'stepwise' && (
+                  <div className="flex items-center justify-between gap-3 pt-4">
+                    <Button
+                      onClick={goBack}
+                      variant="ghost"
+                      size="lg"
+                      className="gap-2"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      {t.back}
+                    </Button>
+                    <Button
+                      onClick={handleSubmit}
+                      disabled={!isFormValid || !hasSignature || isSaving}
+                      className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+                      size="lg"
+                    >
+                      {isSaving ? (
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      ) : (
+                        <Send className="w-5 h-5 mr-2" />
+                      )}
+                      {t.saveAndDownload}
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+};
+
+export default PublicPayout;

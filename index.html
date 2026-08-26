@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Church Accounting</title>
+    <meta name="description" content="Система финансового учета церкви" />
+    <meta name="author" content="Church Account Bliss" />
+    <meta name="theme-color" content="#3b82f6" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Церковный учет" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <meta property="og:title" content="Церковный учет" />
+    <meta property="og:description" content="Система финансового учета церкви" />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@Lovable" />
+    <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+    
+    <link rel="icon" href="/Kosciol.ico.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/Kosciol.ico.png" />
+
+    <script>
+      (function () {
+        var routeMatch = window.location.pathname.match(/\/(payout|deposit|transactions)\/[^/]+\/?$/);
+        var publicType = routeMatch ? routeMatch[1] : null;
+        var pathParts = window.location.pathname.split('/').filter(Boolean);
+        var basePath = window.location.hostname.endsWith('github.io') && pathParts.length
+          ? '/' + pathParts[0] + '/'
+          : '/';
+        var publicRoute = publicType
+          ? window.location.pathname.slice(basePath.length - 1) + window.location.search
+          : null;
+        var appTitles = {
+          payout: 'Dowód wypłaty',
+          deposit: 'Dowód wpłaty',
+          transactions: 'Таблица транзакций'
+        };
+
+        if (publicType) {
+          document.title = appTitles[publicType];
+          document.querySelector('meta[name="apple-mobile-web-app-title"]').content = appTitles[publicType];
+          localStorage.setItem('pwa:last-public-' + publicType, publicRoute);
+          document.cookie = 'pwa_last_public_' + publicType + '=' + encodeURIComponent(publicRoute)
+            + '; Path=' + basePath + '; Max-Age=31536000; SameSite=Lax; Secure';
+        }
+
+        var manifest = document.createElement('link');
+        manifest.rel = 'manifest';
+        manifest.href = basePath + (publicType ? publicType + '-manifest.webmanifest' : 'manifest.webmanifest');
+        document.head.appendChild(manifest);
+      }());
+    </script>
+    
+    <!-- Single Page Apps for GitHub Pages -->
+    <script>
+      (function(l) {
+        if (l.hash.indexOf('#/') === 0) {
+          var hashPath = l.hash.slice(1);
+          var basePath = l.pathname.endsWith('/') ? l.pathname.slice(0, -1) : l.pathname;
+          window.history.replaceState(null, null, basePath + hashPath + l.search);
+          return;
+        }
+
+        if (l.search[1] === '/' ) {
+          var decoded = l.search.slice(1).split('&').map(function(s) { 
+            return s.replace(/~and~/g, '&')
+          }).join('?');
+          window.history.replaceState(null, null,
+              l.pathname.slice(0, -1) + decoded + l.hash
+          );
+        }
+      }(window.location))
+    </script>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
