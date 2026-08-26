@@ -906,7 +906,7 @@ export const NotificationsPage = () => {
         const senderCount = Array.isArray(receiptLayout.senders) ? receiptLayout.senders.length : 2;
         const topMm = isMultiReceiptLayout
           ? receiptOffset + 62 + senderCount * 26
-          : 137;
+          : 104;
         const heightMm = selectedHeightMm;
         page.drawImage(areaImage, {
           x: cashierRowLeftMm * mmX,
