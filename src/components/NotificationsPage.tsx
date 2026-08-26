@@ -1982,7 +1982,7 @@ export const NotificationsPage = () => {
           </div>
           <Button
             className="gap-2"
-            onClick={saveDepositPdf}
+            onClick={() => void saveDepositPdf(false)}
             disabled={!cashierName.trim() || Boolean(savingId)}
           >
             {savingId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
