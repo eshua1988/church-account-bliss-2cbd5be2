@@ -701,6 +701,10 @@ export const NotificationsPage = () => {
 
   const savePayoutCashierPdf = async (clearSignature = false) => {
     if (!depositPdfTarget || (!clearSignature && !cashierName.trim())) return;
+    const cashierNameToSave = cashierName.trim();
+    const cashierSignatureDataUrl = !clearSignature && cashierSignatureRef.current
+      ? cashierSignatureRef.current.toDataURL('image/png')
+      : null;
     const meta = depositPdfTarget.metadata || {};
     const pdfPath = String(meta.pdf_path || '');
     if (!pdfPath) throw new Error('PDF не найден');
@@ -746,7 +750,6 @@ export const NotificationsPage = () => {
       throw new Error('Nie znaleziono pola kasjera w tym PDF. Wygeneruj dokument ponownie przed podpisaniem.');
     }
 
-    const signature = cashierSignatureRef.current;
     const rowX = 20 * mmX;
     const rowWidth = 155 * mmX;
     const rowHeight = 26 * mmY;
@@ -768,9 +771,9 @@ export const NotificationsPage = () => {
     page.drawRectangle({ x: rowX, y: rowBottom, width: rowWidth, height: rowHeight, borderColor: rgb(0, 0, 0), borderWidth: 0.5 });
     page.drawLine({ start: { x: dividerX, y: rowBottom }, end: { x: dividerX, y: rowTop }, thickness: 0.5, color: rgb(0, 0, 0) });
     if (!clearSignature) {
-      page.drawText(cashierName.trim(), { x: rowX + 3 * mmX, y: rowBottom + 9 * mmY, size: 9, maxWidth: dividerX - rowX - 6 * mmX });
-      if (signature) {
-        const cashierImage = await pdfDoc.embedPng(signature.toDataURL('image/png'));
+      page.drawText(cashierNameToSave, { x: rowX + 3 * mmX, y: rowBottom + 9 * mmY, size: 9, maxWidth: dividerX - rowX - 6 * mmX });
+      if (cashierSignatureDataUrl) {
+        const cashierImage = await pdfDoc.embedPng(cashierSignatureDataUrl);
         page.drawImage(cashierImage, { x: dividerX + 3 * mmX, y: rowBottom + 3 * mmY, width: rowX + rowWidth - dividerX - 6 * mmX, height: rowHeight - 6 * mmY });
       }
     }
@@ -788,12 +791,12 @@ export const NotificationsPage = () => {
 
     const updatedMetadata = clearSignature
       ? { ...meta, cashier: null, cashier_signed: false }
-      : { ...meta, cashier: cashierName.trim(), cashier_signed: true };
+      : { ...meta, cashier: cashierNameToSave, cashier_signed: true };
     const { error: notificationError } = await supabase.from('notifications').update({ metadata: updatedMetadata }).eq('id', depositPdfTarget.id);
     if (notificationError) throw notificationError;
     const transactionId = String(meta.transaction_id || '');
     if (transactionId) {
-      const { error: transactionError } = await supabase.from('transactions').update({ cashier_name: clearSignature ? null : cashierName.trim() }).eq('id', transactionId);
+      const { error: transactionError } = await supabase.from('transactions').update({ cashier_name: clearSignature ? null : cashierNameToSave }).eq('id', transactionId);
       if (transactionError) console.warn('Linked transaction cashier was not updated:', transactionError);
     }
   };
