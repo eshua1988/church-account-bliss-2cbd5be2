@@ -746,8 +746,10 @@ export const NotificationsPage = () => {
       console.warn('Could not locate cashier row in payout PDF:', error);
     }
 
+    // Client-generated payout PDFs can have no readable text layer. Their
+    // cashier row is fixed at 180 mm from the top of the A4 page.
     if (cashierLabelYs.length === 0) {
-      throw new Error('Nie znaleziono pola kasjera w tym PDF. Wygeneruj dokument ponownie przed podpisaniem.');
+      cashierLabelYs.push(pageHeight - (180 + 8) * mmY);
     }
 
     const rowX = 20 * mmX;
