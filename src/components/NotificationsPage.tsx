@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { openPdfUrl } from '@/lib/pdfDownload';
+import fontkit from '@pdf-lib/fontkit';
+import { ROBOTO_FONT_BASE64 } from '@/lib/robotoFont';
 import { useToast } from '@/hooks/use-toast';
 import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
@@ -722,6 +724,9 @@ export const NotificationsPage = () => {
     const originalBytes = new Uint8Array(await sourceResponse.arrayBuffer());
     const [{ PDFDocument, rgb }, pdfjsLib] = await Promise.all([import('pdf-lib'), import('pdfjs-dist')]);
     const pdfDoc = await PDFDocument.load(originalBytes);
+    pdfDoc.registerFontkit(fontkit);
+    const cashierFontBytes = Uint8Array.from(atob(ROBOTO_FONT_BASE64), character => character.charCodeAt(0));
+    const cashierFont = await pdfDoc.embedFont(cashierFontBytes);
     const page = pdfDoc.getPage(0);
     const { width: pageWidth, height: pageHeight } = page.getSize();
     const mmX = pageWidth / 210;
@@ -773,7 +778,7 @@ export const NotificationsPage = () => {
     page.drawRectangle({ x: rowX, y: rowBottom, width: rowWidth, height: rowHeight, borderColor: rgb(0, 0, 0), borderWidth: 0.5 });
     page.drawLine({ start: { x: dividerX, y: rowBottom }, end: { x: dividerX, y: rowTop }, thickness: 0.5, color: rgb(0, 0, 0) });
     if (!clearSignature) {
-      page.drawText(cashierNameToSave, { x: rowX + 3 * mmX, y: rowBottom + 9 * mmY, size: 9, maxWidth: dividerX - rowX - 6 * mmX });
+      page.drawText(cashierNameToSave, { font: cashierFont, x: rowX + 3 * mmX, y: rowBottom + 9 * mmY, size: 9, maxWidth: dividerX - rowX - 6 * mmX });
       if (cashierSignatureDataUrl) {
         const cashierImage = await pdfDoc.embedPng(cashierSignatureDataUrl);
         page.drawImage(cashierImage, { x: dividerX + 3 * mmX, y: rowBottom + 3 * mmY, width: rowX + rowWidth - dividerX - 6 * mmX, height: rowHeight - 6 * mmY });
