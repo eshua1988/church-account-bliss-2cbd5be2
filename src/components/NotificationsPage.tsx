@@ -722,41 +722,53 @@ export const NotificationsPage = () => {
     const { width: pageWidth, height: pageHeight } = page.getSize();
     const mmX = pageWidth / 210;
     const mmY = pageHeight / 297;
-    // The payout template already has a cashier row. Only fill its existing
-    // cells; never paint another large frame over the recipient row.
-    let cashierLabelY: number | null = null;
+    // Locate the cashier row(s) already present in the generated payout PDF.
+    // Older PDFs may contain a duplicate row from the previous implementation.
+    const cashierLabelYs: number[] = [];
     try {
       const sourcePdf = await pdfjsLib.getDocument({ data: originalBytes.slice() }).promise;
       const textContent = await (await sourcePdf.getPage(1)).getTextContent();
-      const cashierLabel = textContent.items.find((item: any) => {
+      textContent.items.forEach((item: any) => {
         const label = String(item.str || '').toLocaleLowerCase('pl');
-        return (label.includes('kasjer') || label.includes('кассир') || label.includes('cashier'))
-          && (label.includes('podpis') || label.includes('подпис') || label.includes('signature'));
-      }) as any;
-      if (cashierLabel?.transform) cashierLabelY = Number(cashierLabel.transform[5]);
+        if (label.includes('kasjer') || label.includes('кассир') || label.includes('cashier')) {
+          const labelY = Number(item.transform?.[5]);
+          if (Number.isFinite(labelY) && !cashierLabelYs.some(y => Math.abs(y - labelY) < 2)) {
+            cashierLabelYs.push(labelY);
+          }
+        }
+      });
       await sourcePdf.destroy();
     } catch (error) {
       console.warn('Could not locate cashier row in payout PDF:', error);
     }
 
-    if (cashierLabelY === null) {
+    if (cashierLabelYs.length === 0) {
       throw new Error('Nie znaleziono pola kasjera w tym PDF. Wygeneruj dokument ponownie przed podpisaniem.');
     }
 
     const signature = cashierSignatureRef.current;
     const rowX = 20 * mmX;
-    const rowWidth = 170 * mmX;
+    const rowWidth = 155 * mmX;
     const rowHeight = 26 * mmY;
     const dividerX = rowX + rowWidth * 0.58;
-    const rowTop = cashierLabelY + 7 * mmY;
+    const cashierLabelY = Math.min(...cashierLabelYs);
+    const rowTop = cashierLabelY + 8 * mmY;
     const rowBottom = rowTop - rowHeight;
-    const contentBottom = rowBottom + 3 * mmY;
-    const contentHeight = 15 * mmY;
 
-    page.drawRectangle({ x: rowX + 2 * mmX, y: contentBottom, width: dividerX - rowX - 4 * mmX, height: contentHeight, color: rgb(1, 1, 1) });
-    page.drawRectangle({ x: dividerX + 2 * mmX, y: rowBottom + 2 * mmY, width: rowX + rowWidth - dividerX - 4 * mmX, height: rowHeight - 4 * mmY, color: rgb(1, 1, 1) });
+    cashierLabelYs.forEach(labelY => {
+      const existingTop = labelY + 8 * mmY;
+      page.drawRectangle({
+        x: rowX - 1 * mmX,
+        y: existingTop - rowHeight - 1 * mmY,
+        width: rowWidth + 2 * mmX,
+        height: rowHeight + 2 * mmY,
+        color: rgb(1, 1, 1),
+      });
+    });
+    page.drawRectangle({ x: rowX, y: rowBottom, width: rowWidth, height: rowHeight, borderColor: rgb(0, 0, 0), borderWidth: 0.5 });
+    page.drawLine({ start: { x: dividerX, y: rowBottom }, end: { x: dividerX, y: rowTop }, thickness: 0.5, color: rgb(0, 0, 0) });
     if (!clearSignature) {
-      page.drawText(cashierName.trim(), { x: rowX + 3 * mmX, y: contentBottom + 5 * mmY, size: 9, maxWidth: dividerX - rowX - 6 * mmX });
+      page.drawText(cashierName.trim(), { x: rowX + 3 * mmX, y: rowBottom + 9 * mmY, size: 9, maxWidth: dividerX - rowX - 6 * mmX });
       if (signature) {
         const cashierImage = await pdfDoc.embedPng(signature.toDataURL('image/png'));
         page.drawImage(cashierImage, { x: dividerX + 3 * mmX, y: rowBottom + 3 * mmY, width: rowX + rowWidth - dividerX - 6 * mmX, height: rowHeight - 6 * mmY });
