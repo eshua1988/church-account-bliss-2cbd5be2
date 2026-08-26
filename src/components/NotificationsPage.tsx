@@ -850,7 +850,7 @@ export const NotificationsPage = () => {
         ? depositReceipts.map((_, index) => index)
         : [receiptIndex];
       const selectedLayout = depositReceipts[receiptIndex] || {};
-      const selectedHeightMm = Array.isArray(meta.receipts) ? 16 : 16;
+      const selectedHeightMm = Number(selectedLayout.cashier_height_mm) || 12;
 
       // A single receipt uses the 20–190 mm cashier row visible in the PDF.
       // The older two-receipts-per-page layout has its own wider row.
@@ -904,10 +904,24 @@ export const NotificationsPage = () => {
         // sender occupies 26 mm, then the 16 mm cashier row begins.
         const receiptOffset = Number(receiptLayout.offset_y_mm) || (index % 2 === 0 ? 10 : 153);
         const senderCount = Array.isArray(receiptLayout.senders) ? receiptLayout.senders.length : 2;
-        const topMm = isMultiReceiptLayout
-          ? receiptOffset + 62 + senderCount * 26
-          : 104;
+        const topMm = Number(receiptLayout.cashier_top_mm) || (
+          isMultiReceiptLayout
+            ? receiptOffset + 54 + senderCount * 18 + 4
+            : 104
+        );
         const heightMm = selectedHeightMm;
+        // Older versions appended a second cashier block below the original
+        // row. Clear that legacy area before restoring one canonical row.
+        if (!isMultiReceiptLayout) {
+          const legacyBottomMm = topMm + 49;
+          page.drawRectangle({
+            x: cashierRowLeftMm * mmX,
+            y: pageHeight - legacyBottomMm * mmY,
+            width: cashierRowWidthMm * mmX,
+            height: (legacyBottomMm - topMm) * mmY,
+            color: { type: 'RGB', red: 1, green: 1, blue: 1 } as any,
+          });
+        }
         page.drawImage(areaImage, {
           x: cashierRowLeftMm * mmX,
           y: pageHeight - (topMm + heightMm) * mmY,
