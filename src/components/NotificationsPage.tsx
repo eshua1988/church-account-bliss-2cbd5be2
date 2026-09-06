@@ -1251,32 +1251,6 @@ export const NotificationsPage = () => {
     };
   };
 
-  const removeFromArchive = async (notification: Notification) => {
-    setSavingId(notification.id);
-    try {
-      const metadata = { ...(notification.metadata || {}) } as Record<string, unknown>;
-      delete metadata.archive_type;
-      delete metadata.archive_year;
-      delete metadata.archived_at;
-
-      const { error } = await supabase
-        .from('notifications')
-        .update({ metadata })
-        .eq('id', notification.id);
-      if (error) throw error;
-      await refetchNotifications();
-      toast({ title: 'PDF удалён из архива' });
-    } catch (error) {
-      toast({
-        title: 'Ошибка удаления из архива',
-        description: error instanceof Error ? error.message : String(error),
-        variant: 'destructive',
-      });
-    } finally {
-      setSavingId(null);
-    }
-  };
-
   const upsertOtherRuleTerms = async (transactionType: 'income' | 'expense', terms: string[]) => {
     if (!user) throw new Error('User not authenticated');
     const departmentName = OTHER_DEPARTMENT_BY_TYPE[transactionType];
@@ -1635,6 +1609,17 @@ export const NotificationsPage = () => {
     }
   };
 
+  const handleDeleteSelectedArchive = async () => {
+    try {
+      await Promise.all(selectedArchiveNotifications.map(notification => deleteNotification(notification.id)));
+      setSelectedArchiveIds(new Set());
+      await refetchNotifications();
+      toast({ title: 'PDF удалены', description: `Удалено документов: ${selectedArchiveNotifications.length}` });
+    } catch (error) {
+      toast({ title: 'Ошибка удаления', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+    }
+  };
+
   return (
     <div className="animate-fade-in w-full min-w-0 max-w-full overflow-x-hidden">
       <div className="mb-4 flex min-w-0 flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1840,6 +1825,9 @@ export const NotificationsPage = () => {
               <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void handleDownloadSelectedArchive()}>
                 <Download className="h-4 w-4" /> Скачать
               </Button>
+              <Button variant="destructive" size="sm" className="gap-1.5" onClick={() => void handleDeleteSelectedArchive()}>
+                <Trash2 className="h-4 w-4" /> Удалить
+              </Button>
               <Button variant="ghost" size="sm" onClick={() => setSelectedArchiveIds(new Set())}>Снять выбор</Button>
             </div>
           )}
@@ -1941,19 +1929,6 @@ export const NotificationsPage = () => {
                           >
                             <Pencil className="h-4 w-4" />
                           </Button>}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 flex-shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                            onClick={() => removeFromArchive(notification)}
-                            disabled={savingId === notification.id}
-                            aria-label="Удалить PDF из архива"
-                            title="Удалить PDF из архива"
-                          >
-                            {savingId === notification.id
-                              ? <Loader2 className="h-4 w-4 animate-spin" />
-                              : <Trash2 className="h-4 w-4" />}
-                          </Button>
                         </div>
                       );
                     })}
