@@ -288,7 +288,7 @@ Deno.serve(async (req) => {
         const insertedTx = []
         for (const [index, t] of newTx.entries()) {
           const isTargetedDonation = t.type === 'income' && t.bank_title && targetedDonationRegex.test(t.bank_title)
-          const { error } = await db.from('transactions').insert({
+          const transactionRow = {
             user_id,
             date: t.date,
             created_at: new Date(insertTime - index * 1000).toISOString(),
@@ -303,12 +303,18 @@ Deno.serve(async (req) => {
             bank_sender: t.bank_sender || null,
             bank_recipient: t.bank_recipient || null,
             department_name: isTargetedDonation ? 'Целевые пожертвования' : null,
-          })
-          if (!error || error.code === '23505') {
-            if (!error) {
-              imported++
-              insertedTx.push(t)
-            }
+          }
+          let { error } = await db.from('transactions').insert(transactionRow)
+          if (error?.code === '23505' && t.external_id) {
+            // The bank identifier can collide with an old/global row. Keep
+            // the transaction instead of dropping it, but omit that identifier.
+            const retryRow = { ...transactionRow, external_id: null }
+            const retryResult = await db.from('transactions').insert(retryRow)
+            error = retryResult.error
+          }
+          if (!error) {
+            imported++
+            insertedTx.push(t)
             continue
           }
           insertError = String(error.message)
