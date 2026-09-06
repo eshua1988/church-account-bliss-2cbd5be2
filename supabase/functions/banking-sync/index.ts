@@ -208,7 +208,11 @@ Deno.serve(async (req) => {
         .eq('user_id', user_id)
         .eq('source', source)
         .gte('date', dateFrom)
-      const existingIds = new Set((existing||[]).filter(r => r.external_id).map(r => r.external_id))
+      const { data: existingWithExternalIds } = await db.from('transactions')
+        .select('external_id')
+        .eq('user_id', user_id)
+        .not('external_id', 'is', null)
+      const existingIds = new Set((existingWithExternalIds || []).map(r => r.external_id))
       totalExisting += (existing || []).length
       const matchedExisting = new Set()
       const existingKeys = new Map()
@@ -253,7 +257,18 @@ Deno.serve(async (req) => {
 
       // The reconciliation result is the authoritative import list. This
       // prevents a second deduplication pass from dropping the missing row.
-      const newTx = missingForBank
+      const seenExternalIds = new Set()
+      const seenKeys = new Set()
+      const newTx = missingForBank.filter(t => {
+        if (t.external_id) {
+          if (seenExternalIds.has(t.external_id)) return false
+          seenExternalIds.add(t.external_id)
+        }
+        const key = transactionKey(t)
+        if (seenKeys.has(key)) return false
+        seenKeys.add(key)
+        return true
+      })
 
       if (newTx.length > 0) {
         // Find default income category
