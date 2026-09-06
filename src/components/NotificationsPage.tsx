@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
-import { openPdfUrl } from '@/lib/pdfDownload';
+import { downloadPdfBlob, openPdfUrl } from '@/lib/pdfDownload';
 import fontkit from '@pdf-lib/fontkit';
 import { ROBOTO_FONT_BASE64 } from '@/lib/robotoFont';
 import { useToast } from '@/hooks/use-toast';
@@ -573,6 +573,7 @@ export const NotificationsPage = () => {
   const drawingCashierSignature = useRef(false);
   const [downloadingArchive, setDownloadingArchive] = useState<string | null>(null);
   const [expandedArchiveGroups, setExpandedArchiveGroups] = useState<Set<string>>(new Set());
+  const [selectedArchiveIds, setSelectedArchiveIds] = useState<Set<string>>(new Set());
   const [selectedNotificationIds, setSelectedNotificationIds] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
@@ -1590,6 +1591,50 @@ export const NotificationsPage = () => {
     }
   };
 
+  const selectedArchiveNotifications = archivedNotifications.filter(notification => selectedArchiveIds.has(notification.id));
+
+  const getArchiveDisplayName = (notification: Notification) => {
+    const metadata = notification.metadata || {};
+    const date = String(metadata.date || notification.created_at).slice(0, 10).split('-').reverse().join('.');
+    const department = String(metadata.department_name || 'Без отдела');
+    return `${date} — ${department}.pdf`;
+  };
+
+  const handleDownloadSelectedArchive = async () => {
+    try {
+      for (const notification of selectedArchiveNotifications) {
+        const { blob } = await getNotificationPdf(notification);
+        downloadPdfBlob(blob, getArchiveDisplayName(notification));
+      }
+    } catch (error) {
+      toast({ title: 'Ошибка скачивания', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+    }
+  };
+
+  const handleCopySelectedArchive = async () => {
+    await navigator.clipboard.writeText(selectedArchiveNotifications.map(getArchiveDisplayName).join('\n'));
+    toast({ title: 'Скопировано', description: `Выбрано PDF: ${selectedArchiveNotifications.length}` });
+  };
+
+  const handleShareSelectedArchive = async () => {
+    try {
+      const files: File[] = [];
+      for (const notification of selectedArchiveNotifications) {
+        const { blob } = await getNotificationPdf(notification);
+        files.push(new File([blob], getArchiveDisplayName(notification), { type: 'application/pdf' }));
+      }
+      if (navigator.share && (!navigator.canShare || navigator.canShare({ files }))) {
+        await navigator.share({ title: 'PDF документы', files });
+      } else {
+        await navigator.clipboard.writeText(files.map(file => file.name).join('\n'));
+        toast({ title: 'Названия скопированы', description: 'Браузер не поддерживает отправку PDF-файлов.' });
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      toast({ title: 'Ошибка отправки', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+    }
+  };
+
   return (
     <div className="animate-fade-in w-full min-w-0 max-w-full overflow-x-hidden">
       <div className="mb-4 flex min-w-0 flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1783,6 +1828,21 @@ export const NotificationsPage = () => {
         </div>
       ) : (
         <div className="min-w-0 max-w-full space-y-3 overflow-x-hidden">
+          {activeTab === 'extension' && selectedArchiveNotifications.length > 0 && (
+            <div className="sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-card p-2 shadow-lg">
+              <span className="mr-1 text-sm font-medium">Выбрано: {selectedArchiveNotifications.length}</span>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={handleCopySelectedArchive}>
+                <Copy className="h-4 w-4" /> Копировать
+              </Button>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={handleShareSelectedArchive}>
+                <Share2 className="h-4 w-4" /> Поделиться
+              </Button>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void handleDownloadSelectedArchive()}>
+                <Download className="h-4 w-4" /> Скачать
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setSelectedArchiveIds(new Set())}>Снять выбор</Button>
+            </div>
+          )}
           {activeTab === 'extension' && Object.entries(archiveGroups).map(([key, items]) => {
             const [year, type] = key.split('-');
             const label = `${year} ${type === 'income' ? 'доход' : 'расход'}`;
@@ -1829,17 +1889,32 @@ export const NotificationsPage = () => {
                       const issuedTo = notification.metadata?.issued_to as string | undefined;
                       const pdfPath = notification.metadata?.pdf_path as string | undefined;
                       const metadata = notification.metadata || {};
-                      const displayName = `${String(metadata.date || notification.created_at).slice(0, 10).split('-').reverse().join('.')} — ${String(metadata.department_name || 'Без отдела')}.pdf`;
+                      const displayName = getArchiveDisplayName(notification);
+                      const amount = Number(metadata.amount);
+                      const currency = String(metadata.currency || 'PLN');
                       return (
                         <div
                           key={notification.id}
                           className="flex items-center justify-between gap-3 rounded-lg bg-muted/40 px-3 py-2"
                         >
+                          <Checkbox
+                            checked={selectedArchiveIds.has(notification.id)}
+                            onCheckedChange={(checked) => setSelectedArchiveIds(previous => {
+                              const next = new Set(previous);
+                              if (checked) next.add(notification.id);
+                              else next.delete(notification.id);
+                              return next;
+                            })}
+                            aria-label={`Выбрать ${displayName}`}
+                          />
                           <div className="flex min-w-0 items-center gap-2">
                             <FileText className="h-4 w-4 flex-shrink-0 text-primary" />
                             <div className="min-w-0">
                               <p className="truncate text-sm font-medium">
                                 {issuedTo || notification.title || 'PDF документ'}
+                                {Number.isFinite(amount) && amount > 0 && (
+                                  <span className="ml-2 text-primary">{amount.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency}</span>
+                                )}
                               </p>
                               <p className="truncate text-xs text-muted-foreground">
                                 {displayName || pdfPath?.split('/').pop() || format(new Date(notification.created_at), 'dd.MM.yyyy HH:mm')}
