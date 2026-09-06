@@ -285,7 +285,7 @@ Deno.serve(async (req) => {
         const targetedDonationRegex = /(?:^|\.\s*)\d{2}(?:\s|\D)/i
 
         const insertTime = Date.now()
-        const { error } = await db.from('transactions').insert(
+        const { error } = await db.from('transactions').upsert(
           newTx.map((t, index) => {
             const isTargetedDonation = t.type === 'income' && t.bank_title && targetedDonationRegex.test(t.bank_title)
             return {
@@ -304,7 +304,8 @@ Deno.serve(async (req) => {
               bank_recipient: t.bank_recipient || null,
               department_name: isTargetedDonation ? 'Целевые пожертвования' : null,
             }
-          })
+          }),
+          { onConflict: 'external_id', ignoreDuplicates: true },
         )
         insertError = error ? String(error.message) : null
         if (!error) {
