@@ -1532,10 +1532,38 @@ export const NotificationsPage = () => {
       const folder = zip.folder(folderName);
       if (!folder) throw new Error('Не удалось создать архив');
 
+      const safeFilePart = (value: unknown, fallback: string) => {
+        const cleaned = String(value || fallback)
+          .replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .replace(/[. ]+$/g, '');
+        return cleaned || fallback;
+      };
+      const usedArchiveNames = new Set<string>();
+
       for (const notification of items) {
         const { blob, name } = await getNotificationPdf(notification);
         const monthFolder = folder.folder(getNotificationArchiveMonth(notification));
-        monthFolder?.file(`${notification.id.slice(0, 8)}-${name}`, blob);
+        const metadata = notification.metadata || {};
+        const personName = safeFilePart(
+          metadata.issued_to || metadata.submitter_name || notification.title,
+          'Без имени',
+        );
+        const dateValue = String(metadata.date || notification.created_at).slice(0, 10);
+        const datePart = dateValue.split('-').reverse().join('.');
+        const department = safeFilePart(
+          metadata.department_name || metadata.department || 'Без отдела',
+          'Без отдела',
+        );
+        const extension = name.toLowerCase().endsWith('.pdf') ? '.pdf' : '';
+        const baseArchiveName = `${personName} — ${datePart} — ${department}`;
+        let archiveFileName = `${baseArchiveName}${extension}`;
+        if (usedArchiveNames.has(archiveFileName)) {
+          archiveFileName = `${baseArchiveName} — ${notification.id.slice(0, 8)}${extension}`;
+        }
+        usedArchiveNames.add(archiveFileName);
+        monthFolder?.file(archiveFileName, blob);
       }
 
       const archiveBlob = await zip.generateAsync({
