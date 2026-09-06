@@ -31,6 +31,21 @@ interface ImportResult {
   errors: string[];
 }
 
+interface ReconciliationItem {
+  date: string;
+  amount: number;
+  type: 'income' | 'expense';
+  description: string;
+}
+
+interface ReconciliationReport {
+  bankTotal: number;
+  appTotal: number;
+  imported: number;
+  missing: ReconciliationItem[];
+  extra: ReconciliationItem[];
+}
+
 interface PolishBank {
   name: string;
   logo: string | null;
@@ -211,6 +226,7 @@ export const BankingPage = () => {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [showPreview, setShowPreview] = useState(true);
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [reconciliationReport, setReconciliationReport] = useState<ReconciliationReport | null>(null);
 
   // ── Enable Banking API state ──────────────────────────────────────────────
   const [connectingBank, setConnectingBank] = useState<string | null>(null);
@@ -429,6 +445,14 @@ export const BankingPage = () => {
         return;
       }
 
+      setReconciliationReport({
+        bankTotal: Number(json.bank_total ?? json.total ?? 0),
+        appTotal: Number(json.app_total ?? 0),
+        imported: Number(json.imported ?? 0),
+        missing: Array.isArray(json.missing_transactions) ? json.missing_transactions : [],
+        extra: Array.isArray(json.extra_transactions) ? json.extra_transactions : [],
+      });
+
       if (!json?.url) {
         setConnectingBank(null);
         toast({ title: 'Ошибка', description: 'Enable Banking не вернул URL', variant: 'destructive' });
@@ -486,7 +510,7 @@ export const BankingPage = () => {
         title: 'Синхронизация завершена',
         description: json.debug?.some((d: any) => d.error)
           ? 'Нет счетов — попробуйте переподключить банк'
-          : `В банке: ${json.bank_total ?? json.total ?? 0}; в приложении: ${json.app_total ?? 0}; добавлено: ${json.imported ?? 0}; пропущено найдено: ${json.missing ?? 0}`,
+          : `В банке: ${json.bank_total ?? json.total ?? 0}; в приложении: ${json.app_total ?? 0}; добавлено: ${json.imported ?? 0}; отсутствуют в приложении: ${json.missing ?? 0}; лишних в приложении: ${json.extra ?? 0}`,
       });
     } catch (e) {
       toast({ title: 'Ошибка синхронизации', description: String(e), variant: 'destructive' });
@@ -533,6 +557,42 @@ export const BankingPage = () => {
 
       {/* ── CSV Import ──────────────────────────────────────────── */}
       <div className="space-y-6">
+        {reconciliationReport && (
+          <div className="rounded-xl border border-border bg-muted/20 p-4 space-y-3">
+            <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
+              <span>Банк: <strong>{reconciliationReport.bankTotal}</strong></span>
+              <span>Приложение: <strong>{reconciliationReport.appTotal}</strong></span>
+              <span>Добавлено: <strong>{reconciliationReport.imported}</strong></span>
+            </div>
+            {reconciliationReport.missing.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-destructive">Есть в банке, нет в приложении:</p>
+                <ul className="mt-1 space-y-1 text-xs">
+                  {reconciliationReport.missing.map((item, index) => (
+                    <li key={`missing-${index}`}>
+                      {item.date} · {item.type === 'income' ? '+' : '-'}{item.amount.toFixed(2)} PLN · {item.description || 'Без описания'}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {reconciliationReport.extra.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-amber-500">Есть в приложении, нет в банке:</p>
+                <ul className="mt-1 space-y-1 text-xs">
+                  {reconciliationReport.extra.map((item, index) => (
+                    <li key={`extra-${index}`}>
+                      {item.date} · {item.type === 'income' ? '+' : '-'}{item.amount.toFixed(2)} PLN · {item.description || 'Без описания'}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {reconciliationReport.missing.length === 0 && reconciliationReport.extra.length === 0 && (
+              <p className="text-sm text-green-500">Операции банка и приложения совпадают.</p>
+            )}
+          </div>
+        )}
         {/* Upload area */}
           <div
             className="border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all"
@@ -789,16 +849,6 @@ export const BankingPage = () => {
                       <p className="text-xs text-muted-foreground">
                         Последняя синхронизация: {new Date(conn.last_sync_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </p>
-                    )}
-                    {conn.accounts.length > 0 && (
-                      <div className="space-y-1">
-                        {conn.accounts.map(acc => (
-                          <div key={acc.uid} className="flex items-center justify-between text-xs px-2 py-1 bg-muted/50 rounded">
-                            <span className="font-mono text-muted-foreground">{acc.iban || acc.uid}</span>
-                            <Badge variant="outline" className="text-[10px]">{conn.bank_name}</Badge>
-                          </div>
-                        ))}
-                      </div>
                     )}
                   </div>
                 ))}
