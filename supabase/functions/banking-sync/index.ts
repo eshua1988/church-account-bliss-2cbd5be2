@@ -123,6 +123,7 @@ Deno.serve(async (req) => {
     const allTx = []
     const syncDebug = []
     let accountFetchSuccesses = 0
+    let missingForBank = []
 
     for (const acc of accounts) {
       const uid = acc.uid
@@ -208,7 +209,7 @@ Deno.serve(async (req) => {
       // Also deduplicate by date+amount+description for transactions without external_id
       const existingKeys = new Set((existing||[]).map(r => `${r.date}|${r.amount}|${r.type}|${r.currency}|${r.bank_title || r.description}`))
 
-      const missingForBank = allTx.filter(t => {
+      missingForBank = allTx.filter(t => {
         if (t.external_id && existingIds.has(t.external_id)) return false
         const key = `${t.date}|${t.amount}|${t.type}|${t.currency}|${t.bank_title || t.description}`
         return !existingKeys.has(key)
