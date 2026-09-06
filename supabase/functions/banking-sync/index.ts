@@ -32,7 +32,9 @@ const respond = (status, body) => new Response(JSON.stringify(body), {
   status, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
 })
 
-const SYNC_LOOKBACK_DAYS = 45
+// A short lookback can permanently miss older operations when a sync was not
+// run for several weeks. Keep a full year available for reconciliation.
+const SYNC_LOOKBACK_DAYS = 365
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -68,6 +70,9 @@ Deno.serve(async (req) => {
 
     let totalImported = 0
     let totalTx = 0
+    let totalExisting = 0
+    let totalMissing = 0
+    const missingTransactions = []
     const allSyncDebug = []
 
     for (const conn of connections) {
@@ -167,6 +172,7 @@ Deno.serve(async (req) => {
           allTx.push({
             date: tx.booking_date || tx.value_date || dateFrom,
             amount: Math.abs(amount),
+            currency: String(tx.transaction_amount?.currency || tx.currency || 'PLN').toUpperCase(),
             description: bankTitle || bankSender || bankRecipient || connBankName,
             type: debit ? 'expense' : 'income',
             external_id: tx.entry_reference || tx.transaction_id || null,
@@ -189,19 +195,36 @@ Deno.serve(async (req) => {
     let insertError = null
 
     if (allTx.length > 0) {
+      // Keep the bank's newest-first order for transactions sharing a date.
+      allTx.sort((a, b) => String(b.date).localeCompare(String(a.date)))
       // Deduplicate by external_id
       const { data: existing } = await db.from('transactions')
-        .select('external_id, date, amount, description')
+        .select('external_id, date, amount, description, bank_title, bank_sender, bank_recipient, type, currency')
         .eq('user_id', user_id)
         .eq('source', source)
         .gte('date', dateFrom)
       const existingIds = new Set((existing||[]).filter(r => r.external_id).map(r => r.external_id))
+      totalExisting += (existing || []).length
       // Also deduplicate by date+amount+description for transactions without external_id
-      const existingKeys = new Set((existing||[]).map(r => `${r.date}|${r.amount}|${r.description}`))
+      const existingKeys = new Set((existing||[]).map(r => `${r.date}|${r.amount}|${r.type}|${r.currency}|${r.bank_title || r.description}`))
+
+      const missingForBank = allTx.filter(t => {
+        if (t.external_id && existingIds.has(t.external_id)) return false
+        const key = `${t.date}|${t.amount}|${t.type}|${t.currency}|${t.bank_title || t.description}`
+        return !existingKeys.has(key)
+      })
+      totalMissing += missingForBank.length
+      missingForBank.slice(0, 100).forEach(t => missingTransactions.push({
+        bank: connBankName,
+        date: t.date,
+        amount: t.amount,
+        type: t.type,
+        description: t.description,
+      }))
 
       const newTx = allTx.filter(t => {
         if (t.external_id && existingIds.has(t.external_id)) return false
-        const key = `${t.date}|${t.amount}|${t.description}`
+        const key = `${t.date}|${t.amount}|${t.type}|${t.currency}|${t.bank_title || t.description}`
         if (existingKeys.has(key)) return false
         existingKeys.add(key) // prevent duplicates within same batch
         return true
@@ -221,13 +244,16 @@ Deno.serve(async (req) => {
         // Patterns: "37 oleksandr", "37oleksandr", "PRZELEW NA TELEFON 48666***427. 37oleksandr"
         const targetedDonationRegex = /(?:^|\.\s*)\d{2}(?:\s|\D)/i
 
+        const insertTime = Date.now()
         const { error } = await db.from('transactions').insert(
-          newTx.map(t => {
+          newTx.map((t, index) => {
             const isTargetedDonation = t.type === 'income' && t.bank_title && targetedDonationRegex.test(t.bank_title)
             return {
               user_id,
               date: t.date,
+              created_at: new Date(insertTime - index * 1000).toISOString(),
               amount: t.amount,
+              currency: t.currency,
               description: t.description,
               type: t.type,
               category_id: t.type === 'income' ? defaultIncomeCatId : null,
@@ -287,6 +313,7 @@ Deno.serve(async (req) => {
       bank: connBankName,
       imported,
       total: allTx.length,
+      missing: missingForBank.length,
       date_from: dateFrom,
       insert_error: insertError,
       fetch_successes: accountFetchSuccesses,
@@ -297,6 +324,10 @@ Deno.serve(async (req) => {
     return respond(200, {
       imported: totalImported,
       total: totalTx,
+      bank_total: totalTx,
+      app_total: totalExisting,
+      missing: totalMissing,
+      missing_transactions: missingTransactions,
       date_from: connections.map(c => c.last_sync_at ? new Date(c.last_sync_at).toISOString().split('T')[0] : '2020-01-01').join(', '),
       banks: connections.map(c => c.bank_name),
       debug: allSyncDebug,

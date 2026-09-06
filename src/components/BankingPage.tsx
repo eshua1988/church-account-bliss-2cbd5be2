@@ -484,11 +484,9 @@ export const BankingPage = () => {
 
       toast({
         title: 'Синхронизация завершена',
-        description: json.imported > 0
-          ? `Добавлено ${json.imported} новых транзакций`
-          : json.debug?.some((d: any) => d.error) 
-            ? 'Нет счетов — попробуйте переподключить банк'
-            : 'Новых транзакций нет',
+        description: json.debug?.some((d: any) => d.error)
+          ? 'Нет счетов — попробуйте переподключить банк'
+          : `В банке: ${json.bank_total ?? json.total ?? 0}; в приложении: ${json.app_total ?? 0}; добавлено: ${json.imported ?? 0}; пропущено найдено: ${json.missing ?? 0}`,
       });
     } catch (e) {
       toast({ title: 'Ошибка синхронизации', description: String(e), variant: 'destructive' });
