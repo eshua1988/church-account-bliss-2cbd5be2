@@ -285,38 +285,43 @@ Deno.serve(async (req) => {
         const targetedDonationRegex = /(?:^|\.\s*)\d{2}(?:\s|\D)/i
 
         const insertTime = Date.now()
-        const { error } = await db.from('transactions').upsert(
-          newTx.map((t, index) => {
-            const isTargetedDonation = t.type === 'income' && t.bank_title && targetedDonationRegex.test(t.bank_title)
-            return {
-              user_id,
-              date: t.date,
-              created_at: new Date(insertTime - index * 1000).toISOString(),
-              amount: t.amount,
-              currency: t.currency,
-              description: t.description,
-              type: t.type,
-              category_id: t.type === 'income' ? defaultIncomeCatId : null,
-              source,
-              external_id: t.external_id || null,
-              bank_title: t.bank_title || null,
-              bank_sender: t.bank_sender || null,
-              bank_recipient: t.bank_recipient || null,
-              department_name: isTargetedDonation ? 'Целевые пожертвования' : null,
+        const insertedTx = []
+        for (const [index, t] of newTx.entries()) {
+          const isTargetedDonation = t.type === 'income' && t.bank_title && targetedDonationRegex.test(t.bank_title)
+          const { error } = await db.from('transactions').insert({
+            user_id,
+            date: t.date,
+            created_at: new Date(insertTime - index * 1000).toISOString(),
+            amount: t.amount,
+            currency: t.currency,
+            description: t.description,
+            type: t.type,
+            category_id: t.type === 'income' ? defaultIncomeCatId : null,
+            source,
+            external_id: t.external_id || null,
+            bank_title: t.bank_title || null,
+            bank_sender: t.bank_sender || null,
+            bank_recipient: t.bank_recipient || null,
+            department_name: isTargetedDonation ? 'Целевые пожертвования' : null,
+          })
+          if (!error || error.code === '23505') {
+            if (!error) {
+              imported++
+              insertedTx.push(t)
             }
-          }),
-          { onConflict: 'external_id', ignoreDuplicates: true },
-        )
-        insertError = error ? String(error.message) : null
-        if (!error) {
-          imported = newTx.length
+            continue
+          }
+          insertError = String(error.message)
+        }
+
+        if (insertedTx.length > 0) {
 
           // Apply department_rules to newly inserted transactions
           const { data: rules } = await db.from('department_rules').select('*').eq('user_id', user_id)
           if (rules && rules.length > 0) {
             for (const rule of rules) {
               // Find newly inserted transactions matching this rule
-              const matchingTx = newTx.filter(t => {
+              const matchingTx = insertedTx.filter(t => {
                 if (rule.transaction_type && rule.transaction_type !== t.type) return false
                 const searchTerms = String(rule.search_text || '')
                   .split(',')
