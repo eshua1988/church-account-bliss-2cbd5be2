@@ -1542,25 +1542,28 @@ export const NotificationsPage = () => {
       };
       const usedArchiveNames = new Set<string>();
 
-      for (const notification of items) {
-        const { blob, name } = await getNotificationPdf(notification);
-        const monthFolder = folder.folder(getNotificationArchiveMonth(notification));
+      const getArchiveFileName = (notification: Notification) => {
         const metadata = notification.metadata || {};
-        const personName = safeFilePart(
-          metadata.issued_to || metadata.submitter_name || notification.title,
-          'Без имени',
-        );
+        const safeFilePart = (value: unknown, fallback: string) => String(value || fallback)
+          .replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .replace(/[. ]+$/g, '') || fallback;
+        const personName = safeFilePart(metadata.issued_to || metadata.submitter_name || notification.title, 'Без имени');
         const dateValue = String(metadata.date || notification.created_at).slice(0, 10);
         const datePart = dateValue.split('-').reverse().join('.');
-        const department = safeFilePart(
-          metadata.department_name || metadata.department || 'Без отдела',
-          'Без отдела',
-        );
-        const extension = name.toLowerCase().endsWith('.pdf') ? '.pdf' : '';
-        const baseArchiveName = `${personName} — ${datePart} — ${department}`;
-        let archiveFileName = `${baseArchiveName}${extension}`;
+        const department = safeFilePart(metadata.department_name || metadata.department, 'Без отдела');
+        const baseName = `${personName} — ${datePart} — ${department}`;
+        return `${baseName}.pdf`;
+      };
+
+      for (const notification of items) {
+        const { blob } = await getNotificationPdf(notification);
+        const monthFolder = folder.folder(getNotificationArchiveMonth(notification));
+        const baseArchiveName = getArchiveFileName(notification).slice(0, -4);
+        let archiveFileName = `${baseArchiveName}.pdf`;
         if (usedArchiveNames.has(archiveFileName)) {
-          archiveFileName = `${baseArchiveName} — ${notification.id.slice(0, 8)}${extension}`;
+          archiveFileName = `${baseArchiveName} — ${notification.id.slice(0, 8)}.pdf`;
         }
         usedArchiveNames.add(archiveFileName);
         monthFolder?.file(archiveFileName, blob);
@@ -1826,6 +1829,8 @@ export const NotificationsPage = () => {
                     {items.map(notification => {
                       const issuedTo = notification.metadata?.issued_to as string | undefined;
                       const pdfPath = notification.metadata?.pdf_path as string | undefined;
+                      const metadata = notification.metadata || {};
+                      const displayName = `${String(metadata.issued_to || metadata.submitter_name || notification.title || 'Без имени')} — ${String(metadata.date || notification.created_at).slice(0, 10).split('-').reverse().join('.')} — ${String(metadata.department_name || 'Без отдела')}.pdf`;
                       return (
                         <div
                           key={notification.id}
@@ -1838,7 +1843,7 @@ export const NotificationsPage = () => {
                                 {issuedTo || notification.title || 'PDF документ'}
                               </p>
                               <p className="truncate text-xs text-muted-foreground">
-                                {pdfPath?.split('/').pop() || format(new Date(notification.created_at), 'dd.MM.yyyy HH:mm')}
+                                {displayName || pdfPath?.split('/').pop() || format(new Date(notification.created_at), 'dd.MM.yyyy HH:mm')}
                               </p>
                             </div>
                           </div>
