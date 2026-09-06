@@ -36,6 +36,10 @@ const respond = (status, body) => new Response(JSON.stringify(body), {
 // run for several weeks. Keep a full year available for reconciliation.
 const SYNC_LOOKBACK_DAYS = 365
 const transactionKey = (transaction) => `${transaction.date}|${transaction.amount}|${transaction.type}|${transaction.currency}|${transaction.bank_title || transaction.description}`
+const bankCreatedAt = (transaction) => {
+  const base = Date.parse(`${transaction.date}T23:59:59.000Z`)
+  return new Date((Number.isFinite(base) ? base : Date.now()) - (transaction.bank_order || 0) * 1000).toISOString()
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -202,9 +206,15 @@ Deno.serve(async (req) => {
     if (allTx.length > 0) {
       // Keep the bank's newest-first order for transactions sharing a date.
       allTx.sort((a, b) => String(b.date).localeCompare(String(a.date)))
+      const dayOrders = new Map()
+      allTx.forEach(transaction => {
+        const order = dayOrders.get(transaction.date) || 0
+        transaction.bank_order = order
+        dayOrders.set(transaction.date, order + 1)
+      })
       // Deduplicate by external_id
       const { data: existing } = await db.from('transactions')
-        .select('external_id, date, amount, description, bank_title, bank_sender, bank_recipient, type, currency')
+        .select('id, external_id, date, amount, description, bank_title, bank_sender, bank_recipient, type, currency')
         .eq('user_id', user_id)
         .eq('source', source)
         .gte('date', dateFrom)
@@ -215,6 +225,7 @@ Deno.serve(async (req) => {
       const existingIds = new Set((existingWithExternalIds || []).map(r => r.external_id))
       totalExisting += (existing || []).length
       const matchedExisting = new Set()
+      const matchedBankRows = []
       const existingKeys = new Map()
       ;(existing || []).forEach((row, index) => {
         const key = transactionKey(row)
@@ -229,14 +240,21 @@ Deno.serve(async (req) => {
           : -1
         if (externalIndex >= 0) {
           matchedExisting.add(externalIndex)
+          matchedBankRows.push({ row: existing[externalIndex], transaction: t })
           return false
         }
         const indexes = existingKeys.get(transactionKey(t)) || []
         const matchIndex = indexes.find(index => !matchedExisting.has(index))
         if (matchIndex === undefined) return true
         matchedExisting.add(matchIndex)
+        matchedBankRows.push({ row: existing[matchIndex], transaction: t })
         return false
       })
+      await Promise.all(matchedBankRows
+        .filter(match => match.row.id)
+        .map(match => db.from('transactions')
+          .update({ created_at: bankCreatedAt(match.transaction) })
+          .eq('id', match.row.id)))
       totalMissing += missingForBank.length
       missingForBank.slice(0, 100).forEach(t => missingTransactions.push({
         bank: connBankName,
@@ -284,14 +302,13 @@ Deno.serve(async (req) => {
         // Patterns: "37 oleksandr", "37oleksandr", "PRZELEW NA TELEFON 48666***427. 37oleksandr"
         const targetedDonationRegex = /(?:^|\.\s*)\d{2}(?:\s|\D)/i
 
-        const insertTime = Date.now()
         const insertedTx = []
         for (const [index, t] of newTx.entries()) {
           const isTargetedDonation = t.type === 'income' && t.bank_title && targetedDonationRegex.test(t.bank_title)
           const transactionRow = {
             user_id,
             date: t.date,
-            created_at: new Date(insertTime - index * 1000).toISOString(),
+            created_at: bankCreatedAt(t),
             amount: t.amount,
             currency: t.currency,
             description: t.description,
