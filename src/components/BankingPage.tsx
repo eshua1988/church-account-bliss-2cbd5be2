@@ -492,6 +492,8 @@ export const BankingPage = () => {
         return;
       }
 
+      const syncErrors = Array.isArray(json.errors) ? json.errors.filter(Boolean).join('; ') : '';
+
       // Reload connections
       const { data } = await supabase
         .from('bank_connections')
@@ -507,10 +509,11 @@ export const BankingPage = () => {
       }
 
       toast({
-        title: 'Синхронизация завершена',
+        title: syncErrors ? 'Синхронизация завершена с ошибкой' : 'Синхронизация завершена',
         description: json.debug?.some((d: any) => d.error)
           ? 'Нет счетов — попробуйте переподключить банк'
-          : `В банке: ${json.bank_total ?? json.total ?? 0}; в приложении: ${json.app_total ?? 0}; добавлено: ${json.imported ?? 0}; отсутствуют в приложении: ${json.missing ?? 0}; лишних в приложении: ${json.extra ?? 0}`,
+          : syncErrors || `В банке: ${json.bank_total ?? json.total ?? 0}; в приложении: ${json.app_total ?? 0}; добавлено: ${json.imported ?? 0}; отсутствуют в приложении: ${json.missing ?? 0}; лишних в приложении: ${json.extra ?? 0}`,
+        variant: syncErrors ? 'destructive' : 'default',
       });
     } catch (e) {
       toast({ title: 'Ошибка синхронизации', description: String(e), variant: 'destructive' });

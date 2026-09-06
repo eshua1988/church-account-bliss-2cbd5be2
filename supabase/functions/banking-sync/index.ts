@@ -251,17 +251,9 @@ Deno.serve(async (req) => {
         description: t.bank_title || t.description,
       }))
 
-      let batchIndex = 0
-      const newTx = allTx.filter(t => {
-        if (t.external_id && existingIds.has(t.external_id)) return false
-        const key = transactionKey(t)
-        const indexes = existingKeys.get(key) || []
-        if (indexes.some(index => matchedExisting.has(index))) return false
-        indexes.push(-batchIndex - 1)
-        batchIndex += 1
-        existingKeys.set(key, indexes)
-        return true
-      })
+      // The reconciliation result is the authoritative import list. This
+      // prevents a second deduplication pass from dropping the missing row.
+      const newTx = missingForBank
 
       if (newTx.length > 0) {
         // Find default income category
@@ -360,10 +352,11 @@ Deno.serve(async (req) => {
       total: totalTx,
       bank_total: totalTx,
       app_total: totalExisting,
-      missing: totalMissing,
+      missing: Math.max(totalMissing - totalImported, 0),
       extra: totalExtra,
-      missing_transactions: missingTransactions,
+      missing_transactions: totalImported > 0 ? [] : missingTransactions,
       extra_transactions: extraTransactions,
+      errors: allSyncDebug.filter(d => d.insert_error).map(d => d.insert_error),
       date_from: connections.map(c => c.last_sync_at ? new Date(c.last_sync_at).toISOString().split('T')[0] : '2020-01-01').join(', '),
       banks: connections.map(c => c.bank_name),
       debug: allSyncDebug,
