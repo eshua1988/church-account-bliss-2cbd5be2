@@ -1549,11 +1549,10 @@ export const NotificationsPage = () => {
           .replace(/\s+/g, ' ')
           .trim()
           .replace(/[. ]+$/g, '') || fallback;
-        const personName = safeFilePart(metadata.issued_to || metadata.submitter_name || notification.title, 'Без имени');
         const dateValue = String(metadata.date || notification.created_at).slice(0, 10);
         const datePart = dateValue.split('-').reverse().join('.');
         const department = safeFilePart(metadata.department_name || metadata.department, 'Без отдела');
-        const baseName = `${personName} — ${datePart} — ${department}`;
+        const baseName = `${datePart} — ${department}`;
         return `${baseName}.pdf`;
       };
 
@@ -1830,7 +1829,7 @@ export const NotificationsPage = () => {
                       const issuedTo = notification.metadata?.issued_to as string | undefined;
                       const pdfPath = notification.metadata?.pdf_path as string | undefined;
                       const metadata = notification.metadata || {};
-                      const displayName = `${String(metadata.issued_to || metadata.submitter_name || notification.title || 'Без имени')} — ${String(metadata.date || notification.created_at).slice(0, 10).split('-').reverse().join('.')} — ${String(metadata.department_name || 'Без отдела')}.pdf`;
+                      const displayName = `${String(metadata.date || notification.created_at).slice(0, 10).split('-').reverse().join('.')} — ${String(metadata.department_name || 'Без отдела')}.pdf`;
                       return (
                         <div
                           key={notification.id}
