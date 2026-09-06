@@ -37,8 +37,18 @@ const respond = (status, body) => new Response(JSON.stringify(body), {
 const SYNC_LOOKBACK_DAYS = 365
 const transactionKey = (transaction) => `${transaction.date}|${transaction.amount}|${transaction.type}|${transaction.currency}|${transaction.bank_title || transaction.description}`
 const bankCreatedAt = (transaction) => {
+  const exact = Date.parse(transaction.bank_sort_time || '')
+  if (Number.isFinite(exact)) return new Date(exact).toISOString()
   const base = Date.parse(`${transaction.date}T23:59:59.000Z`)
   return new Date((Number.isFinite(base) ? base : Date.now()) - (transaction.bank_order || 0) * 1000).toISOString()
+}
+
+const bankDateParts = (tx, fallback) => {
+  const rawDate = tx.booking_date || tx.value_date || fallback
+  const rawTime = tx.booking_date_time || tx.booking_datetime || tx.transaction_date_time || tx.transaction_datetime
+  const exact = rawTime || (rawDate && String(rawDate).includes('T') ? rawDate : '')
+  const date = String(rawDate || fallback).slice(0, 10)
+  return { date, exact: exact ? String(exact) : null }
 }
 
 Deno.serve(async (req) => {
@@ -178,8 +188,10 @@ Deno.serve(async (req) => {
             .trim()
           const bankSender = tx.debtor?.name || ''
           const bankRecipient = tx.creditor?.name || ''
+          const bankDate = bankDateParts(tx, dateFrom)
           allTx.push({
-            date: tx.booking_date || tx.value_date || dateFrom,
+            date: bankDate.date,
+            bank_sort_time: bankDate.exact,
             amount: Math.abs(amount),
             currency: String(tx.transaction_amount?.currency || tx.currency || 'PLN').toUpperCase(),
             description: bankTitle || bankSender || bankRecipient || connBankName,
@@ -204,13 +216,19 @@ Deno.serve(async (req) => {
     let insertError = null
 
     if (allTx.length > 0) {
-      // Keep the bank's newest-first order for transactions sharing a date.
-      allTx.sort((a, b) => String(b.date).localeCompare(String(a.date)))
+      // Use the bank's exact booking timestamp for the hidden sort order.
+      allTx.sort((a, b) => {
+        const aTime = Date.parse(a.bank_sort_time || `${a.date}T00:00:00Z`)
+        const bTime = Date.parse(b.bank_sort_time || `${b.date}T00:00:00Z`)
+        return bTime - aTime
+      })
       const dayOrders = new Map()
       allTx.forEach(transaction => {
-        const order = dayOrders.get(transaction.date) || 0
-        transaction.bank_order = order
-        dayOrders.set(transaction.date, order + 1)
+        if (!transaction.bank_sort_time) {
+          const order = dayOrders.get(transaction.date) || 0
+          transaction.bank_order = order
+          dayOrders.set(transaction.date, order + 1)
+        }
       })
       // Deduplicate by external_id
       const { data: existing } = await db.from('transactions')
