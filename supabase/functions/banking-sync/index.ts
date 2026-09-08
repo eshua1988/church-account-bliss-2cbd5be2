@@ -148,10 +148,15 @@ Deno.serve(async (req) => {
       let continuationKey = null
       let totalForAcc = 0
 
-      do {
+      // New bank activity can remain pending before it becomes booked. Fetch
+      // both views and let external_id reconciliation remove duplicates.
+      for (const transactionStatus of ['BOOK', 'PENDING']) {
+        continuationKey = null
+        do {
         const url = new URL(`https://api.enablebanking.com/accounts/${uid}/transactions`)
         url.searchParams.set('date_from', dateFrom)
         url.searchParams.set('date_to', dateTo)
+        url.searchParams.set('transaction_status', transactionStatus)
         url.searchParams.set('strategy', 'longest')
         if (continuationKey) url.searchParams.set('continuation_key', continuationKey)
 
@@ -204,7 +209,8 @@ Deno.serve(async (req) => {
         continuationKey = txData.continuation_key || null
         pageCount++
         if (pageCount >= 50) break
-      } while (continuationKey)
+        } while (continuationKey)
+      }
 
       syncDebug.push({ uid, pages: pageCount, total: totalForAcc })
     }
@@ -214,6 +220,12 @@ Deno.serve(async (req) => {
     let insertError = null
 
     if (allTx.length > 0) {
+      const uniqueBankTransactions = new Map()
+      allTx.forEach(transaction => {
+        const key = transaction.external_id || transactionKey(transaction)
+        if (!uniqueBankTransactions.has(key)) uniqueBankTransactions.set(key, transaction)
+      })
+      allTx.splice(0, allTx.length, ...uniqueBankTransactions.values())
       // Use the bank's exact booking timestamp for the hidden sort order.
       allTx.sort((a, b) => {
         const aTime = Date.parse(a.bank_sort_time || `${a.date}T00:00:00Z`)
