@@ -127,15 +127,13 @@ Deno.serve(async (req) => {
         continue
       }
 
-    // Fetch with a wider overlap so late-booked bank operations are not skipped
-    // if last_sync_at was moved forward by a previous zero-result sync.
-    const dateFrom = conn.last_sync_at
-      ? (() => {
-          const d = new Date(conn.last_sync_at)
-          d.setDate(d.getDate() - SYNC_LOOKBACK_DAYS)
-          return d.toISOString().split('T')[0]
-        })()
-      : '2015-01-01'
+    // Always reconcile a full year. Do not anchor the search to last_sync_at:
+    // a previous empty/partial response must not hide later bank operations.
+    const today = new Date()
+    const dateTo = today.toISOString().split('T')[0]
+    const dateFromValue = new Date(today)
+    dateFromValue.setDate(dateFromValue.getDate() - SYNC_LOOKBACK_DAYS)
+    const dateFrom = dateFromValue.toISOString().split('T')[0]
 
     const allTx = []
     const syncDebug = []
@@ -153,6 +151,7 @@ Deno.serve(async (req) => {
       do {
         const url = new URL(`https://api.enablebanking.com/accounts/${uid}/transactions`)
         url.searchParams.set('date_from', dateFrom)
+        url.searchParams.set('date_to', dateTo)
         url.searchParams.set('transaction_status', 'BOOK')
         url.searchParams.set('strategy', 'longest')
         if (continuationKey) url.searchParams.set('continuation_key', continuationKey)
@@ -403,6 +402,7 @@ Deno.serve(async (req) => {
       missing: missingForBank.length,
       extra: extraForBank.length,
       date_from: dateFrom,
+      date_to: dateTo,
       insert_error: insertError,
       fetch_successes: accountFetchSuccesses,
       debug: syncDebug,
