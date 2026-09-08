@@ -155,7 +155,6 @@ Deno.serve(async (req) => {
         do {
         const url = new URL(`https://api.enablebanking.com/accounts/${uid}/transactions`)
         url.searchParams.set('date_from', dateFrom)
-        url.searchParams.set('date_to', dateTo)
         url.searchParams.set('transaction_status', transactionStatus)
         url.searchParams.set('strategy', 'longest')
         if (continuationKey) url.searchParams.set('continuation_key', continuationKey)
