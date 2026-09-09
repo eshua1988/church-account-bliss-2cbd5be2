@@ -148,9 +148,8 @@ Deno.serve(async (req) => {
       let continuationKey = null
       let totalForAcc = 0
 
-      // New bank activity can remain pending before it becomes booked. Fetch
-      // both views and let external_id reconciliation remove duplicates.
-      for (const transactionStatus of ['BOOK', 'PEND']) {
+      // The application imports completed bank operations only.
+      for (const transactionStatus of ['BOOK']) {
         continuationKey = null
         do {
         const url = new URL(`https://api.enablebanking.com/accounts/${uid}/transactions`)
