@@ -125,6 +125,8 @@ const PublicTransactions = () => {
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [currencyFilter, setCurrencyFilter] = useState<string>('all');
   const [customDateRange, setCustomDateRange] = useState<{ from?: Date; to?: Date }>({});
+  const [amountFrom, setAmountFrom] = useState('');
+  const [amountTo, setAmountTo] = useState('');
   const [addingRuleTerms, setAddingRuleTerms] = useState(false);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [isBankSyncing, setIsBankSyncing] = useState(false);
@@ -511,6 +513,12 @@ const PublicTransactions = () => {
     // Apply currency filter
     if (currencyFilter !== 'all' && t.currency !== currencyFilter) return false;
 
+    // Each boundary is optional, so users can search only from or only to an amount.
+    const minAmount = amountFrom.trim() === '' ? undefined : Number(amountFrom);
+    const maxAmount = amountTo.trim() === '' ? undefined : Number(amountTo);
+    if (Number.isFinite(minAmount) && t.amount < minAmount!) return false;
+    if (Number.isFinite(maxAmount) && t.amount > maxAmount!) return false;
+
     // Apply date range filter
     if (customDateRange.from || customDateRange.to) {
       const txDate = new Date(t.date);
@@ -598,13 +606,21 @@ const PublicTransactions = () => {
     });
   };
 
-  // Show transactions ONLY when search text is entered (filters apply only with search)
-  const hasActiveFilters = searchText.trim() !== '';
+  // Show transactions as soon as a search term or any filter is applied.
+  const hasActiveFilters =
+    searchText.trim() !== '' ||
+    typeFilter !== 'all' ||
+    currencyFilter !== 'all' ||
+    Boolean(customDateRange.from || customDateRange.to) ||
+    amountFrom.trim() !== '' ||
+    amountTo.trim() !== '';
   const hasSearchOrFilters =
     searchText.trim() !== '' ||
     typeFilter !== 'all' ||
     currencyFilter !== 'all' ||
-    Boolean(customDateRange.from || customDateRange.to);
+    Boolean(customDateRange.from || customDateRange.to) ||
+    amountFrom.trim() !== '' ||
+    amountTo.trim() !== '';
 
   const resetAllFilters = () => {
     setSearchText('');
@@ -612,6 +628,8 @@ const PublicTransactions = () => {
     setTypeFilter('all');
     setCurrencyFilter('all');
     setCustomDateRange({});
+    setAmountFrom('');
+    setAmountTo('');
     setShowAdvancedFilters(false);
   };
 
@@ -1000,7 +1018,7 @@ const PublicTransactions = () => {
             </div>
 
             {showAdvancedFilters && (
-              <div className="grid gap-3 rounded-lg border border-border bg-card/60 p-3 sm:grid-cols-2 lg:grid-cols-[170px_190px_auto]">
+              <div className="grid gap-3 rounded-lg border border-border bg-card/60 p-3 sm:grid-cols-2 lg:grid-cols-[170px_190px_140px_140px]">
 
               {/* Currency Filter */}
               {availableCurrencies.length > 0 && (
@@ -1025,6 +1043,33 @@ const PublicTransactions = () => {
               <div>
                 <DateRangeFilter value={customDateRange} onChange={setCustomDateRange} />
               </div>
+
+              <label className="space-y-1 text-xs text-muted-foreground">
+                <span>Сумма от</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={amountFrom}
+                  onChange={(event) => setAmountFrom(event.target.value)}
+                  className="h-10"
+                />
+              </label>
+              <label className="space-y-1 text-xs text-muted-foreground">
+                <span>Сумма до</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={amountTo}
+                  onChange={(event) => setAmountTo(event.target.value)}
+                  className="h-10"
+                />
+              </label>
 
               </div>
             )}

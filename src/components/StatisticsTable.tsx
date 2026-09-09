@@ -81,6 +81,11 @@ export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loa
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [amountFrom, setAmountFrom] = useState('');
+  const [amountTo, setAmountTo] = useState('');
+
+  const parsedAmountFrom = amountFrom.trim() === '' ? undefined : Number(amountFrom);
+  const parsedAmountTo = amountTo.trim() === '' ? undefined : Number(amountTo);
 
   const matchesCategoryFilter = useCallback((transaction: Transaction, filterValue: string) => {
     if (filterValue === 'all') return true;
@@ -108,6 +113,14 @@ export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loa
 
     // Apply type filter
     filtered = filtered.filter(t => typeFilter === 'all' || t.type === typeFilter);
+
+    // Apply amount range. Each bound is optional.
+    if (Number.isFinite(parsedAmountFrom)) {
+      filtered = filtered.filter(t => t.amount >= parsedAmountFrom!);
+    }
+    if (Number.isFinite(parsedAmountTo)) {
+      filtered = filtered.filter(t => t.amount <= parsedAmountTo!);
+    }
 
     // Apply category filter
     if (categoryFilter !== 'all') {
@@ -198,7 +211,7 @@ export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loa
       if (dateDiff !== 0) return dateDiff;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [transactions, timeRange, typeFilter, customDateRange, selectedCurrency, categoryFilter, internalCurrencyFilter, searchText, getCategoryName, matchesCategoryFilter]);
+  }, [transactions, timeRange, typeFilter, customDateRange, selectedCurrency, categoryFilter, internalCurrencyFilter, searchText, getCategoryName, matchesCategoryFilter, parsedAmountFrom, parsedAmountTo]);
 
   // Calculate totals from all transactions (unfiltered by currency) to always show all currency cards
   const totals = useMemo(() => {
@@ -415,7 +428,9 @@ export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loa
     typeFilter !== 'all' ||
     categoryFilter !== 'all' ||
     Boolean(customDateRange.from || customDateRange.to) ||
-    Boolean(internalCurrencyFilter);
+    Boolean(internalCurrencyFilter) ||
+    amountFrom.trim() !== '' ||
+    amountTo.trim() !== '';
 
   const handleResetCalculator = () => {
     setSelectedTransactions(new Set());
@@ -424,6 +439,8 @@ export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loa
     setCategoryFilter('all');
     setCustomDateRange({});
     setInternalCurrencyFilter(null);
+    setAmountFrom('');
+    setAmountTo('');
   };
 
   return (
@@ -483,7 +500,7 @@ export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loa
               )}
             >
               <SlidersHorizontal className="w-4 h-4" />
-              {(categoryFilter !== 'all' || customDateRange.from || customDateRange.to) && (
+              {(categoryFilter !== 'all' || customDateRange.from || customDateRange.to || amountFrom.trim() !== '' || amountTo.trim() !== '') && (
                 <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary" />
               )}
             </button>
@@ -503,6 +520,34 @@ export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loa
         {filtersOpen && (
           <div className="flex flex-wrap items-center gap-2 mt-2 p-2 rounded-md bg-muted/30 border">
             <DateRangeFilter value={customDateRange} onChange={setCustomDateRange} />
+            <div className="flex items-end gap-2">
+              <label className="space-y-1 text-xs text-muted-foreground">
+                <span>Сумма от</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={amountFrom}
+                  onChange={(event) => setAmountFrom(event.target.value)}
+                  className="h-9 w-[130px]"
+                />
+              </label>
+              <label className="space-y-1 text-xs text-muted-foreground">
+                <span>Сумма до</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={amountTo}
+                  onChange={(event) => setAmountTo(event.target.value)}
+                  className="h-9 w-[130px]"
+                />
+              </label>
+            </div>
             {categories.length > 0 && (
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                 <SelectTrigger className="w-[180px] h-9">
@@ -518,11 +563,11 @@ export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loa
                 </SelectContent>
               </Select>
             )}
-            {(categoryFilter !== 'all' || customDateRange.from || customDateRange.to) && (
+            {(categoryFilter !== 'all' || customDateRange.from || customDateRange.to || amountFrom.trim() !== '' || amountTo.trim() !== '') && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => { setCategoryFilter('all'); setCustomDateRange({}); }}
+                onClick={() => { setCategoryFilter('all'); setCustomDateRange({}); setAmountFrom(''); setAmountTo(''); }}
                 className="text-xs text-muted-foreground"
               >
                 Сбросить
