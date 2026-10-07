@@ -73,7 +73,6 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
   const [tempArchivedPdfSpreadsheetId, setTempArchivedPdfSpreadsheetId] = useState('');
   const [tempArchivedPdfSheetName, setTempArchivedPdfSheetName] = useState('');
   const [tempArchivedPdfSheetRange, setTempArchivedPdfSheetRange] = useState(DEFAULT_SHEET_RANGE);
-  const [tempArchivedPdfInsertRow, setTempArchivedPdfInsertRow] = useState('2');
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [exportType, setExportType] = useState<'transactions' | 'pdf'>('transactions');
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
@@ -91,7 +90,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('spreadsheet_id, sheet_range, archived_pdf_spreadsheet_id, archived_pdf_sheet_range, archived_pdf_insert_row')
+          .select('spreadsheet_id, sheet_range, archived_pdf_spreadsheet_id, archived_pdf_sheet_range')
           .eq('user_id', user.id)
           .maybeSingle();
         
@@ -102,7 +101,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
         if (data) {
           // The migration adds the archive fields. Keep this compatible with clients
           // whose generated Supabase types have not been refreshed yet.
-          const profile = data as typeof data & { archived_pdf_spreadsheet_id?: string | null; archived_pdf_sheet_range?: string | null; archived_pdf_insert_row?: number | null };
+          const profile = data as typeof data & { archived_pdf_spreadsheet_id?: string | null; archived_pdf_sheet_range?: string | null };
           setSpreadsheetId(data.spreadsheet_id || '');
           setSheetRange(data.sheet_range || DEFAULT_SHEET_RANGE);
           setTempSpreadsheetId(data.spreadsheet_id || '');
@@ -118,7 +117,6 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
           const archiveMatch = (profile.archived_pdf_sheet_range || '').match(/^'?([^'!]+)'?!(.+)$/);
           setTempArchivedPdfSheetName(archiveMatch ? archiveMatch[1] : '');
           setTempArchivedPdfSheetRange(archiveMatch ? archiveMatch[2] : DEFAULT_SHEET_RANGE);
-          setTempArchivedPdfInsertRow(String(profile.archived_pdf_insert_row || 2));
         } else {
           // Profile doesn't exist yet — create it
           await supabase.from('profiles').upsert(
@@ -157,7 +155,6 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
           sheet_range: fullRange,
           archived_pdf_spreadsheet_id: extractSpreadsheetId(tempArchivedPdfSpreadsheetId) || null,
           archived_pdf_sheet_range: archiveFullRange || null,
-          archived_pdf_insert_row: Math.max(1, Number.parseInt(tempArchivedPdfInsertRow, 10) || 2),
         } as any, { onConflict: 'user_id' });
       
       if (error) throw error;
@@ -784,7 +781,6 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
                   <div className="space-y-2"><Label htmlFor="pdf-spreadsheet-id">ID таблицы или ссылка</Label><Input id="pdf-spreadsheet-id" placeholder="https://docs.google.com/spreadsheets/d/... или ID" value={tempArchivedPdfSpreadsheetId} onChange={(e) => setTempArchivedPdfSpreadsheetId(e.target.value)} /></div>
                   <div className="space-y-2"><Label htmlFor="pdf-sheet-name">Название листа</Label><Input id="pdf-sheet-name" placeholder="Архив PDF" value={tempArchivedPdfSheetName} onChange={(e) => setTempArchivedPdfSheetName(e.target.value)} /></div>
                   <div className="space-y-2"><Label htmlFor="pdf-sheet-range">Диапазон листа</Label><Input id="pdf-sheet-range" placeholder="A:Z" value={tempArchivedPdfSheetRange} onChange={(e) => setTempArchivedPdfSheetRange(e.target.value)} /><p className="text-xs text-muted-foreground">По умолчанию A:Z. Колонки: дата · доход · отдел · расход. «Na podstawie» будет примечанием к расходу.</p></div>
-                  <div className="space-y-2"><Label htmlFor="archived-pdf-row">Строка для новых записей</Label><Input id="archived-pdf-row" type="number" min="1" value={tempArchivedPdfInsertRow} onChange={(e) => setTempArchivedPdfInsertRow(e.target.value)} /></div>
                 </div>)}
 
                 <div className="bg-muted/50 p-3 rounded-lg space-y-2">
