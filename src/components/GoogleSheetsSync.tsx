@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { RefreshCw, Cloud, CloudOff, Settings, Save, ExternalLink, Table2, FileDown, Plus } from 'lucide-react';
+import { RefreshCw, Cloud, CloudOff, Settings, Save, ExternalLink, Table2, FileDown, Plus, Trash2 } from 'lucide-react';
 import { Transaction } from '@/types/transaction';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -14,10 +14,10 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-const DEFAULT_SHEET_RANGE = "A:I";
+const DEFAULT_SHEET_RANGE = "A:Z";
 
 interface GoogleSheetsSyncProps {
   transactions: Transaction[];
@@ -72,9 +72,10 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
   const [tempSheetRange, setTempSheetRange] = useState(DEFAULT_SHEET_RANGE);
   const [tempArchivedPdfSpreadsheetId, setTempArchivedPdfSpreadsheetId] = useState('');
   const [tempArchivedPdfSheetName, setTempArchivedPdfSheetName] = useState('');
-  const [tempArchivedPdfSheetRange, setTempArchivedPdfSheetRange] = useState('A:D');
+  const [tempArchivedPdfSheetRange, setTempArchivedPdfSheetRange] = useState(DEFAULT_SHEET_RANGE);
   const [tempArchivedPdfInsertRow, setTempArchivedPdfInsertRow] = useState('2');
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [exportType, setExportType] = useState<'transactions' | 'pdf'>('transactions');
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   
   const prevTransactionsRef = useRef<string>('');
@@ -116,7 +117,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
           setTempArchivedPdfSpreadsheetId(profile.archived_pdf_spreadsheet_id || '');
           const archiveMatch = (profile.archived_pdf_sheet_range || '').match(/^'?([^'!]+)'?!(.+)$/);
           setTempArchivedPdfSheetName(archiveMatch ? archiveMatch[1] : '');
-          setTempArchivedPdfSheetRange(archiveMatch ? archiveMatch[2] : 'A:D');
+          setTempArchivedPdfSheetRange(archiveMatch ? archiveMatch[2] : DEFAULT_SHEET_RANGE);
           setTempArchivedPdfInsertRow(String(profile.archived_pdf_insert_row || 2));
         } else {
           // Profile doesn't exist yet — create it
@@ -146,7 +147,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
         ? `'${tempSheetName.trim()}'!${tempSheetRange.trim() || DEFAULT_SHEET_RANGE}`
         : (tempSheetRange.trim() || DEFAULT_SHEET_RANGE);
       const archiveFullRange = tempArchivedPdfSheetName.trim()
-        ? `'${tempArchivedPdfSheetName.trim()}'!${tempArchivedPdfSheetRange.trim() || 'A:D'}`
+        ? `'${tempArchivedPdfSheetName.trim()}'!${tempArchivedPdfSheetRange.trim() || DEFAULT_SHEET_RANGE}`
         : '';
       const { error } = await supabase
         .from('profiles')
@@ -479,7 +480,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
 
   const handleExport = async () => {
     if (!spreadsheetId) {
-      setSettingsDialogOpen(true);
+      openExportSettings('transactions');
       return false;
     }
     
@@ -492,7 +493,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
 
   const handleSync = async () => {
     if (!spreadsheetId) {
-      setSettingsDialogOpen(true);
+      openExportSettings('transactions');
       return;
     }
 
@@ -514,7 +515,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
 
   const handleImport = async () => {
     if (!spreadsheetId) {
-      setSettingsDialogOpen(true);
+      openExportSettings('transactions');
       return;
     }
     
@@ -604,6 +605,100 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
     return input.trim();
   };
 
+  const openExportSettings = (type: 'transactions' | 'pdf') => {
+    setExportType(type);
+    setSettingsDialogOpen(true);
+  };
+
+  const openSpreadsheet = (id: string) => {
+    if (id) window.open(`https://docs.google.com/spreadsheets/d/${id}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const deleteExport = async (type: 'transactions' | 'pdf') => {
+    if (!user) return;
+    const fields = type === 'transactions'
+      ? { spreadsheet_id: null, sheet_range: null }
+      : { archived_pdf_spreadsheet_id: null, archived_pdf_sheet_range: null };
+    const { error } = await supabase.from('profiles').update(fields as any).eq('user_id', user.id);
+    if (error) {
+      toast({ title: 'Ошибка удаления', description: error.message, variant: 'destructive' });
+      return;
+    }
+    if (type === 'transactions') setSpreadsheetId('');
+    else setArchivedPdfSpreadsheetId('');
+    toast({ title: 'Экспорт удалён' });
+  };
+
+  const syncArchivedPdfExports = async () => {
+    if (!user || !archivedPdfSpreadsheetId) {
+      openExportSettings('pdf');
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const { data: notifications, error } = await supabase
+        .from('notifications')
+        .select('id, created_at, metadata')
+        .eq('user_id', user.id);
+      if (error) throw error;
+
+      const pending = (notifications || []).filter((notification) => {
+        const metadata = (notification.metadata || {}) as Record<string, unknown>;
+        return Boolean(metadata.archived_at) && !metadata.archived_sheet_exported_at;
+      });
+
+      let exported = 0;
+      for (const notification of pending) {
+        const metadata = (notification.metadata || {}) as Record<string, unknown>;
+        const amount = Number(metadata.amount);
+        if (!Number.isFinite(amount)) continue;
+
+        const currency = String(metadata.currency || 'PLN');
+        const archiveType = metadata.archive_type === 'income' ? 'income' : 'expense';
+        const date = typeof metadata.date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(metadata.date)
+          ? metadata.date.slice(0, 10)
+          : String(notification.created_at).slice(0, 10);
+        const amountWithCurrency = `${amount} ${currency}`;
+        const department = String(metadata.department_name || 'Расход');
+        const { error: exportError } = await supabase.functions.invoke('google-sheets', {
+          body: {
+            action: 'archive_pdf_export',
+            values: [[
+              date,
+              archiveType === 'income' ? amountWithCurrency : '',
+              archiveType === 'expense' ? department : '',
+              archiveType === 'expense' ? amountWithCurrency : '',
+            ]],
+            note: String(metadata.basis || ''),
+          },
+        });
+        if (exportError) throw exportError;
+
+        const { error: updateError } = await supabase
+          .from('notifications')
+          .update({ metadata: { ...metadata, archived_sheet_exported_at: new Date().toISOString() } })
+          .eq('id', notification.id);
+        if (updateError) throw updateError;
+        exported += 1;
+      }
+
+      toast({
+        title: 'Синхронизация PDF завершена',
+        description: exported ? `Передано записей: ${exported}` : 'Все архивированные PDF уже переданы',
+      });
+    } catch (error) {
+      console.error('Archived PDF export error:', error);
+      toast({
+        title: 'Ошибка синхронизации PDF',
+        description: error instanceof Error ? error.message : 'Неизвестная ошибка',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   if (isLoadingSettings) {
     return (
       <div className="space-y-4">
@@ -639,21 +734,17 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
           )}
           
           <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <Settings className="w-4 h-4" />
-              </Button>
-            </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Настройки Google Sheets</DialogTitle>
+                <DialogTitle>Настроить экспорт</DialogTitle>
                 <DialogDescription>
-                  Укажите ID или ссылку на вашу личную Google таблицу
+                  Выберите данные для экспорта и укажите отдельную Google Таблицу
                 </DialogDescription>
               </DialogHeader>
               
               <div className="space-y-4 py-4">
-                <div className="border rounded-lg p-3 space-y-3">
+                <div className="space-y-2"><Label>Тип экспорта</Label><Select value={exportType} onValueChange={(value) => setExportType(value as 'transactions' | 'pdf')}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="transactions">Экспорт транзакций</SelectItem><SelectItem value="pdf">Экспорт данных PDF</SelectItem></SelectContent></Select></div>
+                {exportType === 'transactions' && (<div className="border rounded-lg p-3 space-y-3">
                   <div className="flex items-center gap-2"><Table2 className="w-4 h-4 text-primary" /><p className="text-sm font-semibold">Экспорт транзакций</p></div>
                   <div className="space-y-2">
                   <Label htmlFor="spreadsheet-id">ID таблицы или ссылка</Label>
@@ -682,19 +773,19 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="sheet-range">Диапазон листа</Label>
-                  <Input id="sheet-range" placeholder="A:I" value={tempSheetRange} onChange={(e) => setTempSheetRange(e.target.value)} />
-                  <p className="text-xs text-muted-foreground">Диапазон колонок, например: A:I или A1:Z1000</p>
+                  <Input id="sheet-range" placeholder="A:Z" value={tempSheetRange} onChange={(e) => setTempSheetRange(e.target.value)} />
+                  <p className="text-xs text-muted-foreground">Диапазон колонок, например: A:Z или A1:Z1000</p>
                 </div>
-                </div>
+                </div>)}
 
-                <div className="border rounded-lg p-3 space-y-3">
+                {exportType === 'pdf' && (<div className="border rounded-lg p-3 space-y-3">
                   <div className="flex items-center gap-2"><FileDown className="w-4 h-4 text-amber-500" /><p className="text-sm font-semibold">Экспорт данных PDF</p></div>
                   <p className="text-xs text-muted-foreground">Это отдельное подключение: архив PDF не изменяет лист транзакций.</p>
                   <div className="space-y-2"><Label htmlFor="pdf-spreadsheet-id">ID таблицы или ссылка</Label><Input id="pdf-spreadsheet-id" placeholder="https://docs.google.com/spreadsheets/d/... или ID" value={tempArchivedPdfSpreadsheetId} onChange={(e) => setTempArchivedPdfSpreadsheetId(e.target.value)} /></div>
                   <div className="space-y-2"><Label htmlFor="pdf-sheet-name">Название листа</Label><Input id="pdf-sheet-name" placeholder="Архив PDF" value={tempArchivedPdfSheetName} onChange={(e) => setTempArchivedPdfSheetName(e.target.value)} /></div>
-                  <div className="space-y-2"><Label htmlFor="pdf-sheet-range">Диапазон листа</Label><Input id="pdf-sheet-range" placeholder="A:D" value={tempArchivedPdfSheetRange} onChange={(e) => setTempArchivedPdfSheetRange(e.target.value)} /><p className="text-xs text-muted-foreground">Колонки: дата · доход · отдел · расход. «Na podstawie» будет примечанием к расходу.</p></div>
+                  <div className="space-y-2"><Label htmlFor="pdf-sheet-range">Диапазон листа</Label><Input id="pdf-sheet-range" placeholder="A:Z" value={tempArchivedPdfSheetRange} onChange={(e) => setTempArchivedPdfSheetRange(e.target.value)} /><p className="text-xs text-muted-foreground">По умолчанию A:Z. Колонки: дата · доход · отдел · расход. «Na podstawie» будет примечанием к расходу.</p></div>
                   <div className="space-y-2"><Label htmlFor="archived-pdf-row">Строка для новых записей</Label><Input id="archived-pdf-row" type="number" min="1" value={tempArchivedPdfInsertRow} onChange={(e) => setTempArchivedPdfInsertRow(e.target.value)} /></div>
-                </div>
+                </div>)}
 
                 <div className="bg-muted/50 p-3 rounded-lg space-y-2">
                   <p className="text-sm font-medium">Как настроить:</p>
@@ -725,17 +816,17 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
       </div>
 
       <div className="space-y-2">
-        <button type="button" onClick={() => setSettingsDialogOpen(true)} className="w-full flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-3 text-left hover:bg-muted/60 transition-colors">
+        <div className="w-full flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-3 text-left">
           <Table2 className="h-4 w-4 text-primary" />
           <div className="min-w-0 flex-1"><p className="text-sm font-medium">Экспорт транзакций</p><p className="text-xs text-muted-foreground truncate">{spreadsheetId ? `Таблица: ${spreadsheetId.slice(0, 12)}… · ${sheetRange}` : 'Не настроен'}</p></div>
-          <Settings className="h-4 w-4 text-muted-foreground" />
-        </button>
-        <button type="button" onClick={() => setSettingsDialogOpen(true)} className="w-full flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-3 text-left hover:bg-muted/60 transition-colors">
+          <div className="flex items-center gap-1"><Button variant="ghost" size="icon" onClick={handleSync} title="Синхронизация"><RefreshCw className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => openSpreadsheet(spreadsheetId)} disabled={!spreadsheetId} title="Открыть таблицу"><ExternalLink className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => openExportSettings('transactions')} title="Изменить"><Settings className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => deleteExport('transactions')} disabled={!spreadsheetId} title="Удалить"><Trash2 className="h-4 w-4" /></Button></div>
+        </div>
+        <div className="w-full flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-3 text-left">
           <FileDown className="h-4 w-4 text-amber-500" />
           <div className="min-w-0 flex-1"><p className="text-sm font-medium">Экспорт данных PDF</p><p className="text-xs text-muted-foreground truncate">{archivedPdfSpreadsheetId ? `Таблица: ${archivedPdfSpreadsheetId.slice(0, 12)}…` : 'Не настроен — добавьте отдельную таблицу или лист'}</p></div>
-          <Settings className="h-4 w-4 text-muted-foreground" />
-        </button>
-        <Button variant="outline" className="w-full gap-2" onClick={() => setSettingsDialogOpen(true)}><Plus className="h-4 w-4" />Настроить экспорт</Button>
+          <div className="flex items-center gap-1"><Button variant="ghost" size="icon" onClick={syncArchivedPdfExports} disabled={isExporting} title="Синхронизация"><RefreshCw className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => openSpreadsheet(archivedPdfSpreadsheetId)} disabled={!archivedPdfSpreadsheetId} title="Открыть таблицу"><ExternalLink className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => openExportSettings('pdf')} title="Изменить"><Settings className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => deleteExport('pdf')} disabled={!archivedPdfSpreadsheetId} title="Удалить"><Trash2 className="h-4 w-4" /></Button></div>
+        </div>
+        <Button variant="outline" className="w-full gap-2" onClick={() => openExportSettings('transactions')}><Plus className="h-4 w-4" />Добавить экспорт</Button>
       </div>
       
       {spreadsheetId && (
@@ -775,40 +866,6 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
         </>
       )}
       
-      <div className="flex gap-2">
-        {!spreadsheetId ? (
-          <Button
-            variant="default"
-            onClick={() => setSettingsDialogOpen(true)}
-          >
-            <Settings className="w-4 h-4 mr-2" />
-            Настроить таблицу
-          </Button>
-        ) : (
-          <>
-            <Button
-              variant="default"
-              onClick={handleSync}
-              disabled={isExporting || isImporting || syncStatus === 'syncing'}
-            >
-              {(isExporting || isImporting) ? (
-                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <RefreshCw className="w-4 h-4 mr-2" />
-              )}
-              Синхронизация
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => window.open(`https://docs.google.com/spreadsheets/d/${spreadsheetId}`, '_blank')}
-              title="Открыть таблицу"
-            >
-              <ExternalLink className="w-4 h-4" />
-            </Button>
-          </>
-        )}
-      </div>
     </div>
   );
 };
