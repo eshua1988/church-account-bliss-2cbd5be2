@@ -45,7 +45,22 @@ serve(async (req) => {
       return json({ success: true });
     }
     if (archive) {
-      const response = await fetch(`${base}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, { method: "POST", headers, body: JSON.stringify({ values: body.values || [] }) });
+      const sourceRows: string[][] = Array.isArray(body.values) ? body.values : [];
+      const currencies = [...new Set(sourceRows.map(row => String(row[1] || "").trim().split(/\s+/).at(-1) || "").filter(Boolean))];
+      const departments = [...new Set(sourceRows.map(row => String(row[2] || "").trim()).filter(Boolean))];
+      const headersRow = ["Дата", ...currencies, ...departments];
+      const table = [headersRow, ...sourceRows.map(row => {
+        const income = String(row[1] || "").trim();
+        const expense = String(row[3] || "").trim();
+        const currency = income ? income.split(/\s+/).at(-1) || "" : "";
+        const incomeAmount = income.replace(/\s+[A-Za-z]{3}$/, "");
+        const cells = [String(row[0] || "")];
+        currencies.forEach(item => cells.push(item === currency ? incomeAmount : ""));
+        departments.forEach(item => cells.push(item === String(row[2] || "").trim() ? expense : ""));
+        return cells;
+      })];
+      await fetch(`${base}/values/${encodeURIComponent(range)}:clear`, { method: "POST", headers, body: "{}" });
+      const response = await fetch(`${base}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values: table }) });
       if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets export failed" }, 500);
       return json({ success: true });
     }

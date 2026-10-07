@@ -636,10 +636,10 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
 
       const pending = (notifications || []).filter((notification) => {
         const metadata = (notification.metadata || {}) as Record<string, unknown>;
-        return Boolean(metadata.archived_at) && !metadata.archived_sheet_exported_at;
-      });
+        return Boolean(metadata.archived_at);
+      }).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
 
-      let exported = 0;
+      const exportRows: string[][] = [];
       for (const notification of pending) {
         const metadata = (notification.metadata || {}) as Record<string, unknown>;
         const amount = Number(metadata.amount);
@@ -652,40 +652,25 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
           : String(notification.created_at).slice(0, 10);
         const amountWithCurrency = `${amount} ${currency}`;
         const department = String(metadata.department_name || 'Расход');
-        // `text/plain` with no custom headers is a CORS simple request. It is
-        // needed on GitHub Pages where an OPTIONS preflight can be blocked by
-        // the edge gateway before the function receives it.
-        const exportResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sheets-export`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({
-            accessToken: session.access_token,
-            action: 'archive_pdf_export',
-            values: [[
-              date,
-              archiveType === 'income' ? amountWithCurrency : '',
-              archiveType === 'expense' ? department : '',
-              archiveType === 'expense' ? amountWithCurrency : '',
-            ]],
-            note: String(metadata.basis || ''),
-          }),
-        });
-        if (!exportResponse.ok) {
-          const payload = await exportResponse.json().catch(() => ({}));
-          throw new Error(payload?.error || `Ошибка экспорта PDF (${exportResponse.status})`);
-        }
-
-        const { error: updateError } = await supabase
-          .from('notifications')
-          .update({ metadata: { ...metadata, archived_sheet_exported_at: new Date().toISOString() } })
-          .eq('id', notification.id);
-        if (updateError) throw updateError;
-        exported += 1;
+        exportRows.push([date, archiveType === 'income' ? amountWithCurrency : '', archiveType === 'expense' ? department : '', archiveType === 'expense' ? amountWithCurrency : '']);
       }
+
+      const exportResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sheets-export`, {
+        method: 'POST', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ accessToken: session.access_token, action: 'archive_pdf_export', values: exportRows }),
+      });
+      if (!exportResponse.ok) {
+        const payload = await exportResponse.json().catch(() => ({}));
+        throw new Error(payload?.error || `Ошибка экспорта PDF (${exportResponse.status})`);
+      }
+      await Promise.all(pending.map((notification) => {
+        const metadata = (notification.metadata || {}) as Record<string, unknown>;
+        return supabase.from('notifications').update({ metadata: { ...metadata, archived_sheet_exported_at: new Date().toISOString() } }).eq('id', notification.id);
+      }));
 
       toast({
         title: 'Синхронизация PDF завершена',
-        description: exported ? `Передано записей: ${exported}` : 'Все архивированные PDF уже переданы',
+        description: exportRows.length ? `Передано записей: ${exportRows.length}` : 'В архиве пока нет PDF',
       });
     } catch (error) {
       console.error('Archived PDF export error:', error);
