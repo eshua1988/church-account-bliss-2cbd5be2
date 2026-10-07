@@ -634,6 +634,9 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
 
     setIsExporting(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Пожалуйста, войдите в систему повторно');
+
       const { data: notifications, error } = await supabase
         .from('notifications')
         .select('id, created_at, metadata')
@@ -658,8 +661,14 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
           : String(notification.created_at).slice(0, 10);
         const amountWithCurrency = `${amount} ${currency}`;
         const department = String(metadata.department_name || 'Расход');
-        const { error: exportError } = await supabase.functions.invoke('google-sheets', {
-          body: {
+        // `text/plain` with no custom headers is a CORS simple request. It is
+        // needed on GitHub Pages where an OPTIONS preflight can be blocked by
+        // the edge gateway before the function receives it.
+        const exportResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/google-sheets`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({
+            accessToken: session.access_token,
             action: 'archive_pdf_export',
             values: [[
               date,
@@ -668,9 +677,12 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
               archiveType === 'expense' ? amountWithCurrency : '',
             ]],
             note: String(metadata.basis || ''),
-          },
+          }),
         });
-        if (exportError) throw exportError;
+        if (!exportResponse.ok) {
+          const payload = await exportResponse.json().catch(() => ({}));
+          throw new Error(payload?.error || `Ошибка экспорта PDF (${exportResponse.status})`);
+        }
 
         const { error: updateError } = await supabase
           .from('notifications')

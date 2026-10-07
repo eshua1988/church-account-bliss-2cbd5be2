@@ -60,10 +60,11 @@ interface SheetRequest {
   matches?: Array<{ row: number; nameColumn: number; note: string }>;
   clearMatchNotes?: { startRowIndex: number; endRowIndex: number; columnIndex: number };
   note?: string;
+  accessToken?: string;
 }
 
-async function authenticateRequest(req: Request): Promise<{ userId: string; token: string; authHeader: string; internal: boolean } | Response> {
-  const authHeader = req.headers.get('Authorization');
+async function authenticateRequest(req: Request, requestToken?: string): Promise<{ userId: string; token: string; authHeader: string; internal: boolean } | Response> {
+  const authHeader = req.headers.get('Authorization') || (requestToken ? `Bearer ${requestToken}` : null);
 
   if (!authHeader?.startsWith('Bearer ')) {
     console.error('Missing or invalid authorization header');
@@ -239,13 +240,16 @@ serve(async (req) => {
   }
 
   try {
+    // A simple text/plain POST is intentionally supported for GitHub Pages.
+    // It avoids a browser CORS preflight while still validating the same user JWT.
+    const body: Partial<SheetRequest> = await req.json();
+
     // Authenticate the request first
-    const authResult = await authenticateRequest(req);
+    const authResult = await authenticateRequest(req, body.accessToken);
     if (authResult instanceof Response) {
       return authResult; // Return error response if authentication failed
     }
 
-    const body: Partial<SheetRequest> = await req.json();
     const action = body.action;
 
     // Look up the user's configured spreadsheet in the database (do NOT trust client-supplied IDs)
