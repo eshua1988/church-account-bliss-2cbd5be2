@@ -229,7 +229,14 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
         const dayTxs = [...dateMap.get(dateKey)!]
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-        dayTxs.forEach((tx, txIndex) => {
+        // A calendar day is represented by exactly one spreadsheet row.  More
+        // than one operation can belong to the same category, so keep every
+        // amount in that category's cell instead of overwriting an earlier one.
+        const rowIndex = rows.length;
+        const row: string[] = new Array(headers.length).fill('');
+        row[0] = dateKey;
+
+        dayTxs.forEach((tx) => {
           let col: number;
           if (tx.type === 'income') {
             col = 1;
@@ -241,11 +248,9 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
             col = idx !== -1 ? 2 + idx : fallbackCol;
           }
 
-          const rowIndex = rows.length;
-          const row: string[] = new Array(headers.length).fill('');
-          row[0] = txIndex === 0 ? dateKey : '';
           if (col !== -1) {
-            row[col] = `${tx.amount} ${tx.currency}`;
+            const amountWithCurrency = `${tx.amount} ${tx.currency}`;
+            row[col] = row[col] ? `${row[col]} + ${amountWithCurrency}` : amountWithCurrency;
             const noteParts: string[] = [];
             if (tx.issuedTo) noteParts.push(`Кому: ${tx.issuedTo}`);
             if (tx.departmentName) noteParts.push(`Отдел: ${tx.departmentName}`);
@@ -256,8 +261,8 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
             if (tx.bankRecipient) noteParts.push(`Odbiorca: ${tx.bankRecipient}`);
             if (noteParts.length > 0) notes.push({ row: rowIndex + 1, col, note: noteParts.join('\n') });
           }
-          rows.push(row);
         });
+        rows.push(row);
       });
 
       const values = [headers, ...rows];

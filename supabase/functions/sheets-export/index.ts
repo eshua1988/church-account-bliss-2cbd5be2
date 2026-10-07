@@ -49,16 +49,31 @@ serve(async (req) => {
       const currencies = [...new Set(sourceRows.map(row => String(row[1] || "").trim().split(/\s+/).at(-1) || "").filter(Boolean))];
       const departments = [...new Set(sourceRows.map(row => String(row[2] || "").trim()).filter(Boolean))];
       const headersRow = ["Дата", ...currencies.map(currency => `Доход ${currency}`), ...departments];
-      const table = [headersRow, ...sourceRows.map(row => {
+      const rowsByDate = new Map<string, string[]>();
+      const append = (cells: string[], index: number, value: string) => {
+        if (!value) return;
+        cells[index] = cells[index] ? `${cells[index]} + ${value}` : value;
+      };
+
+      // Notifications from the same day belong to one row. This is kept in
+      // the export function (rather than only in the UI) so every PDF archive
+      // export has the same compact shape.
+      sourceRows.forEach(row => {
+        const date = String(row[0] || "");
+        if (!date) return;
+        const cells = rowsByDate.get(date) || [date, ...new Array(currencies.length + departments.length).fill("")];
         const income = String(row[1] || "").trim();
         const expense = String(row[3] || "").trim();
         const currency = income ? income.split(/\s+/).at(-1) || "" : "";
         const incomeAmount = income.replace(/\s+[A-Za-z]{3}$/, "");
-        const cells = [String(row[0] || "")];
-        currencies.forEach(item => cells.push(item === currency ? incomeAmount : ""));
-        departments.forEach(item => cells.push(item === String(row[2] || "").trim() ? expense : ""));
-        return cells;
-      })];
+        const incomeIndex = currencies.indexOf(currency);
+        const departmentIndex = departments.indexOf(String(row[2] || "").trim());
+
+        if (incomeIndex !== -1) append(cells, 1 + incomeIndex, incomeAmount);
+        if (departmentIndex !== -1) append(cells, 1 + currencies.length + departmentIndex, expense);
+        rowsByDate.set(date, cells);
+      });
+      const table = [headersRow, ...rowsByDate.values()];
       await fetch(`${base}/values/${encodeURIComponent(range)}:clear`, { method: "POST", headers, body: "{}" });
       const response = await fetch(`${base}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values: table }) });
       if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets export failed" }, 500);
