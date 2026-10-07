@@ -30,11 +30,27 @@ serve(async (req) => {
     const supabase = createClient(Deno.env.get("SUPABASE_URL") || "", Deno.env.get("SUPABASE_ANON_KEY") || "", { global: { headers: { Authorization: `Bearer ${token}` } } });
     const { data: auth, error: authError } = await supabase.auth.getUser(token);
     if (authError || !auth.user) return json({ error: "Unauthorized" }, 401);
-    const { data: profile, error: profileError } = await supabase.from("profiles").select("spreadsheet_id, sheet_range, archived_pdf_spreadsheet_id, archived_pdf_sheet_range").eq("user_id", auth.user.id).maybeSingle();
-    if (profileError || !profile) return json({ error: "Google Sheets settings not found" }, 400);
     const archive = body.action === "archive_pdf_export";
-    const spreadsheetId = String(archive ? profile.archived_pdf_spreadsheet_id || "" : profile.spreadsheet_id || "");
-    const savedRange = String(archive ? profile.archived_pdf_sheet_range || "" : profile.sheet_range || "");
+    const requestedExportId = String(body.exportId || "");
+    let spreadsheetId = "";
+    let savedRange = "";
+    if (requestedExportId) {
+      const { data: exportTarget, error } = await supabase
+        .from("google_sheet_exports")
+        .select("spreadsheet_id, sheet_range, export_type")
+        .eq("id", requestedExportId)
+        .eq("user_id", auth.user.id)
+        .maybeSingle();
+      if (error || !exportTarget || exportTarget.export_type !== (archive ? "pdf" : "transactions")) return json({ error: "Google Sheets export was not found" }, 404);
+      spreadsheetId = String(exportTarget.spreadsheet_id || "");
+      savedRange = String(exportTarget.sheet_range || "");
+    } else {
+      // Backward-compatible fallback for the original two profile settings.
+      const { data: profile, error: profileError } = await supabase.from("profiles").select("spreadsheet_id, sheet_range, archived_pdf_spreadsheet_id, archived_pdf_sheet_range").eq("user_id", auth.user.id).maybeSingle();
+      if (profileError || !profile) return json({ error: "Google Sheets settings not found" }, 400);
+      spreadsheetId = String(archive ? profile.archived_pdf_spreadsheet_id || "" : profile.spreadsheet_id || "");
+      savedRange = String(archive ? profile.archived_pdf_sheet_range || "" : profile.sheet_range || "");
+    }
     // Transaction export is a complete table, so it always begins in column A.
     // This also repairs older settings that accidentally started it in column B.
     const range = archive ? savedRange : transactionRangeStartingAtA(savedRange);

@@ -26,6 +26,13 @@ interface GoogleSheetsSyncProps {
   expenseCategories?: { id: string; name: string; type: string; sortOrder?: number }[];
 }
 
+type SheetExport = {
+  id: string;
+  export_type: 'transactions' | 'pdf';
+  spreadsheet_id: string;
+  sheet_range: string;
+};
+
 const AUTO_SYNC_KEY = 'google_sheets_auto_sync';
 const AUTO_DELETE_CHECK_KEY = 'google_sheets_auto_delete_check';
 const DELETE_CHECK_INTERVAL = 60000; // 1 minute
@@ -75,6 +82,8 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
   const [tempArchivedPdfSheetRange, setTempArchivedPdfSheetRange] = useState(DEFAULT_SHEET_RANGE);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [exportType, setExportType] = useState<'transactions' | 'pdf'>('transactions');
+  const [exports, setExports] = useState<SheetExport[]>([]);
+  const [editingExportId, setEditingExportId] = useState<string | null>(null);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   
   const prevTransactionsRef = useRef<string>('');
@@ -98,6 +107,13 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
           console.error('Error loading settings:', error);
         }
         
+        const { data: savedExports, error: exportsError } = await supabase
+          .from('google_sheet_exports' as any)
+          .select('id, export_type, spreadsheet_id, sheet_range')
+          .eq('user_id', user.id)
+          .order('created_at');
+        if (!exportsError) setExports((savedExports || []) as SheetExport[]);
+
         if (data) {
           // The migration adds the archive fields. Keep this compatible with clients
           // whose generated Supabase types have not been refreshed yet.
@@ -139,35 +155,29 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
     
     setIsSavingSettings(true);
     try {
-      const extractedId = extractSpreadsheetId(tempSpreadsheetId);
-      // Combine sheet name + range into full range string
-      const fullRange = tempSheetName.trim()
-        ? `'${tempSheetName.trim()}'!${tempSheetRange.trim() || DEFAULT_SHEET_RANGE}`
-        : (tempSheetRange.trim() || DEFAULT_SHEET_RANGE);
-      const archiveFullRange = tempArchivedPdfSheetName.trim()
-        ? `'${tempArchivedPdfSheetName.trim()}'!${tempArchivedPdfSheetRange.trim() || DEFAULT_SHEET_RANGE}`
-        : '';
-      const { error } = await supabase
-        .from('profiles')
-        .upsert({
-          user_id: user.id,
-          spreadsheet_id: extractedId || null,
-          sheet_range: fullRange,
-          archived_pdf_spreadsheet_id: extractSpreadsheetId(tempArchivedPdfSpreadsheetId) || null,
-          archived_pdf_sheet_range: archiveFullRange || null,
-        } as any, { onConflict: 'user_id' });
+      const isPdf = exportType === 'pdf';
+      const inputId = isPdf ? tempArchivedPdfSpreadsheetId : tempSpreadsheetId;
+      const name = isPdf ? tempArchivedPdfSheetName : tempSheetName;
+      const configuredRange = isPdf ? tempArchivedPdfSheetRange : tempSheetRange;
+      const spreadsheet_id = extractSpreadsheetId(inputId);
+      if (!spreadsheet_id) throw new Error('Укажите таблицу для экспорта');
+      const sheet_range = name.trim() ? `'${name.trim()}'!${configuredRange.trim() || DEFAULT_SHEET_RANGE}` : (configuredRange.trim() || DEFAULT_SHEET_RANGE);
+      const fields = { user_id: user.id, export_type: exportType, spreadsheet_id, sheet_range };
+      const request = editingExportId
+        ? supabase.from('google_sheet_exports' as any).update(fields as any).eq('id', editingExportId).eq('user_id', user.id)
+        : supabase.from('google_sheet_exports' as any).insert(fields as any);
+      const { data: savedExport, error } = await request.select('id, export_type, spreadsheet_id, sheet_range').single();
       
       if (error) throw error;
       
-      setSpreadsheetId(extractedId);
-      setSheetRange(fullRange);
-      setTempSpreadsheetId(extractedId);
-      setArchivedPdfSpreadsheetId(extractSpreadsheetId(tempArchivedPdfSpreadsheetId));
+      const updated = savedExport as SheetExport;
+      setExports(current => editingExportId ? current.map(item => item.id === editingExportId ? updated : item) : [...current, updated]);
+      setEditingExportId(null);
       setSettingsDialogOpen(false);
       
       toast({
-        title: 'Настройки сохранены',
-        description: 'Ваша Google таблица настроена',
+        title: editingExportId ? 'Экспорт обновлён' : 'Экспорт добавлен',
+        description: 'Настройка сохранена отдельно от остальных экспортов',
       });
     } catch (error) {
       console.error('Error saving settings:', error);
@@ -181,8 +191,8 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
     }
   };
 
-  const syncToSheets = useCallback(async (txs: Transaction[]) => {
-    if (!spreadsheetId) {
+  const syncToSheets = useCallback(async (txs: Transaction[], target?: SheetExport) => {
+    if (!(target?.spreadsheet_id || spreadsheetId)) {
       toast({
         title: 'Настройте таблицу',
         description: 'Пожалуйста, укажите ID вашей Google таблицы в настройках',
@@ -278,6 +288,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
         body: JSON.stringify({
           accessToken: session.access_token,
           action: 'write',
+          exportId: target?.id,
           values,
         }),
       });
@@ -476,21 +487,21 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
     }
   };
 
-  const handleExport = async () => {
-    if (!spreadsheetId) {
+  const handleExport = async (target?: SheetExport) => {
+    if (!(target?.spreadsheet_id || spreadsheetId)) {
       openExportSettings('transactions');
       return false;
     }
     
     setIsExporting(true);
-    const success = await syncToSheets(transactions);
+    const success = await syncToSheets(transactions, target);
     setIsExporting(false);
     
     return success;
   };
 
-  const handleSync = async () => {
-    if (!spreadsheetId) {
+  const handleSync = async (target?: SheetExport) => {
+    if (!(target?.spreadsheet_id || spreadsheetId)) {
       openExportSettings('transactions');
       return;
     }
@@ -502,7 +513,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
 
       // Export transaction data. Import is deliberately not run here because
       // the export endpoint is a one-way Google Sheets integration.
-    const exportSuccess = await handleExport();
+    const exportSuccess = await handleExport(target);
     if (exportSuccess) {
       toast({
         title: 'Синхронизация завершена',
@@ -603,8 +614,22 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
     return input.trim();
   };
 
-  const openExportSettings = (type: 'transactions' | 'pdf') => {
-    setExportType(type);
+  const openExportSettings = (type: 'transactions' | 'pdf', target?: SheetExport) => {
+    setExportType(target?.export_type || type);
+    setEditingExportId(target?.id || null);
+    const [name = '', configuredRange = DEFAULT_SHEET_RANGE] = (target?.sheet_range || DEFAULT_SHEET_RANGE).match(/^'?([^'!]+)'?!(.+)$/)?.slice(1) || ['', target?.sheet_range || DEFAULT_SHEET_RANGE];
+    if (target?.export_type === 'pdf') {
+      setTempArchivedPdfSpreadsheetId(target.spreadsheet_id);
+      setTempArchivedPdfSheetName(name);
+      setTempArchivedPdfSheetRange(configuredRange);
+    } else if (target) {
+      setTempSpreadsheetId(target.spreadsheet_id);
+      setTempSheetName(name);
+      setTempSheetRange(configuredRange);
+    } else {
+      setTempSpreadsheetId(''); setTempSheetName(''); setTempSheetRange(DEFAULT_SHEET_RANGE);
+      setTempArchivedPdfSpreadsheetId(''); setTempArchivedPdfSheetName(''); setTempArchivedPdfSheetRange(DEFAULT_SHEET_RANGE);
+    }
     setSettingsDialogOpen(true);
   };
 
@@ -612,23 +637,19 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
     if (id) window.open(`https://docs.google.com/spreadsheets/d/${id}`, '_blank', 'noopener,noreferrer');
   };
 
-  const deleteExport = async (type: 'transactions' | 'pdf') => {
+  const deleteExport = async (target: SheetExport) => {
     if (!user) return;
-    const fields = type === 'transactions'
-      ? { spreadsheet_id: null, sheet_range: null }
-      : { archived_pdf_spreadsheet_id: null, archived_pdf_sheet_range: null };
-    const { error } = await supabase.from('profiles').update(fields as any).eq('user_id', user.id);
+    const { error } = await supabase.from('google_sheet_exports' as any).delete().eq('id', target.id).eq('user_id', user.id);
     if (error) {
       toast({ title: 'Ошибка удаления', description: error.message, variant: 'destructive' });
       return;
     }
-    if (type === 'transactions') setSpreadsheetId('');
-    else setArchivedPdfSpreadsheetId('');
+    setExports(current => current.filter(item => item.id !== target.id));
     toast({ title: 'Экспорт удалён' });
   };
 
-  const syncArchivedPdfExports = async () => {
-    if (!user || !archivedPdfSpreadsheetId) {
+  const syncArchivedPdfExports = async (target?: SheetExport) => {
+    if (!user || !(target?.spreadsheet_id || archivedPdfSpreadsheetId)) {
       openExportSettings('pdf');
       return;
     }
@@ -673,7 +694,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
 
       const exportResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sheets-export`, {
         method: 'POST', headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ accessToken: session.access_token, action: 'archive_pdf_export', values: exportRows }),
+        body: JSON.stringify({ accessToken: session.access_token, action: 'archive_pdf_export', exportId: target?.id, values: exportRows }),
       });
       if (!exportResponse.ok) {
         const payload = await exportResponse.json().catch(() => ({}));
@@ -816,16 +837,11 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
       </div>
 
       <div className="space-y-2">
-        <div className="w-full flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-3 text-left">
-          <Table2 className="h-4 w-4 text-primary" />
-          <div className="min-w-0 flex-1"><p className="text-sm font-medium">Экспорт транзакций</p><p className="text-xs text-muted-foreground truncate">{spreadsheetId ? `Таблица: ${spreadsheetId.slice(0, 12)}… · ${sheetRange}` : 'Не настроен'}</p></div>
-          <div className="flex items-center gap-1"><Button variant="ghost" size="icon" onClick={handleSync} title="Синхронизация"><RefreshCw className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => openSpreadsheet(spreadsheetId)} disabled={!spreadsheetId} title="Открыть таблицу"><ExternalLink className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => openExportSettings('transactions')} title="Изменить"><Settings className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => deleteExport('transactions')} disabled={!spreadsheetId} title="Удалить"><Trash2 className="h-4 w-4" /></Button></div>
-        </div>
-        <div className="w-full flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-3 text-left">
-          <FileDown className="h-4 w-4 text-amber-500" />
-          <div className="min-w-0 flex-1"><p className="text-sm font-medium">Экспорт данных PDF</p><p className="text-xs text-muted-foreground truncate">{archivedPdfSpreadsheetId ? `Таблица: ${archivedPdfSpreadsheetId.slice(0, 12)}…` : 'Не настроен — добавьте отдельную таблицу или лист'}</p></div>
-          <div className="flex items-center gap-1"><Button variant="ghost" size="icon" onClick={syncArchivedPdfExports} disabled={isExporting} title="Синхронизация"><RefreshCw className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => openSpreadsheet(archivedPdfSpreadsheetId)} disabled={!archivedPdfSpreadsheetId} title="Открыть таблицу"><ExternalLink className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => openExportSettings('pdf')} title="Изменить"><Settings className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => deleteExport('pdf')} disabled={!archivedPdfSpreadsheetId} title="Удалить"><Trash2 className="h-4 w-4" /></Button></div>
-        </div>
+        {exports.map(target => <div key={target.id} className="w-full flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-3 text-left">
+          {target.export_type === 'pdf' ? <FileDown className="h-4 w-4 text-amber-500" /> : <Table2 className="h-4 w-4 text-primary" />}
+          <div className="min-w-0 flex-1"><p className="text-sm font-medium">{target.export_type === 'pdf' ? 'Экспорт данных PDF' : 'Экспорт транзакций'}</p><p className="text-xs text-muted-foreground truncate">Таблица: {target.spreadsheet_id.slice(0, 12)}… · {target.sheet_range}</p></div>
+          <div className="flex items-center gap-1"><Button variant="ghost" size="icon" onClick={() => target.export_type === 'pdf' ? syncArchivedPdfExports(target) : handleSync(target)} disabled={isExporting} title="Синхронизация"><RefreshCw className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => openSpreadsheet(target.spreadsheet_id)} title="Открыть таблицу"><ExternalLink className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => openExportSettings(target.export_type, target)} title="Изменить"><Settings className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => deleteExport(target)} title="Удалить"><Trash2 className="h-4 w-4" /></Button></div>
+        </div>)}
         <Button variant="outline" className="w-full gap-2" onClick={() => openExportSettings('transactions')}><Plus className="h-4 w-4" />Добавить экспорт</Button>
       </div>
       
