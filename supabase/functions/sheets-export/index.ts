@@ -30,7 +30,9 @@ serve(async (req) => {
     const supabase = createClient(Deno.env.get("SUPABASE_URL") || "", Deno.env.get("SUPABASE_ANON_KEY") || "", { global: { headers: { Authorization: `Bearer ${token}` } } });
     const { data: auth, error: authError } = await supabase.auth.getUser(token);
     if (authError || !auth.user) return json({ error: "Unauthorized" }, 401);
+    const clearNotesOnly = body.action === "clear_notes";
     const archive = body.action === "archive_pdf_export";
+    const expectedExportType = clearNotesOnly ? String(body.exportType || "transactions") : (archive ? "pdf" : "transactions");
     const requestedExportId = String(body.exportId || "");
     let spreadsheetId = "";
     let savedRange = "";
@@ -41,7 +43,7 @@ serve(async (req) => {
         .eq("id", requestedExportId)
         .eq("user_id", auth.user.id)
         .maybeSingle();
-      if (error || !exportTarget || exportTarget.export_type !== (archive ? "pdf" : "transactions")) return json({ error: "Google Sheets export was not found" }, 404);
+      if (error || !exportTarget || exportTarget.export_type !== expectedExportType) return json({ error: "Google Sheets export was not found" }, 404);
       spreadsheetId = String(exportTarget.spreadsheet_id || "");
       savedRange = String(exportTarget.sheet_range || "");
     } else {
@@ -58,6 +60,21 @@ serve(async (req) => {
     const accessToken = await googleToken();
     const base = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`;
     const headers = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
+    if (clearNotesOnly) {
+      const metadataResponse = await fetch(`${base}?fields=sheets.properties`, { headers });
+      if (!metadataResponse.ok) return json({ error: "Google Sheets metadata failed" }, 500);
+      const metadata = await metadataResponse.json();
+      const requestedSheetName = (savedRange.match(/^'?([^'!]+)'?!/) || [])[1];
+      const sheet = (metadata.sheets || []).find((item: { properties?: { title?: string } }) => item.properties?.title === requestedSheetName) || metadata.sheets?.[0];
+      if (typeof sheet?.properties?.sheetId !== "number") return json({ error: "Google Sheet was not found" }, 500);
+      const columnCount = Math.max(Number(sheet.properties.gridProperties?.columnCount || 0), 1);
+      const response = await fetch(`${base}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests: [{ repeatCell: {
+        range: { sheetId: sheet.properties.sheetId, startRowIndex: 0, endRowIndex: 1000, startColumnIndex: 0, endColumnIndex: columnCount },
+        cell: { note: "" }, fields: "note",
+      } }] }) });
+      if (!response.ok) return json({ error: "Google Sheets note cleanup failed" }, 500);
+      return json({ success: true });
+    }
     if (body.action === "write") {
       const metadataResponse = await fetch(`${base}?fields=sheets.properties`, { headers });
       if (!metadataResponse.ok) return json({ error: "Google Sheets metadata failed" }, 500);
