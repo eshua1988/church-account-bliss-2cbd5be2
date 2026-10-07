@@ -48,7 +48,7 @@ serve(async (req) => {
       const sourceRows: string[][] = Array.isArray(body.values) ? body.values : [];
       const currencies = [...new Set(sourceRows.map(row => String(row[1] || "").trim().split(/\s+/).at(-1) || "").filter(Boolean))];
       const departments = [...new Set(sourceRows.map(row => String(row[2] || "").trim()).filter(Boolean))];
-      const headersRow = ["Дата", ...currencies, ...departments];
+      const headersRow = ["Дата", ...currencies.map(currency => `Доход ${currency}`), ...departments];
       const table = [headersRow, ...sourceRows.map(row => {
         const income = String(row[1] || "").trim();
         const expense = String(row[3] || "").trim();
