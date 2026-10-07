@@ -1,4 +1,5 @@
 -- Settings for the one-way export of archived PDF notifications.
+-- This migration is safe to rerun: every new column uses IF NOT EXISTS.
 -- Keep this separate from the full transaction synchronisation range.
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS archived_pdf_spreadsheet_id text,
