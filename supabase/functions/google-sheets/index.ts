@@ -47,7 +47,7 @@ interface NoteData {
 }
 
 interface SheetRequest {
-  action: 'read' | 'write' | 'append' | 'delete' | 'diagnose' | 'mark-matches' | 'list-sheets';
+  action: 'read' | 'write' | 'append' | 'delete' | 'diagnose' | 'mark-matches' | 'list-sheets' | 'archive_pdf_export';
   spreadsheetId: string;
   range: string;
   values?: string[][];
@@ -57,6 +57,7 @@ interface SheetRequest {
   transactionTypes?: Array<'income' | 'expense'>;
   matches?: Array<{ row: number; nameColumn: number; note: string }>;
   clearMatchNotes?: { startRowIndex: number; endRowIndex: number; columnIndex: number };
+  note?: string;
 }
 
 async function authenticateRequest(req: Request): Promise<{ userId: string; token: string; authHeader: string; internal: boolean } | Response> {
@@ -259,7 +260,7 @@ serve(async (req) => {
 
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('spreadsheet_id, sheet_range')
+      .select('spreadsheet_id, sheet_range, archived_pdf_sheet_range, archived_pdf_insert_row')
       .eq('user_id', authResult.userId)
       .maybeSingle();
 
@@ -280,10 +281,19 @@ serve(async (req) => {
 
     const configuredSpreadsheetId = (profile?.spreadsheet_id ?? '').trim();
     const configuredRange = (profile?.sheet_range ?? "'Data app'!A:G").trim();
+    const archiveRange = (profile?.archived_pdf_sheet_range ?? '').trim();
+    const archiveInsertRow = Math.max(1, Number(profile?.archived_pdf_insert_row ?? 2) || 2);
 
     if (!configuredSpreadsheetId && !authResult.internal) {
       return new Response(
         JSON.stringify({ error: 'Bad request: Please configure your Google Sheets ID in settings' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (action === 'archive_pdf_export' && !archiveRange) {
+      return new Response(
+        JSON.stringify({ error: 'Configure a separate archive PDF sheet in Google Sheets settings first' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -300,7 +310,9 @@ serve(async (req) => {
     // Internal functions can access explicitly configured registration sources.
     // Browser clients are still locked to their profile's single export sheet.
     const spreadsheetId = authResult.internal && body.spreadsheetId ? body.spreadsheetId : configuredSpreadsheetId;
-    const range = authResult.internal && body.range ? body.range : configuredRange;
+    const range = action === 'archive_pdf_export'
+      ? archiveRange
+      : (authResult.internal && body.range ? body.range : configuredRange);
     const values = body.values;
 
     console.log(`Google Sheets action: ${action}, spreadsheet: ${spreadsheetId}, range: ${range}, user: ${authResult.userId}`);
@@ -402,6 +414,12 @@ serve(async (req) => {
       const requestedSheet = sheetMatch[1];
       const exists = sheetsInfo.some(s => s.properties.title === requestedSheet);
       if (!exists) {
+        if (action === 'archive_pdf_export') {
+          return new Response(
+            JSON.stringify({ error: `Archive sheet "${requestedSheet}" was not found. Create this sheet tab first or correct its name in settings.` }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
         console.log(`Sheet "${requestedSheet}" not found, falling back to first sheet "${firstSheetName}"`);
         resolvedRange = range.replace(/^'?[^'!]+'?!/, `'${firstSheetName}'!`);
       }
@@ -693,6 +711,54 @@ serve(async (req) => {
             body: JSON.stringify({ values }),
           }
         );
+        break;
+      }
+
+      case 'archive_pdf_export': {
+        if (!values || values.length !== 1) throw new Error('One archived PDF row is required');
+
+        // The archive sheet is independent of the transaction sheet. Insert a row
+        // at its configured data start so newest archived documents stay on top.
+        const rowIndex = archiveInsertRow - 1;
+        const insertResponse = await fetch(`${baseUrl}:batchUpdate`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requests: [{ insertDimension: {
+              range: { sheetId: sheetIdNum, dimension: 'ROWS', startIndex: rowIndex, endIndex: rowIndex + 1 },
+              inheritFromBefore: false,
+            } }],
+          }),
+        });
+        if (!insertResponse.ok) {
+          const error = await insertResponse.json().catch(() => ({}));
+          throw new Error(error?.error?.message || 'Could not insert a row for the archived PDF');
+        }
+
+        const columnMatch = resolvedRange.match(/!([A-Z]+)(?:\d+)?(?::/i);
+        const startColumn = (columnMatch?.[1] || 'A').toUpperCase();
+        const startColumnIndex = [...startColumn].reduce((result, char) => result * 26 + char.charCodeAt(0) - 64, 0) - 1;
+        const endColumn = numToColLetter(startColumnIndex + values[0].length);
+        const archiveWriteRange = `'${resolvedSheetName.replace(/'/g, "''")}'!${startColumn}${archiveInsertRow}:${endColumn}${archiveInsertRow}`;
+        response = await fetch(`${baseUrl}/values/${encodeURIComponent(archiveWriteRange)}?valueInputOption=USER_ENTERED`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values }),
+        });
+
+        // The fourth exported column is the expense amount. Preserve "Na podstawie"
+        // as a Google Sheets cell note, rather than polluting the table layout.
+        if (response.ok && body.note) {
+          await fetch(`${baseUrl}:batchUpdate`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ requests: [{ repeatCell: {
+              range: { sheetId: sheetIdNum, startRowIndex: rowIndex, endRowIndex: rowIndex + 1, startColumnIndex: startColumnIndex + 3, endColumnIndex: startColumnIndex + 4 },
+              cell: { note: body.note },
+              fields: 'note',
+            } }] }),
+          });
+        }
         break;
       }
 

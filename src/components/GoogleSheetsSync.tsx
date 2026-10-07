@@ -69,6 +69,8 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
   const [tempSpreadsheetId, setTempSpreadsheetId] = useState('');
   const [tempSheetName, setTempSheetName] = useState('');
   const [tempSheetRange, setTempSheetRange] = useState(DEFAULT_SHEET_RANGE);
+  const [tempArchivedPdfRange, setTempArchivedPdfRange] = useState('');
+  const [tempArchivedPdfInsertRow, setTempArchivedPdfInsertRow] = useState('2');
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   
@@ -85,7 +87,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('spreadsheet_id, sheet_range')
+          .select('spreadsheet_id, sheet_range, archived_pdf_sheet_range, archived_pdf_insert_row')
           .eq('user_id', user.id)
           .maybeSingle();
         
@@ -94,6 +96,9 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
         }
         
         if (data) {
+          // The migration adds the archive fields. Keep this compatible with clients
+          // whose generated Supabase types have not been refreshed yet.
+          const profile = data as typeof data & { archived_pdf_sheet_range?: string | null; archived_pdf_insert_row?: number | null };
           setSpreadsheetId(data.spreadsheet_id || '');
           setSheetRange(data.sheet_range || DEFAULT_SHEET_RANGE);
           setTempSpreadsheetId(data.spreadsheet_id || '');
@@ -102,6 +107,10 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
           const savedMatch = saved.match(/^'?([^'!]+)'?!(.+)$/);
           setTempSheetName(savedMatch ? savedMatch[1] : '');
           setTempSheetRange(savedMatch ? savedMatch[2] : saved);
+          // Archive PDF exports deliberately require a separate sheet. Never fall
+          // back to the transaction synchronisation sheet.
+          setTempArchivedPdfRange(profile.archived_pdf_sheet_range || '');
+          setTempArchivedPdfInsertRow(String(profile.archived_pdf_insert_row || 2));
         } else {
           // Profile doesn't exist yet — create it
           await supabase.from('profiles').upsert(
@@ -135,7 +144,9 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
           user_id: user.id,
           spreadsheet_id: extractedId || null,
           sheet_range: fullRange,
-        }, { onConflict: 'user_id' });
+          archived_pdf_sheet_range: tempArchivedPdfRange.trim() || null,
+          archived_pdf_insert_row: Math.max(1, Number.parseInt(tempArchivedPdfInsertRow, 10) || 2),
+        } as any, { onConflict: 'user_id' });
       
       if (error) throw error;
       
@@ -641,6 +652,36 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
                   <p className="text-xs text-muted-foreground">
                     Вставьте ссылку на таблицу или только ID
                   </p>
+                </div>
+
+                <div className="border-t pt-4 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium">Экспорт архивированных PDF</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Используется только отдельный лист архива — основной лист с транзакциями не изменяется. Новая строка добавляется сверху, а текст «Na podstawie» сохраняется примечанием к расходу.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="archived-pdf-range">Лист и диапазон архива</Label>
+                    <Input
+                      id="archived-pdf-range"
+                      placeholder="'Архив PDF'!A:D"
+                      value={tempArchivedPdfRange}
+                      onChange={(e) => setTempArchivedPdfRange(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">Создайте отдельную вкладку в этой Google Таблице и укажите её здесь. Колонки: дата · доход · отдел · расход.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="archived-pdf-row">Строка для новых записей</Label>
+                    <Input
+                      id="archived-pdf-row"
+                      type="number"
+                      min="1"
+                      value={tempArchivedPdfInsertRow}
+                      onChange={(e) => setTempArchivedPdfInsertRow(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">Обычно 2, если строка 1 — заголовки; для вашего шаблона укажите первую строку данных.</p>
+                  </div>
                 </div>
 
                 <div className="space-y-2">

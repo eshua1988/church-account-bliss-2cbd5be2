@@ -1184,17 +1184,53 @@ export const NotificationsPage = () => {
   const archiveNotification = async (archiveType: 'income' | 'expense') => {
     if (!archiveTarget) return;
     const year = getNotificationArchiveYear(archiveTarget);
+    const metadata = archiveTarget.metadata || {};
+    const amount = Number(metadata.amount);
+
+    if (!Number.isFinite(amount)) {
+      toast({ title: 'Ошибка архивации', description: 'В уведомлении нет корректной суммы', variant: 'destructive' });
+      return;
+    }
 
     setSavingId(archiveTarget.id);
     try {
+      const currency = String(metadata.currency || 'PLN');
+      const documentDate = typeof metadata.date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(metadata.date)
+        ? metadata.date.slice(0, 10)
+        : format(new Date(archiveTarget.created_at), 'yyyy-MM-dd');
+      const amountWithCurrency = `${amount} ${currency}`;
+      const department = String(metadata.department_name || 'Расход');
+      const values = [[
+        documentDate,
+        archiveType === 'income' ? amountWithCurrency : '',
+        archiveType === 'expense' ? department : '',
+        archiveType === 'expense' ? amountWithCurrency : '',
+      ]];
+
+      // Export first. If the separate archive sheet is not configured, keep the
+      // notification out of the archive so the user can correct the setting.
+      const { error: exportError } = await supabase.functions.invoke('google-sheets', {
+        body: { action: 'archive_pdf_export', values, note: String(metadata.basis || '') },
+      });
+      if (exportError) {
+        let detail = exportError.message;
+        try {
+          const payload = await exportError.context?.json?.();
+          detail = payload?.error || detail;
+        } catch { /* retain the original error */ }
+        throw new Error(detail);
+      }
+
+      const archivedAt = new Date().toISOString();
       const { error } = await supabase
         .from('notifications')
         .update({
           metadata: {
-            ...(archiveTarget.metadata || {}),
+            ...metadata,
             archive_type: archiveType,
             archive_year: year,
-            archived_at: new Date().toISOString(),
+            archived_at: archivedAt,
+            archived_sheet_exported_at: archivedAt,
           },
         })
         .eq('id', archiveTarget.id);

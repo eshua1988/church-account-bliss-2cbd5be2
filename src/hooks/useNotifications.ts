@@ -13,6 +13,8 @@ export interface NotificationMetadata {
   images_skipped?: boolean;
   pdf_path?: string;
   link_token?: string;
+  archived_at?: string;
+  archived_sheet_exported_at?: string;
   [key: string]: unknown;
 }
 
