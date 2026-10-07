@@ -3,6 +3,9 @@ project_id = "htepbcotdqrewbxmasbf"
 [functions.google-sheets]
 verify_jwt = false
 
+[functions.sheets-export]
+verify_jwt = false
+
 [functions.validate-payout-token]
 verify_jwt = false
 

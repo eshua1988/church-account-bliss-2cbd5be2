@@ -22,8 +22,8 @@ jobs:
 
       - name: Deploy all Edge Functions
         run: |
-          for fn in google-sheets public-transactions submit-public-payout submit-public-deposit validate-payout-token send-push-notification add-images-to-payout generate-payout-pdf upload-payout-pdf check-pending-payouts telegram-bot banking-auth-start banking-auth-complete banking-sync; do
-            if [ "$fn" = "google-sheets" ]; then
+          for fn in google-sheets sheets-export public-transactions submit-public-payout submit-public-deposit validate-payout-token send-push-notification add-images-to-payout generate-payout-pdf upload-payout-pdf check-pending-payouts telegram-bot banking-auth-start banking-auth-complete banking-sync; do
+            if [ "$fn" = "google-sheets" ] || [ "$fn" = "sheets-export" ]; then
               # The function handles CORS preflight and validates the JWT itself.
               # Gateway JWT verification would reject browser OPTIONS requests first.
               supabase functions deploy $fn --no-verify-jwt --project-ref htepbcotdqrewbxmasbf

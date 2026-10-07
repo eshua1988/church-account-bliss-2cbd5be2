@@ -262,27 +262,18 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
 
       const values = [headers, ...rows];
 
-      const { data, error } = await supabase.functions.invoke('google-sheets', {
-        body: {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sheets-export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          accessToken: session.access_token,
           action: 'write',
-          spreadsheetId: spreadsheetId,
-          range: sheetRange,
           values,
-          notes,
-        },
+        }),
       });
-
-      if (error) {
-        console.error('Sync error details:', error);
-        // Extract real message from Edge Function response body
-        let msg = error.message;
-        try {
-          if (error.context && typeof error.context.json === 'function') {
-            const body = await error.context.json();
-            if (body?.error) msg = body.error;
-          }
-        } catch (_) { /* ignore */ }
-        throw new Error(msg);
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.error || `Ошибка экспорта (${response.status})`);
       }
 
       setLastSyncTime(new Date());
@@ -499,10 +490,10 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
       description: 'Начинаем синхронизацию с Google Sheets...',
     });
 
-    // First export, then import
+      // Export transaction data. Import is deliberately not run here because
+      // the export endpoint is a one-way Google Sheets integration.
     const exportSuccess = await handleExport();
     if (exportSuccess) {
-      await handleImport();
       toast({
         title: 'Синхронизация завершена',
         description: `Синхронизировано ${transactions.length} транзакций`,
@@ -664,7 +655,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
         // `text/plain` with no custom headers is a CORS simple request. It is
         // needed on GitHub Pages where an OPTIONS preflight can be blocked by
         // the edge gateway before the function receives it.
-        const exportResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/google-sheets`, {
+        const exportResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sheets-export`, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify({
