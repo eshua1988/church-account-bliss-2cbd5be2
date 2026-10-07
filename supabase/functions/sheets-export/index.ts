@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
+const transactionRangeStartingAtA = (range: string) => range.replace(/(^|!)[A-Z]+(?=:)/i, "$1A");
 
 async function googleToken() {
   const credentials = JSON.parse(Deno.env.get("GOOGLE_SHEETS_CREDENTIALS") || "{}");
@@ -33,12 +34,36 @@ serve(async (req) => {
     if (profileError || !profile) return json({ error: "Google Sheets settings not found" }, 400);
     const archive = body.action === "archive_pdf_export";
     const spreadsheetId = String(archive ? profile.archived_pdf_spreadsheet_id || "" : profile.spreadsheet_id || "");
-    const range = String(archive ? profile.archived_pdf_sheet_range || "" : profile.sheet_range || "");
+    const savedRange = String(archive ? profile.archived_pdf_sheet_range || "" : profile.sheet_range || "");
+    // Transaction export is a complete table, so it always begins in column A.
+    // This also repairs older settings that accidentally started it in column B.
+    const range = archive ? savedRange : transactionRangeStartingAtA(savedRange);
     if (!spreadsheetId || !range) return json({ error: "Configure the export sheet first" }, 400);
     const accessToken = await googleToken();
     const base = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`;
     const headers = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
     if (body.action === "write") {
+      const metadataResponse = await fetch(`${base}?fields=sheets.properties`, { headers });
+      if (!metadataResponse.ok) return json({ error: "Google Sheets metadata failed" }, 500);
+      const metadata = await metadataResponse.json();
+      const requestedSheetName = (range.match(/^'?([^'!]+)'?!/) || [])[1];
+      const sheet = (metadata.sheets || []).find((item: { properties?: { title?: string } }) => item.properties?.title === requestedSheetName) || metadata.sheets?.[0];
+      if (typeof sheet?.properties?.sheetId !== "number") return json({ error: "Google Sheet was not found" }, 500);
+
+      // Old exported notes must not survive a new full export, even if rows or
+      // categories have moved. Clear notes across the export sheet first.
+      const columnCount = Math.max(Number(sheet.properties.gridProperties?.columnCount || 0), 1);
+      const clearNotesResponse = await fetch(`${base}:batchUpdate`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ requests: [{ repeatCell: {
+          range: { sheetId: sheet.properties.sheetId, startRowIndex: 0, endRowIndex: 1000, startColumnIndex: 0, endColumnIndex: columnCount },
+          cell: { note: "" },
+          fields: "note",
+        } }] }),
+      });
+      if (!clearNotesResponse.ok) return json({ error: "Google Sheets note cleanup failed" }, 500);
+
       await fetch(`${base}/values/${encodeURIComponent(range)}:clear`, { method: "POST", headers, body: "{}" });
       const response = await fetch(`${base}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values: body.values || [] }) });
       if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets write failed" }, 500);
