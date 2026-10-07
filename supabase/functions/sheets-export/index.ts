@@ -49,34 +49,78 @@ serve(async (req) => {
       const currencies = [...new Set(sourceRows.map(row => String(row[1] || "").trim().split(/\s+/).at(-1) || "").filter(Boolean))];
       const departments = [...new Set(sourceRows.map(row => String(row[2] || "").trim()).filter(Boolean))];
       const headersRow = ["Дата", ...currencies.map(currency => `Доход ${currency}`), ...departments];
-      const rowsByDate = new Map<string, string[]>();
-      const append = (cells: string[], index: number, value: string) => {
-        if (!value) return;
-        cells[index] = cells[index] ? `${cells[index]} + ${value}` : value;
-      };
+      type ArchiveRow = { cells: string[]; notes: Array<{ col: number; text: string }> };
+      const rowsByDate = new Map<string, ArchiveRow[]>();
 
-      // Notifications from the same day belong to one row. This is kept in
-      // the export function (rather than only in the UI) so every PDF archive
-      // export has the same compact shape.
+      // A day may share a row only while every value goes to its own cell.
+      // When a currency/department cell is already occupied, add another row
+      // and repeat the date instead of combining amounts in one cell.
       sourceRows.forEach(row => {
         const date = String(row[0] || "");
         if (!date) return;
-        const cells = rowsByDate.get(date) || [date, ...new Array(currencies.length + departments.length).fill("")];
         const income = String(row[1] || "").trim();
         const expense = String(row[3] || "").trim();
         const currency = income ? income.split(/\s+/).at(-1) || "" : "";
         const incomeAmount = income.replace(/\s+[A-Za-z]{3}$/, "");
         const incomeIndex = currencies.indexOf(currency);
         const departmentIndex = departments.indexOf(String(row[2] || "").trim());
+        const targetColumn = incomeIndex !== -1
+          ? 1 + incomeIndex
+          : departmentIndex !== -1
+            ? 1 + currencies.length + departmentIndex
+            : -1;
+        if (targetColumn === -1) return;
 
-        if (incomeIndex !== -1) append(cells, 1 + incomeIndex, incomeAmount);
-        if (departmentIndex !== -1) append(cells, 1 + currencies.length + departmentIndex, expense);
-        rowsByDate.set(date, cells);
+        const dateRows = rowsByDate.get(date) || [];
+        let archiveRow = dateRows.find(candidate => !candidate.cells[targetColumn]);
+        if (!archiveRow) {
+          archiveRow = { cells: [date, ...new Array(currencies.length + departments.length).fill("")], notes: [] };
+          dateRows.push(archiveRow);
+        }
+
+        archiveRow.cells[targetColumn] = incomeIndex !== -1 ? incomeAmount : expense;
+        const basis = String(row[4] || "").trim();
+        if (departmentIndex !== -1 && basis) archiveRow.notes.push({ col: targetColumn, text: basis });
+        rowsByDate.set(date, dateRows);
       });
-      const table = [headersRow, ...rowsByDate.values()];
+      const archiveRows = [...rowsByDate.values()].flat();
+      const table = [headersRow, ...archiveRows.map(row => row.cells)];
       await fetch(`${base}/values/${encodeURIComponent(range)}:clear`, { method: "POST", headers, body: "{}" });
       const response = await fetch(`${base}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values: table }) });
       if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets export failed" }, 500);
+
+      const noteRequests = archiveRows.flatMap((row, rowOffset) => row.notes.map(note => ({
+        repeatCell: {
+          range: { sheetId: -1, startRowIndex: rowOffset + 1, endRowIndex: rowOffset + 2, startColumnIndex: note.col, endColumnIndex: note.col + 1 },
+          cell: { note: note.text },
+          fields: "note",
+        },
+      })));
+      if (noteRequests.length) {
+        const metaResponse = await fetch(`${base}?fields=sheets.properties`, { headers });
+        if (!metaResponse.ok) return json({ error: "Could not resolve the archive sheet for notes" }, 500);
+        const meta = await metaResponse.json();
+        const requestedSheetName = (range.match(/^'?([^'!]+)'?!/) || [])[1];
+        const sheet = (meta.sheets || []).find((item: { properties?: { title?: string } }) => item.properties?.title === requestedSheetName) || meta.sheets?.[0];
+        if (typeof sheet?.properties?.sheetId !== "number") return json({ error: "Archive sheet was not found for notes" }, 500);
+
+        const rangeStart = range.match(/!([A-Z]+)(\d+)?/i);
+        const startColumn = (rangeStart?.[1] || "A").toUpperCase().split("").reduce((value, char) => value * 26 + char.charCodeAt(0) - 64, 0) - 1;
+        const startRow = Math.max(Number(rangeStart?.[2] || 1) - 1, 0);
+        noteRequests.forEach(request => {
+          const cellRange = (request.repeatCell as { range: { sheetId: number; startRowIndex: number; endRowIndex: number; startColumnIndex: number; endColumnIndex: number } }).range;
+          cellRange.sheetId = sheet.properties.sheetId;
+          cellRange.startRowIndex += startRow;
+          cellRange.endRowIndex += startRow;
+          cellRange.startColumnIndex += startColumn;
+          cellRange.endColumnIndex += startColumn;
+        });
+
+        // The note is attached to the expense amount itself, so it remains
+        // visible through Google Sheets' "Insert note" interface.
+        const notesResponse = await fetch(`${base}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests: noteRequests }) });
+        if (!notesResponse.ok) return json({ error: (await notesResponse.json()).error?.message || "Google Sheets notes failed" }, 500);
+      }
       return json({ success: true });
     }
     return json({ error: "Unsupported action" }, 400);

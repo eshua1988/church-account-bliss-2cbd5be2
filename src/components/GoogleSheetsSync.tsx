@@ -229,12 +229,10 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
         const dayTxs = [...dateMap.get(dateKey)!]
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-        // A calendar day is represented by exactly one spreadsheet row.  More
-        // than one operation can belong to the same category, so keep every
-        // amount in that category's cell instead of overwriting an earlier one.
-        const rowIndex = rows.length;
-        const row: string[] = new Array(headers.length).fill('');
-        row[0] = dateKey;
+        // Keep one amount per cell. Operations of the same day share a row
+        // only when they use different columns; a collision gets a new row
+        // with the date repeated.
+        const dayRows: string[][] = [];
 
         dayTxs.forEach((tx) => {
           let col: number;
@@ -249,8 +247,15 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
           }
 
           if (col !== -1) {
+            let row = dayRows.find(candidate => !candidate[col]);
+            if (!row) {
+              row = new Array(headers.length).fill('');
+              row[0] = dateKey;
+              dayRows.push(row);
+            }
+            const rowIndex = rows.length + dayRows.indexOf(row);
             const amountWithCurrency = `${tx.amount} ${tx.currency}`;
-            row[col] = row[col] ? `${row[col]} + ${amountWithCurrency}` : amountWithCurrency;
+            row[col] = amountWithCurrency;
             const noteParts: string[] = [];
             if (tx.issuedTo) noteParts.push(`Кому: ${tx.issuedTo}`);
             if (tx.departmentName) noteParts.push(`Отдел: ${tx.departmentName}`);
@@ -262,7 +267,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
             if (noteParts.length > 0) notes.push({ row: rowIndex + 1, col, note: noteParts.join('\n') });
           }
         });
-        rows.push(row);
+        rows.push(...dayRows);
       });
 
       const values = [headers, ...rows];
@@ -657,7 +662,13 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
           : String(notification.created_at).slice(0, 10);
         const amountWithCurrency = `${amount} ${currency}`;
         const department = String(metadata.department_name || 'Расход');
-        exportRows.push([date, archiveType === 'income' ? amountWithCurrency : '', archiveType === 'expense' ? department : '', archiveType === 'expense' ? amountWithCurrency : '']);
+        exportRows.push([
+          date,
+          archiveType === 'income' ? amountWithCurrency : '',
+          archiveType === 'expense' ? department : '',
+          archiveType === 'expense' ? amountWithCurrency : '',
+          archiveType === 'expense' ? String(metadata.basis || '') : '',
+        ]);
       }
 
       const exportResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sheets-export`, {
