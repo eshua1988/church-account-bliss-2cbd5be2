@@ -1,6 +1,7 @@
 -- Settings for the one-way export of archived PDF notifications.
 -- Keep this separate from the full transaction synchronisation range.
 ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS archived_pdf_spreadsheet_id text,
   ADD COLUMN IF NOT EXISTS archived_pdf_sheet_range text,
   ADD COLUMN IF NOT EXISTS archived_pdf_insert_row integer NOT NULL DEFAULT 2;
 

@@ -260,7 +260,7 @@ serve(async (req) => {
 
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('spreadsheet_id, sheet_range, archived_pdf_sheet_range, archived_pdf_insert_row')
+      .select('spreadsheet_id, sheet_range, archived_pdf_spreadsheet_id, archived_pdf_sheet_range, archived_pdf_insert_row')
       .eq('user_id', authResult.userId)
       .maybeSingle();
 
@@ -280,18 +280,19 @@ serve(async (req) => {
     }
 
     const configuredSpreadsheetId = (profile?.spreadsheet_id ?? '').trim();
+    const archiveSpreadsheetId = (profile?.archived_pdf_spreadsheet_id ?? '').trim();
     const configuredRange = (profile?.sheet_range ?? "'Data app'!A:G").trim();
     const archiveRange = (profile?.archived_pdf_sheet_range ?? '').trim();
     const archiveInsertRow = Math.max(1, Number(profile?.archived_pdf_insert_row ?? 2) || 2);
 
-    if (!configuredSpreadsheetId && !authResult.internal) {
+    if (!configuredSpreadsheetId && action !== 'archive_pdf_export' && !authResult.internal) {
       return new Response(
         JSON.stringify({ error: 'Bad request: Please configure your Google Sheets ID in settings' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    if (action === 'archive_pdf_export' && !archiveRange) {
+    if (action === 'archive_pdf_export' && (!archiveSpreadsheetId || !archiveRange)) {
       return new Response(
         JSON.stringify({ error: 'Configure a separate archive PDF sheet in Google Sheets settings first' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -309,7 +310,9 @@ serve(async (req) => {
 
     // Internal functions can access explicitly configured registration sources.
     // Browser clients are still locked to their profile's single export sheet.
-    const spreadsheetId = authResult.internal && body.spreadsheetId ? body.spreadsheetId : configuredSpreadsheetId;
+    const spreadsheetId = action === 'archive_pdf_export'
+      ? archiveSpreadsheetId
+      : (authResult.internal && body.spreadsheetId ? body.spreadsheetId : configuredSpreadsheetId);
     const range = action === 'archive_pdf_export'
       ? archiveRange
       : (authResult.internal && body.range ? body.range : configuredRange);
