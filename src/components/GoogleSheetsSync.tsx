@@ -206,7 +206,10 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
       const sheet_range = name.trim() ? `'${name.trim()}'!${configuredRange.trim() || DEFAULT_SHEET_RANGE}` : (configuredRange.trim() || DEFAULT_SHEET_RANGE);
       const fields = { user_id: user.id, export_type: exportType, spreadsheet_id, sheet_range, period_mode: periodMode || 'day', period_from: periodFrom || null, period_to: periodTo || null };
       const previous = editingExportId ? exports.find(item => item.id === editingExportId) : undefined;
-      if (previous && (previous.sheet_range !== sheet_range || previous.spreadsheet_id !== spreadsheet_id)) {
+      const periodChanged = previous?.period_mode !== fields.period_mode
+        || (previous?.period_from || '') !== (fields.period_from || '')
+        || (previous?.period_to || '') !== (fields.period_to || '');
+      if (previous && (previous.sheet_range !== sheet_range || previous.spreadsheet_id !== spreadsheet_id || periodChanged)) {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) throw new Error('Пожалуйста, войдите в систему повторно');
         const cleanup = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sheets-export`, {
