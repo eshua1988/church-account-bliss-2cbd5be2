@@ -32,6 +32,9 @@ type SheetExport = {
   export_type: 'transactions' | 'pdf';
   spreadsheet_id: string;
   sheet_range: string;
+  period_mode?: 'day' | 'week' | 'month' | 'year';
+  period_from?: string | null;
+  period_to?: string | null;
 };
 
 const AUTO_SYNC_KEY = 'google_sheets_auto_sync';
@@ -51,6 +54,41 @@ const uniqueExpenseCategories = (categories: GoogleSheetsSyncProps['expenseCateg
       seen.add(key);
       return true;
     });
+};
+
+const periodBounds = (mode: SheetExport['period_mode'], from?: string | null, to?: string | null) => {
+  const weekStart = (value: string) => {
+    const match = value.match(/^(\d{4})-W(\d{2})$/);
+    if (!match) return '';
+    const jan4 = new Date(Date.UTC(+match[1], 0, 4));
+    const monday = new Date(jan4);
+    monday.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7) + (+match[2] - 1) * 7);
+    return monday.toISOString().slice(0, 10);
+  };
+  const valueToDate = (value: string, end: boolean) => {
+    if (mode === 'year') return `${value}-${end ? '12-31' : '01-01'}`;
+    if (mode === 'month') {
+      if (!end) return `${value}-01`;
+      const [year, month] = value.split('-').map(Number);
+      return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+    }
+    if (mode === 'week') {
+      const start = weekStart(value);
+      if (!end || !start) return start;
+      const finish = new Date(`${start}T00:00:00Z`);
+      finish.setUTCDate(finish.getUTCDate() + 6);
+      return finish.toISOString().slice(0, 10);
+    }
+    return value;
+  };
+  return { from: from ? valueToDate(from, false) : '', to: to ? valueToDate(to, true) : '' };
+};
+
+const isInExportPeriod = (date: Date | string, target?: SheetExport) => {
+  if (!target?.period_from && !target?.period_to) return true;
+  const value = (date instanceof Date ? date : new Date(date)).toISOString().slice(0, 10);
+  const { from, to } = periodBounds(target.period_mode || 'day', target.period_from, target.period_to);
+  return (!from || value >= from) && (!to || value <= to);
 };
 
 export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategoryName, onDeleteTransaction, expenseCategories = [] }: GoogleSheetsSyncProps) => {
@@ -85,6 +123,9 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
   const [exportType, setExportType] = useState<'transactions' | 'pdf'>('transactions');
   const [exports, setExports] = useState<SheetExport[]>([]);
   const [editingExportId, setEditingExportId] = useState<string | null>(null);
+  const [periodMode, setPeriodMode] = useState<SheetExport['period_mode']>('day');
+  const [periodFrom, setPeriodFrom] = useState('');
+  const [periodTo, setPeriodTo] = useState('');
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   
   const prevTransactionsRef = useRef<string>('');
@@ -110,7 +151,7 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
         
         const { data: savedExports, error: exportsError } = await supabase
           .from('google_sheet_exports' as any)
-          .select('id, export_type, spreadsheet_id, sheet_range')
+          .select('id, export_type, spreadsheet_id, sheet_range, period_mode, period_from, period_to')
           .eq('user_id', user.id)
           .order('created_at');
         if (!exportsError) setExports((savedExports || []) as SheetExport[]);
@@ -163,7 +204,7 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
       const spreadsheet_id = extractSpreadsheetId(inputId);
       if (!spreadsheet_id) throw new Error('Укажите таблицу для экспорта');
       const sheet_range = name.trim() ? `'${name.trim()}'!${configuredRange.trim() || DEFAULT_SHEET_RANGE}` : (configuredRange.trim() || DEFAULT_SHEET_RANGE);
-      const fields = { user_id: user.id, export_type: exportType, spreadsheet_id, sheet_range };
+      const fields = { user_id: user.id, export_type: exportType, spreadsheet_id, sheet_range, period_mode: periodMode || 'day', period_from: periodFrom || null, period_to: periodTo || null };
       const previous = editingExportId ? exports.find(item => item.id === editingExportId) : undefined;
       if (previous && (previous.sheet_range !== sheet_range || previous.spreadsheet_id !== spreadsheet_id)) {
         const { data: { session } } = await supabase.auth.getSession();
@@ -177,7 +218,7 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
       const request = editingExportId
         ? supabase.from('google_sheet_exports' as any).update(fields as any).eq('id', editingExportId).eq('user_id', user.id)
         : supabase.from('google_sheet_exports' as any).insert(fields as any);
-      const { data: savedExport, error } = await request.select('id, export_type, spreadsheet_id, sheet_range').single();
+      const { data: savedExport, error } = await request.select('id, export_type, spreadsheet_id, sheet_range, period_mode, period_from, period_to').single();
       
       if (error) throw error;
       
@@ -225,7 +266,8 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
 
     setSyncStatus('syncing');
     try {
-      const exportTransactions = getAllTransactions ? await getAllTransactions() : txs;
+      const exportTransactions = (getAllTransactions ? await getAllTransactions() : txs)
+        .filter(tx => isInExportPeriod(tx.date, target));
       // Compact format: Date | Income | [expense categories sorted by sortOrder]
       const sortedExpense = uniqueExpenseCategories(expenseCategories);
 
@@ -629,6 +671,9 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
   const openExportSettings = (type: 'transactions' | 'pdf', target?: SheetExport) => {
     setExportType(target?.export_type || type);
     setEditingExportId(target?.id || null);
+    setPeriodMode(target?.period_mode || 'day');
+    setPeriodFrom(target?.period_from || '');
+    setPeriodTo(target?.period_to || '');
     const [name = '', configuredRange = DEFAULT_SHEET_RANGE] = (target?.sheet_range || DEFAULT_SHEET_RANGE).match(/^'?([^'!]+)'?!(.+)$/)?.slice(1) || ['', target?.sheet_range || DEFAULT_SHEET_RANGE];
     if (target?.export_type === 'pdf') {
       setTempArchivedPdfSpreadsheetId(target.spreadsheet_id);
@@ -679,7 +724,10 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
 
       const pending = (notifications || []).filter((notification) => {
         const metadata = (notification.metadata || {}) as Record<string, unknown>;
-        return Boolean(metadata.archived_at);
+        const documentDate = typeof metadata.date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(metadata.date)
+          ? metadata.date.slice(0, 10)
+          : String(notification.created_at).slice(0, 10);
+        return Boolean(metadata.archived_at) && isInExportPeriod(documentDate, target);
       }).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
 
       const exportRows: string[][] = [];
@@ -778,6 +826,19 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
               
               <div className="space-y-4 py-4">
                 <div className="space-y-2"><Label>Тип экспорта</Label><Select value={exportType} onValueChange={(value) => setExportType(value as 'transactions' | 'pdf')}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="transactions">Экспорт транзакций</SelectItem><SelectItem value="pdf">Экспорт данных PDF</SelectItem></SelectContent></Select></div>
+                <div className="space-y-2">
+                  <Label>Период экспорта</Label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Select value={periodMode || 'day'} onValueChange={(value) => { setPeriodMode(value as SheetExport['period_mode']); setPeriodFrom(''); setPeriodTo(''); }}>
+                      <SelectTrigger className="w-[130px]"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="day">День</SelectItem><SelectItem value="week">Неделя</SelectItem><SelectItem value="month">Месяц</SelectItem><SelectItem value="year">Год</SelectItem></SelectContent>
+                    </Select>
+                    <Input className="w-[175px]" type={periodMode === 'year' ? 'number' : periodMode === 'month' ? 'month' : periodMode === 'week' ? 'week' : 'date'} placeholder="С какой даты" value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)} />
+                    <span className="text-sm text-muted-foreground">—</span>
+                    <Input className="w-[175px]" type={periodMode === 'year' ? 'number' : periodMode === 'month' ? 'month' : periodMode === 'week' ? 'week' : 'date'} placeholder="По какую дату" value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Оставьте одно или оба поля пустыми для экспорта только «с», только «до» или без ограничения.</p>
+                </div>
                 {exportType === 'transactions' && (<div className="border rounded-lg p-3 space-y-3">
                   <div className="flex items-center gap-2"><Table2 className="w-4 h-4 text-primary" /><p className="text-sm font-semibold">Экспорт транзакций</p></div>
                   <div className="space-y-2">
