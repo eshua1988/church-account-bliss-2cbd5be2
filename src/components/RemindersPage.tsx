@@ -1,5 +1,5 @@
 import { ChangeEvent, useEffect, useState } from 'react';
-import { Bell, FileText, Image as ImageIcon, Loader2, Paperclip, Plus, Trash2 } from 'lucide-react';
+import { Bell, CalendarDays, FileText, Loader2, Paperclip, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -9,16 +9,19 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 type Attachment = { path: string; name: string; type: string };
+type Repeat = 'once' | 'weekly' | 'monthly' | 'yearly';
 type Reminder = {
   id: string;
   title: string;
   message: string;
   created_at: string;
-  metadata: { full_name?: string; contact?: string; attachments?: Attachment[] } | null;
+  metadata: { full_name?: string; contact?: string; attachments?: Attachment[]; reminder_date?: string; repeat?: Repeat } | null;
 };
 
 const safeFileName = (name: string) => name.replace(/[^a-zA-Z0-9._-]/g, '_');
 const isImage = (attachment: Attachment) => attachment.type.startsWith('image/');
+const repeatLabel: Record<Repeat, string> = { once: 'Один раз', weekly: 'Раз в неделю', monthly: 'Раз в месяц', yearly: 'Раз в год' };
+const today = () => new Date().toISOString().slice(0, 10);
 
 export const RemindersPage = () => {
   const { user } = useAuth();
@@ -33,6 +36,11 @@ export const RemindersPage = () => {
   const [contact, setContact] = useState('');
   const [message, setMessage] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  const [editing, setEditing] = useState<Reminder | null>(null);
+  const [existingAttachments, setExistingAttachments] = useState<Attachment[]>([]);
+  const [removedAttachmentPaths, setRemovedAttachmentPaths] = useState<string[]>([]);
+  const [reminderDate, setReminderDate] = useState(today());
+  const [repeat, setRepeat] = useState<Repeat>('once');
 
   const load = async () => {
     if (!user) return;
@@ -55,6 +63,28 @@ export const RemindersPage = () => {
     setContact('');
     setMessage('');
     setFiles([]);
+    setExistingAttachments([]);
+    setRemovedAttachmentPaths([]);
+    setEditing(null);
+    setReminderDate(today());
+    setRepeat('once');
+  };
+
+  const openNewReminder = () => {
+    resetForm();
+    setOpen(true);
+  };
+
+  const openEditReminder = (reminder: Reminder) => {
+    setEditing(reminder);
+    setFullName(reminder.metadata?.full_name || reminder.title);
+    setContact(reminder.metadata?.contact || '');
+    setMessage(reminder.message);
+    setExistingAttachments(reminder.metadata?.attachments || []);
+    setFiles([]);
+    setReminderDate(reminder.metadata?.reminder_date || today());
+    setRepeat(reminder.metadata?.repeat || 'once');
+    setOpen(true);
   };
 
   const chooseFiles = (event: ChangeEvent<HTMLInputElement>) => {
@@ -69,10 +99,10 @@ export const RemindersPage = () => {
       toast({ title: 'Файл слишком большой', description: 'Размер одного файла — до 15 МБ.', variant: 'destructive' });
       return;
     }
-    setFiles(selected);
+    setFiles(previous => [...previous, ...selected]);
   };
 
-  const createReminder = async () => {
+  const saveReminder = async () => {
     if (!user) return;
     if (!fullName.trim() || !contact.trim() || !message.trim()) {
       toast({ title: 'Заполните все поля', description: 'Укажите имя, контакт и текст напоминания.', variant: 'destructive' });
@@ -82,7 +112,7 @@ export const RemindersPage = () => {
     setSaving(true);
     const uploadedPaths: string[] = [];
     try {
-      const attachments: Attachment[] = [];
+      const attachments: Attachment[] = [...existingAttachments];
       for (const file of files) {
         const id = typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
         const path = `${user.id}/reminders/${id}-${safeFileName(file.name)}`;
@@ -92,17 +122,21 @@ export const RemindersPage = () => {
         attachments.push({ path, name: file.name, type: file.type });
       }
 
-      const { error } = await supabase.from('notifications').insert({
+      const values = {
         user_id: user.id,
         title: fullName.trim(),
         message: message.trim(),
         type: 'reminder',
         is_read: false,
-        metadata: { full_name: fullName.trim(), contact: contact.trim(), attachments },
-      });
+        metadata: { full_name: fullName.trim(), contact: contact.trim(), attachments, reminder_date: reminderDate, repeat },
+      };
+      const { error } = editing
+        ? await supabase.from('notifications').update(values).eq('id', editing.id)
+        : await supabase.from('notifications').insert(values);
       if (error) throw error;
+      if (editing && removedAttachmentPaths.length > 0) await supabase.storage.from('documents').remove(removedAttachmentPaths);
 
-      toast({ title: 'Напоминание добавлено', description: 'Карточка с вложениями создана.' });
+      toast({ title: editing ? 'Напоминание изменено' : 'Напоминание добавлено', description: 'Карточка и вложения сохранены.' });
       setOpen(false);
       resetForm();
       await load();
@@ -112,6 +146,15 @@ export const RemindersPage = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const removeExistingAttachment = (attachment: Attachment) => {
+    setExistingAttachments(previous => previous.filter(item => item.path !== attachment.path));
+    setRemovedAttachmentPaths(previous => [...previous, attachment.path]);
+  };
+
+  const removeNewFile = (file: File) => {
+    setFiles(previous => previous.filter(item => item !== file));
   };
 
   const openPreview = async (reminder: Reminder) => {
@@ -139,8 +182,8 @@ export const RemindersPage = () => {
 
   return <section className="animate-fade-in mx-auto max-w-4xl space-y-5">
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><h1 className="text-2xl font-bold">Напоминания</h1><p className="text-muted-foreground">Храните контакт, текст и нужные изображения или PDF в одной карточке.</p></div>
-      <Button className="gap-2" onClick={() => setOpen(true)}><Plus className="h-4 w-4" />Добавить напоминание</Button>
+      <div><h1 className="text-2xl font-bold">Напоминания</h1><p className="text-muted-foreground">Выберите дату, повторение и сохраните контакт с файлами в одной карточке.</p></div>
+      <Button className="gap-2" onClick={openNewReminder}><Plus className="h-4 w-4" />Добавить напоминание</Button>
     </div>
 
     {loading ? <div className="flex justify-center py-12"><Loader2 className="h-7 w-7 animate-spin text-muted-foreground" /></div> : reminders.length === 0 ? <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">Напоминаний пока нет.</div> : <div className="grid gap-4 sm:grid-cols-2">{reminders.map(reminder => {
@@ -148,15 +191,16 @@ export const RemindersPage = () => {
       return <article key={reminder.id} className="rounded-xl border bg-card p-4 shadow-sm">
         <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="font-semibold">{reminder.metadata?.full_name || reminder.title}</h2><p className="text-sm text-muted-foreground break-words">{reminder.metadata?.contact || 'Контакт не указан'}</p></div><Bell className="h-5 w-5 shrink-0 text-primary" /></div>
         <p className="mt-3 whitespace-pre-wrap text-sm">{reminder.message}</p>
-        <p className="mt-3 text-xs text-muted-foreground">Вложений: {attachments.length} · {new Date(reminder.created_at).toLocaleDateString('ru-RU')}</p>
-        <div className="mt-4 flex gap-2"><Button variant="outline" className="flex-1 gap-2" onClick={() => void openPreview(reminder)}><Paperclip className="h-4 w-4" />Просмотреть</Button><Button variant="ghost" size="icon" className="text-destructive" onClick={() => void deleteReminder(reminder)} aria-label="Удалить напоминание"><Trash2 className="h-4 w-4" /></Button></div>
+        <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground"><CalendarDays className="h-3.5 w-3.5" />{reminder.metadata?.reminder_date ? new Date(`${reminder.metadata.reminder_date}T12:00:00`).toLocaleDateString('ru-RU') : 'Дата не указана'} · {repeatLabel[reminder.metadata?.repeat || 'once']}</p>
+        <p className="mt-1 text-xs text-muted-foreground">Вложений: {attachments.length} · создано {new Date(reminder.created_at).toLocaleDateString('ru-RU')}</p>
+        <div className="mt-4 flex gap-2"><Button variant="outline" className="flex-1 gap-2" onClick={() => void openPreview(reminder)}><Paperclip className="h-4 w-4" />Просмотреть</Button><Button variant="ghost" size="icon" onClick={() => openEditReminder(reminder)} aria-label="Редактировать напоминание"><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive" onClick={() => void deleteReminder(reminder)} aria-label="Удалить напоминание"><Trash2 className="h-4 w-4" /></Button></div>
       </article>;
     })}</div>}
 
     <Dialog open={open} onOpenChange={(value) => { setOpen(value); if (!value) resetForm(); }}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>Новое напоминание</DialogTitle><DialogDescription>Заполните контактные данные и при необходимости приложите фото или PDF.</DialogDescription></DialogHeader>
-        <div className="space-y-4"><div className="space-y-2"><label htmlFor="reminder-name" className="text-sm font-medium">Имя и фамилия</label><Input id="reminder-name" value={fullName} onChange={event => setFullName(event.target.value)} /></div><div className="space-y-2"><label htmlFor="reminder-contact" className="text-sm font-medium">Телефон или конто</label><Input id="reminder-contact" value={contact} onChange={event => setContact(event.target.value)} /></div><div className="space-y-2"><label htmlFor="reminder-text" className="text-sm font-medium">Текст напоминания</label><Textarea id="reminder-text" value={message} onChange={event => setMessage(event.target.value)} rows={5} /></div><div className="space-y-2"><label htmlFor="reminder-files" className="text-sm font-medium">Фото и PDF</label><Input id="reminder-files" type="file" accept="image/*,application/pdf" multiple onChange={chooseFiles} />{files.length > 0 && <ul className="space-y-1 text-sm text-muted-foreground">{files.map(file => <li key={`${file.name}-${file.lastModified}`}>{file.name}</li>)}</ul>}</div></div>
-        <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Отмена</Button><Button onClick={() => void createReminder()} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Создать</Button></DialogFooter>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>{editing ? 'Редактировать напоминание' : 'Новое напоминание'}</DialogTitle><DialogDescription>Выберите дату и периодичность, а также добавьте или удалите фото и PDF.</DialogDescription></DialogHeader>
+        <div className="space-y-4"><div className="space-y-2"><label htmlFor="reminder-name" className="text-sm font-medium">Имя и фамилия</label><Input id="reminder-name" value={fullName} onChange={event => setFullName(event.target.value)} /></div><div className="space-y-2"><label htmlFor="reminder-contact" className="text-sm font-medium">Телефон или конто</label><Input id="reminder-contact" value={contact} onChange={event => setContact(event.target.value)} /></div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><label htmlFor="reminder-date" className="text-sm font-medium">Когда напомнить</label><Input id="reminder-date" type="date" value={reminderDate} onChange={event => setReminderDate(event.target.value)} /></div><div className="space-y-2"><label htmlFor="reminder-repeat" className="text-sm font-medium">Как часто</label><select id="reminder-repeat" value={repeat} onChange={event => setRepeat(event.target.value as Repeat)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="once">Один раз</option><option value="weekly">Раз в неделю</option><option value="monthly">Раз в месяц</option><option value="yearly">Раз в год</option></select></div></div><div className="space-y-2"><label htmlFor="reminder-text" className="text-sm font-medium">Текст напоминания</label><Textarea id="reminder-text" value={message} onChange={event => setMessage(event.target.value)} rows={5} /></div><div className="space-y-2"><label htmlFor="reminder-files" className="text-sm font-medium">Добавить фото и PDF</label><Input id="reminder-files" type="file" accept="image/*,application/pdf" multiple onChange={chooseFiles} />{existingAttachments.length > 0 && <ul className="space-y-1 text-sm text-muted-foreground">{existingAttachments.map(item => <li className="flex items-center justify-between gap-2" key={item.path}><span className="truncate">{item.name}</span><Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeExistingAttachment(item)} aria-label={`Удалить ${item.name}`}><X className="h-4 w-4" /></Button></li>)}</ul>}{files.length > 0 && <ul className="space-y-1 text-sm text-muted-foreground">{files.map(file => <li className="flex items-center justify-between gap-2" key={`${file.name}-${file.lastModified}`}><span className="truncate">{file.name}</span><Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeNewFile(file)} aria-label={`Удалить ${file.name}`}><X className="h-4 w-4" /></Button></li>)}</ul>}</div></div>
+        <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Отмена</Button><Button onClick={() => void saveReminder()} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editing ? 'Сохранить' : 'Создать'}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
 
