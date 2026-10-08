@@ -24,6 +24,7 @@ interface GoogleSheetsSyncProps {
   getCategoryName: (id: string) => string;
   onDeleteTransaction?: (id: string) => Promise<void>;
   expenseCategories?: { id: string; name: string; type: string; sortOrder?: number }[];
+  getAllTransactions?: () => Promise<Transaction[]>;
 }
 
 type SheetExport = {
@@ -52,7 +53,7 @@ const uniqueExpenseCategories = (categories: GoogleSheetsSyncProps['expenseCateg
     });
 };
 
-export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransaction, expenseCategories = [] }: GoogleSheetsSyncProps) => {
+export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategoryName, onDeleteTransaction, expenseCategories = [] }: GoogleSheetsSyncProps) => {
   const { toast } = useToast();
   const { user } = useAuth();
   const [isExporting, setIsExporting] = useState(false);
@@ -224,6 +225,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
 
     setSyncStatus('syncing');
     try {
+      const exportTransactions = getAllTransactions ? await getAllTransactions() : txs;
       // Compact format: Date | Income | [expense categories sorted by sortOrder]
       const sortedExpense = uniqueExpenseCategories(expenseCategories);
 
@@ -232,7 +234,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
 
       // Group by date, sort dates descending
       const dateMap = new Map<string, Transaction[]>();
-      for (const tx of txs) {
+      for (const tx of exportTransactions) {
         const dateKey = new Date(tx.date).toLocaleDateString('pl-PL');
         if (!dateMap.has(dateKey)) dateMap.set(dateKey, []);
         dateMap.get(dateKey)!.push(tx);
@@ -321,7 +323,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
       });
       return false;
     }
-  }, [getCategoryName, toast, spreadsheetId, sheetRange]);
+  }, [getAllTransactions, getCategoryName, toast, spreadsheetId, sheetRange]);
 
   // Auto-sync when transactions change
   useEffect(() => {
@@ -527,7 +529,7 @@ export const GoogleSheetsSync = ({ transactions, getCategoryName, onDeleteTransa
     if (exportSuccess) {
       toast({
         title: 'Синхронизация завершена',
-        description: `Синхронизировано ${transactions.length} транзакций`,
+        description: 'Синхронизированы все имеющиеся транзакции',
       });
     }
   };

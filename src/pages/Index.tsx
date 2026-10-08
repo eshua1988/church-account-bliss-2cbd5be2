@@ -66,6 +66,7 @@ const Index = () => {
     totalCount: transactionCount,
     hasMore: hasMoreTransactions,
     loadMore: loadMoreTransactions,
+    getAllTransactions,
     availableCurrencies,
     addTransaction,
     deleteTransaction,
@@ -527,6 +528,7 @@ const Index = () => {
                   <div className="px-4 pb-4 sm:px-6 sm:pb-6">
                     <GoogleSheetsSync 
                       transactions={transactions} 
+                      getAllTransactions={getAllTransactions}
                       getCategoryName={getCategoryName} 
                       onDeleteTransaction={deleteTransaction}
                       expenseCategories={expenseCategories}

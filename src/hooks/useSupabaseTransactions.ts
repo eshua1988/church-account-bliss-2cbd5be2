@@ -145,6 +145,25 @@ export const useSupabaseTransactions = () => {
     [fetchTransactions, transactions.length],
   );
 
+  // Exports must not be limited by the paged list shown in the interface.
+  const getAllTransactions = useCallback(async (): Promise<Transaction[]> => {
+    if (!user) return [];
+    const all: Transaction[] = [];
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+      const page = (data as DbTransaction[]).map(mapDbToTransaction);
+      all.push(...page);
+      if (page.length < PAGE_SIZE) return all;
+    }
+  }, [user]);
+
   // Subscribe to realtime changes + polling fallback
   useEffect(() => {
     if (!user) return;
@@ -352,6 +371,7 @@ export const useSupabaseTransactions = () => {
     totalCount,
     hasMore: transactions.length < totalCount,
     loadMore,
+    getAllTransactions,
     availableCurrencies: currencyTotals.map(total => total.currency),
     addTransaction,
     deleteTransaction,
