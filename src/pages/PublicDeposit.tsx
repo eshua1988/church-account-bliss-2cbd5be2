@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { CheckCircle2, Eraser, Loader2, Plus, ReceiptText, Trash2, UserRoundPlus } from 'lucide-react';
+import { CheckCircle2, Eraser, Glasses, Loader2, Plus, ReceiptText, Trash2, UserRoundPlus } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -37,6 +37,12 @@ interface DepositEntry {
 }
 
 const OTHER_BASIS = '__other__';
+const HIDDEN_PUBLIC_DEPOSIT_BASES = new Set([
+  'прочее (доход)',
+  'целевые пожертвования',
+  'пожертвование онлайн',
+]);
+const GENERAL_MEETING_DONATION = 'пожертвование на общем собрании';
 const SIGNER_HISTORY_STORAGE_KEY = 'church-account:deposit-signer-history:v1';
 const formatPersonName = (value: string) => {
   const hasTrailingSpace = /\s$/.test(value);
@@ -77,6 +83,9 @@ const PublicDeposit = () => {
   const [error, setError] = useState('');
   const [invalidFields, setInvalidFields] = useState<Set<string>>(new Set());
   const [signerHistory, setSignerHistory] = useState<string[]>([]);
+  const [largeText, setLargeText] = useState(false);
+  const visibleIncomeCategories = incomeCategories.filter(category => !HIDDEN_PUBLIC_DEPOSIT_BASES.has(category.name.trim().toLocaleLowerCase()));
+  const defaultBasisChoice = visibleIncomeCategories.find(category => category.name.trim().toLocaleLowerCase() === GENERAL_MEETING_DONATION)?.id || '';
 
   useEffect(() => {
     try {
@@ -112,11 +121,14 @@ const PublicDeposit = () => {
         const isDeposit = data?.valid && data?.linkType === 'deposit';
         setValid(Boolean(isDeposit));
         setOrganizationName(data?.organizationName || organizationName);
-        setIncomeCategories(
-          Array.isArray(data?.categories)
-            ? data.categories.filter((category: IncomeCategory) => category?.type === 'income' && category?.name)
-            : [],
-        );
+        const categories = Array.isArray(data?.categories)
+          ? data.categories.filter((category: IncomeCategory) => category?.type === 'income' && category?.name && !HIDDEN_PUBLIC_DEPOSIT_BASES.has(category.name.trim().toLocaleLowerCase()))
+          : [];
+        setIncomeCategories(categories);
+        const defaultCategory = categories.find((category: IncomeCategory) => category.name.trim().toLocaleLowerCase() === GENERAL_MEETING_DONATION);
+        if (defaultCategory) {
+          setEntries(current => current.map(entry => entry.basisChoice ? entry : { ...entry, basisChoice: defaultCategory.id }));
+        }
         if (!isDeposit) setError('Ссылка недействительна или отключена');
       })
       .catch(() => setError('Не удалось проверить ссылку'))
@@ -210,7 +222,7 @@ const PublicDeposit = () => {
   const fillAnother = () => {
     canvasRefs.current = {};
     signedSignerIds.current.clear();
-    setEntries([createEntry()]);
+    setEntries([{ ...createEntry(), basisChoice: defaultBasisChoice }]);
     setError('');
     setInvalidFields(new Set());
     setSuccess(false);
@@ -376,10 +388,24 @@ const PublicDeposit = () => {
       <datalist id="deposit-signer-history">
         {signerHistory.map(name => <option key={name} value={name} />)}
       </datalist>
-      <Card className="mx-auto w-full max-w-2xl overflow-hidden">
-        <CardHeader className="px-3 py-5 sm:px-6 sm:py-6">
-          <CardTitle className="flex items-center gap-2"><ReceiptText className="h-6 w-6" />Dowód wpłaty</CardTitle>
+      <Card className={`mx-auto w-full max-w-2xl overflow-hidden ${largeText ? 'deposit-large-text' : ''}`}>
+        <CardHeader className="flex-row items-start justify-between gap-3 px-3 py-5 sm:px-6 sm:py-6">
+          <div>
+            <CardTitle className="flex items-center gap-2"><ReceiptText className="h-6 w-6" />Dowód wpłaty</CardTitle>
           <p className="text-sm text-muted-foreground">{organizationName}</p>
+          </div>
+          <Button
+            type="button"
+            variant={largeText ? 'default' : 'outline'}
+            size="icon"
+            className="h-12 w-12 shrink-0"
+            aria-label={largeText ? 'Вернуть обычный размер текста' : 'Увеличить текст и цифры'}
+            aria-pressed={largeText}
+            title={largeText ? 'Обычный текст' : 'Увеличить текст и цифры'}
+            onClick={() => setLargeText(current => !current)}
+          >
+            <Glasses className="h-7 w-7" aria-hidden="true" />
+          </Button>
         </CardHeader>
         <CardContent className="px-2 pb-4 sm:px-6 sm:pb-6">
           <form className="min-w-0 space-y-4 sm:space-y-6" onSubmit={submit} noValidate>
@@ -487,7 +513,7 @@ const PublicDeposit = () => {
                     })}
                     className="gap-0 overflow-hidden rounded-md border"
                   >
-                    {incomeCategories.map(category => (
+                    {visibleIncomeCategories.map(category => (
                       <Label key={category.id} htmlFor={`basis-${entry.id}-${category.id}`} className="flex cursor-pointer items-center gap-3 border-b px-4 py-3 font-normal hover:bg-muted/50">
                         <RadioGroupItem id={`basis-${entry.id}-${category.id}`} value={category.id} />
                         <span>{category.name}</span>

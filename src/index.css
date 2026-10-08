@@ -118,6 +118,11 @@
 }
 
 @layer utilities {
+  /* Public deposit form: enlarge only readable content, never the layout or icons. */
+  .deposit-large-text :is(h1, h2, h3, p, label, button, input, textarea, [role="radio"], [role="combobox"]) {
+    font-size: 1.25em;
+  }
+
   .gradient-primary {
     background: var(--gradient-primary);
   }
