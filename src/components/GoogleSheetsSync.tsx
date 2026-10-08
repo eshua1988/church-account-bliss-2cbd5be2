@@ -374,19 +374,10 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
       if (!spreadsheet_id) throw new Error('Укажите таблицу для экспорта');
       const sheet_range = name.trim() ? `'${name.trim()}'!${configuredRange.trim() || DEFAULT_SHEET_RANGE}` : (configuredRange.trim() || DEFAULT_SHEET_RANGE);
       const fields = { user_id: user.id, export_type: exportType, spreadsheet_id, sheet_range, period_mode: periodMode || 'day', period_from: periodFrom || null, period_to: periodTo || null };
-      const previous = editingExportId ? exports.find(item => item.id === editingExportId) : undefined;
-      const periodChanged = previous?.period_mode !== fields.period_mode
-        || (previous?.period_from || '') !== (fields.period_from || '')
-        || (previous?.period_to || '') !== (fields.period_to || '');
-      if (previous && (previous.sheet_range !== sheet_range || previous.spreadsheet_id !== spreadsheet_id || periodChanged)) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) throw new Error('Пожалуйста, войдите в систему повторно');
-        const cleanup = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sheets-export`, {
-          method: 'POST', headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({ accessToken: session.access_token, action: 'clear_notes', exportId: previous.id, exportType: previous.export_type }),
-        });
-        if (!cleanup.ok) throw new Error('Не удалось удалить старые примечания в прежнем диапазоне');
-      }
+      // Saving an export only changes its configuration.  In particular, do
+      // not call Sheets from here: changing the tab, range, or period must
+      // never erase the previously exported data.  The selected range is
+      // replaced only after the user explicitly starts a synchronisation.
       const request = editingExportId
         ? supabase.from('google_sheet_exports' as any).update(fields as any).eq('id', editingExportId).eq('user_id', user.id)
         : supabase.from('google_sheet_exports' as any).insert(fields as any);

@@ -4,6 +4,37 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 
+type GoogleSheet = { properties?: { title?: string; sheetId?: number; gridProperties?: { rowCount?: number; columnCount?: number } } };
+
+const configuredSheet = (metadata: { sheets?: GoogleSheet[] }, range: string) => {
+  const requestedName = (range.match(/^'?([^'!]+)'?!/) || [])[1];
+  // A range without a tab name deliberately targets the first tab, matching
+  // Google Sheets' A1 notation.  A named tab must exist: silently falling
+  // back to another tab can overwrite unrelated data.
+  return requestedName
+    ? (metadata.sheets || []).find((item) => item.properties?.title === requestedName)
+    : metadata.sheets?.[0];
+};
+
+const columnIndex = (column: string) => [...column.toUpperCase()].reduce((value, letter) => value * 26 + letter.charCodeAt(0) - 64, 0) - 1;
+
+const rangeBounds = (sheetId: number, range: string, sheet: GoogleSheet) => {
+  const a1 = range.includes("!") ? range.slice(range.indexOf("!") + 1) : range;
+  const match = a1.match(/^([A-Z]+)(\d+)?(?::([A-Z]+)?(\d+)?)?$/i);
+  const maxRows = Math.max(Number(sheet.properties?.gridProperties?.rowCount || 0), 1000);
+  const maxColumns = Math.max(Number(sheet.properties?.gridProperties?.columnCount || 0), 1);
+  if (!match) return { sheetId, startRowIndex: 0, endRowIndex: maxRows, startColumnIndex: 0, endColumnIndex: maxColumns };
+  const startColumnIndex = columnIndex(match[1]);
+  const endColumnIndex = match[3] ? columnIndex(match[3]) + 1 : startColumnIndex + 1;
+  return {
+    sheetId,
+    startRowIndex: match[2] ? Number(match[2]) - 1 : 0,
+    endRowIndex: match[4] ? Number(match[4]) : maxRows,
+    startColumnIndex,
+    endColumnIndex,
+  };
+};
+
 async function googleToken() {
   const credentials = JSON.parse(Deno.env.get("GOOGLE_SHEETS_CREDENTIALS") || "{}");
   if (!credentials.client_email || !credentials.private_key) throw new Error("Google Sheets credentials are not configured");
@@ -29,9 +60,8 @@ serve(async (req) => {
     const supabase = createClient(Deno.env.get("SUPABASE_URL") || "", Deno.env.get("SUPABASE_ANON_KEY") || "", { global: { headers: { Authorization: `Bearer ${token}` } } });
     const { data: auth, error: authError } = await supabase.auth.getUser(token);
     if (authError || !auth.user) return json({ error: "Unauthorized" }, 401);
-    const clearNotesOnly = body.action === "clear_notes";
     const archive = body.action === "archive_pdf_export";
-    const expectedExportType = clearNotesOnly ? String(body.exportType || "transactions") : (archive ? "pdf" : "transactions");
+    const expectedExportType = archive ? "pdf" : "transactions";
     const requestedExportId = String(body.exportId || "");
     let spreadsheetId = "";
     let savedRange = "";
@@ -54,55 +84,32 @@ serve(async (req) => {
     }
     // Both export types honour the exact range configured for that export.
     const range = savedRange;
-    // Clear from column A so a previous export starting in another column does
-    // not leave a second date/header column beside the new table.
-    const clearRange = range.replace(/(^|!)[A-Z]+(?=:)/i, "$1A");
     if (!spreadsheetId || !range) return json({ error: "Configure the export sheet first" }, 400);
     const accessToken = await googleToken();
     const base = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`;
     const headers = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
-    if (clearNotesOnly) {
-      const metadataResponse = await fetch(`${base}?fields=sheets.properties`, { headers });
-      if (!metadataResponse.ok) return json({ error: "Google Sheets metadata failed" }, 500);
-      const metadata = await metadataResponse.json();
-      const requestedSheetName = (savedRange.match(/^'?([^'!]+)'?!/) || [])[1];
-      const sheet = (metadata.sheets || []).find((item: { properties?: { title?: string } }) => item.properties?.title === requestedSheetName) || metadata.sheets?.[0];
-      if (typeof sheet?.properties?.sheetId !== "number") return json({ error: "Google Sheet was not found" }, 500);
-      const columnCount = Math.max(Number(sheet.properties.gridProperties?.columnCount || 0), 1);
-      const response = await fetch(`${base}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests: [{ repeatCell: {
-        range: { sheetId: sheet.properties.sheetId, startRowIndex: 0, endRowIndex: 1000, startColumnIndex: 0, endColumnIndex: columnCount },
-        cell: { note: "" }, fields: "note",
-      } }] }) });
-      if (!response.ok) return json({ error: "Google Sheets note cleanup failed" }, 500);
-      // When the range or sheet tab changes, the old values must leave with
-      // the old notes. Otherwise the date column remains beside the new table.
-      const clearValues = await fetch(`${base}/values/${encodeURIComponent(clearRange)}:clear`, { method: "POST", headers, body: "{}" });
-      if (!clearValues.ok) return json({ error: "Google Sheets old range cleanup failed" }, 500);
-      return json({ success: true });
-    }
     if (body.action === "write") {
       const metadataResponse = await fetch(`${base}?fields=sheets.properties`, { headers });
       if (!metadataResponse.ok) return json({ error: "Google Sheets metadata failed" }, 500);
       const metadata = await metadataResponse.json();
-      const requestedSheetName = (range.match(/^'?([^'!]+)'?!/) || [])[1];
-      const sheet = (metadata.sheets || []).find((item: { properties?: { title?: string } }) => item.properties?.title === requestedSheetName) || metadata.sheets?.[0];
+      const sheet = configuredSheet(metadata, range);
       if (typeof sheet?.properties?.sheetId !== "number") return json({ error: "Google Sheet was not found" }, 500);
 
       // Old exported notes must not survive a new full export, even if rows or
       // categories have moved. Clear notes across the export sheet first.
-      const columnCount = Math.max(Number(sheet.properties.gridProperties?.columnCount || 0), 1);
       const clearNotesResponse = await fetch(`${base}:batchUpdate`, {
         method: "POST",
         headers,
         body: JSON.stringify({ requests: [{ repeatCell: {
-          range: { sheetId: sheet.properties.sheetId, startRowIndex: 0, endRowIndex: 1000, startColumnIndex: 0, endColumnIndex: columnCount },
+          range: rangeBounds(sheet.properties.sheetId, range, sheet),
           cell: { note: "" },
           fields: "note",
         } }] }),
       });
       if (!clearNotesResponse.ok) return json({ error: "Google Sheets note cleanup failed" }, 500);
 
-      await fetch(`${base}/values/${encodeURIComponent(clearRange)}:clear`, { method: "POST", headers, body: "{}" });
+      const clearResponse = await fetch(`${base}/values/${encodeURIComponent(range)}:clear`, { method: "POST", headers, body: "{}" });
+      if (!clearResponse.ok) return json({ error: "Google Sheets range cleanup failed" }, 500);
       const response = await fetch(`${base}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values: body.values || [] }) });
       if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets write failed" }, 500);
       return json({ success: true });
@@ -153,16 +160,15 @@ serve(async (req) => {
       const archiveMetaResponse = await fetch(`${base}?fields=sheets.properties`, { headers });
       if (!archiveMetaResponse.ok) return json({ error: "Could not resolve the archive sheet for note cleanup" }, 500);
       const archiveMeta = await archiveMetaResponse.json();
-      const archiveSheetName = (range.match(/^'?([^'!]+)'?!/) || [])[1];
-      const archiveSheet = (archiveMeta.sheets || []).find((item: { properties?: { title?: string } }) => item.properties?.title === archiveSheetName) || archiveMeta.sheets?.[0];
+      const archiveSheet = configuredSheet(archiveMeta, range);
       if (typeof archiveSheet?.properties?.sheetId !== "number") return json({ error: "Archive sheet was not found for note cleanup" }, 500);
-      const archiveColumnCount = Math.max(Number(archiveSheet.properties.gridProperties?.columnCount || 0), 1);
       const clearArchiveNotes = await fetch(`${base}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests: [{ repeatCell: {
-        range: { sheetId: archiveSheet.properties.sheetId, startRowIndex: 0, endRowIndex: 1000, startColumnIndex: 0, endColumnIndex: archiveColumnCount },
+        range: rangeBounds(archiveSheet.properties.sheetId, range, archiveSheet),
         cell: { note: "" }, fields: "note",
       } }] }) });
       if (!clearArchiveNotes.ok) return json({ error: "Google Sheets archive note cleanup failed" }, 500);
-      await fetch(`${base}/values/${encodeURIComponent(clearRange)}:clear`, { method: "POST", headers, body: "{}" });
+      const clearResponse = await fetch(`${base}/values/${encodeURIComponent(range)}:clear`, { method: "POST", headers, body: "{}" });
+      if (!clearResponse.ok) return json({ error: "Google Sheets range cleanup failed" }, 500);
       const response = await fetch(`${base}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values: table }) });
       if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets export failed" }, 500);
 
@@ -177,8 +183,7 @@ serve(async (req) => {
         const metaResponse = await fetch(`${base}?fields=sheets.properties`, { headers });
         if (!metaResponse.ok) return json({ error: "Could not resolve the archive sheet for notes" }, 500);
         const meta = await metaResponse.json();
-        const requestedSheetName = (range.match(/^'?([^'!]+)'?!/) || [])[1];
-        const sheet = (meta.sheets || []).find((item: { properties?: { title?: string } }) => item.properties?.title === requestedSheetName) || meta.sheets?.[0];
+        const sheet = configuredSheet(meta, range);
         if (typeof sheet?.properties?.sheetId !== "number") return json({ error: "Archive sheet was not found for notes" }, 500);
 
         const rangeStart = range.match(/!([A-Z]+)(\d+)?/i);
