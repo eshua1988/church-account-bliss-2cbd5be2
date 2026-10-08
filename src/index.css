@@ -118,9 +118,16 @@
 }
 
 @layer utilities {
-  /* Public deposit form: enlarge only readable content, never the layout or icons. */
-  .deposit-large-text :is(h1, h2, h3, p, label, button, input, textarea, [role="radio"], [role="combobox"]) {
-    font-size: 1.25em;
+  /* Public deposit form: enlarge readable content, entered values and Radix
+     menus without zooming cards, signature areas or icons. */
+  .deposit-large-text-mode .deposit-large-text :is(h1, h2, h3, p, label, button, input, textarea, [role="radio"], [role="combobox"]),
+  .deposit-large-text-mode [data-radix-popper-content-wrapper] :is(button, [role="option"], [role="menuitem"], [role="listbox"]) {
+    font-size: 1.4em;
+  }
+
+  .deposit-large-text-mode .deposit-large-text input,
+  .deposit-large-text-mode .deposit-large-text textarea {
+    line-height: 1.45;
   }
 
   .gradient-primary {

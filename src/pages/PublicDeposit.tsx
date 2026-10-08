@@ -97,6 +97,13 @@ const PublicDeposit = () => {
   }, []);
 
   useEffect(() => {
+    // Select popovers are rendered in a portal outside the form card, so the
+    // mode is placed on body while this public form is open.
+    document.body.classList.toggle('deposit-large-text-mode', largeText);
+    return () => document.body.classList.remove('deposit-large-text-mode');
+  }, [largeText]);
+
+  useEffect(() => {
     const depositPath = `/deposit/${token}`;
     localStorage.setItem('pwa:last-public-deposit', depositPath);
     document.cookie = `pwa_last_public_deposit=${encodeURIComponent(depositPath)}; Path=${import.meta.env.BASE_URL}; Max-Age=31536000; SameSite=Lax; Secure`;
