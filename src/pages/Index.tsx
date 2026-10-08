@@ -33,10 +33,11 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useNotifications } from '@/hooks/useNotifications';
 import { CloudStorageSettings } from '@/components/CloudStorageSettings';
 import { syncNotificationArchivesToCloud } from '@/lib/cloudArchiveSync';
+import { LinksPage } from '@/components/LinksPage';
 
 const Index = () => {
   const { t, getDateLocale } = useTranslation();
-  const [activeTab, setActiveTab] = useState<'statistics' | 'payout' | 'settings' | 'notifications'>('statistics');
+  const [activeTab, setActiveTab] = useState<'statistics' | 'payout' | 'settings' | 'notifications' | 'links' | 'reminders'>('statistics');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openSettings, setOpenSettings] = useState<Record<string, boolean>>({});
@@ -674,6 +675,14 @@ const Index = () => {
           {/* Notifications Tab */}
           {activeTab === 'notifications' && (
             <NotificationsPage />
+          )}
+
+          {activeTab === 'links' && <LinksPage />}
+
+          {activeTab === 'reminders' && (
+            <div className="animate-fade-in rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+              Раздел напоминаний готовится к подключению безопасного фонового push-расписания.
+            </div>
           )}
 
         </main>

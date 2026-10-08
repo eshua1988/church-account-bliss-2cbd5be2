@@ -1,4 +1,4 @@
-import { BarChart3, Settings, FileText, Wallet, LogOut, Key, Mail, ExternalLink, Building2 } from 'lucide-react';
+import { BarChart3, Settings, FileText, Wallet, LogOut, Key, Mail, ExternalLink, Building2, Bell } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
@@ -34,7 +34,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useNotifications } from '@/hooks/useNotifications';
 
-type TabType = 'balance' | 'statistics' | 'payout' | 'settings' | 'notifications' | 'banking';
+type TabType = 'balance' | 'statistics' | 'payout' | 'settings' | 'notifications' | 'banking' | 'links' | 'reminders';
 
 interface AppSidebarProps {
   activeTab: TabType;
@@ -68,7 +68,8 @@ export const AppSidebar = ({
     { id: 'statistics' as const, icon: BarChart3, label: t('statistics') },
     { id: 'settings' as const, icon: Settings, label: t('settings') },
     { id: 'notifications' as const, icon: Mail, label: 'Уведомления' },
-    { id: 'openSheet' as const, icon: ExternalLink, label: 'Google Таблица', isOpenSheet: true },
+    { id: 'links' as const, icon: ExternalLink, label: 'Ссылки' },
+    { id: 'reminders' as const, icon: Bell, label: 'Напоминания' },
   ];
 
   const handleTabChange = (tab: TabType) => {
