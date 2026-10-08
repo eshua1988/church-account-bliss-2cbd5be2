@@ -143,6 +143,20 @@ serve(async (req) => {
       });
       const archiveRows = [...rowsByDate.values()].flat();
       const table = [headersRow, ...archiveRows.map(row => row.cells)];
+      // PDF exports replace the complete archive table. Remove notes from the
+      // previous period before writing, otherwise notes on cleared rows remain.
+      const archiveMetaResponse = await fetch(`${base}?fields=sheets.properties`, { headers });
+      if (!archiveMetaResponse.ok) return json({ error: "Could not resolve the archive sheet for note cleanup" }, 500);
+      const archiveMeta = await archiveMetaResponse.json();
+      const archiveSheetName = (range.match(/^'?([^'!]+)'?!/) || [])[1];
+      const archiveSheet = (archiveMeta.sheets || []).find((item: { properties?: { title?: string } }) => item.properties?.title === archiveSheetName) || archiveMeta.sheets?.[0];
+      if (typeof archiveSheet?.properties?.sheetId !== "number") return json({ error: "Archive sheet was not found for note cleanup" }, 500);
+      const archiveColumnCount = Math.max(Number(archiveSheet.properties.gridProperties?.columnCount || 0), 1);
+      const clearArchiveNotes = await fetch(`${base}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests: [{ repeatCell: {
+        range: { sheetId: archiveSheet.properties.sheetId, startRowIndex: 0, endRowIndex: 1000, startColumnIndex: 0, endColumnIndex: archiveColumnCount },
+        cell: { note: "" }, fields: "note",
+      } }] }) });
+      if (!clearArchiveNotes.ok) return json({ error: "Google Sheets archive note cleanup failed" }, 500);
       await fetch(`${base}/values/${encodeURIComponent(range)}:clear`, { method: "POST", headers, body: "{}" });
       const response = await fetch(`${base}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values: table }) });
       if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets export failed" }, 500);
