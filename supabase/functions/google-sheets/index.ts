@@ -6,6 +6,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Max-Age': '86400',
+  // Prevent an intermediary from reusing a preflight response for a different
+  // browser origin after the function is deployed.
+  'Vary': 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers',
 };
 
 // Validate spreadsheet ID format (alphanumeric, hyphens, underscores)
