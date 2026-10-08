@@ -3,7 +3,6 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
-const transactionRangeStartingAtA = (range: string) => range.replace(/(^|!)[A-Z]+(?=:)/i, "$1A");
 
 async function googleToken() {
   const credentials = JSON.parse(Deno.env.get("GOOGLE_SHEETS_CREDENTIALS") || "{}");
@@ -53,9 +52,11 @@ serve(async (req) => {
       spreadsheetId = String(archive ? profile.archived_pdf_spreadsheet_id || "" : profile.spreadsheet_id || "");
       savedRange = String(archive ? profile.archived_pdf_sheet_range || "" : profile.sheet_range || "");
     }
-    // Transaction export is a complete table, so it always begins in column A.
-    // This also repairs older settings that accidentally started it in column B.
-    const range = archive ? savedRange : transactionRangeStartingAtA(savedRange);
+    // Both export types honour the exact range configured for that export.
+    const range = savedRange;
+    // Clear from column A so a previous export starting in another column does
+    // not leave a second date/header column beside the new table.
+    const clearRange = range.replace(/(^|!)[A-Z]+(?=:)/i, "$1A");
     if (!spreadsheetId || !range) return json({ error: "Configure the export sheet first" }, 400);
     const accessToken = await googleToken();
     const base = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`;
@@ -73,6 +74,10 @@ serve(async (req) => {
         cell: { note: "" }, fields: "note",
       } }] }) });
       if (!response.ok) return json({ error: "Google Sheets note cleanup failed" }, 500);
+      // When the range or sheet tab changes, the old values must leave with
+      // the old notes. Otherwise the date column remains beside the new table.
+      const clearValues = await fetch(`${base}/values/${encodeURIComponent(clearRange)}:clear`, { method: "POST", headers, body: "{}" });
+      if (!clearValues.ok) return json({ error: "Google Sheets old range cleanup failed" }, 500);
       return json({ success: true });
     }
     if (body.action === "write") {
@@ -97,7 +102,7 @@ serve(async (req) => {
       });
       if (!clearNotesResponse.ok) return json({ error: "Google Sheets note cleanup failed" }, 500);
 
-      await fetch(`${base}/values/${encodeURIComponent(range)}:clear`, { method: "POST", headers, body: "{}" });
+      await fetch(`${base}/values/${encodeURIComponent(clearRange)}:clear`, { method: "POST", headers, body: "{}" });
       const response = await fetch(`${base}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values: body.values || [] }) });
       if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets write failed" }, 500);
       return json({ success: true });
@@ -157,7 +162,7 @@ serve(async (req) => {
         cell: { note: "" }, fields: "note",
       } }] }) });
       if (!clearArchiveNotes.ok) return json({ error: "Google Sheets archive note cleanup failed" }, 500);
-      await fetch(`${base}/values/${encodeURIComponent(range)}:clear`, { method: "POST", headers, body: "{}" });
+      await fetch(`${base}/values/${encodeURIComponent(clearRange)}:clear`, { method: "POST", headers, body: "{}" });
       const response = await fetch(`${base}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values: table }) });
       if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets export failed" }, 500);
 
