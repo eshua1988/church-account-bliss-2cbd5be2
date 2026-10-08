@@ -150,8 +150,7 @@ const Index = () => {
     try {
       // Each integration is independent: one failed destination must never
       // cancel exports to the others.
-      const [, configuredExports, , cloud] = await Promise.allSettled([
-        handleSheetSync(),
+      const [configuredExports, , cloud] = await Promise.allSettled([
         syncAllConfiguredGoogleSheetExports(transactions, expenseCategories, getAllTransactions),
         handleBankSync(),
         syncNotificationArchivesToCloud(notifications),
@@ -187,7 +186,7 @@ const Index = () => {
     } finally {
       setIsConfiguredExportsSyncing(false);
     }
-  }, [handleSheetSync, handleBankSync, notifications, toast, transactions, expenseCategories, getAllTransactions]);
+  }, [handleBankSync, notifications, toast, transactions, expenseCategories, getAllTransactions]);
 
   // Track previous transaction count for auto-sync on realtime changes
   const prevTransactionCountRef = useRef<number>(transactions.length);

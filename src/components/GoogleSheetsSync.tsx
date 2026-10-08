@@ -160,16 +160,40 @@ export const syncAllConfiguredGoogleSheetExports = async (
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Пожалуйста, войдите в систему повторно');
 
-  const [{ data: targets, error: targetsError }, allTransactionsResult, notificationsResult] = await Promise.all([
+  const [{ data: targets, error: targetsError }, allTransactionsResult, notificationsResult, profileResult] = await Promise.all([
     supabase.from('google_sheet_exports' as any)
       .select('id, export_type, spreadsheet_id, sheet_range, period_mode, period_from, period_to')
       .eq('user_id', session.user.id),
     getAllTransactions ? getAllTransactions() : Promise.resolve(transactions as Transaction[]),
     supabase.from('notifications').select('id, created_at, metadata').eq('user_id', session.user.id),
+    supabase.from('profiles')
+      .select('spreadsheet_id, sheet_range, archived_pdf_spreadsheet_id, archived_pdf_sheet_range')
+      .eq('user_id', session.user.id)
+      .maybeSingle(),
   ]);
   if (targetsError) throw targetsError;
+  if (profileResult.error) throw profileResult.error;
 
-  const exports = (targets || []) as SheetExport[];
+  const savedExports = (targets || []) as SheetExport[];
+  const profile = profileResult.data as typeof profileResult.data & {
+    archived_pdf_spreadsheet_id?: string | null;
+    archived_pdf_sheet_range?: string | null;
+  };
+  const legacyExports: SheetExport[] = [
+    profile?.spreadsheet_id && profile?.sheet_range
+      ? { id: '', export_type: 'transactions', spreadsheet_id: profile.spreadsheet_id, sheet_range: profile.sheet_range }
+      : null,
+    profile?.archived_pdf_spreadsheet_id && profile?.archived_pdf_sheet_range
+      ? { id: '', export_type: 'pdf', spreadsheet_id: profile.archived_pdf_spreadsheet_id, sheet_range: profile.archived_pdf_sheet_range }
+      : null,
+  ].filter((target): target is SheetExport => target !== null);
+  const exports = [...savedExports];
+  for (const legacy of legacyExports) {
+    const alreadyConfigured = savedExports.some(target => target.export_type === legacy.export_type
+      && target.spreadsheet_id === legacy.spreadsheet_id
+      && target.sheet_range === legacy.sheet_range);
+    if (!alreadyConfigured) exports.push(legacy);
+  }
   if (exports.length === 0) return { configured: 0, completed: 0, failed: 0, errors: [] as string[] };
   if (notificationsResult.error) throw notificationsResult.error;
 
@@ -183,7 +207,7 @@ export const syncAllConfiguredGoogleSheetExports = async (
         body: JSON.stringify({
           accessToken: session.access_token,
           action: 'write',
-          exportId: target.id,
+          ...(target.id ? { exportId: target.id } : {}),
           values: buildTransactionExportValues(allTransactions, expenseCategories, target),
         }),
       });
@@ -217,7 +241,12 @@ export const syncAllConfiguredGoogleSheetExports = async (
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sheets-export`, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ accessToken: session.access_token, action: 'archive_pdf_export', exportId: target.id, values: archiveRows }),
+      body: JSON.stringify({
+        accessToken: session.access_token,
+        action: 'archive_pdf_export',
+        ...(target.id ? { exportId: target.id } : {}),
+        values: archiveRows,
+      }),
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
