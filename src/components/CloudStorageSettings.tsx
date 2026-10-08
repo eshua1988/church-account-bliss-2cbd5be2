@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CircleHelp, Cloud, Link2, Loader2, Plus, Save, Trash2 } from 'lucide-react';
+import { CircleHelp, Cloud, Link2, Loader2, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -23,6 +23,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { syncNotificationArchivesToCloud } from '@/lib/cloudArchiveSync';
+import { Notification } from '@/hooks/useNotifications';
 
 const HELP_CONTENT: Record<CloudProvider, { title: string; steps: string[] }> = {
   google_drive: {
@@ -90,6 +92,7 @@ export const CloudStorageSettings = () => {
   const [helpProvider, setHelpProvider] = useState<CloudProvider | null>(null);
   const [loadingConnections, setLoadingConnections] = useState(true);
   const [mobileEditingId, setMobileEditingId] = useState<string | null>(null);
+  const [syncingConnectionId, setSyncingConnectionId] = useState<string | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const isMobile = useIsMobile();
@@ -258,6 +261,43 @@ export const CloudStorageSettings = () => {
     toast({ title: `${connection.name} отключено на этом телефоне` });
   };
 
+  const syncZipArchives = async (connection: CloudConnection) => {
+    if (!user) {
+      toast({ title: 'Войдите в аккаунт для синхронизации ZIP-архивов', variant: 'destructive' });
+      return;
+    }
+
+    setSyncingConnectionId(connection.id);
+    try {
+      // The archive helper reads connection details from local storage. Keep it in
+      // sync with fields that may have just been edited before the button click.
+      saveCloudConnections(connections);
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('id, user_id, title, message, type, is_read, metadata, created_at')
+        .eq('user_id', user.id);
+      if (error) throw error;
+
+      const result = await syncNotificationArchivesToCloud((data || []) as Notification[], connection.id);
+      if (result.errors.length > 0) throw new Error(result.errors.join('\n'));
+
+      toast({
+        title: result.uploaded > 0 ? 'ZIP-архивы синхронизированы' : 'ZIP-архивы не найдены',
+        description: result.uploaded > 0
+          ? `Загружено файлов: ${result.uploaded}`
+          : 'В уведомлениях пока нет архивированных PDF-файлов.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Не удалось синхронизировать ZIP-архивы',
+        description: error instanceof Error ? error.message : String(error),
+        variant: 'destructive',
+      });
+    } finally {
+      setSyncingConnectionId(null);
+    }
+  };
+
   const addCloud = () => {
     const connection = createConnection(newProvider);
     setConnections(prev => [...prev, connection]);
@@ -350,6 +390,17 @@ export const CloudStorageSettings = () => {
               title="Инструкция по подключению"
             >
               <CircleHelp className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => void syncZipArchives(connection)}
+              disabled={!connection.enabled || syncingConnectionId === connection.id}
+              aria-label="Синхронизировать ZIP-архивы"
+              title="Синхронизировать ZIP-архивы"
+            >
+              <RefreshCw className={`h-4 w-4 ${syncingConnectionId === connection.id ? 'animate-spin' : ''}`} />
             </Button>
             <Button
               type="button"

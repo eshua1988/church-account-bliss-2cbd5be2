@@ -46,12 +46,18 @@ const getPdfBlob = async (notification: Notification) => {
   };
 };
 
-export const syncNotificationArchivesToCloud = async (notifications: Notification[]) => {
+export const syncNotificationArchivesToCloud = async (
+  notifications: Notification[],
+  connectionId?: string,
+) => {
   const storedConnections = loadCloudConnections();
+  const candidateConnections = connectionId
+    ? storedConnections.filter(connection => connection.id === connectionId)
+    : storedConnections;
   const connections: CloudConnection[] = [];
   const errors: string[] = [];
 
-  for (const connection of storedConnections) {
+  for (const connection of candidateConnections) {
     if (!connection.enabled || !isCloudEnabledOnDevice(connection)) continue;
     if (connection.provider === 'google_drive' && !hasCloudCredentials(connection)) {
       try {
