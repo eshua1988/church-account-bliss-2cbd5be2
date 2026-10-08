@@ -15,7 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { AppSidebar } from '@/components/AppSidebar';
-import { GoogleSheetsSync } from '@/components/GoogleSheetsSync';
+import { GoogleSheetsSync, syncAllConfiguredGoogleSheetExports } from '@/components/GoogleSheetsSync';
 import { TelegramBotSettings } from '@/components/TelegramBotSettings';
 import { SharePayoutLink } from '@/components/SharePayoutLink';
 import { ShareDepositLink } from '@/components/ShareDepositLink';
@@ -104,6 +104,7 @@ const Index = () => {
   });
 
   const [isBankSyncing, setIsBankSyncing] = useState(false);
+  const [isConfiguredExportsSyncing, setIsConfiguredExportsSyncing] = useState(false);
 
   const handleBankSync = useCallback(async () => {
     try {
@@ -142,28 +143,51 @@ const Index = () => {
     }
   }, [refetchTransactions, toast]);
 
-  const isSyncing = isSheetSyncing || isBankSyncing;
+  const isSyncing = isSheetSyncing || isBankSyncing || isConfiguredExportsSyncing;
 
   const handleSync = useCallback(async () => {
-    const [, , cloudResult] = await Promise.all([
-      handleSheetSync(),
-      handleBankSync(),
-      syncNotificationArchivesToCloud(notifications),
-    ]);
-    if (cloudResult.uploaded > 0) {
-      toast({
-        title: 'Облачные архивы обновлены',
-        description: `Загружено файлов: ${cloudResult.uploaded}`,
-      });
+    setIsConfiguredExportsSyncing(true);
+    try {
+      // Each integration is independent: one failed destination must never
+      // cancel exports to the others.
+      const [, configuredExports, , cloud] = await Promise.allSettled([
+        handleSheetSync(),
+        syncAllConfiguredGoogleSheetExports(transactions, expenseCategories, getAllTransactions),
+        handleBankSync(),
+        syncNotificationArchivesToCloud(notifications),
+      ]);
+
+      if (configuredExports.status === 'fulfilled') {
+        const configuredExportsResult = configuredExports.value;
+        if (configuredExportsResult.configured > 0) {
+          toast({
+            title: configuredExportsResult.failed > 0 ? 'Не все экспорты Google Sheets завершены' : 'Экспорты Google Sheets завершены',
+            description: `Готово: ${configuredExportsResult.completed} из ${configuredExportsResult.configured}`,
+            variant: configuredExportsResult.failed > 0 ? 'destructive' : 'default',
+          });
+        }
+        if (configuredExportsResult.errors.length > 0) {
+          toast({ title: 'Ошибка экспорта Google Sheets', description: configuredExportsResult.errors.join('; '), variant: 'destructive' });
+        }
+      } else {
+        toast({ title: 'Ошибка экспорта Google Sheets', description: String(configuredExports.reason), variant: 'destructive' });
+      }
+
+      if (cloud.status === 'fulfilled') {
+        const cloudResult = cloud.value;
+        if (cloudResult.uploaded > 0) {
+          toast({ title: 'Облачные архивы обновлены', description: `Загружено файлов: ${cloudResult.uploaded}` });
+        }
+        if (cloudResult.errors.length > 0) {
+          toast({ title: 'Ошибка синхронизации облака', description: cloudResult.errors.join('; '), variant: 'destructive' });
+        }
+      } else {
+        toast({ title: 'Ошибка синхронизации облака', description: String(cloud.reason), variant: 'destructive' });
+      }
+    } finally {
+      setIsConfiguredExportsSyncing(false);
     }
-    if (cloudResult.errors.length > 0) {
-      toast({
-        title: 'Ошибка синхронизации облака',
-        description: cloudResult.errors.join('; '),
-        variant: 'destructive',
-      });
-    }
-  }, [handleSheetSync, handleBankSync, notifications, toast]);
+  }, [handleSheetSync, handleBankSync, notifications, toast, transactions, expenseCategories, getAllTransactions]);
 
   // Track previous transaction count for auto-sync on realtime changes
   const prevTransactionCountRef = useRef<number>(transactions.length);

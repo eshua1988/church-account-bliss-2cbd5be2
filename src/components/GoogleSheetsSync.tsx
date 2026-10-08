@@ -27,7 +27,7 @@ interface GoogleSheetsSyncProps {
   getAllTransactions?: () => Promise<Transaction[]>;
 }
 
-type SheetExport = {
+export type SheetExport = {
   id: string;
   export_type: 'transactions' | 'pdf';
   spreadsheet_id: string;
@@ -89,6 +89,146 @@ const isInExportPeriod = (date: Date | string, target?: SheetExport) => {
   const value = (date instanceof Date ? date : new Date(date)).toISOString().slice(0, 10);
   const { from, to } = periodBounds(target.period_mode || 'day', target.period_from, target.period_to);
   return (!from || value >= from) && (!to || value <= to);
+};
+
+type ExportSyncTransaction = Pick<Transaction, 'id' | 'amount' | 'currency' | 'type' | 'category' | 'departmentName' | 'date' | 'createdAt'>;
+type ExportSyncCategory = { id: string; name: string; type: string; sortOrder?: number };
+
+const buildTransactionExportValues = (
+  transactions: ExportSyncTransaction[],
+  expenseCategories: ExportSyncCategory[],
+  target: SheetExport,
+) => {
+  const exportTransactions = transactions.filter(transaction => isInExportPeriod(transaction.date, target));
+  const sortedExpense = uniqueExpenseCategories(expenseCategories);
+  const headers = ['Date', 'Income', ...sortedExpense.map(category => category.name), 'Прочее'];
+  const fallbackColumn = headers.length - 1;
+  const byDate = new Map<string, ExportSyncTransaction[]>();
+
+  for (const transaction of exportTransactions) {
+    const date = new Date(transaction.date).toLocaleDateString('pl-PL');
+    const sameDay = byDate.get(date) || [];
+    sameDay.push(transaction);
+    byDate.set(date, sameDay);
+  }
+
+  const sortedDates = [...byDate.keys()].sort((left, right) => {
+    const toTime = (value: string) => {
+      const [day, month, year] = value.split('.');
+      return new Date(+year, +month - 1, +day).getTime();
+    };
+    return toTime(right) - toTime(left);
+  });
+  const rows: string[][] = [];
+
+  for (const date of sortedDates) {
+    const dayRows: string[][] = [];
+    const dayTransactions = [...(byDate.get(date) || [])]
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+
+    for (const transaction of dayTransactions) {
+      let column = fallbackColumn;
+      if (transaction.type === 'income') {
+        column = 1;
+      } else {
+        let categoryIndex = sortedExpense.findIndex(category => category.id === transaction.category);
+        if (categoryIndex === -1 && transaction.departmentName) {
+          categoryIndex = sortedExpense.findIndex(category => category.name === transaction.departmentName);
+        }
+        if (categoryIndex !== -1) column = categoryIndex + 2;
+      }
+
+      let row = dayRows.find(candidate => !candidate[column]);
+      if (!row) {
+        row = new Array(headers.length).fill('');
+        row[0] = date;
+        dayRows.push(row);
+      }
+      row[column] = `${transaction.amount} ${transaction.currency}`;
+    }
+    rows.push(...dayRows);
+  }
+
+  return [headers, ...rows];
+};
+
+export const syncAllConfiguredGoogleSheetExports = async (
+  transactions: ExportSyncTransaction[],
+  expenseCategories: ExportSyncCategory[],
+  getAllTransactions?: () => Promise<Transaction[]>,
+) => {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Пожалуйста, войдите в систему повторно');
+
+  const [{ data: targets, error: targetsError }, allTransactionsResult, notificationsResult] = await Promise.all([
+    supabase.from('google_sheet_exports' as any)
+      .select('id, export_type, spreadsheet_id, sheet_range, period_mode, period_from, period_to')
+      .eq('user_id', session.user.id),
+    getAllTransactions ? getAllTransactions() : Promise.resolve(transactions as Transaction[]),
+    supabase.from('notifications').select('id, created_at, metadata').eq('user_id', session.user.id),
+  ]);
+  if (targetsError) throw targetsError;
+
+  const exports = (targets || []) as SheetExport[];
+  if (exports.length === 0) return { configured: 0, completed: 0, failed: 0, errors: [] as string[] };
+  if (notificationsResult.error) throw notificationsResult.error;
+
+  const allTransactions = allTransactionsResult as ExportSyncTransaction[];
+  const notifications = notificationsResult.data || [];
+  const results = await Promise.allSettled(exports.map(async (target) => {
+    if (target.export_type === 'transactions') {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sheets-export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          accessToken: session.access_token,
+          action: 'write',
+          exportId: target.id,
+          values: buildTransactionExportValues(allTransactions, expenseCategories, target),
+        }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.error || `Ошибка экспорта транзакций (${response.status})`);
+      }
+      return;
+    }
+
+    const archiveRows: string[][] = [];
+    for (const notification of notifications) {
+      const metadata = (notification.metadata || {}) as Record<string, unknown>;
+      const date = typeof metadata.date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(metadata.date)
+        ? metadata.date.slice(0, 10)
+        : String(notification.created_at).slice(0, 10);
+      if (!metadata.archived_at || !isInExportPeriod(date, target)) continue;
+      const amount = Number(metadata.amount);
+      if (!Number.isFinite(amount)) continue;
+      const income = metadata.archive_type === 'income';
+      const amountWithCurrency = `${amount} ${String(metadata.currency || 'PLN')}`;
+      archiveRows.push([
+        date,
+        income ? amountWithCurrency : '',
+        income ? '' : String(metadata.department_name || 'Расход'),
+        income ? '' : amountWithCurrency,
+        income ? '' : String(metadata.basis || ''),
+      ]);
+    }
+
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sheets-export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ accessToken: session.access_token, action: 'archive_pdf_export', exportId: target.id, values: archiveRows }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload?.error || `Ошибка экспорта PDF (${response.status})`);
+    }
+  }));
+
+  const errors = results.flatMap(result => result.status === 'rejected'
+    ? [result.reason instanceof Error ? result.reason.message : String(result.reason)]
+    : []);
+  return { configured: exports.length, completed: exports.length - errors.length, failed: errors.length, errors };
 };
 
 export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategoryName, onDeleteTransaction, expenseCategories = [] }: GoogleSheetsSyncProps) => {

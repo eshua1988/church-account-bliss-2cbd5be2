@@ -46,6 +46,19 @@ const getPdfBlob = async (notification: Notification) => {
   };
 };
 
+const mapWithConcurrency = async <T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>) => {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const run = async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await worker(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run));
+  return results;
+};
+
 export const syncNotificationArchivesToCloud = async (
   notifications: Notification[],
   connectionId?: string,
@@ -94,8 +107,10 @@ export const syncNotificationArchivesToCloud = async (
     const folder = zip.folder(folderName);
     if (!folder) continue;
 
-    for (const notification of items) {
-      const pdf = await getPdfBlob(notification);
+    const pdfs = await mapWithConcurrency(items, 4, getPdfBlob);
+    for (let index = 0; index < items.length; index++) {
+      const notification = items[index];
+      const pdf = pdfs[index];
       const monthFolder = folder.folder(getNotificationArchiveMonth(notification));
       monthFolder?.file(`${notification.id.slice(0, 8)}-${pdf.name}`, pdf.blob);
     }
@@ -107,14 +122,14 @@ export const syncNotificationArchivesToCloud = async (
     });
     const fileName = `${folderName}.zip`;
 
-    for (const connection of connections) {
+    await Promise.all(connections.map(async connection => {
       try {
         await uploadCloudArchive(connection, fileName, archive);
         uploaded++;
       } catch (error) {
         errors.push(`${connection.name}: ${error instanceof Error ? error.message : String(error)}`);
       }
-    }
+    }));
   }
 
   return { uploaded, archives: Object.keys(groups).length, skipped: false, errors };
