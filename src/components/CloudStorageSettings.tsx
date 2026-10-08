@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CircleHelp, Cloud, Link2, Loader2, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
+import { CircleHelp, Cloud, ExternalLink, Link2, Loader2, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -229,6 +229,21 @@ export const CloudStorageSettings = () => {
     void persist(next, 'Облако удалено');
   };
 
+  const openArchiveFolder = (connection: CloudConnection) => {
+    const folderUrl = connection.folderUrl?.trim();
+    if (!folderUrl) {
+      toast({ title: 'Укажите ссылку на папку', description: 'Добавьте ссылку на папку, в которую выгружаются ZIP-архивы.', variant: 'destructive' });
+      return;
+    }
+    try {
+      const url = new URL(folderUrl);
+      if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('Unsupported protocol');
+      window.open(url.toString(), '_blank', 'noopener,noreferrer');
+    } catch {
+      toast({ title: 'Некорректная ссылка на папку', variant: 'destructive' });
+    }
+  };
+
   const connectThisDevice = (connection: CloudConnection) => {
     if (connection.provider === 'google_drive') {
       void connectGoogleDrive(connection);
@@ -390,6 +405,17 @@ export const CloudStorageSettings = () => {
               title="Инструкция по подключению"
             >
               <CircleHelp className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => openArchiveFolder(connection)}
+              disabled={!connection.folderUrl?.trim()}
+              aria-label="Открыть папку ZIP-архивов в облаке"
+              title="Открыть папку ZIP-архивов"
+            >
+              <ExternalLink className="h-4 w-4" />
             </Button>
             <Button
               type="button"
