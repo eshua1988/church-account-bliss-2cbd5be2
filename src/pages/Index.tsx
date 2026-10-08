@@ -34,6 +34,7 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { CloudStorageSettings } from '@/components/CloudStorageSettings';
 import { syncNotificationArchivesToCloud } from '@/lib/cloudArchiveSync';
 import { LinksPage } from '@/components/LinksPage';
+import { RemindersPage } from '@/components/RemindersPage';
 
 const Index = () => {
   const { t, getDateLocale } = useTranslation();
@@ -679,11 +680,7 @@ const Index = () => {
 
           {activeTab === 'links' && <LinksPage />}
 
-          {activeTab === 'reminders' && (
-            <div className="animate-fade-in rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-              Раздел напоминаний готовится к подключению безопасного фонового push-расписания.
-            </div>
-          )}
+          {activeTab === 'reminders' && <RemindersPage />}
 
         </main>
         </div>
