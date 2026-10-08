@@ -22,6 +22,14 @@ const safeFileName = (name: string) => name.replace(/[^a-zA-Z0-9._-]/g, '_');
 const isImage = (attachment: Attachment) => attachment.type.startsWith('image/');
 const repeatLabel: Record<Repeat, string> = { once: 'Один раз', weekly: 'Раз в неделю', monthly: 'Раз в месяц', yearly: 'Раз в год' };
 const today = () => new Date().toISOString().slice(0, 10);
+const remindersTable = () => supabase.from('reminders' as any) as any;
+const fromRow = (row: any): Reminder => ({
+  id: row.id,
+  title: row.full_name,
+  message: row.message,
+  created_at: row.created_at,
+  metadata: { full_name: row.full_name, contact: row.contact, attachments: row.attachments || [], reminder_date: row.reminder_date, repeat: row.repeat },
+});
 
 export const RemindersPage = () => {
   const { user } = useAuth();
@@ -45,14 +53,12 @@ export const RemindersPage = () => {
   const load = async () => {
     if (!user) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('id, title, message, created_at, metadata')
+    const { data, error } = await remindersTable()
+      .select('id, full_name, contact, message, attachments, reminder_date, repeat, created_at')
       .eq('user_id', user.id)
-      .eq('type', 'reminder')
       .order('created_at', { ascending: false });
     if (error) toast({ title: 'Не удалось загрузить напоминания', description: error.message, variant: 'destructive' });
-    else setReminders((data || []) as Reminder[]);
+    else setReminders((data || []).map(fromRow));
     setLoading(false);
   };
 
@@ -123,16 +129,16 @@ export const RemindersPage = () => {
       }
 
       const values = {
-        user_id: user.id,
-        title: fullName.trim(),
+        full_name: fullName.trim(),
+        contact: contact.trim(),
         message: message.trim(),
-        type: 'reminder',
-        is_read: false,
-        metadata: { full_name: fullName.trim(), contact: contact.trim(), attachments, reminder_date: reminderDate, repeat },
+        attachments,
+        reminder_date: reminderDate,
+        repeat,
       };
       const { error } = editing
-        ? await supabase.from('notifications').update(values).eq('id', editing.id)
-        : await supabase.from('notifications').insert(values);
+        ? await remindersTable().update(values).eq('id', editing.id)
+        : await remindersTable().insert({ ...values, user_id: user.id });
       if (error) throw error;
       if (editing && removedAttachmentPaths.length > 0) await supabase.storage.from('documents').remove(removedAttachmentPaths);
 
@@ -170,7 +176,7 @@ export const RemindersPage = () => {
   const deleteReminder = async (reminder: Reminder) => {
     if (!window.confirm(`Удалить напоминание «${reminder.title}»?`)) return;
     const attachments = reminder.metadata?.attachments || [];
-    const { error } = await supabase.from('notifications').delete().eq('id', reminder.id);
+    const { error } = await remindersTable().delete().eq('id', reminder.id);
     if (error) {
       toast({ title: 'Не удалось удалить напоминание', description: error.message, variant: 'destructive' });
       return;
