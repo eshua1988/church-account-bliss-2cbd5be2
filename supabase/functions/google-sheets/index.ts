@@ -3,7 +3,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  // supabase-js may add this version header on browser invokes.  It has to be
+  // accepted during OPTIONS as well, otherwise GitHub Pages never reaches the
+  // function body and reports a misleading generic CORS error.
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-api-version',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Max-Age': '86400',
   // Prevent an intermediary from reusing a preflight response for a different
