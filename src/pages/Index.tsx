@@ -35,6 +35,7 @@ import { CloudStorageSettings } from '@/components/CloudStorageSettings';
 import { syncNotificationArchivesToCloud } from '@/lib/cloudArchiveSync';
 import { LinksPage } from '@/components/LinksPage';
 import { RemindersPage } from '@/components/RemindersPage';
+import { PdfArchiveStatistics } from '@/components/PdfArchiveStatistics';
 
 const Index = () => {
   const { t, getDateLocale } = useTranslation();
@@ -423,6 +424,12 @@ const Index = () => {
           {/* Statistics Tab */}
           {activeTab === 'statistics' && (
             <div className="animate-fade-in">
+              <Tabs defaultValue="online" className="w-full space-y-4">
+                <TabsList className="h-auto gap-1 p-1">
+                  <TabsTrigger value="online" className="gap-2 px-5"><span className="h-2 w-2 rounded-full bg-emerald-500" />Онлайн</TabsTrigger>
+                  <TabsTrigger value="pdf" className="gap-2 px-5"><span className="h-2 w-2 rounded-full bg-amber-500" />PDF</TabsTrigger>
+                </TabsList>
+                <TabsContent value="online" className="mt-0">
               <Tabs defaultValue="balance" className="w-full">
                 <div className="sticky top-0 z-30 -mx-3 sm:-mx-4 mb-4 px-3 sm:px-4 py-2 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85 border-b border-border/60">
                   <TabsList className="flex-wrap h-auto gap-1 p-1">
@@ -490,6 +497,11 @@ const Index = () => {
                   {transactionCount === 0 && (
                     <p className="text-muted-foreground text-center py-8">{t('noTransactions')}</p>
                   )}
+                </TabsContent>
+              </Tabs>
+                </TabsContent>
+                <TabsContent value="pdf" className="mt-0">
+                  <PdfArchiveStatistics notifications={notifications} categories={categories} getCategoryName={getCategoryName} />
                 </TabsContent>
               </Tabs>
             </div>
