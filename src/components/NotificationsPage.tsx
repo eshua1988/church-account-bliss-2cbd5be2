@@ -1478,14 +1478,15 @@ export const NotificationsPage = () => {
   const ruleRequests = notifications.filter(
     n => !isDepositNotification(n) && isRuleRequestNotification(n)
   );
+  const reminderAlerts = notifications.filter(n => n.type === 'reminder_alert');
   const archivedNotifications = getArchivedNotifications(notifications);
   const payoutNotifications = notifications.filter(
-    n => !isDepositNotification(n) && !isRuleRequestNotification(n)
+    n => !isDepositNotification(n) && !isRuleRequestNotification(n) && n.type !== 'reminder_alert'
   );
   const withoutPhotos = payoutNotifications.filter(n => n.metadata?.images_skipped);
   const withPhotos = payoutNotifications.filter(n => !n.metadata?.images_skipped);
   const extensionNotifications = Array.from(
-    new Map([...ruleRequests, ...archivedNotifications].map(notification => [notification.id, notification])).values(),
+    new Map([...ruleRequests, ...reminderAlerts, ...archivedNotifications].map(notification => [notification.id, notification])).values(),
   ).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   const pushEnabled = pushPermission === 'granted' && hasPushSubscription;
   const pushActionLabel = pushEnabled ? 'Проверить push' : 'Включить push';
@@ -1493,11 +1494,11 @@ export const NotificationsPage = () => {
     activeTab === 'income'
       ? incomeNotifications
       : activeTab === 'extension'
-      ? ruleRequests
+      ? [...ruleRequests, ...reminderAlerts]
       : activeTab === 'all'
         ? withPhotos
         : withoutPhotos;
-  const selectableNotifications = activeTab === 'extension' ? ruleRequests : displayed;
+  const selectableNotifications = activeTab === 'extension' ? [...ruleRequests, ...reminderAlerts] : displayed;
   const selectedInCurrentTab = selectableNotifications.filter(notification => selectedNotificationIds.has(notification.id));
   const areAllCurrentTabNotificationsSelected = selectableNotifications.length > 0
     && selectedInCurrentTab.length === selectableNotifications.length;
@@ -1517,7 +1518,7 @@ export const NotificationsPage = () => {
     extensionNotifications.slice(0, visibleNotificationsLimit).map(notification => notification.id),
   );
   const visibleNotifications = activeTab === 'extension'
-    ? ruleRequests.filter(notification => visibleExtensionIds.has(notification.id))
+    ? [...ruleRequests, ...reminderAlerts].filter(notification => visibleExtensionIds.has(notification.id))
     : displayed.slice(0, visibleNotificationsLimit);
   const visibleArchivedNotifications = archivedNotifications.filter(notification => visibleExtensionIds.has(notification.id));
   const currentTabCount = activeTab === 'extension' ? extensionNotifications.length : displayed.length;
@@ -1803,14 +1804,14 @@ export const NotificationsPage = () => {
           )}
         >
           Расширение
-          {(ruleRequests.length + archivedNotifications.length) > 0 && (
+          {(ruleRequests.length + reminderAlerts.length + archivedNotifications.length) > 0 && (
             <span className={cn(
               'ml-2 text-xs rounded-full px-1.5 py-0.5',
               ruleRequestsUnread > 0
                 ? 'bg-yellow-500/20 text-yellow-500 font-semibold'
                 : 'bg-muted text-muted-foreground'
             )}>
-              {ruleRequests.length + archivedNotifications.length}
+              {ruleRequests.length + reminderAlerts.length + archivedNotifications.length}
             </span>
           )}
         </button>
