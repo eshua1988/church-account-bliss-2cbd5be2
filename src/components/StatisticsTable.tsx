@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { Transaction, CURRENCY_SYMBOLS } from '@/types/transaction';
+import { Transaction, CURRENCY_NAMES, CURRENCY_SYMBOLS } from '@/types/transaction';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { format, startOfMonth, endOfMonth, subMonths, isWithinInterval, startOfYear, endOfYear } from 'date-fns';
 import {
@@ -83,6 +83,11 @@ export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loa
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [amountFrom, setAmountFrom] = useState('');
   const [amountTo, setAmountTo] = useState('');
+
+  // Each data source (online or PDF archive) supplies its own transactions,
+  // so this list never offers currencies that do not exist in that section.
+  const availableCurrencies = useMemo(() => [...new Set(transactions.map(transaction => transaction.currency))]
+    .sort((left, right) => left.localeCompare(right)), [transactions]);
 
   const parsedAmountFrom = amountFrom.trim() === '' ? undefined : Number(amountFrom);
   const parsedAmountTo = amountTo.trim() === '' ? undefined : Number(amountTo);
@@ -578,6 +583,22 @@ export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loa
 
         {/* Type filter buttons */}
         <div className="flex flex-wrap items-center gap-2 mt-2">
+          <Select
+            value={internalCurrencyFilter || 'all'}
+            onValueChange={value => setInternalCurrencyFilter(value === 'all' ? null : value)}
+          >
+            <SelectTrigger className="h-9 w-[185px]">
+              <SelectValue placeholder="Все валюты" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Все валюты</SelectItem>
+              {availableCurrencies.map(currency => (
+                <SelectItem key={currency} value={currency}>
+                  {CURRENCY_NAMES[currency]} ({currency})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button
             variant={typeFilter === 'all' ? 'default' : 'outline'}
             size="sm"
