@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { Currency } from '@/types/transaction';
+import { amountInPolishWords, type DepositCurrency } from '@/lib/amountInWords';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -73,6 +74,7 @@ const NotificationCard = ({
   onArchive,
   onChangeDepartment,
   onEditDepositPdf,
+  onEditDepositDetails,
   savingId,
   swipedId,
   onSwipe,
@@ -90,6 +92,7 @@ const NotificationCard = ({
   onArchive?: (notification: Notification) => void;
   onChangeDepartment?: (notification: Notification) => void;
   onEditDepositPdf?: (notification: Notification) => void;
+  onEditDepositDetails?: (notification: Notification) => void;
   savingId?: string | null;
   swipedId?: string | null;
   onSwipe?: (id: string | null) => void;
@@ -184,6 +187,7 @@ const NotificationCard = ({
     ((pdfPath || transactionId) ? 1 : 0) +
     (onArchive && !isArchived && (pdfPath || transactionId) ? 1 : 0) +
     (onChangeDepartment && notification.type === 'payout' && !isRuleRequest ? 1 : 0) +
+    (onEditDepositDetails && isDeposit && !isRuleRequest ? 1 : 0) +
     (onEditDepositPdf && (isDeposit || notification.type === 'payout') && !isRuleRequest ? 1 : 0);
   const SWIPE_MAX = mobileButtonCount * BTN_W;
   const SWIPE_THRESHOLD = 50;
@@ -237,6 +241,19 @@ const NotificationCard = ({
   // Action buttons — shared between desktop bottom row and mobile swipe tray
   const actionButtons = (
     <>
+      {onEditDepositDetails && isDeposit && !isRuleRequest && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5 h-8 px-2.5 text-xs"
+          onClick={() => { onEditDepositDetails(notification); doClose(); }}
+          disabled={isSaving}
+          title={pdfPath?.split('/').pop() || 'Изменить суммы и валюты в PDF'}
+        >
+          <Pencil className="h-3 w-3" />
+          PDF
+        </Button>
+      )}
       {onChangeDepartment && notification.type === 'payout' && !isRuleRequest && (
         <Button
           variant="outline"
@@ -348,6 +365,18 @@ const NotificationCard = ({
         className="sm:hidden absolute right-0 top-0 bottom-0 flex max-w-full rounded-r-xl overflow-hidden"
         style={{ width: `${SWIPE_MAX}px` }}
       >
+        {onEditDepositDetails && isDeposit && !isRuleRequest && (
+          <button
+            className="flex flex-col items-center justify-center gap-1 text-white bg-violet-600 active:bg-violet-700"
+            style={{ width: `${BTN_W}px` }}
+            onClick={() => { onEditDepositDetails(notification); doClose(); }}
+            disabled={isSaving}
+            title={pdfPath?.split('/').pop() || 'Изменить суммы и валюты в PDF'}
+          >
+            <Pencil className="h-5 w-5" />
+            <span className="text-[11px] font-medium leading-none">PDF</span>
+          </button>
+        )}
         {onChangeDepartment && notification.type === 'payout' && !isRuleRequest && (
           <button
             className="flex flex-col items-center justify-center gap-1 text-white bg-violet-600 active:bg-violet-700"
@@ -566,6 +595,8 @@ export const NotificationsPage = () => {
   const [departmentTarget, setDepartmentTarget] = useState<Notification | null>(null);
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [depositPdfTarget, setDepositPdfTarget] = useState<Notification | null>(null);
+  const [depositDetailsTarget, setDepositDetailsTarget] = useState<Notification | null>(null);
+  const [depositReceiptDrafts, setDepositReceiptDrafts] = useState<Array<{ amount: string; currency: DepositCurrency; customCurrency: string }>>([]);
   const [selectedReceiptIndex, setSelectedReceiptIndex] = useState('0');
   const [cashierName, setCashierName] = useState('');
   const [signAllDepositReceipts, setSignAllDepositReceipts] = useState(false);
@@ -656,6 +687,35 @@ export const NotificationsPage = () => {
         }]
       : [];
 
+  const depositDetailsReceipts = depositDetailsTarget && Array.isArray(depositDetailsTarget.metadata?.receipts)
+    ? depositDetailsTarget.metadata.receipts as Array<Record<string, unknown>>
+    : depositDetailsTarget
+      ? [depositDetailsTarget.metadata || {}]
+      : [];
+
+  const openDepositDetailsEditor = (notification: Notification) => {
+    const metadata = notification.metadata || {};
+    const receipts = Array.isArray(metadata.receipts) && metadata.receipts.length > 0
+      ? metadata.receipts as Array<Record<string, unknown>>
+      : [metadata as Record<string, unknown>];
+    setDepositDetailsTarget(notification);
+    setDepositReceiptDrafts(receipts.map(receipt => {
+      const rawCurrency = String(receipt.currency || metadata.currency || 'PLN').toUpperCase();
+      const currency: DepositCurrency = ['PLN', 'USD', 'EUR', 'UAH', 'OTHER'].includes(rawCurrency)
+        ? rawCurrency as DepositCurrency
+        : 'OTHER';
+      return {
+        amount: String(receipt.amount ?? metadata.amount ?? ''),
+        currency,
+        customCurrency: String(receipt.custom_currency || receipt.customCurrency || (currency === 'OTHER' ? rawCurrency : '') || ''),
+      };
+    }));
+  };
+
+  const updateDepositReceiptDraft = (index: number, patch: Partial<{ amount: string; currency: DepositCurrency; customCurrency: string }>) => {
+    setDepositReceiptDrafts(current => current.map((receipt, receiptIndex) => receiptIndex === index ? { ...receipt, ...patch } : receipt));
+  };
+
   const clearCashierSignature = () => {
     const canvas = cashierSignatureRef.current;
     canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
@@ -700,6 +760,125 @@ export const NotificationsPage = () => {
     setCashierName(String(receipts[0]?.cashier || notification.metadata?.cashier || ''));
     setSignAllDepositReceipts(false);
     requestAnimationFrame(clearCashierSignature);
+  };
+
+  const saveDepositDetails = async () => {
+    if (!depositDetailsTarget) return;
+    const parsed = depositReceiptDrafts.map((draft, index) => ({
+      ...draft,
+      amount: Number(draft.amount.replace(',', '.')),
+      index,
+    }));
+    if (parsed.some(receipt => !Number.isFinite(receipt.amount) || receipt.amount <= 0 || (receipt.currency === 'OTHER' && !receipt.customCurrency.trim()))) {
+      toast({ title: 'Проверьте суммы и валюты', description: 'Сумма должна быть больше нуля; для другой валюты укажите её название.', variant: 'destructive' });
+      return;
+    }
+
+    const target = depositDetailsTarget;
+    const metadata = target.metadata || {};
+    const originalReceipts = Array.isArray(metadata.receipts) && metadata.receipts.length > 0
+      ? metadata.receipts as Array<Record<string, unknown>>
+      : [metadata as Record<string, unknown>];
+    const receipts = originalReceipts.map((receipt, index) => {
+      const next = parsed[index];
+      const visibleCurrency = next.currency === 'OTHER' ? next.customCurrency.trim() : next.currency;
+      return {
+        ...receipt,
+        amount: next.amount,
+        currency: next.currency,
+        custom_currency: next.currency === 'OTHER' ? next.customCurrency.trim() : null,
+        customCurrency: next.currency === 'OTHER' ? next.customCurrency.trim() : '',
+        amount_in_words: amountInPolishWords(next.amount, next.currency, next.customCurrency.trim()),
+        display_currency: visibleCurrency,
+      };
+    });
+
+    setSavingId(target.id);
+    try {
+      const pdfPath = String(metadata.pdf_path || '');
+      if (!pdfPath) throw new Error('PDF не найден');
+      const supabaseUrl = (supabase as any).supabaseUrl as string;
+      const supabaseKey = (supabase as any).supabaseKey as string;
+      const edgeHeaders = { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` };
+      const signParams = new URLSearchParams({ action: 'sign', filePath: pdfPath, userId: target.user_id });
+      const signResponse = await fetch(`${supabaseUrl}/functions/v1/upload-payout-pdf?${signParams}`, { headers: edgeHeaders });
+      const signResult = await signResponse.json();
+      if (!signResponse.ok || !signResult.signedUrl) throw new Error(signResult.error || 'Не удалось открыть PDF');
+      const sourceResponse = await fetch(signResult.signedUrl);
+      if (!sourceResponse.ok) throw new Error(`Ошибка загрузки PDF: HTTP ${sourceResponse.status}`);
+
+      const originalBytes = new Uint8Array(await sourceResponse.arrayBuffer());
+      const { PDFDocument, rgb } = await import('pdf-lib');
+      const pdfDoc = await PDFDocument.load(originalBytes);
+      pdfDoc.registerFontkit(fontkit);
+      const fontBytes = Uint8Array.from(atob(ROBOTO_FONT_BASE64), character => character.charCodeAt(0));
+      const font = await pdfDoc.embedFont(fontBytes);
+      const isMultiReceiptLayout = Array.isArray(metadata.receipts);
+
+      receipts.forEach((receipt, index) => {
+        const pageIndex = Number.isFinite(Number(receipt.page_index)) ? Number(receipt.page_index) : Math.floor(index / 2);
+        if (pageIndex >= pdfDoc.getPageCount()) throw new Error('Квитанция не найдена в PDF');
+        const page = pdfDoc.getPage(pageIndex);
+        const { width, height } = page.getSize();
+        const mmX = width / 210;
+        const mmY = height / 297;
+        const offset = Number(receipt.offset_y_mm) || (isMultiReceiptLayout ? (index % 2 === 0 ? 10 : 153) : 10);
+        const amountText = `${Number(receipt.amount).toFixed(2)} ${String(receipt.display_currency || receipt.currency)}`;
+        const amountFontSize = 9.5;
+        const amountWidth = font.widthOfTextAtSize(amountText, amountFontSize);
+        // Only repaint the value cells. Table lines, dates, names and signatures remain intact.
+        page.drawRectangle({ x: 13 * mmX, y: height - (offset + 28.5) * mmY, width: 91 * mmX, height: 6.5 * mmY, color: rgb(1, 1, 1) });
+        page.drawText(amountText, { font, size: amountFontSize, x: 58.5 * mmX - amountWidth / 2, y: height - (offset + 27) * mmY, color: rgb(0, 0, 0) });
+        const words = String(receipt.amount_in_words || '');
+        let wordsSize = 10;
+        const wordsWidth = 145 * mmX;
+        while (font.widthOfTextAtSize(words, wordsSize) > wordsWidth && wordsSize > 6) wordsSize -= 0.25;
+        page.drawRectangle({ x: 49 * mmX, y: height - (offset + 49) * mmY, width: 147 * mmX, height: 5.8 * mmY, color: rgb(1, 1, 1) });
+        page.drawText(words, { font, size: wordsSize, x: 49 * mmX, y: height - (offset + 48) * mmY, color: rgb(0, 0, 0) });
+      });
+
+      const token = String(metadata.link_token || fallbackToken || '');
+      if (!token) throw new Error('Не найден ключ для обновления PDF');
+      const uploadParams = new URLSearchParams({ action: 'upload-url', filePath: pdfPath, token });
+      const uploadResponse = await fetch(`${supabaseUrl}/functions/v1/upload-payout-pdf?${uploadParams}`, { headers: edgeHeaders });
+      const uploadResult = await uploadResponse.json();
+      if (!uploadResponse.ok || !uploadResult.path || !uploadResult.token) throw new Error(uploadResult.error || 'Не удалось получить доступ для сохранения PDF');
+      const { error: uploadError } = await supabase.storage.from('documents').uploadToSignedUrl(
+        uploadResult.path,
+        uploadResult.token,
+        new Blob([await pdfDoc.save() as BlobPart], { type: 'application/pdf' }),
+        { contentType: 'application/pdf' },
+      );
+      if (uploadError) throw uploadError;
+
+      const first = receipts[0];
+      const updatedMetadata = {
+        ...metadata,
+        receipts,
+        amount: first.amount,
+        currency: first.currency,
+        custom_currency: first.custom_currency,
+        amount_in_words: first.amount_in_words,
+      };
+      const { error: notificationError } = await supabase.from('notifications').update({ metadata: updatedMetadata }).eq('id', target.id);
+      if (notificationError) throw notificationError;
+
+      if (metadata.archived_at) {
+        await Promise.all(receipts.map((receipt, index) => (supabase as any)
+          .from('pdf_archive_entries')
+          .update({ amount: receipt.amount, currency: receipt.currency })
+          .eq('source_notification_id', target.id)
+          .eq('receipt_index', index)));
+      }
+      setDepositDetailsTarget(null);
+      await refetchNotifications();
+      toast({ title: 'PDF обновлён', description: receipts.length > 1 ? `Исправлено квитанций: ${receipts.length}` : 'Сумма и валюта сохранены.' });
+    } catch (error) {
+      console.error('Failed to update deposit receipt details:', error);
+      toast({ title: 'Не удалось обновить PDF', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+    } finally {
+      setSavingId(null);
+    }
   };
 
   const savePayoutCashierPdf = async (clearSignature = false) => {
@@ -2031,6 +2210,7 @@ export const NotificationsPage = () => {
                 );
               }}
               onEditDepositPdf={openDepositPdfEditor}
+              onEditDepositDetails={openDepositDetailsEditor}
               savingId={savingId}
               swipedId={swipedId}
               onSwipe={setSwipedId}
@@ -2059,6 +2239,79 @@ export const NotificationsPage = () => {
           </p>
         </div>
       )}
+
+      <Dialog
+        open={Boolean(depositDetailsTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDepositDetailsTarget(null);
+            setDepositReceiptDrafts([]);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Изменить сумму и валюту PDF</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground break-all">
+            {String(depositDetailsTarget?.metadata?.pdf_path || '').split('/').pop() || 'PDF-документ'}
+          </p>
+          <div className="space-y-3">
+            {depositDetailsReceipts.map((receipt, index) => {
+              const draft = depositReceiptDrafts[index];
+              if (!draft) return null;
+              return (
+                <div key={index} className="rounded-lg border p-3 space-y-3">
+                  <p className="text-sm font-medium">
+                    Квитанция {index + 1}{receipt.issued_to ? ` — ${String(receipt.issued_to)}` : ''}
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor={`deposit-amount-${index}`}>Сумма</Label>
+                      <Input
+                        id={`deposit-amount-${index}`}
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={draft.amount}
+                        onChange={(event) => updateDepositReceiptDraft(index, { amount: event.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Валюта</Label>
+                      <Select value={draft.currency} onValueChange={(value) => updateDepositReceiptDraft(index, { currency: value as DepositCurrency })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="PLN">PLN</SelectItem>
+                          <SelectItem value="USD">USD</SelectItem>
+                          <SelectItem value="EUR">EUR</SelectItem>
+                          <SelectItem value="UAH">UAH</SelectItem>
+                          <SelectItem value="OTHER">Другая</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  {draft.currency === 'OTHER' && (
+                    <div className="space-y-2">
+                      <Label htmlFor={`deposit-custom-currency-${index}`}>Название валюты</Label>
+                      <Input
+                        id={`deposit-custom-currency-${index}`}
+                        value={draft.customCurrency}
+                        onChange={(event) => updateDepositReceiptDraft(index, { customCurrency: event.target.value })}
+                        placeholder="Например: GBP"
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <Button className="gap-2" onClick={() => void saveDepositDetails()} disabled={Boolean(savingId) || depositReceiptDrafts.length === 0}>
+            {savingId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
+            Сохранить в PDF
+          </Button>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={Boolean(depositPdfTarget)}
