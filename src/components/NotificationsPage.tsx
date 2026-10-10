@@ -1733,11 +1733,11 @@ export const NotificationsPage = () => {
       </div>
 
       {/* Tabs */}
-      <div className="mb-5 flex max-w-full gap-1 overflow-x-auto overscroll-x-contain border-b border-border">
+      <div className="mb-5 flex max-w-full gap-1 overflow-x-auto overflow-y-hidden overscroll-x-contain border-b border-border">
         <button
           onClick={() => { setActiveTab('all'); setVisibleNotificationsLimit(NOTIFICATIONS_PAGE_SIZE); }}
           className={cn(
-            'order-0 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+            'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
             activeTab === 'all'
               ? 'border-primary text-primary'
               : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -1753,7 +1753,7 @@ export const NotificationsPage = () => {
         <button
           onClick={() => { setActiveTab('income'); setVisibleNotificationsLimit(NOTIFICATIONS_PAGE_SIZE); }}
           className={cn(
-            'order-2 flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
+            'flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
             activeTab === 'income'
               ? 'border-primary text-primary'
               : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -1775,7 +1775,7 @@ export const NotificationsPage = () => {
         <button
           onClick={() => { setActiveTab('no_photos'); setVisibleNotificationsLimit(NOTIFICATIONS_PAGE_SIZE); }}
           className={cn(
-            'order-1 flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
+            'flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
             activeTab === 'no_photos'
               ? 'border-primary text-primary'
               : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -1797,7 +1797,7 @@ export const NotificationsPage = () => {
         <button
           onClick={() => { setActiveTab('extension'); setVisibleNotificationsLimit(NOTIFICATIONS_PAGE_SIZE); }}
           className={cn(
-            'order-3 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
+            'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
             activeTab === 'extension'
               ? 'border-primary text-primary'
               : 'border-transparent text-muted-foreground hover:text-foreground'

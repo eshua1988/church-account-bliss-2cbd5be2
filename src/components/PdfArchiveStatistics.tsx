@@ -59,7 +59,7 @@ export const PdfArchiveStatistics = ({ notifications, categories, getCategoryNam
   return <section className="space-y-4">
     <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
       <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary"><Archive className="h-5 w-5" /></div>
-      <div><h2 className="font-semibold">PDF</h2><p className="text-sm text-muted-foreground">Данные документов, перемещённых в PDF-архив. Категории сохранены из документа.</p></div>
+      <div><h2 className="font-semibold">PDF</h2><p className="text-sm text-muted-foreground">Категории сохранены из документа PDF.</p></div>
     </div>
     <Tabs defaultValue="balance" className="w-full">
       <TabsList className="flex-wrap h-auto gap-1 p-1">
