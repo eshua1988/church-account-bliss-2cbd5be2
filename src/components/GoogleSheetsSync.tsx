@@ -186,6 +186,21 @@ const recoverLegacyPdfArchiveEntries = async (userId: string) => {
   if (upsertError) throw upsertError;
 };
 
+const PRIMARY_CURRENCY_ORDER = ['PLN', 'USD', 'EUR'];
+
+const normaliseExportCurrency = (currency: string) => currency.trim().toUpperCase() || 'PLN';
+
+const orderExportCurrencies = (transactions: ExportSyncTransaction[]) => {
+  const currencies = new Set(transactions.map(transaction => normaliseExportCurrency(transaction.currency)));
+  const otherCurrencies = [...currencies]
+    .filter(currency => !PRIMARY_CURRENCY_ORDER.includes(currency))
+    .sort((left, right) => left.localeCompare(right));
+
+  // Keep the three standard currencies visible even during a period in which one
+  // of them has no transactions. This keeps the sheet layout stable between syncs.
+  return [...PRIMARY_CURRENCY_ORDER, ...otherCurrencies];
+};
+
 const buildTransactionExportValues = (
   transactions: ExportSyncTransaction[],
   expenseCategories: ExportSyncCategory[],
@@ -193,7 +208,23 @@ const buildTransactionExportValues = (
 ) => {
   const exportTransactions = transactions.filter(transaction => isInExportPeriod(transaction.date, target));
   const sortedExpense = uniqueExpenseCategories(expenseCategories);
-  const headers = ['Date', 'Income', ...sortedExpense.map(category => category.name), 'Прочее'];
+  const currencies = orderExportCurrencies(exportTransactions);
+  const currencyColumns = currencies.flatMap(currency => currency === 'PLN'
+    ? [{ currency, type: 'income' as const, header: 'Доход PLN' }]
+    : [
+        { currency, type: 'income' as const, header: `Доход ${currency}` },
+        { currency, type: 'expense' as const, header: `Расходы ${currency}` },
+      ]);
+  const headers = [
+    'Дата',
+    ...currencyColumns.map(column => column.header),
+    ...sortedExpense.map(category => category.name),
+    'Прочее (расход)',
+  ];
+  const currencyColumnByKey = new Map(
+    currencyColumns.map((column, index) => [`${column.type}:${column.currency}`, index + 1]),
+  );
+  const departmentColumnStart = currencyColumns.length + 1;
   const fallbackColumn = headers.length - 1;
   const byDate = new Map<string, ExportSyncTransaction[]>();
 
@@ -219,15 +250,17 @@ const buildTransactionExportValues = (
       .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
 
     for (const transaction of dayTransactions) {
-      let column = fallbackColumn;
-      if (transaction.type === 'income') {
-        column = 1;
-      } else {
+      const currency = normaliseExportCurrency(transaction.currency);
+      let column = currencyColumnByKey.get(`${transaction.type}:${currency}`) ?? fallbackColumn;
+
+      // Foreign-currency expenses are kept with that currency even when they
+      // belong to a department. Department columns remain PLN expenses only.
+      if (transaction.type === 'expense' && currency === 'PLN') {
         let categoryIndex = sortedExpense.findIndex(category => category.id === transaction.category);
         if (categoryIndex === -1 && transaction.departmentName) {
           categoryIndex = sortedExpense.findIndex(category => category.name === transaction.departmentName);
         }
-        if (categoryIndex !== -1) column = categoryIndex + 2;
+        if (categoryIndex !== -1) column = departmentColumnStart + categoryIndex;
       }
 
       let row = dayRows.find(candidate => !candidate[column]);
