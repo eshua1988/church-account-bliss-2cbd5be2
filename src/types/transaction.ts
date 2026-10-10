@@ -34,6 +34,7 @@ export interface Transaction {
   bankSender?: string; // Nadawca
   bankRecipient?: string; // Odbiorca
   source?: string; // Bank source name
+  sourcePdfPath?: string; // Original PDF path for an independently archived entry
   // User-editable fields
   departmentName?: string; // Отдел
   comment?: string; // Комментарий

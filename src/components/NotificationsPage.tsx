@@ -1246,6 +1246,7 @@ export const NotificationsPage = () => {
           department_name: String(receipt.department_name || basis || metadata.department_name || '') || null,
           basis: basis || null,
           issued_to: String(receipt.issued_to || metadata.issued_to || '') || null,
+          source_pdf_path: String(metadata.pdf_path || '') || null,
           document_date: documentDate,
         };
       });

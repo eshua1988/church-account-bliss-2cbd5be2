@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp, TrendingDown, Trash2, Download, ChevronDown, FileText, Settings, Search, SlidersHorizontal } from 'lucide-react';
+import { TrendingUp, TrendingDown, Trash2, Download, ChevronDown, ExternalLink, FileText, Settings, Search, SlidersHorizontal } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -39,6 +39,7 @@ interface StatisticsTableProps {
   notifications?: Notification[];
   onLinkNotification?: (transactionId: string, notificationId: string) => void;
   onUnlinkNotification?: (transactionId: string) => void;
+  onOpenPdf?: (transaction: Transaction) => void;
   calculatorMode?: boolean;
 }
 
@@ -70,7 +71,7 @@ const getSearchWords = (text: string) =>
     .map(word => word.trim())
     .filter(word => word.length >= 2);
 
-export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loadingMore = false, onLoadMore, getCategoryName, onDelete, onUpdate, selectedCurrency, categories = [], notifications = [], onLinkNotification, onUnlinkNotification, calculatorMode = false }: StatisticsTableProps) => {
+export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loadingMore = false, onLoadMore, getCategoryName, onDelete, onUpdate, selectedCurrency, categories = [], notifications = [], onLinkNotification, onUnlinkNotification, onOpenPdf, calculatorMode = false }: StatisticsTableProps) => {
   const { t, getDateLocale } = useTranslation();
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
@@ -662,6 +663,11 @@ export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loa
                         )}>
                           {transaction.type === 'income' ? '+' : '-'}{transaction.amount.toLocaleString(getDateLocale())} {CURRENCY_SYMBOLS[transaction.currency]}
                         </span>
+                        {onOpenPdf && transaction.sourcePdfPath && (
+                          <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-primary" onClick={() => onOpenPdf(transaction)} aria-label="Открыть исходный PDF" title="Открыть исходный PDF">
+                            <ExternalLink className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"
@@ -759,6 +765,7 @@ export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loa
                 <th className="h-12 px-3 text-left align-middle font-medium text-muted-foreground whitespace-nowrap">{t('date')}</th>
                 <th className="h-12 px-3 text-left align-middle font-medium text-muted-foreground">{t('category')}</th>
                 <th className="h-12 px-2 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">{t('amount')}</th>
+                {onOpenPdf && <th className="h-12 w-8 px-1"></th>}
                 <th className="h-12 w-8 px-1"></th>
                 {onUpdate && <th className="h-12 w-8 px-1"></th>}
               </tr>
@@ -794,6 +801,11 @@ export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loa
                         <td className={cn('p-4 px-2 text-right font-semibold whitespace-nowrap align-middle', transaction.type === 'income' ? 'text-success' : 'text-destructive')}>
                           {transaction.type === 'income' ? '+' : '-'}{transaction.amount.toLocaleString(getDateLocale())} {CURRENCY_SYMBOLS[transaction.currency]}
                         </td>
+                        {onOpenPdf && <td className="p-4 w-8 px-1 align-middle">
+                          {transaction.sourcePdfPath && <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-primary" onClick={() => onOpenPdf(transaction)} aria-label="Открыть исходный PDF" title="Открыть исходный PDF">
+                            <ExternalLink className="h-4 w-4" />
+                          </Button>}
+                        </td>}
                         <td className="p-4 w-8 px-1 align-middle">
                           <Button
                             variant="ghost"

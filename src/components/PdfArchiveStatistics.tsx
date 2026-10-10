@@ -6,6 +6,9 @@ import { CurrencyBalanceCard } from '@/components/CurrencyBalanceCard';
 import { StatisticsTable } from '@/components/StatisticsTable';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { usePdfArchiveEntries } from '@/hooks/usePdfArchiveEntries';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { openPdfUrl } from '@/lib/pdfDownload';
 
 interface PdfArchiveStatisticsProps {
   categories: { id: string; name: string; type: string }[];
@@ -19,6 +22,7 @@ const asCurrency = (value: unknown): Currency =>
 
 export const PdfArchiveStatistics = ({ categories, getCategoryName }: PdfArchiveStatisticsProps) => {
   const { t } = useTranslation();
+  const { toast } = useToast();
   const { entries } = usePdfArchiveEntries();
   const archiveTransactions = useMemo<Transaction[]>(() => entries.map(entry => {
     const date = new Date(entry.document_date);
@@ -33,6 +37,7 @@ export const PdfArchiveStatistics = ({ categories, getCategoryName }: PdfArchive
       date: Number.isNaN(date.getTime()) ? new Date(entry.created_at) : date,
       createdAt: new Date(entry.created_at),
       issuedTo: entry.issued_to || undefined,
+      sourcePdfPath: entry.source_pdf_path || undefined,
       departmentName: entry.department_name || basis,
       comment: 'PDF-архив',
     };
@@ -45,6 +50,29 @@ export const PdfArchiveStatistics = ({ categories, getCategoryName }: PdfArchive
     const income = rows.filter(transaction => transaction.type === 'income').reduce((sum, transaction) => sum + transaction.amount, 0);
     const expense = rows.filter(transaction => transaction.type === 'expense').reduce((sum, transaction) => sum + transaction.amount, 0);
     return { income, expense, balance: income - expense };
+  };
+
+  const openSourcePdf = async (transaction: Transaction) => {
+    if (!transaction.sourcePdfPath) {
+      toast({ title: 'Исходный PDF не найден', description: 'Для этой записи путь к документу не сохранён.', variant: 'destructive' });
+      return;
+    }
+    try {
+      const supabaseUrl = (supabase as any).supabaseUrl as string;
+      const supabaseKey = (supabase as any).supabaseKey as string;
+      const sourceUserId = transaction.sourcePdfPath.split('/')[0];
+      if (!sourceUserId) throw new Error('Не указан владелец исходного PDF');
+      const params = new URLSearchParams({ action: 'sign', filePath: transaction.sourcePdfPath, userId: sourceUserId });
+      const response = await fetch(`${supabaseUrl}/functions/v1/upload-payout-pdf?${params}`, {
+        headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+      });
+      const result = await response.json();
+      if (!response.ok || !result.signedUrl) throw new Error(result.error || 'Не удалось получить ссылку на PDF');
+      openPdfUrl(`${result.signedUrl}${result.signedUrl.includes('?') ? '&' : '?'}v=${Date.now()}`);
+    } catch (error) {
+      console.error('Error opening source PDF:', error);
+      toast({ title: 'Не удалось открыть PDF', description: 'Проверьте, что исходный файл ещё доступен.', variant: 'destructive' });
+    }
   };
 
   return <section className="space-y-4">
@@ -64,7 +92,7 @@ export const PdfArchiveStatistics = ({ categories, getCategoryName }: PdfArchive
           return <CurrencyBalanceCard key={currency} currency={currency} income={balance.income} expense={balance.expense} balance={balance.balance} delay={index * 100} transactions={archiveTransactions} getCategoryName={getCategoryName} />;
         })}</div>}
       </TabsContent>
-      <TabsContent value="table"><StatisticsTable transactions={archiveTransactions} getCategoryName={getCategoryName} categories={categories} /></TabsContent>
+      <TabsContent value="table"><StatisticsTable transactions={archiveTransactions} getCategoryName={getCategoryName} categories={categories} onOpenPdf={openSourcePdf} /></TabsContent>
       <TabsContent value="calculator"><StatisticsTable transactions={archiveTransactions} getCategoryName={getCategoryName} categories={categories} calculatorMode /></TabsContent>
     </Tabs>
   </section>;
