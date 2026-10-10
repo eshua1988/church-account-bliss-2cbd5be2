@@ -32,7 +32,7 @@ AS $$
       COALESCE(p.department_name, 'Без отдела') AS department_name,
       COALESCE(c.name, 'Без категории') AS category_name
     FROM public.pdf_archive_entries p
-    LEFT JOIN public.categories c ON c.id = p.category_id
+    LEFT JOIN public.categories c ON c.id::text = p.category_id
     WHERE analytics_source = 'pdf'
       AND p.user_id = target_user_id
       AND p.document_date >= from_date
