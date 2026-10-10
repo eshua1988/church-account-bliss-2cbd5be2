@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 type Period = 'week' | 'month' | 'quarter' | 'year' | 'all';
 type TransactionFilter = 'all' | 'income' | 'expense';
+type AnalyticsSource = 'bank' | 'pdf';
 interface CurrencyTotal { type: 'income' | 'expense'; currency: string; amount: number; transaction_count: number }
 interface DepartmentTotal { department_name: string; currency: string; income: number; expense: number }
 interface CategoryTotal { category_name: string; currency: string; income: number; expense: number; income_count: number; expense_count: number }
@@ -42,6 +43,7 @@ const PublicAnalytics = () => {
   const { token = '' } = useParams();
   const [period, setPeriod] = useState<Period>('month');
   const [transactionFilter, setTransactionFilter] = useState<TransactionFilter>('all');
+  const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('bank');
   const [currency, setCurrency] = useState('');
   const [data, setData] = useState<Response | null>(null);
 
@@ -55,9 +57,9 @@ const PublicAnalytics = () => {
       })();
     setData(null);
     supabase.functions.invoke<Response>('public-transactions', {
-      body: { token, action: 'analytics', fromDate },
+      body: { token, action: 'analytics', fromDate, analyticsSource },
     }).then(({ data }) => setData(data || { valid: false }));
-  }, [token, period]);
+  }, [token, period, analyticsSource]);
 
   const summary = data?.analytics;
   const currencies = useMemo(() => Array.from(new Set(summary?.currencyTotals.map(row => row.currency) || [])), [summary]);
@@ -117,7 +119,13 @@ const PublicAnalytics = () => {
     <main className="min-h-screen bg-background p-3 sm:p-8">
       <div className="mx-auto max-w-7xl space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="flex items-center gap-2 text-2xl font-bold"><BarChart3 />Публичная аналитика</h1>
+          <div className="space-y-3">
+            <h1 className="flex items-center gap-2 text-2xl font-bold"><BarChart3 />Публичная аналитика</h1>
+            <div className="flex flex-wrap gap-2" aria-label="Источник аналитики">
+              <Button variant={analyticsSource === 'bank' ? 'default' : 'outline'} size="sm" onClick={() => setAnalyticsSource('bank')}>Банк</Button>
+              <Button variant={analyticsSource === 'pdf' ? 'default' : 'outline'} size="sm" onClick={() => setAnalyticsSource('pdf')}>PDF Аналитика</Button>
+            </div>
+          </div>
           <div className="flex flex-wrap gap-2">
             {currencies.length > 1 && (
               <Select value={currency} onValueChange={setCurrency}>

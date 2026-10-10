@@ -8,8 +8,9 @@ const corsHeaders = {
 interface PublicTransactionsRequest {
   token: string;
   includeNotifications?: boolean;
-  action?: 'add-rule-terms' | 'sync-bank' | 'export-sheets' | 'save-sheets-settings' | 'save-export-source' | 'delete-export-source' | 'save-registration-source' | 'delete-registration-source' | 'reconcile-registration-sheets' | 'list-sheets';
+  action?: 'analytics' | 'add-rule-terms' | 'sync-bank' | 'export-sheets' | 'save-sheets-settings' | 'save-export-source' | 'delete-export-source' | 'save-registration-source' | 'delete-registration-source' | 'reconcile-registration-sheets' | 'list-sheets';
   fromDate?: string;
+  analyticsSource?: 'bank' | 'pdf';
   cursor?: {
     date: string;
     createdAt: string;
@@ -788,7 +789,11 @@ Deno.serve(async (req) => {
         : new Date(Date.now() - 31 * 86400000).toISOString().slice(0, 10);
       const { data: analytics, error: analyticsError } = await supabase.rpc(
         'public_analytics_summary',
-        { target_user_id: linkData.owner_user_id, from_date: fromDate },
+        {
+          target_user_id: linkData.owner_user_id,
+          from_date: fromDate,
+          analytics_source: body.analyticsSource === 'pdf' ? 'pdf' : 'bank',
+        },
       );
       if (analyticsError) {
         return new Response(JSON.stringify({ valid: false, error: 'Failed to aggregate analytics' }), {
