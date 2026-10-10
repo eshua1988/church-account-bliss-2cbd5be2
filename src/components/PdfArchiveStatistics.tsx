@@ -22,29 +22,55 @@ export const PdfArchiveStatistics = ({ notifications, categories, getCategoryNam
   const { t } = useTranslation();
   const archiveTransactions = useMemo<Transaction[]>(() => notifications.flatMap(notification => {
     const metadata = notification.metadata || {};
-    const amount = Number(metadata.amount);
-    if (!metadata.archived_at || !Number.isFinite(amount)) return [];
+    if (!metadata.archived_at) return [];
 
+    // Deposit PDFs can contain multiple "Dowód wpłaty" documents. Their
+    // individual fields are stored in receipts; legacy documents use metadata.
+    const receipts = Array.isArray(metadata.receipts) && metadata.receipts.length > 0
+      ? metadata.receipts.filter((receipt): receipt is Record<string, unknown> => Boolean(receipt) && typeof receipt === 'object')
+      : [metadata as Record<string, unknown>];
     const archiveType = metadata.archive_type === 'income' ? 'income' : 'expense';
-    const rawDate = typeof metadata.date === 'string' ? metadata.date : notification.created_at;
-    const date = new Date(rawDate);
-    const category = typeof metadata.category_id === 'string' && metadata.category_id
-      ? metadata.category_id
-      : 'other';
 
-    return [{
-      id: `pdf-${notification.id}`,
-      type: archiveType,
-      amount,
-      currency: asCurrency(metadata.currency),
-      category: category as TransactionCategory,
-      description: String(metadata.basis || notification.message || 'Архивный PDF'),
-      date: Number.isNaN(date.getTime()) ? new Date(notification.created_at) : date,
-      createdAt: new Date(notification.created_at),
-      issuedTo: typeof metadata.issued_to === 'string' ? metadata.issued_to : notification.title,
-      departmentName: typeof metadata.department_name === 'string' ? metadata.department_name : undefined,
-      comment: 'PDF-архив',
-    }];
+    return receipts.flatMap((receipt, receiptIndex) => {
+      const amount = Number(receipt.amount);
+      if (!Number.isFinite(amount)) return [];
+
+      const rawDate = typeof receipt.date === 'string' ? receipt.date : notification.created_at;
+      const date = new Date(rawDate);
+      const category = typeof receipt.category_id === 'string' && receipt.category_id
+        ? receipt.category_id
+        : typeof metadata.category_id === 'string' && metadata.category_id
+          ? metadata.category_id
+          : 'other';
+      const basis = typeof receipt.basis === 'string' && receipt.basis.trim()
+        ? receipt.basis.trim()
+        : String(metadata.basis || notification.message || 'Архивный PDF');
+      // Deposit receipts have no separately selected department. The basis is
+      // therefore the authoritative category from the document and is used in
+      // both the table heading and expanded card.
+      const departmentName = typeof receipt.department_name === 'string' && receipt.department_name.trim()
+        ? receipt.department_name.trim()
+        : basis;
+      const issuedTo = typeof receipt.issued_to === 'string' && receipt.issued_to.trim()
+        ? receipt.issued_to
+        : typeof metadata.issued_to === 'string'
+          ? metadata.issued_to
+          : notification.title;
+
+      return [{
+        id: `pdf-${notification.id}-${receiptIndex}`,
+        type: archiveType,
+        amount,
+        currency: asCurrency(receipt.currency ?? metadata.currency),
+        category: category as TransactionCategory,
+        description: basis,
+        date: Number.isNaN(date.getTime()) ? new Date(notification.created_at) : date,
+        createdAt: new Date(notification.created_at),
+        issuedTo,
+        departmentName,
+        comment: 'PDF-архив',
+      }];
+    });
   }), [notifications]);
 
   const availableCurrencies = useMemo(() => [...new Set(archiveTransactions.map(transaction => transaction.currency))] as Currency[], [archiveTransactions]);

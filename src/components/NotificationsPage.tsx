@@ -1185,27 +1185,33 @@ export const NotificationsPage = () => {
     if (!archiveTarget) return;
     const year = getNotificationArchiveYear(archiveTarget);
     const metadata = archiveTarget.metadata || {};
-    const amount = Number(metadata.amount);
+    const archiveReceipts = Array.isArray(metadata.receipts) && metadata.receipts.length > 0
+      ? metadata.receipts.filter((receipt): receipt is Record<string, unknown> => Boolean(receipt) && typeof receipt === 'object')
+      : [metadata as Record<string, unknown>];
+    const validReceipts = archiveReceipts.filter(receipt => Number.isFinite(Number(receipt.amount)));
 
-    if (!Number.isFinite(amount)) {
+    if (validReceipts.length === 0) {
       toast({ title: 'Ошибка архивации', description: 'В уведомлении нет корректной суммы', variant: 'destructive' });
       return;
     }
 
     setSavingId(archiveTarget.id);
     try {
-      const currency = String(metadata.currency || 'PLN');
-      const documentDate = typeof metadata.date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(metadata.date)
-        ? metadata.date.slice(0, 10)
-        : format(new Date(archiveTarget.created_at), 'yyyy-MM-dd');
-      const amountWithCurrency = `${amount} ${currency}`;
-      const department = String(metadata.department_name || 'Расход');
-      const values = [[
-        documentDate,
-        archiveType === 'income' ? amountWithCurrency : '',
-        archiveType === 'expense' ? department : '',
-        archiveType === 'expense' ? amountWithCurrency : '',
-      ]];
+      const values = validReceipts.map(receipt => {
+        const currency = String(receipt.currency || metadata.currency || 'PLN');
+        const rawDate = typeof receipt.date === 'string' ? receipt.date : metadata.date;
+        const documentDate = typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(rawDate)
+          ? rawDate.slice(0, 10)
+          : format(new Date(archiveTarget.created_at), 'yyyy-MM-dd');
+        const amountWithCurrency = `${Number(receipt.amount)} ${currency}`;
+        const department = String(receipt.department_name || receipt.basis || metadata.department_name || 'Расход');
+        return [
+          documentDate,
+          archiveType === 'income' ? amountWithCurrency : '',
+          archiveType === 'expense' ? department : '',
+          archiveType === 'expense' ? amountWithCurrency : '',
+        ];
+      });
 
       // Export first. If the separate archive sheet is not configured, keep the
       // notification out of the archive so the user can correct the setting.
