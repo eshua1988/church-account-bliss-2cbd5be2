@@ -10,7 +10,7 @@ import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { Currency, CURRENCY_SYMBOLS, Transaction, TransactionType } from '@/types/transaction';
-import { Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronUp, Landmark } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
@@ -426,10 +426,14 @@ const Index = () => {
             <div className="animate-fade-in">
               <Tabs defaultValue="online" className="w-full space-y-4">
                 <TabsList className="h-auto gap-1 p-1">
-                  <TabsTrigger value="online" className="gap-2 px-5"><span className="h-2 w-2 rounded-full bg-emerald-500" />Онлайн</TabsTrigger>
+                  <TabsTrigger value="online" className="gap-2 px-5"><span className="h-2 w-2 rounded-full bg-emerald-500" />Банк</TabsTrigger>
                   <TabsTrigger value="pdf" className="gap-2 px-5"><span className="h-2 w-2 rounded-full bg-amber-500" />PDF</TabsTrigger>
                 </TabsList>
                 <TabsContent value="online" className="mt-0">
+              <div className="mb-4 flex items-center gap-3 rounded-xl border bg-card p-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary"><Landmark className="h-5 w-5" /></div>
+                <div className="flex flex-wrap items-baseline gap-x-2"><h2 className="font-semibold">Банк</h2><p className="text-sm text-muted-foreground">— Транзакции сохранены из Банка онлайн.</p></div>
+              </div>
               <Tabs defaultValue="balance" className="w-full">
                 <div className="sticky top-0 z-30 -mx-3 sm:-mx-4 mb-4 px-3 sm:px-4 py-2 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85 border-b border-border/60">
                   <TabsList className="flex-wrap h-auto gap-1 p-1">
