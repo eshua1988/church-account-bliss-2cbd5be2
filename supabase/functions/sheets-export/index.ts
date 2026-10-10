@@ -224,8 +224,16 @@ serve(async (req) => {
           {
             repeatCell: {
               range: { sheetId: archiveSheet.properties.sheetId, startRowIndex: dataStartRow, endRowIndex: bounds.endRowIndex, startColumnIndex: bounds.startColumnIndex, endColumnIndex: dataEndColumn },
-              cell: { userEnteredFormat: { borders: { top: { style: "NONE" }, bottom: { style: "NONE" } } } },
-              fields: "userEnteredFormat.borders.top,userEnteredFormat.borders.bottom",
+              // Explicit thin borders keep ordinary cells visible even when the
+              // sheet's default gridlines are disabled. Background colours and
+              // other template formatting remain unchanged.
+              cell: { userEnteredFormat: { borders: {
+                top: { style: "SOLID", color: { red: 0.72, green: 0.72, blue: 0.72 } },
+                bottom: { style: "SOLID", color: { red: 0.72, green: 0.72, blue: 0.72 } },
+                left: { style: "SOLID", color: { red: 0.72, green: 0.72, blue: 0.72 } },
+                right: { style: "SOLID", color: { red: 0.72, green: 0.72, blue: 0.72 } },
+              } } },
+              fields: "userEnteredFormat.borders",
             },
           },
           ...monthSeparatorRowIndexes.map(rowOffset => ({
