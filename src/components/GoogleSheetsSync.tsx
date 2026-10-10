@@ -179,21 +179,10 @@ export const syncAllConfiguredGoogleSheetExports = async (
     archived_pdf_spreadsheet_id?: string | null;
     archived_pdf_sheet_range?: string | null;
   };
-  const legacyExports: SheetExport[] = [
-    profile?.spreadsheet_id && profile?.sheet_range
-      ? { id: '', export_type: 'transactions', spreadsheet_id: profile.spreadsheet_id, sheet_range: profile.sheet_range }
-      : null,
-    profile?.archived_pdf_spreadsheet_id && profile?.archived_pdf_sheet_range
-      ? { id: '', export_type: 'pdf', spreadsheet_id: profile.archived_pdf_spreadsheet_id, sheet_range: profile.archived_pdf_sheet_range }
-      : null,
-  ].filter((target): target is SheetExport => target !== null);
+  // Only exports visible in Settings are run here. Legacy profile fields can
+  // point to the same spreadsheet with an old range and would otherwise create
+  // a hidden duplicate export on every top-level synchronization.
   const exports = [...savedExports];
-  for (const legacy of legacyExports) {
-    const alreadyConfigured = savedExports.some(target => target.export_type === legacy.export_type
-      && target.spreadsheet_id === legacy.spreadsheet_id
-      && target.sheet_range === legacy.sheet_range);
-    if (!alreadyConfigured) exports.push(legacy);
-  }
   if (exports.length === 0) return { configured: 0, completed: 0, failed: 0, errors: [] as string[] };
   if (notificationsResult.error) throw notificationsResult.error;
 
