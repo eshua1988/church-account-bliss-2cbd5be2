@@ -123,6 +123,42 @@ const Index = () => {
   const [isConfiguredExportsSyncing, setIsConfiguredExportsSyncing] = useState(false);
   const [syncReport, setSyncReport] = useState<SyncReport | null>(loadSyncReport);
 
+  useEffect(() => {
+    let active = true;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    const loadRemoteReport = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || !active) return;
+      const { data } = await (supabase as any)
+        .from('sync_reports')
+        .select('completed_at, items')
+        .eq('user_id', user.id)
+        .order('completed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data && active) {
+        const report = { completedAt: data.completed_at, items: data.items as SyncReportItem[] };
+        setSyncReport(report);
+        localStorage.setItem(SYNC_REPORT_STORAGE_KEY, JSON.stringify(report));
+      }
+      channel = supabase
+        .channel(`sync-reports-${user.id}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sync_reports', filter: `user_id=eq.${user.id}` }, payload => {
+          const row = payload.new as { completed_at: string; items: SyncReportItem[] };
+          const report = { completedAt: row.completed_at, items: row.items };
+          setSyncReport(report);
+          localStorage.setItem(SYNC_REPORT_STORAGE_KEY, JSON.stringify(report));
+        })
+        .subscribe();
+    };
+    void loadRemoteReport();
+    return () => {
+      active = false;
+      if (channel) void supabase.removeChannel(channel);
+    };
+  }, []);
+
   const handleBankSync = useCallback(async (): Promise<SyncReportItem> => {
     try {
       setIsBankSyncing(true);
@@ -185,13 +221,9 @@ const Index = () => {
 
       if (configuredExports.status === 'fulfilled') {
         const configuredExportsResult = configuredExports.value;
-        reportItems.push(configuredExportsResult.configured > 0
-          ? {
-            id: 'sheets', title: 'Экспорт в Google Sheets',
-            status: configuredExportsResult.failed > 0 ? 'error' : 'success',
-            details: [`Готово: ${configuredExportsResult.completed} из ${configuredExportsResult.configured}`, ...configuredExportsResult.errors],
-          }
-          : { id: 'sheets', title: 'Экспорт в Google Sheets', status: 'skipped', details: ['Нет настроенных экспортов'] });
+        reportItems.push(...(configuredExportsResult.configured > 0
+          ? configuredExportsResult.items
+          : [{ id: 'sheets', title: 'Экспорт в Google Sheets', status: 'skipped' as const, details: ['Нет настроенных экспортов'] }]));
         if (configuredExportsResult.configured > 0) {
           toast({
             title: configuredExportsResult.failed > 0 ? 'Не все экспорты Google Sheets завершены' : 'Экспорты Google Sheets завершены',
@@ -230,6 +262,16 @@ const Index = () => {
       const nextReport: SyncReport = { completedAt: new Date().toISOString(), items: reportItems };
       setSyncReport(nextReport);
       localStorage.setItem(SYNC_REPORT_STORAGE_KEY, JSON.stringify(nextReport));
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { error } = await (supabase as any).from('sync_reports').insert({
+          user_id: user.id,
+          completed_at: nextReport.completedAt,
+          trigger_source: 'manual',
+          items: nextReport.items,
+        });
+        if (error) console.error('Failed to save shared sync report:', error);
+      }
     } finally {
       setIsConfiguredExportsSyncing(false);
     }

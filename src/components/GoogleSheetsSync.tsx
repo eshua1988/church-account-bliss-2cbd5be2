@@ -215,7 +215,7 @@ export const syncAllConfiguredGoogleSheetExports = async (
         const payload = await response.json().catch(() => ({}));
         throw new Error(payload?.error || `Ошибка экспорта транзакций (${response.status})`);
       }
-      return;
+      return { target, title: `Google Sheets — ${target.export_type === 'pdf' ? 'PDF-архив' : 'транзакции'}` };
     }
 
     const archiveRows: string[][] = [];
@@ -254,10 +254,20 @@ export const syncAllConfiguredGoogleSheetExports = async (
     }
   }));
 
-  const errors = results.flatMap(result => result.status === 'rejected'
-    ? [result.reason instanceof Error ? result.reason.message : String(result.reason)]
-    : []);
-  return { configured: exports.length, completed: exports.length - errors.length, failed: errors.length, errors };
+  const items = results.map((result, index) => {
+    const target = exports[index];
+    const title = `Google Sheets — ${target.export_type === 'pdf' ? 'PDF-архив' : 'транзакции'}`;
+    const location = `${target.spreadsheet_id.slice(0, 12)}… · ${target.sheet_range}`;
+    if (result.status === 'fulfilled') return { id: `sheets-${target.id || index}`, title, status: 'success' as const, details: [location] };
+    return {
+      id: `sheets-${target.id || index}`,
+      title,
+      status: 'error' as const,
+      details: [location, result.reason instanceof Error ? result.reason.message : String(result.reason)],
+    };
+  });
+  const errors = items.filter(item => item.status === 'error').flatMap(item => item.details.slice(1));
+  return { configured: exports.length, completed: exports.length - errors.length, failed: errors.length, errors, items };
 };
 
 export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategoryName, onDeleteTransaction, expenseCategories = [] }: GoogleSheetsSyncProps) => {
