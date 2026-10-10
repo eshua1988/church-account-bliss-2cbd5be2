@@ -442,9 +442,23 @@ export const useNotifications = () => {
     fetchNotifications();
   }, [fetchNotifications]);
 
-  // Real-time subscription
+  // Realtime is the normal delivery channel. The 30-second query is only a
+  // fallback when that channel is unavailable.
   useEffect(() => {
     if (!user) return;
+
+    let poll: ReturnType<typeof setInterval> | null = null;
+    const stopPolling = () => {
+      if (poll) {
+        clearInterval(poll);
+        poll = null;
+      }
+    };
+    const startPolling = () => {
+      if (poll) return;
+      void fetchNotifications();
+      poll = setInterval(() => void fetchNotifications(), 30_000);
+    };
 
     // Unique channel name per user prevents multi-device conflicts
     const channel = supabase
@@ -521,17 +535,17 @@ export const useNotifications = () => {
         }
       )
       .subscribe((status) => {
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        if (status === 'SUBSCRIBED') {
+          stopPolling();
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           console.warn('Realtime: notifications subscription issue, falling back to polling');
+          startPolling();
         }
       });
 
-    // Polling fallback every 30s
-    const poll = setInterval(() => fetchNotifications(), 30_000);
-
     return () => {
       supabase.removeChannel(channel);
-      clearInterval(poll);
+      stopPolling();
     };
   }, [user, toast, fetchNotifications, showBrowserNotification, queueServerPushFallback, hasPushSubscription]);
 

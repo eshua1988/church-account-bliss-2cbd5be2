@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Header, type SyncReport, type SyncReportItem } from '@/components/Header';
 import { CurrencyBalanceCard } from '@/components/CurrencyBalanceCard';
@@ -27,7 +27,6 @@ import { BankingPage } from '@/components/BankingPage';
 import { TelegramMenuPage } from '@/components/TelegramMenuPage';
 import { RegistrationBuilder } from '@/components/RegistrationBuilder';
 import { HeaderBrandingSettings } from '@/components/HeaderBrandingSettings';
-import { useGoogleSheetsSync } from '@/hooks/useGoogleSheetsSync';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useNotifications } from '@/hooks/useNotifications';
@@ -109,16 +108,6 @@ const Index = () => {
 
   const { notifications, refetch: refetchNotifications } = useNotifications();
   
-  const {
-    isSyncing: isSheetSyncing,
-    handleSync: handleSheetSync,
-    spreadsheetId,
-  } = useGoogleSheetsSync({
-    transactions,
-    onDeleteTransaction: deleteTransaction,
-    expenseCategories,
-  });
-
   const [isBankSyncing, setIsBankSyncing] = useState(false);
   const [isConfiguredExportsSyncing, setIsConfiguredExportsSyncing] = useState(false);
   const [syncReport, setSyncReport] = useState<SyncReport | null>(loadSyncReport);
@@ -205,7 +194,7 @@ const Index = () => {
     }
   }, [refetchTransactions, toast]);
 
-  const isSyncing = isSheetSyncing || isBankSyncing || isConfiguredExportsSyncing;
+  const isSyncing = isBankSyncing || isConfiguredExportsSyncing;
 
   const handleSync = useCallback(async () => {
     setIsConfiguredExportsSyncing(true);
@@ -276,29 +265,6 @@ const Index = () => {
       setIsConfiguredExportsSyncing(false);
     }
   }, [handleBankSync, notifications, toast, transactions, expenseCategories, getAllTransactions]);
-
-  // Track previous transaction count for auto-sync on realtime changes
-  const prevTransactionCountRef = useRef<number>(transactions.length);
-  const isInitialMountRef = useRef<boolean>(true);
-
-  // Auto-sync when transactions change via realtime (e.g., from public payout link)
-  useEffect(() => {
-    // Skip initial mount
-    if (isInitialMountRef.current) {
-      isInitialMountRef.current = false;
-      prevTransactionCountRef.current = transactions.length;
-      return;
-    }
-
-    // Only sync if spreadsheet is configured and transaction count changed
-    if (spreadsheetId && transactions.length !== prevTransactionCountRef.current) {
-      const timerId = setTimeout(() => {
-        void handleSheetSync();
-      }, 1000);
-      prevTransactionCountRef.current = transactions.length;
-      return () => clearTimeout(timerId);
-    }
-  }, [transactions.length, spreadsheetId, handleSheetSync]);
 
   const incomeByCategory = getTransactionsByCategory('income');
   const expenseByCategory = getTransactionsByCategory('expense');
@@ -501,7 +467,6 @@ const Index = () => {
           collapsed={sidebarCollapsed}
           mobileOpen={mobileMenuOpen}
           onMobileOpenChange={setMobileMenuOpen}
-          spreadsheetId={spreadsheetId}
         />
         
         <div className="flex-1 min-h-0 min-w-0 overflow-auto">

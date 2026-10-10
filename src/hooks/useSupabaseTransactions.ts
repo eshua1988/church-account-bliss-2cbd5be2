@@ -164,11 +164,26 @@ export const useSupabaseTransactions = () => {
     }
   }, [user]);
 
-  // Subscribe to realtime changes + polling fallback
+  // Realtime keeps active devices in sync. Poll only when its channel cannot
+  // connect, rather than continually duplicating successful realtime traffic.
   useEffect(() => {
     if (!user) return;
 
     fetchTransactions();
+    let poll: ReturnType<typeof setInterval> | null = null;
+
+    const stopPolling = () => {
+      if (poll) {
+        clearInterval(poll);
+        poll = null;
+      }
+    };
+
+    const startPolling = () => {
+      if (poll) return;
+      void fetchTransactions(false);
+      poll = setInterval(() => void fetchTransactions(false), 30_000);
+    };
 
     // Unique channel name per user prevents multi-device conflicts
     const channel = supabase
@@ -182,23 +197,22 @@ export const useSupabaseTransactions = () => {
           filter: `user_id=eq.${user.id}`,
         },
         () => {
-          fetchTransactions(false);
+          void fetchTransactions(false);
         }
       )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           console.log('Realtime: transactions subscribed');
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          stopPolling();
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           console.warn('Realtime: transactions subscription issue, falling back to polling');
+          startPolling();
         }
       });
 
-    // Polling fallback every 30s in case Realtime drops
-    const poll = setInterval(() => fetchTransactions(false), 30_000);
-
     return () => {
       supabase.removeChannel(channel);
-      clearInterval(poll);
+      stopPolling();
     };
   }, [user, fetchTransactions]);
 

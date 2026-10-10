@@ -115,7 +115,10 @@ export const LinksPage = () => {
       }
     };
     void load(true);
-    const interval = window.setInterval(() => void load(), 5000);
+    // Links are changed in settings, not continuously. A modest refresh keeps
+    // another device's edits visible without issuing four database reads every
+    // five seconds while this page is open.
+    const interval = window.setInterval(() => void load(), 60_000);
     return () => {
       active = false;
       window.clearInterval(interval);
