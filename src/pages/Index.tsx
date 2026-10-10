@@ -505,7 +505,7 @@ const Index = () => {
               </Tabs>
                 </TabsContent>
                 <TabsContent value="pdf" className="mt-0">
-                  <PdfArchiveStatistics notifications={notifications} categories={categories} getCategoryName={getCategoryName} />
+                  <PdfArchiveStatistics categories={categories} getCategoryName={getCategoryName} />
                 </TabsContent>
               </Tabs>
             </div>

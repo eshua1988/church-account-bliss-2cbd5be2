@@ -1227,6 +1227,33 @@ export const NotificationsPage = () => {
         throw new Error(detail);
       }
 
+      // Save independent accounting rows. The original PDF and notification are
+      // intentionally left untouched; the PDF archive reads these database rows.
+      const archiveEntries = validReceipts.map((receipt, receiptIndex) => {
+        const rawDate = typeof receipt.date === 'string' ? receipt.date : metadata.date;
+        const documentDate = typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(rawDate)
+          ? rawDate.slice(0, 10)
+          : format(new Date(archiveTarget.created_at), 'yyyy-MM-dd');
+        const basis = String(receipt.basis || metadata.basis || '');
+        return {
+          user_id: archiveTarget.user_id,
+          source_notification_id: archiveTarget.id,
+          receipt_index: receiptIndex,
+          type: archiveType,
+          amount: Number(receipt.amount),
+          currency: String(receipt.currency || metadata.currency || 'PLN'),
+          category_id: String(receipt.category_id || metadata.category_id || '') || null,
+          department_name: String(receipt.department_name || basis || metadata.department_name || '') || null,
+          basis: basis || null,
+          issued_to: String(receipt.issued_to || metadata.issued_to || '') || null,
+          document_date: documentDate,
+        };
+      });
+      const { error: archiveEntryError } = await (supabase as any)
+        .from('pdf_archive_entries')
+        .upsert(archiveEntries, { onConflict: 'source_notification_id,receipt_index' });
+      if (archiveEntryError) throw archiveEntryError;
+
       const archivedAt = new Date().toISOString();
       const { error } = await supabase
         .from('notifications')
