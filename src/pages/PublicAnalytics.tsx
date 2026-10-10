@@ -43,7 +43,7 @@ const tooltipStyle = { backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(va
 
 const PublicAnalytics = () => {
   const { token = '' } = useParams();
-  const [period, setPeriod] = useState<Period>('month');
+  const [period, setPeriod] = useState<Period>('all');
   const [transactionFilter, setTransactionFilter] = useState<TransactionFilter>('all');
   const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('bank');
   const [currency, setCurrency] = useState('');
@@ -66,7 +66,7 @@ const PublicAnalytics = () => {
   const summary = data?.analytics;
   const currencies = useMemo(() => Array.from(new Set(summary?.currencyTotals.map(row => row.currency) || [])), [summary]);
   useEffect(() => {
-    if (currencies.length && !currencies.includes(currency)) setCurrency(currencies.includes('PLN') ? 'PLN' : currencies[0]);
+    if (currency && currencies.length && !currencies.includes(currency)) setCurrency('');
   }, [currencies, currency]);
 
   if (!data) return <main className="p-8 text-center">Загрузка аналитики…</main>;
@@ -74,43 +74,60 @@ const PublicAnalytics = () => {
 
   const showIncome = transactionFilter !== 'expense';
   const showExpense = transactionFilter !== 'income';
-  const totals = summary.currencyTotals.filter(row => row.currency === currency);
-  const departments = summary.departmentTotals.filter(row => row.currency === currency)
-    .map(row => ({
-      name: row.department_name,
-      income: showIncome ? number(row.income) : 0,
-      expense: showExpense ? number(row.expense) : 0,
-    }))
+  const isAllCurrencies = currency === '';
+  const isSelectedCurrency = (rowCurrency: string) => isAllCurrencies || rowCurrency === currency;
+  const totals = summary.currencyTotals.filter(row => isSelectedCurrency(row.currency));
+  const departments = Object.values(summary.departmentTotals
+    .filter(row => isSelectedCurrency(row.currency))
+    .reduce<Record<string, { name: string; income: number; expense: number }>>((result, row) => {
+      const entry = result[row.department_name] ||= { name: row.department_name, income: 0, expense: 0 };
+      entry.income += showIncome ? number(row.income) : 0;
+      entry.expense += showExpense ? number(row.expense) : 0;
+      return result;
+    }, {}))
     .filter(row => row.income > 0 || row.expense > 0)
     .sort((a, b) => b.income + b.expense - a.income - a.expense);
-  const categories = (summary.categoryTotals || []).filter(row => row.currency === currency)
-    .map(row => ({
-      name: row.category_name,
-      income: showIncome ? number(row.income) : 0,
-      expense: showExpense ? number(row.expense) : 0,
-      count: (showIncome ? number(row.income_count) : 0) + (showExpense ? number(row.expense_count) : 0),
-    }))
+  const categories = Object.values((summary.categoryTotals || [])
+    .filter(row => isSelectedCurrency(row.currency))
+    .reduce<Record<string, { name: string; income: number; expense: number; count: number }>>((result, row) => {
+      const entry = result[row.category_name] ||= { name: row.category_name, income: 0, expense: 0, count: 0 };
+      entry.income += showIncome ? number(row.income) : 0;
+      entry.expense += showExpense ? number(row.expense) : 0;
+      entry.count += (showIncome ? number(row.income_count) : 0) + (showExpense ? number(row.expense_count) : 0);
+      return result;
+    }, {}))
     .filter(row => row.income > 0 || row.expense > 0)
     .sort((a, b) => b.income + b.expense - a.income - a.expense);
   let cumulative = 0;
-  const daily = (summary.dailyTotals || []).filter(row => row.currency === currency).map(row => {
-    const income = showIncome ? number(row.income) : 0;
-    const expense = showExpense ? number(row.expense) : 0;
+  const daily = Object.values((summary.dailyTotals || [])
+    .filter(row => isSelectedCurrency(row.currency))
+    .reduce<Record<string, { rawDate: string; income: number; expense: number; incomeCount: number; expenseCount: number }>>((result, row) => {
+      const entry = result[row.date] ||= { rawDate: row.date, income: 0, expense: 0, incomeCount: 0, expenseCount: 0 };
+      entry.income += showIncome ? number(row.income) : 0;
+      entry.expense += showExpense ? number(row.expense) : 0;
+      entry.incomeCount += showIncome ? number(row.income_count) : 0;
+      entry.expenseCount += showExpense ? number(row.expense_count) : 0;
+      return result;
+    }, {}))
+    .sort((left, right) => left.rawDate.localeCompare(right.rawDate))
+    .map(row => {
+    const income = row.income;
+    const expense = row.expense;
     cumulative += income - expense;
     return {
-      date: new Date(`${row.date}T00:00:00`).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }),
+      date: new Date(`${row.rawDate}T00:00:00`).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }),
       income, expense, balance: income - expense, cumulative,
-      incomeCount: showIncome ? number(row.income_count) : 0,
-      expenseCount: showExpense ? number(row.expense_count) : 0,
+      incomeCount: row.incomeCount,
+      expenseCount: row.expenseCount,
     };
   });
-  const income = totals.find(row => row.type === 'income');
-  const expense = totals.find(row => row.type === 'expense');
-  const incomeAmount = showIncome ? number(income?.amount) : 0;
-  const expenseAmount = showExpense ? number(expense?.amount) : 0;
+  const incomeAmount = showIncome ? totals.filter(row => row.type === 'income').reduce((sum, row) => sum + number(row.amount), 0) : 0;
+  const expenseAmount = showExpense ? totals.filter(row => row.type === 'expense').reduce((sum, row) => sum + number(row.amount), 0) : 0;
+  const incomeCount = showIncome ? totals.filter(row => row.type === 'income').reduce((sum, row) => sum + number(row.transaction_count), 0) : 0;
+  const expenseCount = showExpense ? totals.filter(row => row.type === 'expense').reduce((sum, row) => sum + number(row.transaction_count), 0) : 0;
   const operationMix = [
-    ...(showIncome ? [{ name: 'Доходы', value: number(income?.transaction_count) }] : []),
-    ...(showExpense ? [{ name: 'Расходы', value: number(expense?.transaction_count) }] : []),
+    ...(showIncome ? [{ name: 'Доходы', value: incomeCount }] : []),
+    ...(showExpense ? [{ name: 'Расходы', value: expenseCount }] : []),
   ];
   const notificationMix = [
     ...(showIncome ? [{ name: 'Доходы', value: number(summary.notificationTotals.income) }] : []),
@@ -129,10 +146,13 @@ const PublicAnalytics = () => {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            {currencies.length > 1 && (
-              <Select value={currency} onValueChange={setCurrency}>
-                <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
-                <SelectContent>{currencies.map(value => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent>
+            {currencies.length > 0 && (
+              <Select value={currency || '__all__'} onValueChange={value => setCurrency(value === '__all__' ? '' : value)}>
+                <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">Все валюты</SelectItem>
+                  {currencies.map(value => <SelectItem key={value} value={value}>{value}</SelectItem>)}
+                </SelectContent>
               </Select>
             )}
             {(Object.keys(labels) as Period[]).map(value => (
@@ -155,10 +175,10 @@ const PublicAnalytics = () => {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Card><CardHeader><CardTitle className="flex gap-2 text-green-500"><TrendingUp />Доходы</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{money(incomeAmount)} {currency}</p><p className="text-muted-foreground">Операций: {showIncome ? number(income?.transaction_count) : 0}</p></CardContent></Card>
-          <Card><CardHeader><CardTitle className="flex gap-2 text-red-500"><TrendingDown />Расходы</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{money(expenseAmount)} {currency}</p><p className="text-muted-foreground">Операций: {showExpense ? number(expense?.transaction_count) : 0}</p></CardContent></Card>
-          <Card><CardHeader><CardTitle>Баланс</CardTitle></CardHeader><CardContent><p className={`text-2xl font-bold ${incomeAmount - expenseAmount >= 0 ? 'text-green-500' : 'text-red-500'}`}>{money(incomeAmount - expenseAmount)} {currency}</p><p className="text-muted-foreground">Доходы минус расходы</p></CardContent></Card>
-          <Card><CardHeader><CardTitle>Средняя операция</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{money((incomeAmount + expenseAmount) / Math.max(1, (showIncome ? number(income?.transaction_count) : 0) + (showExpense ? number(expense?.transaction_count) : 0)))} {currency}</p><p className="text-muted-foreground">За выбранный период</p></CardContent></Card>
+          <Card><CardHeader><CardTitle className="flex gap-2 text-green-500"><TrendingUp />Доходы</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{money(incomeAmount)} {currency || 'Все валюты'}</p><p className="text-muted-foreground">Операций: {incomeCount}</p></CardContent></Card>
+          <Card><CardHeader><CardTitle className="flex gap-2 text-red-500"><TrendingDown />Расходы</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{money(expenseAmount)} {currency || 'Все валюты'}</p><p className="text-muted-foreground">Операций: {expenseCount}</p></CardContent></Card>
+          <Card><CardHeader><CardTitle>Баланс</CardTitle></CardHeader><CardContent><p className={`text-2xl font-bold ${incomeAmount - expenseAmount >= 0 ? 'text-green-500' : 'text-red-500'}`}>{money(incomeAmount - expenseAmount)} {currency || 'Все валюты'}</p><p className="text-muted-foreground">Доходы минус расходы</p></CardContent></Card>
+          <Card><CardHeader><CardTitle>Средняя операция</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{money((incomeAmount + expenseAmount) / Math.max(1, incomeCount + expenseCount))} {currency || 'Все валюты'}</p><p className="text-muted-foreground">За выбранный период</p></CardContent></Card>
         </div>
 
         <div className="grid gap-5">
@@ -170,8 +190,8 @@ const PublicAnalytics = () => {
           <ChartCard title="Расходы по категориям"><ResponsiveContainer><PieChart><Pie data={categories.filter(row => row.expense > 0).slice(0, 10)} dataKey="expense" nameKey="name" outerRadius={120} label>{categories.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip formatter={money} contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 14 }} /></PieChart></ResponsiveContainer></ChartCard>
           <ChartCard title="Количество операций по категориям"><ResponsiveContainer><BarChart data={categories.slice(0, 12)} margin={{ bottom: 42 }}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" interval={0} angle={-22} textAnchor="end" height={78} tick={axisTick} /><YAxis allowDecimals={false} tick={axisTick} width={56} /><Tooltip contentStyle={tooltipStyle} /><Bar dataKey="count" name="Операции" fill="#8b5cf6" /></BarChart></ResponsiveContainer></ChartCard>
           <ChartCard title="Соотношение количества операций"><ResponsiveContainer><PieChart><Pie data={operationMix} dataKey="value" nameKey="name" outerRadius={120} label>{operationMix.map((_, index) => <Cell key={index} fill={COLORS[index]} />)}</Pie><Tooltip contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 14 }} /></PieChart></ResponsiveContainer></ChartCard>
-          <ChartCard title="Доходы по отделам"><ResponsiveContainer><PieChart><Pie data={departments.filter(row => row.income > 0).slice(0, 10)} dataKey="income" nameKey="name" outerRadius={120} label>{departments.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip formatter={money} contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 14 }} /></PieChart></ResponsiveContainer></ChartCard>
-          <ChartCard title="Расходы по отделам"><ResponsiveContainer><PieChart><Pie data={departments.filter(row => row.expense > 0).slice(0, 10)} dataKey="expense" nameKey="name" outerRadius={120} label>{departments.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip formatter={money} contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 14 }} /></PieChart></ResponsiveContainer></ChartCard>
+          <ChartCard title="Доходы по отделам — круговая диаграмма"><ResponsiveContainer><PieChart><Pie data={departments.filter(row => row.income > 0).slice(0, 10)} dataKey="income" nameKey="name" outerRadius={120} label>{departments.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip formatter={money} contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 14 }} /></PieChart></ResponsiveContainer></ChartCard>
+          <ChartCard title="Расходы по отделам — круговая диаграмма"><ResponsiveContainer><PieChart><Pie data={departments.filter(row => row.expense > 0).slice(0, 10)} dataKey="expense" nameKey="name" outerRadius={120} label>{departments.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip formatter={money} contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 14 }} /></PieChart></ResponsiveContainer></ChartCard>
           <ChartCard title="Уведомления: доходы и расходы"><ResponsiveContainer><PieChart><Pie data={notificationMix} dataKey="value" nameKey="name" outerRadius={120} label>{notificationMix.map((_, index) => <Cell key={index} fill={COLORS[index]} />)}</Pie><Tooltip contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 14 }} /></PieChart></ResponsiveContainer></ChartCard>
           <ChartCard title="Дневной чистый результат"><ResponsiveContainer><BarChart data={daily}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="date" tick={axisTick} minTickGap={28} interval="preserveStartEnd" /><YAxis tick={axisTick} width={72} /><Tooltip formatter={money} contentStyle={tooltipStyle} /><Bar dataKey="balance" name="Баланс">{daily.map((row, index) => <Cell key={index} fill={row.balance >= 0 ? '#22c55e' : '#ef4444'} />)}</Bar></BarChart></ResponsiveContainer></ChartCard>
         </div>
