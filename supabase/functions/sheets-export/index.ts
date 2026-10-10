@@ -6,6 +6,25 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 type GoogleSheet = { properties?: { title?: string; sheetId?: number; gridProperties?: { rowCount?: number; columnCount?: number } } };
 
+type SheetCurrency = { amount: number; currency: string };
+
+const parseSheetCurrency = (raw: unknown): SheetCurrency | null => {
+  const match = String(raw ?? "").trim().match(/^(-?[\d\s]+(?:[.,]\d+)?)\s*([^\s]+)?$/);
+  if (!match) return null;
+  const amount = Number(match[1].replace(/\s/g, "").replace(",", "."));
+  if (!Number.isFinite(amount)) return null;
+  return { amount, currency: String(match[2] || "").trim().toUpperCase() };
+};
+
+// Google Sheets receives actual numbers; the pattern selects its native
+// currency renderer instead of putting a currency code into cell text.
+const currencyPattern = (currency: string) => ({
+  PLN: '#,##0.00 [$zł-pl-PL]',
+  USD: '[$$-en-US]#,##0.00',
+  EUR: '[$€-x-euro2] #,##0.00',
+  UAH: '[$₴-uk-UA] #,##0.00',
+}[currency] || '#,##0.00');
+
 const configuredSheet = (metadata: { sheets?: GoogleSheet[] }, range: string) => {
   const requestedName = (range.match(/^'?([^'!]+)'?!/) || [])[1];
   // A range without a tab name deliberately targets the first tab, matching
@@ -115,12 +134,12 @@ serve(async (req) => {
       return json({ success: true });
     }
     if (archive) {
-      const sourceRows: string[][] = Array.isArray(body.values) ? body.values : [];
-      const currencies = [...new Set(sourceRows.map(row => String(row[1] || "").trim().split(/\s+/).at(-1) || "").filter(Boolean))];
+      const sourceRows: unknown[][] = Array.isArray(body.values) ? body.values : [];
+      const currencies = [...new Set(sourceRows.map(row => parseSheetCurrency(row[1])?.currency || "").filter(Boolean))];
       const departments = [...new Set(sourceRows.map(row => String(row[2] || "").trim()).filter(Boolean))];
       const headersRow = ["Дата", ...currencies.map(currency => `Доход ${currency}`), ...departments];
-      type ArchiveRow = { cells: string[]; notes: Array<{ col: number; text: string }> };
-      type SourceArchiveRow = { date: string; income: string; expense: string; currency: string; incomeAmount: string; incomeIndex: number; departmentIndex: number; targetColumn: number; basis: string; issuedTo: string };
+      type ArchiveRow = { cells: Array<string | number>; notes: Array<{ col: number; text: string }>; currencies: Array<{ col: number; currency: string }> };
+      type SourceArchiveRow = { date: string; income: SheetCurrency | null; expense: SheetCurrency | null; currency: string; incomeIndex: number; departmentIndex: number; targetColumn: number; basis: string; issuedTo: string };
       const byMonth = new Map<string, SourceArchiveRow[]>();
 
       // Only a Dowód wpłaty (income) owns a date in the archive table.
@@ -129,9 +148,9 @@ serve(async (req) => {
       sourceRows.forEach(row => {
         const date = String(row[0] || "");
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
-        const income = String(row[1] || "").trim();
-        const expense = String(row[3] || "").trim();
-        const currency = income ? income.split(/\s+/).at(-1) || "" : "";
+        const income = parseSheetCurrency(row[1]);
+        const expense = parseSheetCurrency(row[3]);
+        const currency = income?.currency || "";
         const incomeIndex = currencies.indexOf(currency);
         const departmentIndex = departments.indexOf(String(row[2] || "").trim());
         const targetColumn = incomeIndex !== -1
@@ -145,7 +164,6 @@ serve(async (req) => {
           income,
           expense,
           currency,
-          incomeAmount: income.replace(/\s+[A-Za-z]{3}$/, ""),
           incomeIndex,
           departmentIndex,
           targetColumn,
@@ -163,6 +181,7 @@ serve(async (req) => {
       const makeRow = (date = ""): ArchiveRow => ({
         cells: [date, ...new Array(currencies.length + departments.length).fill("")],
         notes: [],
+        currencies: [],
       });
 
       [...byMonth.keys()].sort((left, right) => right.localeCompare(left)).forEach((month, monthIndex) => {
@@ -181,7 +200,8 @@ serve(async (req) => {
             archiveRow = makeRow(row.date);
             incomeArchiveRows.push(archiveRow);
           }
-          archiveRow.cells[row.targetColumn] = row.incomeAmount;
+          archiveRow.cells[row.targetColumn] = row.income!.amount;
+          archiveRow.currencies.push({ col: row.targetColumn, currency: row.income!.currency });
         });
 
         // Department expenses are packed into date-free rows for this month.
@@ -191,7 +211,8 @@ serve(async (req) => {
             archiveRow = makeRow();
             expenseArchiveRows.push(archiveRow);
           }
-          archiveRow.cells[row.targetColumn] = row.expense;
+          archiveRow.cells[row.targetColumn] = row.expense!.amount;
+          archiveRow.currencies.push({ col: row.targetColumn, currency: row.expense!.currency });
           // Keep the accounting reason readable and add the person who received
           // the payment at the end, without adding another visible table column.
           const note = [row.basis, row.issuedTo ? `(${row.issuedTo})` : ""].filter(Boolean).join(" ");
@@ -247,6 +268,19 @@ serve(async (req) => {
               fields: "userEnteredFormat.borders.top",
             },
           })),
+          ...archiveRows.flatMap((row, rowOffset) => row.currencies.map(currency => ({
+            repeatCell: {
+              range: {
+                sheetId: archiveSheet.properties.sheetId,
+                startRowIndex: dataStartRow + rowOffset,
+                endRowIndex: dataStartRow + rowOffset + 1,
+                startColumnIndex: bounds.startColumnIndex + currency.col,
+                endColumnIndex: bounds.startColumnIndex + currency.col + 1,
+              },
+              cell: { userEnteredFormat: { numberFormat: { type: "CURRENCY", pattern: currencyPattern(currency.currency) } } },
+              fields: "userEnteredFormat.numberFormat",
+            },
+          }))),
         ];
         const borderResponse = await fetch(`${base}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests: borderRequests }) });
         if (!borderResponse.ok) return json({ error: "Google Sheets month separator formatting failed" }, 500);
