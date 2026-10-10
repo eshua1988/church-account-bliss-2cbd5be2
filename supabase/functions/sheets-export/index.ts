@@ -50,7 +50,9 @@ const columnLetter = (index: number) => {
 
 const quotedSheetName = (title: string) => `'${title.replace(/'/g, "''")}'`;
 
-const sumFormula = (references: string[]) => references.length ? `=SUM(${references.join(",")})` : "=0";
+// The configured church spreadsheets use a Polish locale, where Google Sheets
+// separates function arguments with semicolons rather than commas.
+const sumFormula = (references: string[]) => references.length ? `=SUM(${references.join(";")})` : "=0";
 
 const rangeBounds = (sheetId: number, range: string, sheet: GoogleSheet) => {
   const a1 = range.includes("!") ? range.slice(range.indexOf("!") + 1) : range;
