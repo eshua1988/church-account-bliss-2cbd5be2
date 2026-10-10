@@ -120,18 +120,18 @@ serve(async (req) => {
       const departments = [...new Set(sourceRows.map(row => String(row[2] || "").trim()).filter(Boolean))];
       const headersRow = ["Дата", ...currencies.map(currency => `Доход ${currency}`), ...departments];
       type ArchiveRow = { cells: string[]; notes: Array<{ col: number; text: string }> };
-      const rowsByDate = new Map<string, ArchiveRow[]>();
+      type SourceArchiveRow = { date: string; income: string; expense: string; currency: string; incomeAmount: string; incomeIndex: number; departmentIndex: number; targetColumn: number; basis: string };
+      const byMonth = new Map<string, SourceArchiveRow[]>();
 
-      // A day may share a row only while every value goes to its own cell.
-      // When a currency/department cell is already occupied, add another row
-      // and repeat the date instead of combining amounts in one cell.
+      // Only a Dowód wpłaty (income) owns a date in the archive table.
+      // Expenses are grouped below the income rows of the same month without a
+      // date, so they cannot be mistaken for a payment receipt on that day.
       sourceRows.forEach(row => {
         const date = String(row[0] || "");
-        if (!date) return;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
         const income = String(row[1] || "").trim();
         const expense = String(row[3] || "").trim();
         const currency = income ? income.split(/\s+/).at(-1) || "" : "";
-        const incomeAmount = income.replace(/\s+[A-Za-z]{3}$/, "");
         const incomeIndex = currencies.indexOf(currency);
         const departmentIndex = departments.indexOf(String(row[2] || "").trim());
         const targetColumn = incomeIndex !== -1
@@ -140,20 +140,62 @@ serve(async (req) => {
             ? 1 + currencies.length + departmentIndex
             : -1;
         if (targetColumn === -1) return;
-
-        const dateRows = rowsByDate.get(date) || [];
-        let archiveRow = dateRows.find(candidate => !candidate.cells[targetColumn]);
-        if (!archiveRow) {
-          archiveRow = { cells: [date, ...new Array(currencies.length + departments.length).fill("")], notes: [] };
-          dateRows.push(archiveRow);
-        }
-
-        archiveRow.cells[targetColumn] = incomeIndex !== -1 ? incomeAmount : expense;
-        const basis = String(row[4] || "").trim();
-        if (departmentIndex !== -1 && basis) archiveRow.notes.push({ col: targetColumn, text: basis });
-        rowsByDate.set(date, dateRows);
+        const parsed = {
+          date,
+          income,
+          expense,
+          currency,
+          incomeAmount: income.replace(/\s+[A-Za-z]{3}$/, ""),
+          incomeIndex,
+          departmentIndex,
+          targetColumn,
+          basis: String(row[4] || "").trim(),
+        };
+        const month = date.slice(0, 7);
+        const monthRows = byMonth.get(month) || [];
+        monthRows.push(parsed);
+        byMonth.set(month, monthRows);
       });
-      const archiveRows = [...rowsByDate.values()].flat();
+
+      const archiveRows: ArchiveRow[] = [];
+      const monthSeparatorRowIndexes: number[] = [];
+      const makeRow = (date = ""): ArchiveRow => ({
+        cells: [date, ...new Array(currencies.length + departments.length).fill("")],
+        notes: [],
+      });
+
+      [...byMonth.keys()].sort((left, right) => right.localeCompare(left)).forEach((month, monthIndex) => {
+        if (monthIndex > 0) monthSeparatorRowIndexes.push(archiveRows.length + 1);
+        const monthRows = byMonth.get(month) || [];
+        const incomeRows = monthRows.filter(row => Boolean(row.income)).sort((left, right) => right.date.localeCompare(left.date));
+        const expenseRows = monthRows.filter(row => !row.income && Boolean(row.expense)).sort((left, right) => right.date.localeCompare(left.date));
+        const incomeArchiveRows: ArchiveRow[] = [];
+        const expenseArchiveRows: ArchiveRow[] = [];
+
+        // Values with the same receipt date may share a row only if they use
+        // different currency columns. A collision repeats that receipt date.
+        incomeRows.forEach(row => {
+          let archiveRow = incomeArchiveRows.find(candidate => candidate.cells[0] === row.date && !candidate.cells[row.targetColumn]);
+          if (!archiveRow) {
+            archiveRow = makeRow(row.date);
+            incomeArchiveRows.push(archiveRow);
+          }
+          archiveRow.cells[row.targetColumn] = row.incomeAmount;
+        });
+
+        // Department expenses are packed into date-free rows for this month.
+        expenseRows.forEach(row => {
+          let archiveRow = expenseArchiveRows.find(candidate => !candidate.cells[row.targetColumn]);
+          if (!archiveRow) {
+            archiveRow = makeRow();
+            expenseArchiveRows.push(archiveRow);
+          }
+          archiveRow.cells[row.targetColumn] = row.expense;
+          if (row.basis) archiveRow.notes.push({ col: row.targetColumn, text: row.basis });
+        });
+
+        archiveRows.push(...incomeArchiveRows, ...expenseArchiveRows);
+      });
       const table = [headersRow, ...archiveRows.map(row => row.cells)];
       // PDF exports replace the complete archive table. Remove notes from the
       // previous period before writing, otherwise notes on cleared rows remain.
@@ -171,6 +213,32 @@ serve(async (req) => {
       if (!clearResponse.ok) return json({ error: "Google Sheets range cleanup failed" }, 500);
       const response = await fetch(`${base}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values: table }) });
       if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets export failed" }, 500);
+
+      // Remove separators left by a previous layout, then draw a thick line
+      // before each new month. Dates remain only on income rows.
+      if (archiveRows.length > 0) {
+        const bounds = rangeBounds(archiveSheet.properties.sheetId, range, archiveSheet);
+        const dataStartRow = bounds.startRowIndex + 1; // skip the header
+        const dataEndColumn = bounds.startColumnIndex + headersRow.length;
+        const borderRequests = [
+          {
+            repeatCell: {
+              range: { sheetId: archiveSheet.properties.sheetId, startRowIndex: dataStartRow, endRowIndex: bounds.endRowIndex, startColumnIndex: bounds.startColumnIndex, endColumnIndex: dataEndColumn },
+              cell: { userEnteredFormat: { borders: { top: { style: "NONE" }, bottom: { style: "NONE" } } } },
+              fields: "userEnteredFormat.borders.top,userEnteredFormat.borders.bottom",
+            },
+          },
+          ...monthSeparatorRowIndexes.map(rowOffset => ({
+            repeatCell: {
+              range: { sheetId: archiveSheet.properties.sheetId, startRowIndex: bounds.startRowIndex + rowOffset, endRowIndex: bounds.startRowIndex + rowOffset + 1, startColumnIndex: bounds.startColumnIndex, endColumnIndex: dataEndColumn },
+              cell: { userEnteredFormat: { borders: { top: { style: "SOLID_THICK" } } } },
+              fields: "userEnteredFormat.borders.top",
+            },
+          })),
+        ];
+        const borderResponse = await fetch(`${base}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests: borderRequests }) });
+        if (!borderResponse.ok) return json({ error: "Google Sheets month separator formatting failed" }, 500);
+      }
 
       const noteRequests = archiveRows.flatMap((row, rowOffset) => row.notes.map(note => ({
         repeatCell: {
