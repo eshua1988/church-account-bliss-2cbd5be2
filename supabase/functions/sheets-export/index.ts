@@ -131,6 +131,9 @@ serve(async (req) => {
       if (!clearResponse.ok) return json({ error: "Google Sheets range cleanup failed" }, 500);
       const response = await fetch(`${base}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values: body.values || [] }) });
       if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets write failed" }, 500);
+      // Keep the export limited to its configured range. In particular, do not
+      // create or clear a separate currency-summary block beside the table:
+      // protected columns there made otherwise successful exports appear failed.
       return json({ success: true });
     }
     if (archive) {
