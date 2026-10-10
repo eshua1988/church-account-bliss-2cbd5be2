@@ -105,6 +105,87 @@ type PdfArchiveExportEntry = {
   source_notification_id?: string | null;
 };
 
+type LegacyPdfNotification = {
+  id: string;
+  type: string;
+  user_id: string;
+  created_at: string;
+  metadata: Record<string, unknown> | null;
+};
+
+const normalizeArchiveAmount = (value: unknown) => {
+  const normalized = String(value ?? '')
+    .replace(/\s/g, '')
+    .replace(',', '.')
+    .replace(/[^0-9.-]/g, '');
+  const amount = Number(normalized);
+  return Number.isFinite(amount) && amount > 0 ? amount : null;
+};
+
+const normalizeArchiveCurrency = (value: unknown) => {
+  const raw = String(value ?? '').trim().toUpperCase();
+  if (raw === 'ZŁ' || raw === 'ZL') return 'PLN';
+  if (raw === '$') return 'USD';
+  if (raw === '€') return 'EUR';
+  if (raw === '₴' || raw === 'ГРН') return 'UAH';
+  return raw || 'PLN';
+};
+
+const normalizeArchiveDate = (value: unknown, fallback: string) => {
+  const raw = String(value ?? '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const european = raw.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (european) return `${european[3]}-${european[2]}-${european[1]}`;
+  return fallback.slice(0, 10);
+};
+
+// Older PDFs were archived before pdf_archive_entries existed. Rebuild their
+// accounting rows from notification metadata every time an export runs. The
+// unique notification/receipt key makes this repair idempotent.
+const recoverLegacyPdfArchiveEntries = async (userId: string) => {
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('id, type, user_id, created_at, metadata')
+    .eq('user_id', userId);
+  if (error) throw error;
+
+  const rows = ((data || []) as LegacyPdfNotification[]).flatMap(notification => {
+    const metadata = notification.metadata || {};
+    if (!metadata.archived_at) return [];
+    const receiptValues = Array.isArray(metadata.receipts) && metadata.receipts.length > 0
+      ? metadata.receipts.filter((receipt): receipt is Record<string, unknown> => Boolean(receipt) && typeof receipt === 'object')
+      : [metadata];
+    const archiveType = metadata.archive_type === 'income'
+      ? 'income'
+      : notification.type === 'deposit' || metadata.document_type === 'deposit'
+        ? 'income'
+        : 'expense';
+    return receiptValues.flatMap((receipt, receiptIndex) => {
+      const amount = normalizeArchiveAmount(receipt.amount ?? metadata.amount);
+      if (amount === null) return [];
+      return [{
+        user_id: notification.user_id,
+        source_notification_id: notification.id,
+        receipt_index: receiptIndex,
+        type: archiveType,
+        amount,
+        currency: normalizeArchiveCurrency(receipt.currency ?? metadata.currency),
+        category_id: String(receipt.category_id ?? metadata.category_id ?? '') || null,
+        department_name: String(receipt.department_name ?? receipt.basis ?? metadata.department_name ?? metadata.basis ?? '') || null,
+        basis: String(receipt.basis ?? metadata.basis ?? '') || null,
+        issued_to: String(receipt.issued_to ?? metadata.issued_to ?? '') || null,
+        source_pdf_path: String(metadata.pdf_path || '') || null,
+        document_date: normalizeArchiveDate(receipt.date ?? metadata.date, notification.created_at),
+      }];
+    });
+  });
+  if (rows.length === 0) return;
+  const { error: upsertError } = await (supabase as any)
+    .from('pdf_archive_entries')
+    .upsert(rows, { onConflict: 'source_notification_id,receipt_index' });
+  if (upsertError) throw upsertError;
+};
+
 const buildTransactionExportValues = (
   transactions: ExportSyncTransaction[],
   expenseCategories: ExportSyncCategory[],
@@ -190,6 +271,8 @@ export const syncAllConfiguredGoogleSheetExports = async (
 ) => {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Пожалуйста, войдите в систему повторно');
+
+  await recoverLegacyPdfArchiveEntries(session.user.id);
 
   const [{ data: targets, error: targetsError }, allTransactionsResult, archiveEntriesResult] = await Promise.all([
     supabase.from('google_sheet_exports' as any)
@@ -883,6 +966,8 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Пожалуйста, войдите в систему повторно');
+
+      await recoverLegacyPdfArchiveEntries(user.id);
 
       const { data: archiveEntries, error } = await (supabase as any)
         .from('pdf_archive_entries')
