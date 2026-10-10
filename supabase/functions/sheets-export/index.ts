@@ -7,7 +7,6 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 type GoogleSheet = { properties?: { title?: string; sheetId?: number; gridProperties?: { rowCount?: number; columnCount?: number } } };
 
 type SheetCurrency = { amount: number; currency: string };
-type SheetCurrencyCell = { row: number; col: number; currency: string; type: "income" | "expense" };
 
 const parseSheetCurrency = (raw: unknown): SheetCurrency | null => {
   const match = String(raw ?? "").trim().match(/^(-?[\d\s]+(?:[.,]\d+)?)\s*([^\s]+)?$/);
@@ -37,20 +36,6 @@ const configuredSheet = (metadata: { sheets?: GoogleSheet[] }, range: string) =>
 };
 
 const columnIndex = (column: string) => [...column.toUpperCase()].reduce((value, letter) => value * 26 + letter.charCodeAt(0) - 64, 0) - 1;
-const columnLetter = (index: number) => {
-  let value = index + 1;
-  let result = "";
-  while (value > 0) {
-    const remainder = (value - 1) % 26;
-    result = String.fromCharCode(65 + remainder) + result;
-    value = Math.floor((value - 1) / 26);
-  }
-  return result;
-};
-
-const quotedSheetName = (title: string) => `'${title.replace(/'/g, "''")}'`;
-
-const sumFormula = (references: string[]) => references.length ? `=SUM(${references.join(",")})` : "=0";
 
 const rangeBounds = (sheetId: number, range: string, sheet: GoogleSheet) => {
   const a1 = range.includes("!") ? range.slice(range.indexOf("!") + 1) : range;
@@ -68,75 +53,6 @@ const rangeBounds = (sheetId: number, range: string, sheet: GoogleSheet) => {
     endColumnIndex,
   };
 };
-
-/**
- * Writes a compact formula-driven summary beside the configured export range.
- * It is made of normal Google Sheets cells, so its totals recalculate in the
- * user's spreadsheet and the block can be cut and moved like any other cell
- * range.  Currency rows are rebuilt whenever an export introduces a new one.
- */
-async function writeCurrencySummary(
-  base: string,
-  headers: Record<string, string>,
-  sheet: GoogleSheet,
-  range: string,
-  dataColumnCount: number,
-  cells: SheetCurrencyCell[],
-) {
-  if (typeof sheet.properties?.sheetId !== "number" || !sheet.properties.title) return;
-  const bounds = rangeBounds(sheet.properties.sheetId, range, sheet);
-  // Put the card outside the configured export range, with one empty column
-  // between the data and the card. This leaves the export data untouched.
-  const startColumn = Math.max(bounds.endColumnIndex + 1, bounds.startColumnIndex + dataColumnCount + 1);
-  const startRow = bounds.startRowIndex;
-  const sheetPrefix = quotedSheetName(sheet.properties.title);
-  const cardRange = `${quotedSheetName(sheet.properties.title)}!${columnLetter(startColumn)}${startRow + 1}:${columnLetter(startColumn + 3)}`;
-  const clearResponse = await fetch(`${base}/values/${encodeURIComponent(cardRange)}:clear`, { method: "POST", headers, body: "{}" });
-  if (!clearResponse.ok) throw new Error("Google Sheets summary cleanup failed");
-  const currencies = [...new Set(cells.map(cell => cell.currency).filter(Boolean))].sort();
-  if (!currencies.length) return;
-  const cellReference = (cell: SheetCurrencyCell) => `${sheetPrefix}!${columnLetter(bounds.startColumnIndex + cell.col)}${bounds.startRowIndex + cell.row + 1}`;
-  const rows: Array<Array<string | number>> = [
-    ["Сводка по валютам", "", "", ""],
-    ["Валюта", "Доходы", "Расходы", "Баланс"],
-    ...currencies.map(currency => {
-      const income = cells.filter(cell => cell.currency === currency && cell.type === "income").map(cellReference);
-      const expense = cells.filter(cell => cell.currency === currency && cell.type === "expense").map(cellReference);
-      return [currency, sumFormula(income), sumFormula(expense), `=${columnLetter(startColumn + 1)}${startRow + 3 + currencies.indexOf(currency)}-${columnLetter(startColumn + 2)}${startRow + 3 + currencies.indexOf(currency)}`];
-    }),
-  ];
-  const startA1 = `${quotedSheetName(sheet.properties.title)}!${columnLetter(startColumn)}${startRow + 1}`;
-  const valuesResponse = await fetch(`${base}/values/${encodeURIComponent(`${startA1}:${columnLetter(startColumn + 3)}${startRow + rows.length}`)}?valueInputOption=USER_ENTERED`, {
-    method: "PUT", headers, body: JSON.stringify({ values: rows }),
-  });
-  if (!valuesResponse.ok) throw new Error("Google Sheets summary write failed");
-
-  const formatRequests = [
-    {
-      repeatCell: {
-        range: { sheetId: sheet.properties.sheetId, startRowIndex: startRow, endRowIndex: startRow + 1, startColumnIndex: startColumn, endColumnIndex: startColumn + 4 },
-        cell: { userEnteredFormat: { backgroundColor: { red: 0.12, green: 0.25, blue: 0.48 }, textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true }, horizontalAlignment: "CENTER" } },
-        fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)",
-      },
-    },
-    {
-      repeatCell: {
-        range: { sheetId: sheet.properties.sheetId, startRowIndex: startRow + 1, endRowIndex: startRow + 2, startColumnIndex: startColumn, endColumnIndex: startColumn + 4 },
-        cell: { userEnteredFormat: { backgroundColor: { red: 0.86, green: 0.91, blue: 0.98 }, textFormat: { bold: true }, horizontalAlignment: "CENTER" } },
-        fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)",
-      },
-    },
-    ...currencies.flatMap((currency, index) => [1, 2, 3].map(columnOffset => ({
-      repeatCell: {
-        range: { sheetId: sheet.properties.sheetId!, startRowIndex: startRow + 2 + index, endRowIndex: startRow + 3 + index, startColumnIndex: startColumn + columnOffset, endColumnIndex: startColumn + columnOffset + 1 },
-        cell: { userEnteredFormat: { numberFormat: { type: "CURRENCY", pattern: currencyPattern(currency) } } },
-        fields: "userEnteredFormat.numberFormat",
-      },
-    }))),
-  ];
-  const formatResponse = await fetch(`${base}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests: formatRequests }) });
-  if (!formatResponse.ok) throw new Error("Google Sheets summary formatting failed");
-}
 
 async function googleToken() {
   const credentials = JSON.parse(Deno.env.get("GOOGLE_SHEETS_CREDENTIALS") || "{}");
@@ -215,36 +131,6 @@ serve(async (req) => {
       if (!clearResponse.ok) return json({ error: "Google Sheets range cleanup failed" }, 500);
       const response = await fetch(`${base}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values: body.values || [] }) });
       if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets write failed" }, 500);
-      const currencyCells: SheetCurrencyCell[] = Array.isArray(body.currencyCells)
-        ? body.currencyCells.filter((cell: unknown): cell is SheetCurrencyCell => {
-          if (!cell || typeof cell !== "object") return false;
-          const value = cell as Record<string, unknown>;
-          return Number.isInteger(value.row) && Number(value.row) >= 1
-            && Number.isInteger(value.col) && Number(value.col) >= 0
-            && typeof value.currency === "string" && Boolean(value.currency)
-            && (value.type === "income" || value.type === "expense");
-        })
-        : [];
-      if (currencyCells.length) {
-        const bounds = rangeBounds(sheet.properties.sheetId, range, sheet);
-        const formatResponse = await fetch(`${base}:batchUpdate`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ requests: currencyCells.map(cell => ({ repeatCell: {
-            range: {
-              sheetId: sheet.properties.sheetId,
-              startRowIndex: bounds.startRowIndex + cell.row,
-              endRowIndex: bounds.startRowIndex + cell.row + 1,
-              startColumnIndex: bounds.startColumnIndex + cell.col,
-              endColumnIndex: bounds.startColumnIndex + cell.col + 1,
-            },
-            cell: { userEnteredFormat: { numberFormat: { type: "CURRENCY", pattern: currencyPattern(cell.currency) } } },
-            fields: "userEnteredFormat.numberFormat",
-          } })) }),
-        });
-        if (!formatResponse.ok) return json({ error: "Google Sheets currency formatting failed" }, 500);
-      }
-      await writeCurrencySummary(base, headers, sheet, range, Math.max(...(body.values || []).map((row: unknown[]) => Array.isArray(row) ? row.length : 0), 1), currencyCells);
       return json({ success: true });
     }
     if (archive) {
@@ -252,7 +138,7 @@ serve(async (req) => {
       const currencies = [...new Set(sourceRows.map(row => parseSheetCurrency(row[1])?.currency || "").filter(Boolean))];
       const departments = [...new Set(sourceRows.map(row => String(row[2] || "").trim()).filter(Boolean))];
       const headersRow = ["Дата", ...currencies.map(currency => `Доход ${currency}`), ...departments];
-      type ArchiveRow = { cells: Array<string | number>; notes: Array<{ col: number; text: string }>; currencies: Array<{ col: number; currency: string; type: "income" | "expense" }> };
+      type ArchiveRow = { cells: Array<string | number>; notes: Array<{ col: number; text: string }>; currencies: Array<{ col: number; currency: string }> };
       type SourceArchiveRow = { date: string; income: SheetCurrency | null; expense: SheetCurrency | null; currency: string; incomeIndex: number; departmentIndex: number; targetColumn: number; basis: string; issuedTo: string };
       const byMonth = new Map<string, SourceArchiveRow[]>();
 
@@ -315,7 +201,7 @@ serve(async (req) => {
             incomeArchiveRows.push(archiveRow);
           }
           archiveRow.cells[row.targetColumn] = row.income!.amount;
-          archiveRow.currencies.push({ col: row.targetColumn, currency: row.income!.currency, type: "income" });
+          archiveRow.currencies.push({ col: row.targetColumn, currency: row.income!.currency });
         });
 
         // Department expenses are packed into date-free rows for this month.
@@ -326,7 +212,7 @@ serve(async (req) => {
             expenseArchiveRows.push(archiveRow);
           }
           archiveRow.cells[row.targetColumn] = row.expense!.amount;
-          archiveRow.currencies.push({ col: row.targetColumn, currency: row.expense!.currency, type: "expense" });
+          archiveRow.currencies.push({ col: row.targetColumn, currency: row.expense!.currency });
           // Keep the accounting reason readable and add the person who received
           // the payment at the end, without adding another visible table column.
           const note = [row.basis, row.issuedTo ? `(${row.issuedTo})` : ""].filter(Boolean).join(" ");
@@ -431,13 +317,6 @@ serve(async (req) => {
         const notesResponse = await fetch(`${base}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests: noteRequests }) });
         if (!notesResponse.ok) return json({ error: (await notesResponse.json()).error?.message || "Google Sheets notes failed" }, 500);
       }
-      const archiveCurrencyCells: SheetCurrencyCell[] = archiveRows.flatMap((row, rowIndex) => row.currencies.map(currency => ({
-        row: rowIndex + 1,
-        col: currency.col,
-        currency: currency.currency,
-        type: currency.type,
-      })));
-      await writeCurrencySummary(base, headers, archiveSheet, range, headersRow.length, archiveCurrencyCells);
       return json({ success: true });
     }
     return json({ error: "Unsupported action" }, 400);

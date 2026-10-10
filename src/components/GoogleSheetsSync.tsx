@@ -537,9 +537,8 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
         return parse(b) - parse(a);
       });
 
-      const rows: (string | number)[][] = [];
+      const rows: string[][] = [];
       const notes: { row: number; col: number; note: string }[] = [];
-      const currencyCells: { row: number; col: number; currency: string; type: 'income' | 'expense' }[] = [];
 
       sortedDates.forEach(dateKey => {
         const dayTxs = [...dateMap.get(dateKey)!]
@@ -548,7 +547,7 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
         // Keep one amount per cell. Operations of the same day share a row
         // only when they use different columns; a collision gets a new row
         // with the date repeated.
-        const dayRows: (string | number)[][] = [];
+        const dayRows: string[][] = [];
 
         dayTxs.forEach((tx) => {
           let col: number;
@@ -570,16 +569,8 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
               dayRows.push(row);
             }
             const rowIndex = rows.length + dayRows.indexOf(row);
-            // Keep currency values numeric. The export function applies the
-            // native Google Sheets currency format, allowing formulas in the
-            // sheet to calculate totals and balances correctly.
-            row[col] = tx.amount;
-            currencyCells.push({
-              row: rowIndex + 1,
-              col,
-              currency: tx.currency,
-              type: tx.type === 'income' ? 'income' : 'expense',
-            });
+            const amountWithCurrency = `${tx.amount} ${tx.currency}`;
+            row[col] = amountWithCurrency;
             const noteParts: string[] = [];
             if (tx.issuedTo) noteParts.push(`Кому: ${tx.issuedTo}`);
             if (tx.departmentName) noteParts.push(`Отдел: ${tx.departmentName}`);
@@ -604,7 +595,6 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
           action: 'write',
           exportId: target?.id,
           values,
-          currencyCells,
         }),
       });
       if (!response.ok) {
