@@ -100,6 +100,7 @@ type PdfArchiveExportEntry = {
   currency: string;
   department_name: string | null;
   basis: string | null;
+  issued_to: string | null;
   document_date: string;
   source_notification_id?: string | null;
 };
@@ -178,6 +179,7 @@ const buildPdfArchiveExportRows = (entries: PdfArchiveExportEntry[], target?: Sh
         income ? '' : (entry.department_name || 'Расход'),
         income ? '' : amountWithCurrency,
         income ? '' : (entry.basis || ''),
+        income ? '' : (entry.issued_to || ''),
       ];
     });
 
@@ -195,7 +197,7 @@ export const syncAllConfiguredGoogleSheetExports = async (
       .eq('user_id', session.user.id),
     getAllTransactions ? getAllTransactions() : Promise.resolve(transactions as Transaction[]),
     (supabase as any).from('pdf_archive_entries')
-      .select('id, type, amount, currency, department_name, basis, document_date, source_notification_id')
+      .select('id, type, amount, currency, department_name, basis, issued_to, document_date, source_notification_id')
       .eq('user_id', session.user.id),
   ]);
   if (targetsError) throw targetsError;
@@ -884,7 +886,7 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
 
       const { data: archiveEntries, error } = await (supabase as any)
         .from('pdf_archive_entries')
-        .select('id, type, amount, currency, department_name, basis, document_date, source_notification_id')
+        .select('id, type, amount, currency, department_name, basis, issued_to, document_date, source_notification_id')
         .eq('user_id', user.id);
       if (error) throw error;
 

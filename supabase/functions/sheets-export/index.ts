@@ -120,7 +120,7 @@ serve(async (req) => {
       const departments = [...new Set(sourceRows.map(row => String(row[2] || "").trim()).filter(Boolean))];
       const headersRow = ["Дата", ...currencies.map(currency => `Доход ${currency}`), ...departments];
       type ArchiveRow = { cells: string[]; notes: Array<{ col: number; text: string }> };
-      type SourceArchiveRow = { date: string; income: string; expense: string; currency: string; incomeAmount: string; incomeIndex: number; departmentIndex: number; targetColumn: number; basis: string };
+      type SourceArchiveRow = { date: string; income: string; expense: string; currency: string; incomeAmount: string; incomeIndex: number; departmentIndex: number; targetColumn: number; basis: string; issuedTo: string };
       const byMonth = new Map<string, SourceArchiveRow[]>();
 
       // Only a Dowód wpłaty (income) owns a date in the archive table.
@@ -150,6 +150,7 @@ serve(async (req) => {
           departmentIndex,
           targetColumn,
           basis: String(row[4] || "").trim(),
+          issuedTo: String(row[5] || "").trim(),
         };
         const month = date.slice(0, 7);
         const monthRows = byMonth.get(month) || [];
@@ -191,7 +192,10 @@ serve(async (req) => {
             expenseArchiveRows.push(archiveRow);
           }
           archiveRow.cells[row.targetColumn] = row.expense;
-          if (row.basis) archiveRow.notes.push({ col: row.targetColumn, text: row.basis });
+          // Keep the accounting reason readable and add the person who received
+          // the payment at the end, without adding another visible table column.
+          const note = [row.basis, row.issuedTo ? `(${row.issuedTo})` : ""].filter(Boolean).join(" ");
+          if (note) archiveRow.notes.push({ col: row.targetColumn, text: note });
         });
 
         archiveRows.push(...incomeArchiveRows, ...expenseArchiveRows);
