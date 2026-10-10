@@ -93,6 +93,16 @@ const isInExportPeriod = (date: Date | string, target?: SheetExport) => {
 
 type ExportSyncTransaction = Pick<Transaction, 'id' | 'amount' | 'currency' | 'type' | 'category' | 'departmentName' | 'date' | 'createdAt'>;
 type ExportSyncCategory = { id: string; name: string; type: string; sortOrder?: number };
+type PdfArchiveExportEntry = {
+  id: string;
+  type: 'income' | 'expense';
+  amount: number | string;
+  currency: string;
+  department_name: string | null;
+  basis: string | null;
+  document_date: string;
+  source_notification_id?: string | null;
+};
 
 const buildTransactionExportValues = (
   transactions: ExportSyncTransaction[],
@@ -152,6 +162,25 @@ const buildTransactionExportValues = (
   return [headers, ...rows];
 };
 
+// A single PDF may contain several receipts. They are stored individually in
+// pdf_archive_entries, so never rebuild this export from only the notification
+// header metadata (which contains just the first receipt for compatibility).
+const buildPdfArchiveExportRows = (entries: PdfArchiveExportEntry[], target?: SheetExport) =>
+  entries
+    .filter(entry => Number.isFinite(Number(entry.amount)) && isInExportPeriod(entry.document_date, target))
+    .sort((left, right) => right.document_date.localeCompare(left.document_date))
+    .map(entry => {
+      const amountWithCurrency = `${Number(entry.amount)} ${entry.currency || 'PLN'}`;
+      const income = entry.type === 'income';
+      return [
+        entry.document_date,
+        income ? amountWithCurrency : '',
+        income ? '' : (entry.department_name || 'Расход'),
+        income ? '' : amountWithCurrency,
+        income ? '' : (entry.basis || ''),
+      ];
+    });
+
 export const syncAllConfiguredGoogleSheetExports = async (
   transactions: ExportSyncTransaction[],
   expenseCategories: ExportSyncCategory[],
@@ -160,34 +189,27 @@ export const syncAllConfiguredGoogleSheetExports = async (
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Пожалуйста, войдите в систему повторно');
 
-  const [{ data: targets, error: targetsError }, allTransactionsResult, notificationsResult, profileResult] = await Promise.all([
+  const [{ data: targets, error: targetsError }, allTransactionsResult, archiveEntriesResult] = await Promise.all([
     supabase.from('google_sheet_exports' as any)
       .select('id, export_type, spreadsheet_id, sheet_range, period_mode, period_from, period_to')
       .eq('user_id', session.user.id),
     getAllTransactions ? getAllTransactions() : Promise.resolve(transactions as Transaction[]),
-    supabase.from('notifications').select('id, created_at, metadata').eq('user_id', session.user.id),
-    supabase.from('profiles')
-      .select('spreadsheet_id, sheet_range, archived_pdf_spreadsheet_id, archived_pdf_sheet_range')
-      .eq('user_id', session.user.id)
-      .maybeSingle(),
+    (supabase as any).from('pdf_archive_entries')
+      .select('id, type, amount, currency, department_name, basis, document_date, source_notification_id')
+      .eq('user_id', session.user.id),
   ]);
   if (targetsError) throw targetsError;
-  if (profileResult.error) throw profileResult.error;
+  if (archiveEntriesResult.error) throw archiveEntriesResult.error;
 
   const savedExports = (targets || []) as SheetExport[];
-  const profile = profileResult.data as typeof profileResult.data & {
-    archived_pdf_spreadsheet_id?: string | null;
-    archived_pdf_sheet_range?: string | null;
-  };
   // Only exports visible in Settings are run here. Legacy profile fields can
   // point to the same spreadsheet with an old range and would otherwise create
   // a hidden duplicate export on every top-level synchronization.
   const exports = [...savedExports];
   if (exports.length === 0) return { configured: 0, completed: 0, failed: 0, errors: [] as string[] };
-  if (notificationsResult.error) throw notificationsResult.error;
 
   const allTransactions = allTransactionsResult as ExportSyncTransaction[];
-  const notifications = notificationsResult.data || [];
+  const archiveEntries = (archiveEntriesResult.data || []) as PdfArchiveExportEntry[];
   const results = await Promise.allSettled(exports.map(async (target) => {
     if (target.export_type === 'transactions') {
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sheets-export`, {
@@ -207,25 +229,7 @@ export const syncAllConfiguredGoogleSheetExports = async (
       return { target, title: `Google Sheets — ${target.export_type === 'pdf' ? 'PDF-архив' : 'транзакции'}` };
     }
 
-    const archiveRows: string[][] = [];
-    for (const notification of notifications) {
-      const metadata = (notification.metadata || {}) as Record<string, unknown>;
-      const date = typeof metadata.date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(metadata.date)
-        ? metadata.date.slice(0, 10)
-        : String(notification.created_at).slice(0, 10);
-      if (!metadata.archived_at || !isInExportPeriod(date, target)) continue;
-      const amount = Number(metadata.amount);
-      if (!Number.isFinite(amount)) continue;
-      const income = metadata.archive_type === 'income';
-      const amountWithCurrency = `${amount} ${String(metadata.currency || 'PLN')}`;
-      archiveRows.push([
-        date,
-        income ? amountWithCurrency : '',
-        income ? '' : String(metadata.department_name || 'Расход'),
-        income ? '' : amountWithCurrency,
-        income ? '' : String(metadata.basis || ''),
-      ]);
-    }
+    const archiveRows = buildPdfArchiveExportRows(archiveEntries, target);
 
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sheets-export`, {
       method: 'POST',
@@ -878,41 +882,14 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Пожалуйста, войдите в систему повторно');
 
-      const { data: notifications, error } = await supabase
-        .from('notifications')
-        .select('id, created_at, metadata')
+      const { data: archiveEntries, error } = await (supabase as any)
+        .from('pdf_archive_entries')
+        .select('id, type, amount, currency, department_name, basis, document_date, source_notification_id')
         .eq('user_id', user.id);
       if (error) throw error;
 
-      const pending = (notifications || []).filter((notification) => {
-        const metadata = (notification.metadata || {}) as Record<string, unknown>;
-        const documentDate = typeof metadata.date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(metadata.date)
-          ? metadata.date.slice(0, 10)
-          : String(notification.created_at).slice(0, 10);
-        return Boolean(metadata.archived_at) && isInExportPeriod(documentDate, target);
-      }).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
-
-      const exportRows: string[][] = [];
-      for (const notification of pending) {
-        const metadata = (notification.metadata || {}) as Record<string, unknown>;
-        const amount = Number(metadata.amount);
-        if (!Number.isFinite(amount)) continue;
-
-        const currency = String(metadata.currency || 'PLN');
-        const archiveType = metadata.archive_type === 'income' ? 'income' : 'expense';
-        const date = typeof metadata.date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(metadata.date)
-          ? metadata.date.slice(0, 10)
-          : String(notification.created_at).slice(0, 10);
-        const amountWithCurrency = `${amount} ${currency}`;
-        const department = String(metadata.department_name || 'Расход');
-        exportRows.push([
-          date,
-          archiveType === 'income' ? amountWithCurrency : '',
-          archiveType === 'expense' ? department : '',
-          archiveType === 'expense' ? amountWithCurrency : '',
-          archiveType === 'expense' ? String(metadata.basis || '') : '',
-        ]);
-      }
+      const entries = (archiveEntries || []) as PdfArchiveExportEntry[];
+      const exportRows = buildPdfArchiveExportRows(entries, target);
 
       const exportResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sheets-export`, {
         method: 'POST', headers: { 'Content-Type': 'text/plain' },
@@ -922,9 +899,20 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
         const payload = await exportResponse.json().catch(() => ({}));
         throw new Error(payload?.error || `Ошибка экспорта PDF (${exportResponse.status})`);
       }
-      await Promise.all(pending.map((notification) => {
-        const metadata = (notification.metadata || {}) as Record<string, unknown>;
-        return supabase.from('notifications').update({ metadata: { ...metadata, archived_sheet_exported_at: new Date().toISOString() } }).eq('id', notification.id);
+      const sourceNotificationIds = [...new Set(entries
+        .filter(entry => isInExportPeriod(entry.document_date, target))
+        .map(entry => entry.source_notification_id)
+        .filter((id): id is string => Boolean(id)))];
+      await Promise.all(sourceNotificationIds.map(async notificationId => {
+        const { data: notification } = await supabase
+          .from('notifications')
+          .select('metadata')
+          .eq('id', notificationId)
+          .maybeSingle();
+        if (!notification) return;
+        await supabase.from('notifications').update({
+          metadata: { ...(notification.metadata || {}), archived_sheet_exported_at: new Date().toISOString() },
+        }).eq('id', notificationId);
       }));
 
       toast({

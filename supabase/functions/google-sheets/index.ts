@@ -730,49 +730,53 @@ serve(async (req) => {
       }
 
       case 'archive_pdf_export': {
-        if (!values || values.length !== 1) throw new Error('One archived PDF row is required');
+        if (!Array.isArray(values) || values.length === 0) throw new Error('At least one archived PDF row is required');
 
         // The archive sheet is independent of the transaction sheet. Insert a row
         // at its configured data start so newest archived documents stay on top.
+        // A deposited PDF can contain several Dowód wpłaty receipts; each one
+        // needs its own row instead of dropping all but the first receipt.
         const rowIndex = archiveInsertRow - 1;
-        const insertResponse = await fetch(`${baseUrl}:batchUpdate`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            requests: [{ insertDimension: {
-              range: { sheetId: sheetIdNum, dimension: 'ROWS', startIndex: rowIndex, endIndex: rowIndex + 1 },
-              inheritFromBefore: false,
-            } }],
-          }),
-        });
-        if (!insertResponse.ok) {
-          const error = await insertResponse.json().catch(() => ({}));
-          throw new Error(error?.error?.message || 'Could not insert a row for the archived PDF');
-        }
-
         const columnMatch = resolvedRange.match(/!([A-Z]+)(?:\d+)?(?::/i);
         const startColumn = (columnMatch?.[1] || 'A').toUpperCase();
         const startColumnIndex = [...startColumn].reduce((result, char) => result * 26 + char.charCodeAt(0) - 64, 0) - 1;
-        const endColumn = numToColLetter(startColumnIndex + values[0].length);
-        const archiveWriteRange = `'${resolvedSheetName.replace(/'/g, "''")}'!${startColumn}${archiveInsertRow}:${endColumn}${archiveInsertRow}`;
-        response = await fetch(`${baseUrl}/values/${encodeURIComponent(archiveWriteRange)}?valueInputOption=USER_ENTERED`, {
-          method: 'PUT',
-          headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ values }),
-        });
-
-        // The fourth exported column is the expense amount. Preserve "Na podstawie"
-        // as a Google Sheets cell note, rather than polluting the table layout.
-        if (response.ok && body.note) {
-          await fetch(`${baseUrl}:batchUpdate`, {
+        for (const row of [...values].reverse()) {
+          const insertResponse = await fetch(`${baseUrl}:batchUpdate`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ requests: [{ repeatCell: {
-              range: { sheetId: sheetIdNum, startRowIndex: rowIndex, endRowIndex: rowIndex + 1, startColumnIndex: startColumnIndex + 3, endColumnIndex: startColumnIndex + 4 },
-              cell: { note: body.note },
-              fields: 'note',
-            } }] }),
+            body: JSON.stringify({
+              requests: [{ insertDimension: {
+                range: { sheetId: sheetIdNum, dimension: 'ROWS', startIndex: rowIndex, endIndex: rowIndex + 1 },
+                inheritFromBefore: false,
+              } }],
+            }),
           });
+          if (!insertResponse.ok) {
+            const error = await insertResponse.json().catch(() => ({}));
+            throw new Error(error?.error?.message || 'Could not insert a row for the archived PDF');
+          }
+
+          const endColumn = numToColLetter(startColumnIndex + row.length);
+          const archiveWriteRange = `'${resolvedSheetName.replace(/'/g, "''")}'!${startColumn}${archiveInsertRow}:${endColumn}${archiveInsertRow}`;
+          response = await fetch(`${baseUrl}/values/${encodeURIComponent(archiveWriteRange)}?valueInputOption=USER_ENTERED`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ values: [row] }),
+          });
+
+          // The fourth exported column is the expense amount. Preserve "Na podstawie"
+          // as a Google Sheets cell note, rather than polluting the table layout.
+          if (response.ok && body.note) {
+            await fetch(`${baseUrl}:batchUpdate`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ requests: [{ repeatCell: {
+                range: { sheetId: sheetIdNum, startRowIndex: rowIndex, endRowIndex: rowIndex + 1, startColumnIndex: startColumnIndex + 3, endColumnIndex: startColumnIndex + 4 },
+                cell: { note: body.note },
+                fields: 'note',
+              } }] }),
+            });
+          }
         }
         break;
       }
