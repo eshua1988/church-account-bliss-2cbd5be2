@@ -16,6 +16,106 @@ const parseSheetCurrency = (raw: unknown): SheetCurrency | null => {
   return { amount, currency: String(match[2] || "").trim().toUpperCase() };
 };
 
+const preferredCurrencyOrder = ["PLN", "USD", "EUR"];
+const normaliseCurrency = (currency: string) => {
+  const value = currency.trim().toUpperCase();
+  if (value === "ZŁ" || value === "ZL") return "PLN";
+  if (value === "$") return "USD";
+  if (value === "€") return "EUR";
+  return value;
+};
+
+const currencySort = (left: string, right: string) => {
+  const leftIndex = preferredCurrencyOrder.indexOf(left);
+  const rightIndex = preferredCurrencyOrder.indexOf(right);
+  if (leftIndex !== -1 || rightIndex !== -1) return (leftIndex === -1 ? Infinity : leftIndex) - (rightIndex === -1 ? Infinity : rightIndex);
+  return left.localeCompare(right);
+};
+
+// Accept exports produced by a cached older browser too.  Such versions put
+// every foreign-currency expense into a department column and had no dedicated
+// expense columns.  Rebuild the table here, at the final write boundary.
+const applyCurrencyColumns = (rawValues: unknown) => {
+  if (!Array.isArray(rawValues) || rawValues.length === 0 || !Array.isArray(rawValues[0])) return rawValues;
+  const input = rawValues as unknown[][];
+  const inputHeaders = input[0].map(value => String(value ?? "").trim());
+  const incomeColumns = new Map<number, string | null>();
+  const expenseColumns = new Map<number, string>();
+  const currencies = new Set<string>();
+
+  inputHeaders.forEach((header, index) => {
+    const income = header.match(/^(?:доход(?:ы)?|income)\s*(.*)$/i);
+    const expense = header.match(/^(?:расход(?:ы)?|expenses?)\s+(.+)$/i);
+    if (income) {
+      const currency = normaliseCurrency(income[1]);
+      incomeColumns.set(index, currency || null);
+      if (currency) currencies.add(currency);
+    }
+    if (expense) {
+      const currency = normaliseCurrency(expense[1]);
+      if (currency && currency !== "PLN") {
+        expenseColumns.set(index, currency);
+        currencies.add(currency);
+      }
+    }
+  });
+
+  // No currency columns means this is not a transactions-export table.
+  if (incomeColumns.size === 0) return rawValues;
+
+  input.slice(1).forEach(row => {
+    incomeColumns.forEach((currency, index) => {
+      const parsed = parseSheetCurrency(row[index]);
+      if (parsed) currencies.add(currency || normaliseCurrency(parsed.currency));
+    });
+    inputHeaders.forEach((_, index) => {
+      if (incomeColumns.has(index) || expenseColumns.has(index)) return;
+      const parsed = parseSheetCurrency(row[index]);
+      if (parsed && normaliseCurrency(parsed.currency) !== "PLN") currencies.add(normaliseCurrency(parsed.currency));
+    });
+  });
+
+  const orderedCurrencies = [...currencies].filter(Boolean).sort(currencySort);
+  if (!orderedCurrencies.includes("PLN")) orderedCurrencies.unshift("PLN");
+  const currencyHeaders = orderedCurrencies.flatMap(currency => currency === "PLN"
+    ? [`Доход ${currency}`]
+    : [`Доход ${currency}`, `Расходы ${currency}`]);
+  const currencyColumn = new Map<string, number>();
+  currencyHeaders.forEach((header, index) => currencyColumn.set(header, index + 1));
+  const categoryIndexes = inputHeaders
+    .map((_, index) => index)
+    .filter(index => index !== 0 && !incomeColumns.has(index) && !expenseColumns.has(index));
+  const categoryHeaders = categoryIndexes.map(index => inputHeaders[index]);
+  const categoryStart = currencyHeaders.length + 1;
+
+  const rows = input.slice(1).map(row => {
+    const result = new Array(1 + currencyHeaders.length + categoryHeaders.length).fill("");
+    result[0] = row[0] ?? "";
+    incomeColumns.forEach((declaredCurrency, index) => {
+      if (!row[index]) return;
+      const parsed = parseSheetCurrency(row[index]);
+      const currency = declaredCurrency || normaliseCurrency(parsed?.currency || "");
+      const target = currencyColumn.get(`Доход ${currency}`);
+      if (target !== undefined) result[target] = row[index];
+    });
+    expenseColumns.forEach((currency, index) => {
+      const target = currencyColumn.get(`Расходы ${currency}`);
+      if (target !== undefined && row[index]) result[target] = row[index];
+    });
+    categoryIndexes.forEach((sourceIndex, categoryIndex) => {
+      if (!row[sourceIndex]) return;
+      const parsed = parseSheetCurrency(row[sourceIndex]);
+      const currency = normaliseCurrency(parsed?.currency || "PLN");
+      const foreignExpense = currency !== "PLN" ? currencyColumn.get(`Расходы ${currency}`) : undefined;
+      if (foreignExpense !== undefined) result[foreignExpense] = row[sourceIndex];
+      else result[categoryStart + categoryIndex] = row[sourceIndex];
+    });
+    return result;
+  });
+
+  return [["Дата", ...currencyHeaders, ...categoryHeaders], ...rows];
+};
+
 // Google Sheets receives actual numbers; the pattern selects its native
 // currency renderer instead of putting a currency code into cell text.
 const currencyPattern = (currency: string) => ({
@@ -108,6 +208,7 @@ serve(async (req) => {
     const base = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`;
     const headers = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
     if (body.action === "write") {
+      const values = applyCurrencyColumns(body.values || []);
       const metadataResponse = await fetch(`${base}?fields=sheets.properties`, { headers });
       if (!metadataResponse.ok) return json({ error: "Google Sheets metadata failed" }, 500);
       const metadata = await metadataResponse.json();
@@ -129,7 +230,7 @@ serve(async (req) => {
 
       const clearResponse = await fetch(`${base}/values/${encodeURIComponent(range)}:clear`, { method: "POST", headers, body: "{}" });
       if (!clearResponse.ok) return json({ error: "Google Sheets range cleanup failed" }, 500);
-      const response = await fetch(`${base}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values: body.values || [] }) });
+      const response = await fetch(`${base}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values }) });
       if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets write failed" }, 500);
       // Keep the export limited to its configured range. In particular, do not
       // create or clear a separate currency-summary block beside the table:
