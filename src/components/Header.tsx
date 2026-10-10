@@ -4,6 +4,8 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import {
   Book,
   Building2,
+  CheckCircle2,
+  ClipboardList,
   ChevronLeft,
   ChevronRight,
   Church,
@@ -22,6 +24,7 @@ import {
   Star,
   Sun,
   Users,
+  XCircle,
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -39,6 +42,7 @@ import { Category } from '@/hooks/useSupabaseCategories';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { CloudSyncIcon } from '@/components/icons/CloudSyncIcon';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 export const HEADER_SETTINGS_UPDATED_EVENT = 'church-header-settings-updated';
 const HEADER_SETTINGS_KEY = 'church_header_settings';
@@ -59,6 +63,18 @@ export interface HeaderSettings {
   customImage?: string;
   customImagePath?: string;
   updatedAt?: string;
+}
+
+export interface SyncReportItem {
+  id: string;
+  title: string;
+  details: string[];
+  status: 'success' | 'error' | 'skipped';
+}
+
+export interface SyncReport {
+  completedAt: string;
+  items: SyncReportItem[];
 }
 
 export const HEADER_ICON_OPTIONS: { name: string; icon: LucideIcon }[] = [
@@ -225,6 +241,7 @@ interface HeaderProps {
   onAddTransaction?: (transaction: Omit<Transaction, 'id' | 'createdAt'>) => Promise<void>;
   onSync?: () => void;
   isSyncing?: boolean;
+  syncReport?: SyncReport | null;
   incomeCategories?: Category[];
   expenseCategories?: Category[];
 }
@@ -236,6 +253,7 @@ export const Header = ({
   onAddTransaction,
   onSync,
   isSyncing = false,
+  syncReport,
   incomeCategories = [],
   expenseCategories = [],
 }: HeaderProps) => {
@@ -314,6 +332,9 @@ export const Header = ({
   const CurrentIcon = HEADER_ICON_OPTIONS.find(i => i.name === currentIconName)?.icon || Church;
   const displayTitle = headerSettings?.title || t('appTitle');
   const displaySubtitle = headerSettings?.subtitle || t('appSubtitle');
+  const formatSyncTime = (value: string) => new Intl.DateTimeFormat('ru-RU', {
+    dateStyle: 'short', timeStyle: 'short',
+  }).format(new Date(value));
 
   const handleAddTransaction = async (transaction: Omit<Transaction, 'id' | 'createdAt'>) => {
     if (onAddTransaction) {
@@ -372,18 +393,48 @@ export const Header = ({
             </Button>
 
             {onSync && (
-              <Button
-                variant="outline"
-                size={isMobile ? 'icon' : 'default'}
-                onClick={onSync}
-                disabled={isSyncing}
-                aria-label="Синхронизация"
-                title={isSyncing ? 'Синхронизация...' : 'Синхронизация'}
-                className="flex-shrink-0"
-              >
-                <CloudSyncIcon className={`${isSyncing ? 'animate-pulse' : ''} ${isMobile ? '' : 'sm:mr-2'}`} />
-                <span className="hidden sm:inline">{isSyncing ? 'Синхронизация...' : 'Синхронизация'}</span>
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size={isMobile ? 'icon' : 'default'}
+                  onClick={onSync}
+                  disabled={isSyncing}
+                  aria-label="Синхронизация"
+                  title={isSyncing ? 'Синхронизация...' : 'Синхронизация'}
+                  className="flex-shrink-0"
+                >
+                  <CloudSyncIcon className={`${isSyncing ? 'animate-pulse' : ''} ${isMobile ? '' : 'sm:mr-2'}`} />
+                  <span className="hidden sm:inline">{isSyncing ? 'Синхронизация...' : 'Синхронизация'}</span>
+                </Button>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="icon" className="flex-shrink-0" aria-label="Отчёт синхронизации" title="Отчёт синхронизации">
+                      <ClipboardList className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-[min(24rem,calc(100vw-2rem))] p-4">
+                    <div className="space-y-3">
+                      <div>
+                        <p className="font-semibold">Отчёт синхронизации</p>
+                        <p className="text-xs text-muted-foreground">
+                          {syncReport ? `Последний запуск: ${formatSyncTime(syncReport.completedAt)}` : 'Синхронизация ещё не запускалась'}
+                        </p>
+                      </div>
+                      {syncReport?.items.map(item => (
+                        <div key={item.id} className="rounded-lg border p-3">
+                          <div className="flex items-center gap-2 font-medium">
+                            {item.status === 'success' ? <CheckCircle2 className="h-4 w-4 text-success" /> : item.status === 'error' ? <XCircle className="h-4 w-4 text-destructive" /> : <ClipboardList className="h-4 w-4 text-muted-foreground" />}
+                            <span>{item.title}</span>
+                          </div>
+                          <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                            {item.details.map(detail => <p key={detail}>{detail}</p>)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
             )}
 
             {onAddTransaction && (

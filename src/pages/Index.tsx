@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Header } from '@/components/Header';
+import { Header, type SyncReport, type SyncReportItem } from '@/components/Header';
 import { CurrencyBalanceCard } from '@/components/CurrencyBalanceCard';
 import { CategoryManager } from '@/components/CategoryManager';
 import { CategoryPieChart } from '@/components/charts/CategoryPieChart';
@@ -36,6 +36,19 @@ import { syncNotificationArchivesToCloud } from '@/lib/cloudArchiveSync';
 import { LinksPage } from '@/components/LinksPage';
 import { RemindersPage } from '@/components/RemindersPage';
 import { PdfArchiveStatistics } from '@/components/PdfArchiveStatistics';
+
+const SYNC_REPORT_STORAGE_KEY = 'church-sync-report-v1';
+
+const loadSyncReport = (): SyncReport | null => {
+  try {
+    const raw = localStorage.getItem(SYNC_REPORT_STORAGE_KEY);
+    if (!raw) return null;
+    const report = JSON.parse(raw) as SyncReport;
+    return report?.completedAt && Array.isArray(report.items) ? report : null;
+  } catch {
+    return null;
+  }
+};
 
 const Index = () => {
   const { t, getDateLocale } = useTranslation();
@@ -108,12 +121,13 @@ const Index = () => {
 
   const [isBankSyncing, setIsBankSyncing] = useState(false);
   const [isConfiguredExportsSyncing, setIsConfiguredExportsSyncing] = useState(false);
+  const [syncReport, setSyncReport] = useState<SyncReport | null>(loadSyncReport);
 
-  const handleBankSync = useCallback(async () => {
+  const handleBankSync = useCallback(async (): Promise<SyncReportItem> => {
     try {
       setIsBankSyncing(true);
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) return;
+      if (!session?.user) throw new Error('Войдите в систему повторно');
       const supabaseUrl = (supabase as any).supabaseUrl as string;
       const supabaseKey = (supabase as any).supabaseKey as string;
       const accessToken = session.access_token || supabaseKey;
@@ -131,16 +145,25 @@ const Index = () => {
       const json = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
 
       if (!res.ok) {
-        toast({ title: 'Ошибка синхр. банка', description: json?.error || `HTTP ${res.status}`, variant: 'destructive' });
-        return;
+        throw new Error(json?.error || `HTTP ${res.status}`);
       }
 
       if (json.imported > 0) {
         toast({ title: 'Банк синхронизирован', description: `Добавлено ${json.imported} новых транзакций` });
       }
       await refetchTransactions();
+      return {
+        id: 'bank',
+        title: 'Импорт из банка',
+        status: 'success',
+        details: [
+          `В банке: ${Number(json.bank_total ?? json.total ?? 0).toLocaleString('ru-RU')}; добавлено: ${Number(json.imported ?? 0).toLocaleString('ru-RU')}`,
+          `Отсутствуют в приложении: ${Number(json.missing ?? 0).toLocaleString('ru-RU')}; лишних в приложении: ${Number(json.extra ?? 0).toLocaleString('ru-RU')}`,
+        ],
+      };
     } catch (e) {
       toast({ title: 'Ошибка синхр. банка', description: String(e), variant: 'destructive' });
+      return { id: 'bank', title: 'Импорт из банка', status: 'error', details: [e instanceof Error ? e.message : String(e)] };
     } finally {
       setIsBankSyncing(false);
     }
@@ -153,14 +176,22 @@ const Index = () => {
     try {
       // Each integration is independent: one failed destination must never
       // cancel exports to the others.
-      const [configuredExports, , cloud] = await Promise.allSettled([
+      const [configuredExports, bank, cloud] = await Promise.allSettled([
         syncAllConfiguredGoogleSheetExports(transactions, expenseCategories, getAllTransactions),
         handleBankSync(),
         syncNotificationArchivesToCloud(notifications),
       ]);
+      const reportItems: SyncReportItem[] = [];
 
       if (configuredExports.status === 'fulfilled') {
         const configuredExportsResult = configuredExports.value;
+        reportItems.push(configuredExportsResult.configured > 0
+          ? {
+            id: 'sheets', title: 'Экспорт в Google Sheets',
+            status: configuredExportsResult.failed > 0 ? 'error' : 'success',
+            details: [`Готово: ${configuredExportsResult.completed} из ${configuredExportsResult.configured}`, ...configuredExportsResult.errors],
+          }
+          : { id: 'sheets', title: 'Экспорт в Google Sheets', status: 'skipped', details: ['Нет настроенных экспортов'] });
         if (configuredExportsResult.configured > 0) {
           toast({
             title: configuredExportsResult.failed > 0 ? 'Не все экспорты Google Sheets завершены' : 'Экспорты Google Sheets завершены',
@@ -172,11 +203,19 @@ const Index = () => {
           toast({ title: 'Ошибка экспорта Google Sheets', description: configuredExportsResult.errors.join('; '), variant: 'destructive' });
         }
       } else {
+        reportItems.push({ id: 'sheets', title: 'Экспорт в Google Sheets', status: 'error', details: [String(configuredExports.reason)] });
         toast({ title: 'Ошибка экспорта Google Sheets', description: String(configuredExports.reason), variant: 'destructive' });
       }
 
+      reportItems.push(bank.status === 'fulfilled'
+        ? bank.value
+        : { id: 'bank', title: 'Импорт из банка', status: 'error', details: [String(bank.reason)] });
+
       if (cloud.status === 'fulfilled') {
         const cloudResult = cloud.value;
+        reportItems.push(cloudResult.skipped
+          ? { id: 'cloud', title: 'Облачные PDF-архивы', status: cloudResult.errors.length > 0 ? 'error' : 'skipped', details: [cloudResult.errors.length > 0 ? cloudResult.errors.join('; ') : 'Нет подключённых облачных хранилищ'] }
+          : { id: 'cloud', title: 'Облачные PDF-архивы', status: cloudResult.errors.length > 0 ? 'error' : 'success', details: [`Архивов обработано: ${cloudResult.archives}; файлов загружено: ${cloudResult.uploaded}`, ...cloudResult.errors] });
         if (cloudResult.uploaded > 0) {
           toast({ title: 'Облачные архивы обновлены', description: `Загружено файлов: ${cloudResult.uploaded}` });
         }
@@ -184,8 +223,13 @@ const Index = () => {
           toast({ title: 'Ошибка синхронизации облака', description: cloudResult.errors.join('; '), variant: 'destructive' });
         }
       } else {
+        reportItems.push({ id: 'cloud', title: 'Облачные PDF-архивы', status: 'error', details: [String(cloud.reason)] });
         toast({ title: 'Ошибка синхронизации облака', description: String(cloud.reason), variant: 'destructive' });
       }
+
+      const nextReport: SyncReport = { completedAt: new Date().toISOString(), items: reportItems };
+      setSyncReport(nextReport);
+      localStorage.setItem(SYNC_REPORT_STORAGE_KEY, JSON.stringify(nextReport));
     } finally {
       setIsConfiguredExportsSyncing(false);
     }
@@ -403,6 +447,7 @@ const Index = () => {
         onAddTransaction={handleAddTransaction}
         onSync={handleSync}
         isSyncing={isSyncing}
+        syncReport={syncReport}
         incomeCategories={getIncomeCategories()}
         expenseCategories={getExpenseCategories()}
       />
