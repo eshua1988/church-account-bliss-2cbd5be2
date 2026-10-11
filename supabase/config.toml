@@ -6,6 +6,9 @@ verify_jwt = false
 [functions.sheets-export]
 verify_jwt = false
 
+[functions.archive-pdf]
+verify_jwt = false
+
 [functions.validate-payout-token]
 verify_jwt = false
 

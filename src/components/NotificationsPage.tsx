@@ -1394,8 +1394,8 @@ export const NotificationsPage = () => {
 
       // Export first. If the separate archive sheet is not configured, keep the
       // notification out of the archive so the user can correct the setting.
-      const { error: exportError } = await supabase.functions.invoke('google-sheets', {
-        body: { action: 'archive_pdf_export', values, note: String(metadata.basis || '') },
+      const { error: exportError } = await supabase.functions.invoke('archive-pdf', {
+        body: { values },
       });
       if (exportError) {
         let detail = exportError.message;
