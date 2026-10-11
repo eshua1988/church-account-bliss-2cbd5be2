@@ -151,7 +151,12 @@ const recoverLegacyPdfArchiveEntries = async (userId: string) => {
 
   const rows = ((data || []) as LegacyPdfNotification[]).flatMap(notification => {
     const metadata = notification.metadata || {};
-    if (!metadata.archived_at) return [];
+    if (!metadata.archived_at || metadata.archive_entry_deleted) return [];
+    const deletedReceiptIndexes = new Set(
+      Array.isArray(metadata.deleted_archive_receipt_indices)
+        ? metadata.deleted_archive_receipt_indices.map(Number).filter(Number.isInteger)
+        : [],
+    );
     const receiptValues = Array.isArray(metadata.receipts) && metadata.receipts.length > 0
       ? metadata.receipts.filter((receipt): receipt is Record<string, unknown> => Boolean(receipt) && typeof receipt === 'object')
       : [metadata];
@@ -161,6 +166,7 @@ const recoverLegacyPdfArchiveEntries = async (userId: string) => {
         ? 'income'
         : 'expense';
     return receiptValues.flatMap((receipt, receiptIndex) => {
+      if (deletedReceiptIndexes.has(receiptIndex)) return [];
       const amount = normalizeArchiveAmount(receipt.amount ?? metadata.amount);
       if (amount === null) return [];
       return [{
@@ -280,7 +286,7 @@ const buildTransactionExportValues = (
 // A single PDF may contain several receipts. They are stored individually in
 // pdf_archive_entries, so never rebuild this export from only the notification
 // header metadata (which contains just the first receipt for compatibility).
-const buildPdfArchiveExportRows = (entries: PdfArchiveExportEntry[], target?: SheetExport) =>
+export const buildPdfArchiveExportRows = (entries: PdfArchiveExportEntry[], target?: SheetExport) =>
   entries
     .filter(entry => Number.isFinite(Number(entry.amount)) && isInExportPeriod(entry.document_date, target))
     .sort((left, right) => right.document_date.localeCompare(left.document_date))
@@ -296,6 +302,42 @@ const buildPdfArchiveExportRows = (entries: PdfArchiveExportEntry[], target?: Sh
         income ? '' : (entry.issued_to || ''),
       ];
     });
+
+/** Rebuild only configured PDF exports. Used after a PDF archive item is deleted. */
+export const syncPdfArchiveExportsOnly = async () => {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Пожалуйста, войдите в систему повторно');
+  const [{ data: targets, error: targetsError }, entriesResult] = await Promise.all([
+    supabase.from('google_sheet_exports' as any)
+      .select('id, export_type, spreadsheet_id, sheet_range, period_mode, period_from, period_to')
+      .eq('user_id', session.user.id)
+      .eq('export_type', 'pdf'),
+    (supabase as any).from('pdf_archive_entries')
+      .select('id, type, amount, currency, department_name, basis, issued_to, document_date')
+      .eq('user_id', session.user.id),
+  ]);
+  if (targetsError) throw targetsError;
+  if (entriesResult.error) throw entriesResult.error;
+  const targetsToSync = (targets || []) as SheetExport[];
+  const entries = (entriesResult.data || []) as PdfArchiveExportEntry[];
+  for (const target of targetsToSync) {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sheets-export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        accessToken: session.access_token,
+        action: 'archive_pdf_export',
+        exportId: target.id,
+        values: buildPdfArchiveExportRows(entries, target),
+      }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload?.error || `Ошибка экспорта PDF (${response.status})`);
+    }
+  }
+  return targetsToSync.length;
+};
 
 export const syncAllConfiguredGoogleSheetExports = async (
   transactions: ExportSyncTransaction[],

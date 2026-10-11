@@ -12,6 +12,8 @@ export interface PdfArchiveEntry {
   basis: string | null;
   issued_to: string | null;
   source_pdf_path: string | null;
+  source_notification_id: string | null;
+  receipt_index: number;
   document_date: string;
   created_at: string;
 }
@@ -27,7 +29,7 @@ export const usePdfArchiveEntries = () => {
     }
     const { data, error } = await (supabase as any)
       .from('pdf_archive_entries')
-      .select('id, type, amount, currency, category_id, department_name, basis, issued_to, source_pdf_path, document_date, created_at')
+      .select('id, type, amount, currency, category_id, department_name, basis, issued_to, source_pdf_path, source_notification_id, receipt_index, document_date, created_at')
       .eq('user_id', user.id)
       .order('document_date', { ascending: false })
       .order('created_at', { ascending: false });

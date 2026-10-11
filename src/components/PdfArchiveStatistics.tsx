@@ -9,6 +9,7 @@ import { usePdfArchiveEntries } from '@/hooks/usePdfArchiveEntries';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { openPdfUrl } from '@/lib/pdfDownload';
+import { syncPdfArchiveExportsOnly } from '@/components/GoogleSheetsSync';
 
 interface PdfArchiveStatisticsProps {
   categories: { id: string; name: string; type: string }[];
@@ -75,6 +76,44 @@ export const PdfArchiveStatistics = ({ categories, getCategoryName }: PdfArchive
     }
   };
 
+  const deleteSelectedArchiveTransactions = async (transactionIds: string[]) => {
+    const entryIds = transactionIds.map(id => id.replace(/^pdf-/, '')).filter(Boolean);
+    const selectedEntries = entries.filter(entry => entryIds.includes(entry.id));
+    if (!selectedEntries.length) return false;
+    if (!window.confirm(`Удалить без возможности восстановления ${selectedEntries.length} PDF-транзакц. из базы и Google Sheets?`)) return false;
+    try {
+      // Legacy recovery reads the notification metadata. Remember deleted receipt
+      // indexes there so a later sync cannot recreate an intentionally deleted row.
+      const byNotification = new Map<string, number[]>();
+      selectedEntries.forEach(entry => {
+        if (!entry.source_notification_id) return;
+        byNotification.set(entry.source_notification_id, [...(byNotification.get(entry.source_notification_id) || []), entry.receipt_index]);
+      });
+      for (const [notificationId, receiptIndexes] of byNotification) {
+        const { data: notification, error } = await supabase.from('notifications').select('metadata').eq('id', notificationId).maybeSingle();
+        if (error) throw error;
+        const metadata = (notification?.metadata || {}) as Record<string, unknown>;
+        const alreadyDeleted = Array.isArray(metadata.deleted_archive_receipt_indices)
+          ? metadata.deleted_archive_receipt_indices.map(Number).filter(Number.isInteger)
+          : [];
+        const deletedIndexes = [...new Set([...alreadyDeleted, ...receiptIndexes])];
+        const { error: updateError } = await supabase.from('notifications').update({
+          metadata: { ...metadata, deleted_archive_receipt_indices: deletedIndexes },
+        }).eq('id', notificationId);
+        if (updateError) throw updateError;
+      }
+      const { error: deleteError } = await (supabase as any).from('pdf_archive_entries').delete().in('id', entryIds);
+      if (deleteError) throw deleteError;
+      const exportsCount = await syncPdfArchiveExportsOnly();
+      toast({ title: 'PDF-транзакции удалены навсегда', description: exportsCount ? `Обновлено таблиц Google Sheets: ${exportsCount}` : 'Настроенных PDF-экспортов нет.' });
+      return true;
+    } catch (error) {
+      console.error('PDF archive deletion failed:', error);
+      toast({ title: 'Не удалось удалить PDF-транзакции', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+      return false;
+    }
+  };
+
   return <section className="space-y-4">
     <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
       <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary"><Archive className="h-5 w-5" /></div>
@@ -92,7 +131,7 @@ export const PdfArchiveStatistics = ({ categories, getCategoryName }: PdfArchive
           return <CurrencyBalanceCard key={currency} currency={currency} income={balance.income} expense={balance.expense} balance={balance.balance} delay={index * 100} transactions={archiveTransactions} getCategoryName={getCategoryName} />;
         })}</div>}
       </TabsContent>
-      <TabsContent value="table"><StatisticsTable transactions={archiveTransactions} getCategoryName={getCategoryName} categories={categories} onOpenPdf={openSourcePdf} /></TabsContent>
+      <TabsContent value="table"><StatisticsTable transactions={archiveTransactions} getCategoryName={getCategoryName} categories={categories} onOpenPdf={openSourcePdf} onDeleteSelected={deleteSelectedArchiveTransactions} /></TabsContent>
       <TabsContent value="calculator"><StatisticsTable transactions={archiveTransactions} getCategoryName={getCategoryName} categories={categories} calculatorMode /></TabsContent>
     </Tabs>
   </section>;

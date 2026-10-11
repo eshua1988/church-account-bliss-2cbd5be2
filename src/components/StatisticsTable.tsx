@@ -33,6 +33,7 @@ interface StatisticsTableProps {
   onLoadMore?: () => void;
   getCategoryName: (id: string) => string;
   onDelete?: (id: string) => void;
+  onDeleteSelected?: (ids: string[]) => boolean | void | Promise<boolean | void>;
   onUpdate?: (id: string, updates: Partial<Transaction>) => void;
   selectedCurrency?: string | null;
   categories?: { id: string; name: string; type: string }[];
@@ -71,7 +72,7 @@ const getSearchWords = (text: string) =>
     .map(word => word.trim())
     .filter(word => word.length >= 2);
 
-export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loadingMore = false, onLoadMore, getCategoryName, onDelete, onUpdate, selectedCurrency, categories = [], notifications = [], onLinkNotification, onUnlinkNotification, onOpenPdf, calculatorMode = false }: StatisticsTableProps) => {
+export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loadingMore = false, onLoadMore, getCategoryName, onDelete, onDeleteSelected, onUpdate, selectedCurrency, categories = [], notifications = [], onLinkNotification, onUnlinkNotification, onOpenPdf, calculatorMode = false }: StatisticsTableProps) => {
   const { t, getDateLocale } = useTranslation();
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
@@ -422,9 +423,12 @@ export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loa
 
   const isAllSelected = filteredTransactions.length > 0 && selectedTransactions.size === filteredTransactions.length;
 
-  const handleDeleteSelected = () => {
-    if (!onDelete) return;
-    selectedTransactions.forEach(id => onDelete(id));
+  const handleDeleteSelected = async () => {
+    if (onDeleteSelected) {
+      const deleted = await onDeleteSelected([...selectedTransactions]);
+      if (deleted === false) return;
+    } else if (onDelete) selectedTransactions.forEach(id => onDelete(id));
+    else return;
     setSelectedTransactions(new Set());
   };
 
@@ -749,7 +753,7 @@ export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loa
                 <th className="h-12 px-2 text-left align-middle font-medium text-muted-foreground">
                   <div className="flex items-center gap-1.5">
                     <Checkbox checked={isAllSelected} onCheckedChange={toggleAllTransactions} aria-label="Select all" />
-                    {selectedTransactions.size > 0 && onDelete && !calculatorMode && (
+                    {selectedTransactions.size > 0 && (onDelete || onDeleteSelected) && !calculatorMode && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -918,7 +922,7 @@ export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loa
             {/* Mobile: fixed bottom bar */}
             <div className="sm:hidden fixed bottom-0 left-0 right-0 z-50 flex items-center justify-between gap-2 px-4 py-3 bg-card border-t border-border shadow-lg">
               <p className="text-sm text-primary font-medium">Выбрано: {selectedTransactions.size}</p>
-              {selectedTransactions.size > 0 && onDelete && !calculatorMode && (
+              {selectedTransactions.size > 0 && (onDelete || onDeleteSelected) && !calculatorMode && (
                 <Button
                   variant="destructive"
                   size="sm"
@@ -933,7 +937,7 @@ export const StatisticsTable = ({ transactions, totalCount, hasMore = false, loa
             {/* Desktop: bottom bar */}
             <div className="hidden sm:flex items-center justify-between gap-2 mt-4 px-4 py-3 bg-card border rounded-lg">
               <p className="text-sm text-primary font-medium">Выбрано: {selectedTransactions.size}</p>
-              {selectedTransactions.size > 0 && onDelete && !calculatorMode && (
+              {selectedTransactions.size > 0 && (onDelete || onDeleteSelected) && !calculatorMode && (
                 <Button
                   variant="ghost"
                   size="sm"
