@@ -239,11 +239,24 @@ serve(async (req) => {
     }
     if (archive) {
       const sourceRows: unknown[][] = Array.isArray(body.values) ? body.values : [];
-      const currencies = [...new Set(sourceRows.map(row => parseSheetCurrency(row[1])?.currency || "").filter(Boolean))];
+      const currencies = [...new Set([
+        "PLN",
+        ...sourceRows.flatMap(row => [parseSheetCurrency(row[1])?.currency, parseSheetCurrency(row[3])?.currency])
+          .filter((currency): currency is string => Boolean(currency))
+          .map(normaliseCurrency),
+      ])].sort(currencySort);
       const departments = [...new Set(sourceRows.map(row => String(row[2] || "").trim()).filter(Boolean))];
-      const headersRow = ["Дата", ...currencies.map(currency => `Доход ${currency}`), ...departments];
+      const currencyColumns = currencies.flatMap(currency => currency === "PLN"
+        ? [{ currency, type: "income" as const, header: `Доход ${currency}` }]
+        : [
+            { currency, type: "income" as const, header: `Доход ${currency}` },
+            { currency, type: "expense" as const, header: `Расходы ${currency}` },
+          ]);
+      const currencyColumn = new Map(currencyColumns.map((column, index) => [`${column.type}:${column.currency}`, index + 1]));
+      const departmentStart = currencyColumns.length + 1;
+      const headersRow = ["Дата", ...currencyColumns.map(column => column.header), ...departments];
       type ArchiveRow = { cells: Array<string | number>; notes: Array<{ col: number; text: string }>; currencies: Array<{ col: number; currency: string }> };
-      type SourceArchiveRow = { date: string; income: SheetCurrency | null; expense: SheetCurrency | null; currency: string; incomeIndex: number; departmentIndex: number; targetColumn: number; basis: string; issuedTo: string };
+      type SourceArchiveRow = { date: string; income: SheetCurrency | null; expense: SheetCurrency | null; targetColumn: number; basis: string; issuedTo: string };
       const byMonth = new Map<string, SourceArchiveRow[]>();
 
       // Only a Dowód wpłaty (income) owns a date in the archive table.
@@ -254,22 +267,21 @@ serve(async (req) => {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
         const income = parseSheetCurrency(row[1]);
         const expense = parseSheetCurrency(row[3]);
-        const currency = income?.currency || "";
-        const incomeIndex = currencies.indexOf(currency);
         const departmentIndex = departments.indexOf(String(row[2] || "").trim());
-        const targetColumn = incomeIndex !== -1
-          ? 1 + incomeIndex
-          : departmentIndex !== -1
-            ? 1 + currencies.length + departmentIndex
-            : -1;
+        const incomeCurrency = normaliseCurrency(income?.currency || "");
+        const expenseCurrency = normaliseCurrency(expense?.currency || "");
+        const targetColumn = income
+          ? currencyColumn.get(`income:${incomeCurrency}`) ?? -1
+          : expenseCurrency && expenseCurrency !== "PLN"
+            ? currencyColumn.get(`expense:${expenseCurrency}`) ?? -1
+            : departmentIndex !== -1
+              ? departmentStart + departmentIndex
+              : -1;
         if (targetColumn === -1) return;
         const parsed = {
           date,
           income,
           expense,
-          currency,
-          incomeIndex,
-          departmentIndex,
           targetColumn,
           basis: String(row[4] || "").trim(),
           issuedTo: String(row[5] || "").trim(),
@@ -283,7 +295,7 @@ serve(async (req) => {
       const archiveRows: ArchiveRow[] = [];
       const monthSeparatorRowIndexes: number[] = [];
       const makeRow = (date = ""): ArchiveRow => ({
-        cells: [date, ...new Array(currencies.length + departments.length).fill("")],
+        cells: [date, ...new Array(currencyColumns.length + departments.length).fill("")],
         notes: [],
         currencies: [],
       });
