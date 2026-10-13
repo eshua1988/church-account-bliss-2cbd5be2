@@ -24,6 +24,11 @@ import { Currency, CURRENCY_SYMBOLS } from '@/types/transaction';
 import { CurrencyConverter } from '@/components/CurrencyConverter';
 import { loadHeaderSettings } from '@/components/Header';
 import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+
+// Keep the worker in the Vite build. The CDN path used before is not published
+// for the installed PDF.js version and caused PDF attachments to fail with 404.
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 type Language = 'pl' | 'ru' | 'en' | 'uk';
 type LinkType = 'standard' | 'stepwise';
@@ -708,9 +713,6 @@ const PublicPayout = () => {
 
   // Load shared link and categories via secure edge function
   useEffect(() => {
-    // Initialize PDF.js worker
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-    
     const loadData = async () => {
       if (!token) {
         setError('Nieprawidłowy link');
