@@ -1687,14 +1687,15 @@ export const NotificationsPage = () => {
       });
   }, [notifications]);
 
-  const incomeNotifications = notifications.filter(isDepositNotification);
+  const isHiddenInInbox = (notification: Notification) => Boolean(notification.metadata?.archived_only);
+  const incomeNotifications = notifications.filter(notification => isDepositNotification(notification) && !isHiddenInInbox(notification));
   const ruleRequests = notifications.filter(
     n => !isDepositNotification(n) && isRuleRequestNotification(n)
   );
   const reminderAlerts = notifications.filter(n => n.type === 'reminder_alert');
   const archivedNotifications = getArchivedNotifications(notifications);
   const payoutNotifications = notifications.filter(
-    n => !isDepositNotification(n) && !isRuleRequestNotification(n) && n.type !== 'reminder_alert'
+    n => !isDepositNotification(n) && !isRuleRequestNotification(n) && n.type !== 'reminder_alert' && !isHiddenInInbox(n)
   );
   const withoutPhotos = payoutNotifications.filter(n => n.metadata?.images_skipped);
   const withPhotos = payoutNotifications.filter(n => !n.metadata?.images_skipped);
@@ -1860,11 +1861,15 @@ export const NotificationsPage = () => {
   };
 
   const handleDeleteSelectedArchive = async () => {
+    if (selectedArchiveNotifications.length === 0) return;
+    if (!window.confirm(`Удалить без возможности восстановления ${selectedArchiveNotifications.length} PDF из ZIP-архива?`)) return;
     try {
-      await Promise.all(selectedArchiveNotifications.map(notification => deleteNotification(notification.id)));
+      const ids = selectedArchiveNotifications.map(notification => notification.id);
+      const { error } = await supabase.from('notifications').delete().in('id', ids);
+      if (error) throw error;
       setSelectedArchiveIds(new Set());
       await refetchNotifications();
-      toast({ title: 'PDF удалены', description: `Удалено документов: ${selectedArchiveNotifications.length}` });
+      toast({ title: 'PDF удалены из ZIP-архива', description: `Удалено документов: ${selectedArchiveNotifications.length}` });
     } catch (error) {
       toast({ title: 'Ошибка удаления', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
     }
@@ -2064,8 +2069,8 @@ export const NotificationsPage = () => {
       ) : (
         <div className="min-w-0 max-w-full space-y-3 overflow-x-hidden">
           {activeTab === 'extension' && selectedArchiveNotifications.length > 0 && (
-            <div className="sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-card p-2 shadow-lg">
-              <span className="mr-1 text-sm font-medium">Выбрано: {selectedArchiveNotifications.length}</span>
+            <div className="sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/5 p-3 shadow-lg">
+              <span className="mr-1 text-sm font-medium">Выбрано PDF: {selectedArchiveNotifications.length}</span>
               <Button variant="outline" size="sm" className="gap-1.5" onClick={handleCopySelectedArchive}>
                 <Copy className="h-4 w-4" /> Копировать
               </Button>
@@ -2076,7 +2081,7 @@ export const NotificationsPage = () => {
                 <Download className="h-4 w-4" /> Скачать
               </Button>
               <Button variant="destructive" size="sm" className="gap-1.5" onClick={() => void handleDeleteSelectedArchive()}>
-                <Trash2 className="h-4 w-4" /> Удалить
+                <Trash2 className="h-4 w-4" /> Удалить из архива
               </Button>
               <Button variant="ghost" size="sm" onClick={() => setSelectedArchiveIds(new Set())}>Снять выбор</Button>
             </div>

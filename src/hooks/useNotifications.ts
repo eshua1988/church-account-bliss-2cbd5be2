@@ -15,6 +15,8 @@ export interface NotificationMetadata {
   link_token?: string;
   archived_at?: string;
   archived_sheet_exported_at?: string;
+  /** Hidden from ordinary notification tabs but retained in the ZIP/PDF archive. */
+  archived_only?: boolean;
   [key: string]: unknown;
 }
 
@@ -396,6 +398,21 @@ export const useNotifications = () => {
   const deleteNotification = useCallback(async (notificationId: string) => {
     try {
       const notification = notifications.find(n => n.id === notificationId);
+
+      // An archived PDF is the source for a ZIP archive. Removing it from the
+      // inbox must not destroy that archive entry; hide it from ordinary tabs
+      // and leave final deletion to the archive's own delete action.
+      if (notification?.metadata?.archived_at) {
+        const metadata = { ...notification.metadata, archived_only: true };
+        const { error } = await supabase
+          .from('notifications')
+          .update({ metadata })
+          .eq('id', notificationId);
+        if (error) throw error;
+        setNotifications(prev => prev.map(item => item.id === notificationId ? { ...item, metadata } : item));
+        if (!notification.is_read) setUnreadCount(prev => Math.max(0, prev - 1));
+        return;
+      }
       
       const { error } = await supabase
         .from('notifications')
