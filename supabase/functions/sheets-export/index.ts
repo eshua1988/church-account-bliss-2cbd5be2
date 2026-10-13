@@ -137,6 +137,27 @@ const configuredSheet = (metadata: { sheets?: GoogleSheet[] }, range: string) =>
 
 const columnIndex = (column: string) => [...column.toUpperCase()].reduce((value, letter) => value * 26 + letter.charCodeAt(0) - 64, 0) - 1;
 
+const columnLetter = (index: number) => {
+  let value = index + 1;
+  let result = '';
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    result = String.fromCharCode(65 + remainder) + result;
+    value = Math.floor((value - 1) / 26);
+  }
+  return result;
+};
+
+// A saved range such as "Лист31!B:Z" is a starting position, not a hard
+// schema limit: transaction exports add department and currency columns.
+// Expand the end column before writing so a new column (AA, AB, ...) cannot
+// make the whole top-level synchronization fail.
+const expandRangeColumns = (range: string, columnCount: number) =>
+  range.replace(/([A-Z]+):([A-Z]+)$/i, (_match, startColumn: string) => {
+    const startIndex = columnIndex(startColumn);
+    return `${startColumn}:${columnLetter(startIndex + Math.max(columnCount, 1) - 1)}`;
+  });
+
 const rangeBounds = (sheetId: number, range: string, sheet: GoogleSheet) => {
   const a1 = range.includes("!") ? range.slice(range.indexOf("!") + 1) : range;
   const match = a1.match(/^([A-Z]+)(\d+)?(?::([A-Z]+)?(\d+)?)?$/i);
@@ -215,22 +236,31 @@ serve(async (req) => {
       const sheet = configuredSheet(metadata, range);
       if (typeof sheet?.properties?.sheetId !== "number") return json({ error: "Google Sheet was not found" }, 500);
 
+      const dataWidth = Math.max(...values.map((row: unknown[]) => row.length), 1);
+      const writeRange = expandRangeColumns(range, dataWidth);
+      const configuredStart = (range.includes('!') ? range.slice(range.indexOf('!') + 1) : range).match(/^([A-Z]+)/i)?.[1] || 'A';
+      const existingWidth = Math.max(
+        Number(sheet.properties?.gridProperties?.columnCount || 0) - columnIndex(configuredStart),
+        1,
+      );
+      const clearRange = expandRangeColumns(range, Math.max(dataWidth, existingWidth));
+
       // Old exported notes must not survive a new full export, even if rows or
       // categories have moved. Clear notes across the export sheet first.
       const clearNotesResponse = await fetch(`${base}:batchUpdate`, {
         method: "POST",
         headers,
         body: JSON.stringify({ requests: [{ repeatCell: {
-          range: rangeBounds(sheet.properties.sheetId, range, sheet),
+          range: rangeBounds(sheet.properties.sheetId, clearRange, sheet),
           cell: { note: "" },
           fields: "note",
         } }] }),
       });
       if (!clearNotesResponse.ok) return json({ error: "Google Sheets note cleanup failed" }, 500);
 
-      const clearResponse = await fetch(`${base}/values/${encodeURIComponent(range)}:clear`, { method: "POST", headers, body: "{}" });
+      const clearResponse = await fetch(`${base}/values/${encodeURIComponent(clearRange)}:clear`, { method: "POST", headers, body: "{}" });
       if (!clearResponse.ok) return json({ error: "Google Sheets range cleanup failed" }, 500);
-      const response = await fetch(`${base}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values }) });
+      const response = await fetch(`${base}/values/${encodeURIComponent(writeRange)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values }) });
       if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets write failed" }, 500);
       // Keep the export limited to its configured range. In particular, do not
       // create or clear a separate currency-summary block beside the table:
