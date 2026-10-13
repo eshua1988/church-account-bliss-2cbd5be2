@@ -58,11 +58,11 @@ const translations: Record<Language, Record<string, string>> = {
     basis: 'Podstawa (na jakie potrzeby)',
     basisPlaceholder: 'Wpisz podstawę wypłaty...',
     amountInWords: 'Suma słownie',
-    attachments: 'Załączniki (zdjęcia)',
+    attachments: 'Załączniki (zdjęcia lub PDF)',
     required: 'Obowiązkowe',
     optional: 'Nieobowiązkowe',
-    addPhotos: 'Dodaj zdjęcia',
-    photoNote: 'Każde zdjęcie zostanie umieszczone na osobnej stronie PDF',
+    addPhotos: 'Dodaj zdjęcia lub PDF',
+    photoNote: 'Każde zdjęcie i każda strona PDF będą umieszczone na osobnej stronie dokumentu',
     signature: 'Podpis odbiorcy',
     clear: 'Wyczyść',
     saveAndDownload: 'Wyślij',
@@ -132,11 +132,11 @@ const translations: Record<Language, Record<string, string>> = {
     basis: 'Основание (на какие нужды)',
     basisPlaceholder: 'Введите основание выплаты...',
     amountInWords: 'Сумма прописью',
-    attachments: 'Вложения (фото)',
+    attachments: 'Вложения (фото или PDF)',
     required: 'Обязательно',
     optional: 'Необязательно',
-    addPhotos: 'Добавить фото',
-    photoNote: 'Каждое фото будет размещено на отдельной странице PDF',
+    addPhotos: 'Добавить фото или PDF',
+    photoNote: 'Каждое фото и каждая страница PDF будут размещены на отдельной странице документа',
     signature: 'Подпись получателя',
     clear: 'Очистить',
     saveAndDownload: 'Отправить',
@@ -206,11 +206,11 @@ const translations: Record<Language, Record<string, string>> = {
     basis: 'Purpose (for what needs)',
     basisPlaceholder: 'Enter payment purpose...',
     amountInWords: 'Amount in words',
-    attachments: 'Attachments (photos)',
+    attachments: 'Attachments (photos or PDF)',
     required: 'Required',
     optional: 'Optional',
-    addPhotos: 'Add photos',
-    photoNote: 'Each photo will be placed on a separate PDF page',
+    addPhotos: 'Add photos or PDF',
+    photoNote: 'Each photo and each PDF page will be placed on a separate document page',
     signature: 'Recipient signature',
     clear: 'Clear',
     saveAndDownload: 'Send',
@@ -280,11 +280,11 @@ const translations: Record<Language, Record<string, string>> = {
     basis: 'Підстава (на які потреби)',
     basisPlaceholder: 'Введіть підставу виплати...',
     amountInWords: 'Сума прописом',
-    attachments: 'Вкладення (фото)',
+    attachments: 'Вкладення (фото або PDF)',
     required: 'Обов\'язково',
     optional: 'Необов\'язково',
-    addPhotos: 'Додати фото',
-    photoNote: 'Кожне фото буде розміщено на окремій сторінці PDF',
+    addPhotos: 'Додати фото або PDF',
+    photoNote: 'Кожне фото та кожна сторінка PDF будуть розміщені на окремій сторінці документа',
     signature: 'Підпис отримувача',
     clear: 'Очистити',
     saveAndDownload: 'Надіслати',
@@ -1334,17 +1334,13 @@ const PublicPayout = () => {
     for (const img of attachedImages) {
       doc.addPage();
 
-      // Load original image
-      const originalDataUrl = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(img.file);
-      });
-
+      // PDF attachments have already been rendered into one preview per page.
+      // Use that preview rather than the original PDF file, so every source page
+      // becomes exactly one page in the generated payout document.
       const imgElement = await new Promise<HTMLImageElement>((resolve) => {
         const image = new Image();
         image.onload = () => resolve(image);
-        image.src = originalDataUrl;
+        image.src = img.preview;
       });
 
       // Resize to max 800px on the longest side to keep PDF size small
@@ -2840,7 +2836,7 @@ const PublicPayout = () => {
                         <input
                           ref={fileInputRef}
                           type="file"
-                          accept="image/*"
+                          accept="image/*,.pdf,application/pdf"
                           multiple
                           onChange={handleImageSelect}
                           className="hidden"
@@ -2872,6 +2868,9 @@ const PublicPayout = () => {
                                   alt={`${t.attachments} ${index + 1}`}
                                   className="w-full h-24 object-cover rounded-lg border border-border"
                                 />
+                              {img.isFromPdf && (
+                                <span className="absolute top-1 left-1 rounded bg-primary/85 px-1.5 py-0.5 text-xs text-primary-foreground">PDF · {img.pageNumber}</span>
+                              )}
                                 <button
                                   type="button"
                                   onClick={() => removeImage(index)}
