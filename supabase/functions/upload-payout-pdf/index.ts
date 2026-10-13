@@ -59,13 +59,14 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // GET requests: action=sign (download URL) or action=upload-url (signed upload URL)
+    // GET requests: action=sign (download URL), action=upload-url (existing
+    // path) or action=prepare-upload (new anonymous public-payout upload).
     if (req.method === 'GET') {
       const url = new URL(req.url);
       const action = url.searchParams.get('action');
       const filePath = url.searchParams.get('filePath');
 
-      if (!filePath) {
+      if (!filePath && action !== 'prepare-upload') {
         return new Response(JSON.stringify({ error: 'Missing filePath' }), {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -75,7 +76,7 @@ Deno.serve(async (req) => {
       const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
       const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-      if (action === 'upload-url') {
+      if (action === 'upload-url' || action === 'prepare-upload') {
         // Require a valid payout link token — derive userId from it (client never knows userId)
         const linkToken = url.searchParams.get('token');
         if (!linkToken) {
@@ -93,8 +94,18 @@ Deno.serve(async (req) => {
             status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        // Validate filePath belongs to the token owner
-        if (!filePath.startsWith(linkData.owner_user_id + '/')) {
+        const isPreparedUpload = action === 'prepare-upload';
+        const safeFileName = String(url.searchParams.get('fileName') || 'dowod_wyplaty.pdf')
+          .replace(/[^a-zA-Z0-9._-]/g, '_')
+          .slice(0, 160) || 'dowod_wyplaty.pdf';
+        const folderKey = crypto.randomUUID();
+        const resolvedFilePath = isPreparedUpload
+          ? `${linkData.owner_user_id}/${folderKey}/${safeFileName}`
+          : filePath!;
+
+        // Validate an existing path belongs to the token owner. Prepared
+        // uploads always receive a new server-generated path.
+        if (!resolvedFilePath.startsWith(linkData.owner_user_id + '/')) {
           console.error('filePath does not belong to token owner:', filePath, linkData.owner_user_id);
           return new Response(JSON.stringify({ error: 'Forbidden' }), {
             status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -104,7 +115,7 @@ Deno.serve(async (req) => {
         // upsert: true is required so a re-upload overwrites the old PDF (e.g. sans-photos original)
         const { data, error } = await supabase.storage
           .from('documents')
-          .createSignedUploadUrl(filePath, { upsert: true });
+          .createSignedUploadUrl(resolvedFilePath, { upsert: true });
 
         if (error || !data) {
           console.error('createSignedUploadUrl error:', error);
@@ -113,7 +124,13 @@ Deno.serve(async (req) => {
           });
         }
 
-        return new Response(JSON.stringify({ signedUrl: data.signedUrl, token: data.token, path: data.path }), {
+        return new Response(JSON.stringify({
+          signedUrl: data.signedUrl,
+          token: data.token,
+          path: data.path,
+          filePath: resolvedFilePath,
+          ...(isPreparedUpload ? { folderKey } : {}),
+        }), {
           status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }

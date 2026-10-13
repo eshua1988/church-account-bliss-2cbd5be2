@@ -36,6 +36,10 @@ interface SubmitPayoutRequest {
   organizationName?: string;
   // Client-generated PDF base64 (prevents Cyrillic transliteration from missing font)
   clientPdfBase64?: string;
+  // A PDF uploaded directly to Storage using the one-time signed URL. This
+  // keeps public submissions reliable for large scans on mobile devices.
+  clientPdfPath?: string;
+  folderKey?: string;
 }
 
 const rateLimitStore: Map<string, { count: number; resetTime: number }> = new Map();
@@ -643,8 +647,18 @@ Deno.serve(async (req) => {
       finalDescription = finalDescription ? `${finalDescription} ${trackingNote}` : trackingNote;
     }
 
-    // Generate a unique folder key (no transaction created automatically)
-    const folderKey = crypto.randomUUID();
+    // A direct upload gets its random folder from upload-payout-pdf. Keep that
+    // folder for the notification, otherwise generate one here as before.
+    const directPdfPath = typeof body.clientPdfPath === 'string' ? body.clientPdfPath : null;
+    const requestedFolderKey = typeof body.folderKey === 'string' ? body.folderKey : null;
+    const folderKey = requestedFolderKey && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestedFolderKey)
+      ? requestedFolderKey
+      : crypto.randomUUID();
+
+    if (directPdfPath && !directPdfPath.startsWith(`${linkData.owner_user_id}/${folderKey}/`)) {
+      return new Response(JSON.stringify({ error: 'Invalid uploaded PDF path' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     // Keep all notifications. The interface paginates them in groups of 25,
     // so pending payout documents are never deleted automatically.
@@ -656,7 +670,12 @@ Deno.serve(async (req) => {
 
     // Generate / upload PDF using folderKey instead of transactionId
     let pdfPath: string | null = null;
-    if (body.clientPdfBase64) {
+    if (directPdfPath) {
+      // The browser already PUT the completed PDF (including every attachment)
+      // using a signed URL. Do not send it through JSON/base64 again.
+      pdfPath = directPdfPath;
+      console.log('Using directly uploaded client PDF:', pdfPath);
+    } else if (body.clientPdfBase64) {
       try {
         const pdfBytes = Uint8Array.from(atob(body.clientPdfBase64), c => c.charCodeAt(0));
         const pdfFileName = `dowod_wyplaty_${body.date}_${folderKey.slice(0, 8)}.pdf`;

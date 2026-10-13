@@ -671,6 +671,7 @@ const PublicPayout = () => {
     }
   };
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
+  const [isProcessingAttachments, setIsProcessingAttachments] = useState(false);
   const [language, setLanguage] = useState<Language>('ru');
   const [imagesOptional, setImagesOptional] = useState(false); // false = images required by default
   const [showConverter, setShowConverter] = useState(false);
@@ -1112,27 +1113,46 @@ const PublicPayout = () => {
     }
   };
 
+  const isPdfFile = (file: File) =>
+    file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
     const newImages: AttachedImage[] = [];
-    
-    for (const file of Array.from(files)) {
-      if (file.type.startsWith('image/')) {
-        const preview = URL.createObjectURL(file);
-        newImages.push({ file, preview });
-      } else if (file.type === 'application/pdf') {
-        const pdfImages = await convertPdfToImages(file);
-        newImages.push(...pdfImages);
+    setIsProcessingAttachments(true);
+    try {
+      for (const file of Array.from(files)) {
+        if (file.type.startsWith('image/')) {
+          const preview = URL.createObjectURL(file);
+          newImages.push({ file, preview });
+        } else if (isPdfFile(file)) {
+          const pdfImages = await convertPdfToImages(file);
+          if (pdfImages.length === 0) {
+            toast({
+              variant: 'destructive',
+              title: 'Не удалось прочитать PDF',
+              description: `Файл «${file.name}» не был добавлен. Попробуйте выбрать его ещё раз.`,
+            });
+          }
+          newImages.push(...pdfImages);
+        } else {
+          toast({
+            variant: 'destructive',
+            title: 'Неподдерживаемый файл',
+            description: `«${file.name}» — добавьте фото или PDF.`,
+          });
+        }
       }
-    }
 
-    setAttachedImages(prev => [...prev, ...newImages]);
-    
-    // Reset input to allow selecting same files again
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      setAttachedImages(prev => [...prev, ...newImages]);
+    } finally {
+      setIsProcessingAttachments(false);
+      // Reset input to allow selecting same files again
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -1395,17 +1415,15 @@ const PublicPayout = () => {
     }
     const finalBytes = await mergedDocument.save();
     const pdfBlob = new Blob([finalBytes], { type: 'application/pdf' });
-    const pdfBase64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result).split(',')[1]);
-      reader.onerror = () => reject(reader.error || new Error('Не удалось подготовить PDF'));
-      reader.readAsDataURL(pdfBlob);
-    });
-    return { pdfBase64, fileName, pdfBlob };
+    return { fileName, pdfBlob };
   };
 
   const handleSubmit = async () => {
     if (!token) return;
+    if (isProcessingAttachments) {
+      toast({ title: 'Подождите', description: 'Файлы ещё добавляются.' });
+      return;
+    }
 
     setIsSaving(true);
 
@@ -1515,48 +1533,36 @@ const PublicPayout = () => {
       // Encode signature as base64 string (strip data: prefix)
       const signatureBase64 = signatureDataUrl ? signatureDataUrl.split(',')[1] : undefined;
 
-      // Compress and encode each image as JPEG base64 (max 600px, quality 0.45)
-      // Only needed as fallback — if clientPdfBase64 succeeds, images are already embedded
-      const imagesBase64: string[] = [];
-      if (attachedImages.length > 0 && !imagesOptional) {
-        for (const img of attachedImages) {
-          try {
-            const canvas = document.createElement('canvas');
-            const image = new Image();
-            await new Promise<void>(resolve => {
-              image.onload = () => resolve();
-              image.src = img.preview;
-            });
-            const MAX = 600;
-            let w = image.naturalWidth || image.width;
-            let h = image.naturalHeight || image.height;
-            if (w > MAX || h > MAX) {
-              if (w >= h) { h = Math.round(h / w * MAX); w = MAX; }
-              else { w = Math.round(w / h * MAX); h = MAX; }
-            }
-            canvas.width = w;
-            canvas.height = h;
-            canvas.getContext('2d')!.drawImage(image, 0, 0, w, h);
-            const b64 = canvas.toDataURL('image/jpeg', 0.45).split(',')[1];
-            imagesBase64.push(b64);
-          } catch (e) {
-            console.error('Image compress error:', e);
-          }
-        }
+      // 2. Upload the completed PDF directly to Storage. This avoids putting a
+      //    large base64 document into an Edge Function request, which is
+      //    unreliable on mobile browsers and caused attachments to disappear.
+      const pdfResult = await generatePDF();
+      const supaUrl = (supabase as any).supabaseUrl as string;
+      const supaKey = (supabase as any).supabaseKey as string;
+      const prepareParams = new URLSearchParams({
+        action: 'prepare-upload',
+        token,
+        fileName: pdfResult.fileName,
+      });
+      const prepareResponse = await withTimeout(fetch(
+        `${supaUrl}/functions/v1/upload-payout-pdf?${prepareParams}`,
+        { headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` } },
+      ), 30000);
+      const prepareData = await prepareResponse.json().catch(() => ({}));
+      if (!prepareResponse.ok || !prepareData.signedUrl || !prepareData.filePath || !prepareData.folderKey) {
+        throw new Error(prepareData.error || 'Не удалось подготовить загрузку PDF');
+      }
+      const uploadResponse = await withTimeout(fetch(prepareData.signedUrl, {
+        method: 'PUT',
+        body: pdfResult.pdfBlob,
+        headers: { 'Content-Type': 'application/pdf' },
+      }), 120000);
+      if (!uploadResponse.ok) {
+        throw new Error('Не удалось загрузить PDF с вложениями. Проверьте интернет и повторите попытку.');
       }
 
-      // 2. Generate PDF client-side before submitting — ensures correct font rendering
-      //    (prevents Cyrillic transliteration that occurs when server font fails to load)
-      let clientPdfBase64: string | undefined;
-      try {
-        const pdfResult = await generatePDF();
-        clientPdfBase64 = pdfResult?.pdfBase64;
-      } catch (e) {
-        console.error('Client PDF generation failed, server will generate fallback:', e);
-      }
-
-      // 3. Submit transaction — server stores PDF (client-generated or server fallback)
-      //    When client PDF is available, skip sending imagesBase64 to reduce payload size
+      // 3. Save only the document path and form data. The request stays small
+      //    on Android, iOS and desktop devices.
       const submitResult = await withTimeout(supabase.functions.invoke('submit-public-payout', {
         body: {
           token,
@@ -1573,10 +1579,11 @@ const PublicPayout = () => {
           decisionNumber: formData.bankAccount,
           bankAccount: formData.bankAccount,
           signatureBase64: signatureBase64 || undefined,
-          imagesBase64: !clientPdfBase64 && imagesBase64.length > 0 ? imagesBase64 : undefined,
+          imagesBase64: undefined,
           language: language,
           organizationName,
-          clientPdfBase64,
+          clientPdfPath: prepareData.filePath,
+          folderKey: prepareData.folderKey,
         }
       }), 120000);
 
@@ -1615,9 +1622,9 @@ const PublicPayout = () => {
   };
 
   // For continuing payout, require images
-  const isFormValid = continuingPayout 
+  const isFormValid = !isProcessingAttachments && (continuingPayout
     ? attachedImages.length > 0 
-    : (formData.amount && formData.issuedTo && formData.departmentName && formData.basis && formData.amountInWords && (imagesOptional || attachedImages.length > 0));
+    : (formData.amount && formData.issuedTo && formData.departmentName && formData.basis && formData.amountInWords && (imagesOptional || attachedImages.length > 0)));
 
   if (loading) {
     return (
@@ -2498,7 +2505,7 @@ const PublicPayout = () => {
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="image/*,.pdf"
+                      accept="image/*,.pdf,application/pdf"
                       multiple
                       onChange={handleImageSelect}
                       className="hidden"
@@ -2539,7 +2546,7 @@ const PublicPayout = () => {
                       </div>
                     )}
                     <p className="text-xs text-muted-foreground mt-2">
-                      {t.photoNote}
+                      {isProcessingAttachments ? 'Подготавливаем выбранный файл…' : t.photoNote}
                     </p>
                   </div>
                 </div>
@@ -2870,7 +2877,7 @@ const PublicPayout = () => {
                         >
                           <ImagePlus className="w-8 h-8" />
                           <span className="text-base font-semibold">{t.addPhotos}</span>
-                          <span className="text-xs text-muted-foreground">{t.photoNote}</span>
+                          <span className="text-xs text-muted-foreground">{isProcessingAttachments ? 'Подготавливаем выбранный файл…' : t.photoNote}</span>
                         </button>
                         
                         {attachedImages.length > 0 && (
