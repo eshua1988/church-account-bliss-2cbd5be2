@@ -16,6 +16,7 @@ import { Switch } from '@/components/ui/switch';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import jsPDF from 'jspdf';
+import { PDFDocument } from 'pdf-lib';
 import { ROBOTO_FONT_BASE64 } from '@/lib/robotoFont';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -1332,13 +1333,11 @@ const PublicPayout = () => {
     doc.text('Kasjer:', leftMargin + 3, yPos + 8);
     doc.text('Podpis kasjera:', signatureDividerX + 3, yPos + 8);
 
-    // Add each attached image on a new page (compressed)
-    for (const img of attachedImages) {
+    // Photos are placed on their own pages. PDF attachments are merged below as
+    // native PDF pages, so their text and graphics are never rasterized.
+    for (const img of attachedImages.filter(item => !item.isFromPdf)) {
       doc.addPage();
 
-      // PDF attachments have already been rendered into one preview per page.
-      // Use that preview rather than the original PDF file, so every source page
-      // becomes exactly one page in the generated payout document.
       const imgElement = await new Promise<HTMLImageElement>((resolve) => {
         const image = new Image();
         image.onload = () => resolve(image);
@@ -1385,10 +1384,23 @@ const PublicPayout = () => {
     
     const fileName = `dowod_wyplaty_${format(formData.date, 'yyyy-MM-dd')}_${sanitizeForFilename(formData.issuedTo)}.pdf`;
 
-    // Return blob + base64 WITHOUT downloading yet
-    // Download is triggered separately AFTER the transaction is saved
-    const pdfBlob = doc.output('blob');
-    const pdfBase64 = doc.output('datauristring').split(',')[1];
+    // Copy pages from the original PDFs directly into the output. This keeps
+    // vector text, scans, resolution, and the original page size intact.
+    const mergedDocument = await PDFDocument.load(doc.output('arraybuffer'));
+    const pdfFiles = [...new Set(attachedImages.filter(item => item.isFromPdf).map(item => item.file))];
+    for (const file of pdfFiles) {
+      const sourceDocument = await PDFDocument.load(await file.arrayBuffer());
+      const pages = await mergedDocument.copyPages(sourceDocument, sourceDocument.getPageIndices());
+      pages.forEach(page => mergedDocument.addPage(page));
+    }
+    const finalBytes = await mergedDocument.save();
+    const pdfBlob = new Blob([finalBytes], { type: 'application/pdf' });
+    const pdfBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(',')[1]);
+      reader.onerror = () => reject(reader.error || new Error('Не удалось подготовить PDF'));
+      reader.readAsDataURL(pdfBlob);
+    });
     return { pdfBase64, fileName, pdfBlob };
   };
 
