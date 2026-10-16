@@ -215,23 +215,85 @@ const rangeBounds = (sheetId: number, range: string, sheet: GoogleSheet) => {
   };
 };
 
-// When a saved export changes from A:Z to A:B;D:Z, C can still contain a
-// header and values written by the earlier export. Clear only those newly
-// skipped gaps so they visibly remain unused on every following export.
-const skippedColumnBounds = (sheetId: number, parts: RangePart[], sheet: GoogleSheet) =>
-  parts.slice(1).flatMap((part, index) => {
-    const previous = parts[index];
-    const gapStart = previous.startColumnIndex + previous.columnCount;
-    if (gapStart >= part.startColumnIndex) return [];
-    const previousBounds = rangeBounds(sheetId, previous.range, sheet);
-    return [{
-      sheetId,
-      startRowIndex: previousBounds.startRowIndex,
-      endRowIndex: previousBounds.endRowIndex,
-      startColumnIndex: gapStart,
-      endColumnIndex: part.startColumnIndex,
-    }];
+const textValue = (value: unknown) => String(value ?? "").trim();
+const dateValue = (value: unknown) => {
+  const text = textValue(value);
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return text;
+  const european = text.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  return european ? `${european[3]}-${european[2]}-${european[1]}` : "";
+};
+const numericValue = (value: unknown) => {
+  const text = textValue(value).replace(/[\s ]/g, "").replace(",", ".").replace(/[^\d.-]/g, "");
+  return /^-?\d+(?:\.\d+)?$/.test(text) ? Number(text) : null;
+};
+const sameCellValue = (existing: unknown, next: unknown) => {
+  if (textValue(existing) === textValue(next)) return true;
+  const existingDate = dateValue(existing);
+  const nextDate = dateValue(next);
+  if (existingDate && nextDate) return existingDate === nextDate;
+  const existingNumber = numericValue(existing);
+  const nextNumber = numericValue(next);
+  return existingNumber !== null && nextNumber !== null && Math.abs(existingNumber - nextNumber) < 0.000001;
+};
+
+type ProtectedWrite = { blocked: Set<string> };
+
+// Never overwrite a non-empty cell that differs from the export.  This lets a
+// spreadsheet remain a working document: manual entries stay intact and are
+// made obvious with a purple background.
+const writeIntoEmptyCells = async (
+  base: string,
+  headers: Record<string, string>,
+  sheet: GoogleSheet,
+  parts: RangePart[],
+  table: unknown[][],
+): Promise<ProtectedWrite> => {
+  const ranges = parts.map(part => `ranges=${encodeURIComponent(part.range)}`).join("&");
+  const read = await fetch(`${base}/values:batchGet?${ranges}&valueRenderOption=FORMATTED_VALUE`, { headers });
+  if (!read.ok) throw new Error("Google Sheets read failed before protected export");
+  const current = await read.json() as { valueRanges?: Array<{ values?: unknown[][] }> };
+  const writes: Array<{ range: string; values: unknown[][] }> = [];
+  const conflicts: Array<{ row: number; column: number }> = [];
+
+  parts.forEach((part, partIndex) => {
+    const existingRows = current.valueRanges?.[partIndex]?.values || [];
+    const partValues = valuesForRangePart(table, part);
+    const bounds = rangeBounds(Number(sheet.properties?.sheetId), part.range, sheet);
+    const prefix = part.range.includes("!") ? part.range.slice(0, part.range.indexOf("!") + 1) : "";
+    partValues.forEach((row, rowOffset) => row.forEach((next, columnOffset) => {
+      if (textValue(next) === "") return;
+      const existing = existingRows[rowOffset]?.[columnOffset];
+      const rowIndex = bounds.startRowIndex + rowOffset;
+      const columnIndex = part.startColumnIndex + columnOffset;
+      if (textValue(existing) === "" || sameCellValue(existing, next)) {
+        if (textValue(existing) === "") writes.push({ range: `${prefix}${columnLetter(columnIndex)}${rowIndex + 1}`, values: [[next]] });
+        return;
+      }
+      conflicts.push({ row: rowIndex, column: columnIndex });
+    }));
   });
+
+  for (let index = 0; index < writes.length; index += 500) {
+    const response = await fetch(`${base}/values:batchUpdate`, {
+      method: "POST", headers,
+      body: JSON.stringify({ valueInputOption: "USER_ENTERED", data: writes.slice(index, index + 500) }),
+    });
+    if (!response.ok) throw new Error("Google Sheets protected write failed");
+  }
+  if (conflicts.length) {
+    const response = await fetch(`${base}:batchUpdate`, {
+      method: "POST", headers,
+      body: JSON.stringify({ requests: conflicts.map(cell => ({ repeatCell: {
+        range: { sheetId: sheet.properties?.sheetId, startRowIndex: cell.row, endRowIndex: cell.row + 1, startColumnIndex: cell.column, endColumnIndex: cell.column + 1 },
+        cell: { userEnteredFormat: { backgroundColor: { red: 0.5, green: 0, blue: 0.5 }, textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 } } } },
+        fields: "userEnteredFormat(backgroundColor,textFormat.foregroundColor)",
+      } })) }),
+    });
+    if (!response.ok) throw new Error("Google Sheets conflict highlighting failed");
+  }
+  return { blocked: new Set(conflicts.map(cell => `${cell.row}:${cell.column}`)) };
+};
 
 async function googleToken() {
   const credentials = JSON.parse(Deno.env.get("GOOGLE_SHEETS_CREDENTIALS") || "{}");
@@ -297,39 +359,7 @@ serve(async (req) => {
       const dataWidth = Math.max(...values.map((row: unknown[]) => row.length), 1);
       const rangeParts = splitRangeParts(range, dataWidth);
       if (!rangeParts.length) return json({ error: "Invalid Google Sheets range" }, 400);
-      const skippedRanges = skippedColumnBounds(sheet.properties.sheetId, rangeParts, sheet);
-
-      // Old exported notes must not survive a new full export, even if rows or
-      // categories have moved.  Each configured block is handled separately
-      // so columns omitted with a semicolon are never cleared or written.
-      const clearNotesResponse = await fetch(`${base}:batchUpdate`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ requests: [
-          ...rangeParts.map(part => ({ repeatCell: {
-            range: rangeBounds(sheet.properties.sheetId, part.range, sheet),
-            cell: { note: "" },
-            fields: "note",
-          } })),
-          // `updateCells` with no row data clears stale values and notes in
-          // the columns deliberately omitted by the new configuration.
-          ...skippedRanges.map(range => ({ updateCells: { range, fields: "userEnteredValue,note" } })),
-        ] }),
-      });
-      if (!clearNotesResponse.ok) return json({ error: "Google Sheets note cleanup failed" }, 500);
-
-      for (const part of rangeParts) {
-        const clearResponse = await fetch(`${base}/values/${encodeURIComponent(part.range)}:clear`, { method: "POST", headers, body: "{}" });
-        if (!clearResponse.ok) return json({ error: "Google Sheets range cleanup failed" }, 500);
-        if (part.valueOffset >= dataWidth) continue;
-        const response = await fetch(`${base}/values/${encodeURIComponent(part.range)}?valueInputOption=USER_ENTERED`, {
-          method: "PUT", headers, body: JSON.stringify({ values: valuesForRangePart(values, part) }),
-        });
-        if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets write failed" }, 500);
-      }
-      // Keep the export limited to its configured range. In particular, do not
-      // create or clear a separate currency-summary block beside the table:
-      // protected columns there made otherwise successful exports appear failed.
+      await writeIntoEmptyCells(base, headers, sheet, rangeParts, values);
       return json({ success: true });
     }
     if (archive) {
@@ -442,24 +472,7 @@ serve(async (req) => {
       if (typeof archiveSheet?.properties?.sheetId !== "number") return json({ error: "Archive sheet was not found for note cleanup" }, 500);
       const archiveRangeParts = splitRangeParts(range, headersRow.length);
       if (!archiveRangeParts.length) return json({ error: "Invalid Google Sheets range" }, 400);
-      const skippedArchiveRanges = skippedColumnBounds(archiveSheet.properties.sheetId, archiveRangeParts, archiveSheet);
-      const clearArchiveNotes = await fetch(`${base}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests: [
-        ...archiveRangeParts.map(part => ({ repeatCell: {
-          range: rangeBounds(archiveSheet.properties.sheetId, part.range, archiveSheet),
-          cell: { note: "" }, fields: "note",
-        } })),
-        ...skippedArchiveRanges.map(range => ({ updateCells: { range, fields: "userEnteredValue,note" } })),
-      ] }) });
-      if (!clearArchiveNotes.ok) return json({ error: "Google Sheets archive note cleanup failed" }, 500);
-      for (const part of archiveRangeParts) {
-        const clearResponse = await fetch(`${base}/values/${encodeURIComponent(part.range)}:clear`, { method: "POST", headers, body: "{}" });
-        if (!clearResponse.ok) return json({ error: "Google Sheets range cleanup failed" }, 500);
-        if (part.valueOffset >= headersRow.length) continue;
-        const response = await fetch(`${base}/values/${encodeURIComponent(part.range)}?valueInputOption=USER_ENTERED`, {
-          method: "PUT", headers, body: JSON.stringify({ values: valuesForRangePart(table, part) }),
-        });
-        if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets export failed" }, 500);
-      }
+      const protectedWrite = await writeIntoEmptyCells(base, headers, archiveSheet, archiveRangeParts, table);
       const bounds = rangeBounds(archiveSheet.properties.sheetId, archiveRangeParts[0].range, archiveSheet);
       const physicalColumn = (logicalColumn: number) => {
         const part = archiveRangeParts.find(candidate => logicalColumn >= candidate.valueOffset && logicalColumn < candidate.valueOffset + candidate.columnCount);
@@ -511,7 +524,9 @@ serve(async (req) => {
         if (!borderResponse.ok) return json({ error: "Google Sheets month separator formatting failed" }, 500);
       }
 
-      const noteRequests = archiveRows.flatMap((row, rowOffset) => row.notes.map(note => ({
+      const noteRequests = archiveRows.flatMap((row, rowOffset) => row.notes
+        .filter(note => !protectedWrite.blocked.has(`${bounds.startRowIndex + rowOffset + 1}:${physicalColumn(note.col)}`))
+        .map(note => ({
         repeatCell: {
           range: { sheetId: archiveSheet.properties.sheetId, startRowIndex: bounds.startRowIndex + rowOffset + 1, endRowIndex: bounds.startRowIndex + rowOffset + 2, startColumnIndex: physicalColumn(note.col), endColumnIndex: physicalColumn(note.col) + 1 },
           cell: { note: note.text },
