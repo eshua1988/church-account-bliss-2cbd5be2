@@ -239,6 +239,39 @@ const sameCellValue = (existing: unknown, next: unknown) => {
 
 type ProtectedWrite = { blocked: Set<string> };
 
+const isPurple = (color?: { red?: number; green?: number; blue?: number }) =>
+  Boolean(color) && Math.abs((color?.red ?? 0) - 0.5) < 0.02 && (color?.green ?? 0) < 0.02 && Math.abs((color?.blue ?? 0) - 0.5) < 0.02;
+
+// A user can remove the manual value that caused a conflict.  The conflict
+// marker must not remain behind as a misleading purple blank cell.
+const clearEmptyPurpleCells = async (
+  base: string,
+  headers: Record<string, string>,
+  sheet: GoogleSheet,
+  parts: RangePart[],
+) => {
+  const ranges = parts.map(part => `ranges=${encodeURIComponent(part.range)}`).join("&");
+  const fields = "sheets(properties(sheetId),data(startRow,startColumn,rowData(values(userEnteredValue,userEnteredFormat.backgroundColor))))";
+  const response = await fetch(`${base}?includeGridData=true&${ranges}&fields=${encodeURIComponent(fields)}`, { headers });
+  if (!response.ok) throw new Error("Google Sheets conflict marker check failed");
+  const data = await response.json() as { sheets?: Array<{ properties?: { sheetId?: number }; data?: Array<{ startRow?: number; startColumn?: number; rowData?: Array<{ values?: Array<{ userEnteredValue?: unknown; userEnteredFormat?: { backgroundColor?: { red?: number; green?: number; blue?: number } } }> }> }> }> };
+  const grid = data.sheets?.find(item => item.properties?.sheetId === sheet.properties?.sheetId)?.data || [];
+  const requests: unknown[] = [];
+  grid.forEach(block => block.rowData?.forEach((row, rowOffset) => row.values?.forEach((cell, columnOffset) => {
+    if (cell.userEnteredValue || !isPurple(cell.userEnteredFormat?.backgroundColor)) return;
+    const startRowIndex = (block.startRow || 0) + rowOffset;
+    const startColumnIndex = (block.startColumn || 0) + columnOffset;
+    requests.push({ repeatCell: {
+      range: { sheetId: sheet.properties?.sheetId, startRowIndex, endRowIndex: startRowIndex + 1, startColumnIndex, endColumnIndex: startColumnIndex + 1 },
+      cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 1, blue: 1 }, textFormat: { foregroundColor: { red: 0, green: 0, blue: 0 } } } },
+      fields: "userEnteredFormat(backgroundColor,textFormat.foregroundColor)",
+    } });
+  })));
+  if (!requests.length) return;
+  const update = await fetch(`${base}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests }) });
+  if (!update.ok) throw new Error("Google Sheets conflict marker cleanup failed");
+};
+
 // Never overwrite a non-empty cell that differs from the export.  This lets a
 // spreadsheet remain a working document: manual entries stay intact and are
 // made obvious with a purple background.
@@ -249,6 +282,7 @@ const writeIntoEmptyCells = async (
   parts: RangePart[],
   table: unknown[][],
 ): Promise<ProtectedWrite> => {
+  await clearEmptyPurpleCells(base, headers, sheet, parts);
   const ranges = parts.map(part => `ranges=${encodeURIComponent(part.range)}`).join("&");
   const read = await fetch(`${base}/values:batchGet?${ranges}&valueRenderOption=FORMATTED_VALUE`, { headers });
   if (!read.ok) throw new Error("Google Sheets read failed before protected export");
