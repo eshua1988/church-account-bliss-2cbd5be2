@@ -158,6 +158,46 @@ const expandRangeColumns = (range: string, columnCount: number) =>
     return `${startColumn}:${columnLetter(startIndex + Math.max(columnCount, 1) - 1)}`;
   });
 
+type RangePart = { range: string; startColumnIndex: number; columnCount: number; valueOffset: number };
+
+// A semicolon separates destination column blocks.  For example, B:F;I:Z
+// writes the first five exported fields into B:F and continues at I, leaving
+// G:H completely untouched.  Google Sheets' A1 API accepts one range per
+// request, so the table is split here instead of filling the skipped columns
+// with empty values.
+const splitRangeParts = (range: string, dataWidth: number): RangePart[] => {
+  const prefixMatch = range.match(/^(.*!)(.+)$/);
+  const prefix = prefixMatch?.[1] || "";
+  const rawParts = (prefixMatch?.[2] || range).split(";").map(part => part.trim()).filter(Boolean);
+  if (rawParts.length === 0) return [];
+
+  let valueOffset = 0;
+  return rawParts.flatMap((raw, partIndex) => {
+    const match = raw.match(/^([A-Z]+)(\d+)?(?::([A-Z]+)?(\d+)?)?$/i);
+    if (!match) return [];
+    const start = match[1].toUpperCase();
+    const startColumnIndex = columnIndex(start);
+    const originalEnd = (match[3] || start).toUpperCase();
+    const originalWidth = columnIndex(originalEnd) - startColumnIndex + 1;
+    // Keep the existing flexible export behaviour: if new categories make the
+    // table wider than the configured blocks, extend only the final block.
+    const remaining = Math.max(dataWidth - valueOffset, 0);
+    const columnCount = partIndex === rawParts.length - 1
+      ? Math.max(originalWidth, remaining)
+      : originalWidth;
+    const end = columnLetter(startColumnIndex + columnCount - 1);
+    const startRow = match[2] || "";
+    const endRow = match[4] || "";
+    const partRange = `${prefix}${start}${startRow}:${end}${endRow}`;
+    const result = { range: partRange, startColumnIndex, columnCount, valueOffset };
+    valueOffset += columnCount;
+    return [result];
+  });
+};
+
+const valuesForRangePart = (values: unknown[][], part: RangePart) =>
+  values.map(row => row.slice(part.valueOffset, part.valueOffset + part.columnCount));
+
 const rangeBounds = (sheetId: number, range: string, sheet: GoogleSheet) => {
   const a1 = range.includes("!") ? range.slice(range.indexOf("!") + 1) : range;
   const match = a1.match(/^([A-Z]+)(\d+)?(?::([A-Z]+)?(\d+)?)?$/i);
@@ -237,31 +277,31 @@ serve(async (req) => {
       if (typeof sheet?.properties?.sheetId !== "number") return json({ error: "Google Sheet was not found" }, 500);
 
       const dataWidth = Math.max(...values.map((row: unknown[]) => row.length), 1);
-      const writeRange = expandRangeColumns(range, dataWidth);
-      const configuredStart = (range.includes('!') ? range.slice(range.indexOf('!') + 1) : range).match(/^([A-Z]+)/i)?.[1] || 'A';
-      const existingWidth = Math.max(
-        Number(sheet.properties?.gridProperties?.columnCount || 0) - columnIndex(configuredStart),
-        1,
-      );
-      const clearRange = expandRangeColumns(range, Math.max(dataWidth, existingWidth));
+      const rangeParts = splitRangeParts(range, dataWidth);
+      if (!rangeParts.length) return json({ error: "Invalid Google Sheets range" }, 400);
 
       // Old exported notes must not survive a new full export, even if rows or
-      // categories have moved. Clear notes across the export sheet first.
+      // categories have moved.  Each configured block is handled separately
+      // so columns omitted with a semicolon are never cleared or written.
       const clearNotesResponse = await fetch(`${base}:batchUpdate`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ requests: [{ repeatCell: {
-          range: rangeBounds(sheet.properties.sheetId, clearRange, sheet),
+        body: JSON.stringify({ requests: rangeParts.map(part => ({ repeatCell: {
+          range: rangeBounds(sheet.properties.sheetId, part.range, sheet),
           cell: { note: "" },
           fields: "note",
-        } }] }),
+        } })) }),
       });
       if (!clearNotesResponse.ok) return json({ error: "Google Sheets note cleanup failed" }, 500);
 
-      const clearResponse = await fetch(`${base}/values/${encodeURIComponent(clearRange)}:clear`, { method: "POST", headers, body: "{}" });
-      if (!clearResponse.ok) return json({ error: "Google Sheets range cleanup failed" }, 500);
-      const response = await fetch(`${base}/values/${encodeURIComponent(writeRange)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values }) });
-      if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets write failed" }, 500);
+      for (const part of rangeParts) {
+        const clearResponse = await fetch(`${base}/values/${encodeURIComponent(part.range)}:clear`, { method: "POST", headers, body: "{}" });
+        if (!clearResponse.ok) return json({ error: "Google Sheets range cleanup failed" }, 500);
+        const response = await fetch(`${base}/values/${encodeURIComponent(part.range)}?valueInputOption=USER_ENTERED`, {
+          method: "PUT", headers, body: JSON.stringify({ values: valuesForRangePart(values, part) }),
+        });
+        if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets write failed" }, 500);
+      }
       // Keep the export limited to its configured range. In particular, do not
       // create or clear a separate currency-summary block beside the table:
       // protected columns there made otherwise successful exports appear failed.
@@ -375,26 +415,35 @@ serve(async (req) => {
       const archiveMeta = await archiveMetaResponse.json();
       const archiveSheet = configuredSheet(archiveMeta, range);
       if (typeof archiveSheet?.properties?.sheetId !== "number") return json({ error: "Archive sheet was not found for note cleanup" }, 500);
-      const clearArchiveNotes = await fetch(`${base}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests: [{ repeatCell: {
-        range: rangeBounds(archiveSheet.properties.sheetId, range, archiveSheet),
+      const archiveRangeParts = splitRangeParts(range, headersRow.length);
+      if (!archiveRangeParts.length) return json({ error: "Invalid Google Sheets range" }, 400);
+      const clearArchiveNotes = await fetch(`${base}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests: archiveRangeParts.map(part => ({ repeatCell: {
+        range: rangeBounds(archiveSheet.properties.sheetId, part.range, archiveSheet),
         cell: { note: "" }, fields: "note",
-      } }] }) });
+      } })) }) });
       if (!clearArchiveNotes.ok) return json({ error: "Google Sheets archive note cleanup failed" }, 500);
-      const clearResponse = await fetch(`${base}/values/${encodeURIComponent(range)}:clear`, { method: "POST", headers, body: "{}" });
-      if (!clearResponse.ok) return json({ error: "Google Sheets range cleanup failed" }, 500);
-      const response = await fetch(`${base}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, { method: "PUT", headers, body: JSON.stringify({ values: table }) });
-      if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets export failed" }, 500);
+      for (const part of archiveRangeParts) {
+        const clearResponse = await fetch(`${base}/values/${encodeURIComponent(part.range)}:clear`, { method: "POST", headers, body: "{}" });
+        if (!clearResponse.ok) return json({ error: "Google Sheets range cleanup failed" }, 500);
+        const response = await fetch(`${base}/values/${encodeURIComponent(part.range)}?valueInputOption=USER_ENTERED`, {
+          method: "PUT", headers, body: JSON.stringify({ values: valuesForRangePart(table, part) }),
+        });
+        if (!response.ok) return json({ error: (await response.json()).error?.message || "Google Sheets export failed" }, 500);
+      }
+      const bounds = rangeBounds(archiveSheet.properties.sheetId, archiveRangeParts[0].range, archiveSheet);
+      const physicalColumn = (logicalColumn: number) => {
+        const part = archiveRangeParts.find(candidate => logicalColumn >= candidate.valueOffset && logicalColumn < candidate.valueOffset + candidate.columnCount);
+        return part ? part.startColumnIndex + logicalColumn - part.valueOffset : 0;
+      };
 
       // Remove separators left by a previous layout, then draw a thick line
       // before each new month. Dates remain only on income rows.
       if (archiveRows.length > 0) {
-        const bounds = rangeBounds(archiveSheet.properties.sheetId, range, archiveSheet);
         const dataStartRow = bounds.startRowIndex + 1; // skip the header
-        const dataEndColumn = bounds.startColumnIndex + headersRow.length;
         const borderRequests = [
-          {
+          ...archiveRangeParts.map(part => ({
             repeatCell: {
-              range: { sheetId: archiveSheet.properties.sheetId, startRowIndex: dataStartRow, endRowIndex: bounds.endRowIndex, startColumnIndex: bounds.startColumnIndex, endColumnIndex: dataEndColumn },
+              range: { sheetId: archiveSheet.properties.sheetId, startRowIndex: dataStartRow, endRowIndex: bounds.endRowIndex, startColumnIndex: part.startColumnIndex, endColumnIndex: part.startColumnIndex + part.columnCount },
               // Explicit thin borders keep ordinary cells visible even when the
               // sheet's default gridlines are disabled. Background colours and
               // other template formatting remain unchanged.
@@ -406,22 +455,22 @@ serve(async (req) => {
               } } },
               fields: "userEnteredFormat.borders",
             },
-          },
-          ...monthSeparatorRowIndexes.map(rowOffset => ({
+          })),
+          ...monthSeparatorRowIndexes.flatMap(rowOffset => archiveRangeParts.map(part => ({
             repeatCell: {
-              range: { sheetId: archiveSheet.properties.sheetId, startRowIndex: bounds.startRowIndex + rowOffset, endRowIndex: bounds.startRowIndex + rowOffset + 1, startColumnIndex: bounds.startColumnIndex, endColumnIndex: dataEndColumn },
+              range: { sheetId: archiveSheet.properties.sheetId, startRowIndex: bounds.startRowIndex + rowOffset, endRowIndex: bounds.startRowIndex + rowOffset + 1, startColumnIndex: part.startColumnIndex, endColumnIndex: part.startColumnIndex + part.columnCount },
               cell: { userEnteredFormat: { borders: { top: { style: "SOLID_THICK" } } } },
               fields: "userEnteredFormat.borders.top",
             },
-          })),
+          }))),
           ...archiveRows.flatMap((row, rowOffset) => row.currencies.map(currency => ({
             repeatCell: {
               range: {
                 sheetId: archiveSheet.properties.sheetId,
                 startRowIndex: dataStartRow + rowOffset,
                 endRowIndex: dataStartRow + rowOffset + 1,
-                startColumnIndex: bounds.startColumnIndex + currency.col,
-                endColumnIndex: bounds.startColumnIndex + currency.col + 1,
+                startColumnIndex: physicalColumn(currency.col),
+                endColumnIndex: physicalColumn(currency.col) + 1,
               },
               cell: { userEnteredFormat: { numberFormat: { type: "CURRENCY", pattern: currencyPattern(currency.currency) } } },
               fields: "userEnteredFormat.numberFormat",
@@ -434,30 +483,12 @@ serve(async (req) => {
 
       const noteRequests = archiveRows.flatMap((row, rowOffset) => row.notes.map(note => ({
         repeatCell: {
-          range: { sheetId: -1, startRowIndex: rowOffset + 1, endRowIndex: rowOffset + 2, startColumnIndex: note.col, endColumnIndex: note.col + 1 },
+          range: { sheetId: archiveSheet.properties.sheetId, startRowIndex: bounds.startRowIndex + rowOffset + 1, endRowIndex: bounds.startRowIndex + rowOffset + 2, startColumnIndex: physicalColumn(note.col), endColumnIndex: physicalColumn(note.col) + 1 },
           cell: { note: note.text },
           fields: "note",
         },
       })));
       if (noteRequests.length) {
-        const metaResponse = await fetch(`${base}?fields=sheets.properties`, { headers });
-        if (!metaResponse.ok) return json({ error: "Could not resolve the archive sheet for notes" }, 500);
-        const meta = await metaResponse.json();
-        const sheet = configuredSheet(meta, range);
-        if (typeof sheet?.properties?.sheetId !== "number") return json({ error: "Archive sheet was not found for notes" }, 500);
-
-        const rangeStart = range.match(/!([A-Z]+)(\d+)?/i);
-        const startColumn = (rangeStart?.[1] || "A").toUpperCase().split("").reduce((value, char) => value * 26 + char.charCodeAt(0) - 64, 0) - 1;
-        const startRow = Math.max(Number(rangeStart?.[2] || 1) - 1, 0);
-        noteRequests.forEach(request => {
-          const cellRange = (request.repeatCell as { range: { sheetId: number; startRowIndex: number; endRowIndex: number; startColumnIndex: number; endColumnIndex: number } }).range;
-          cellRange.sheetId = sheet.properties.sheetId;
-          cellRange.startRowIndex += startRow;
-          cellRange.endRowIndex += startRow;
-          cellRange.startColumnIndex += startColumn;
-          cellRange.endColumnIndex += startColumn;
-        });
-
         // The note is attached to the expense amount itself, so it remains
         // visible through Google Sheets' "Insert note" interface.
         const notesResponse = await fetch(`${base}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests: noteRequests }) });

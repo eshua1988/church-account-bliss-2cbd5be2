@@ -1181,7 +1181,7 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
                 <div className="space-y-2">
                   <Label htmlFor="sheet-range">Диапазон листа</Label>
                   <Input id="sheet-range" placeholder="A:Z" value={tempSheetRange} onChange={(e) => setTempSheetRange(e.target.value)} />
-                  <p className="text-xs text-muted-foreground">Диапазон колонок, например: A:Z или A1:Z1000</p>
+                  <p className="text-xs text-muted-foreground">Диапазон колонок, например: A:Z. Чтобы пропустить столбцы, укажите несколько диапазонов через «;»: B:F;I:Z.</p>
                 </div>
                 </div>)}
 
@@ -1190,7 +1190,7 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
                   <p className="text-xs text-muted-foreground">Это отдельное подключение: архив PDF не изменяет лист транзакций.</p>
                   <div className="space-y-2"><Label htmlFor="pdf-spreadsheet-id">ID таблицы или ссылка</Label><Input id="pdf-spreadsheet-id" placeholder="https://docs.google.com/spreadsheets/d/... или ID" value={tempArchivedPdfSpreadsheetId} onChange={(e) => setTempArchivedPdfSpreadsheetId(e.target.value)} /></div>
                   <div className="space-y-2"><Label htmlFor="pdf-sheet-name">Название листа</Label><Input id="pdf-sheet-name" placeholder="Архив PDF" value={tempArchivedPdfSheetName} onChange={(e) => setTempArchivedPdfSheetName(e.target.value)} /></div>
-                  <div className="space-y-2"><Label htmlFor="pdf-sheet-range">Диапазон листа</Label><Input id="pdf-sheet-range" placeholder="A:Z" value={tempArchivedPdfSheetRange} onChange={(e) => setTempArchivedPdfSheetRange(e.target.value)} /><p className="text-xs text-muted-foreground">По умолчанию A:Z. Колонки: дата · доход · отдел · расход. «Na podstawie» будет примечанием к расходу.</p></div>
+                  <div className="space-y-2"><Label htmlFor="pdf-sheet-range">Диапазон листа</Label><Input id="pdf-sheet-range" placeholder="A:Z" value={tempArchivedPdfSheetRange} onChange={(e) => setTempArchivedPdfSheetRange(e.target.value)} /><p className="text-xs text-muted-foreground">По умолчанию A:Z. Можно пропустить столбцы: B:F;I:Z — экспорт продолжится с I, а G:H не будут изменены. Колонки: дата · доход · отдел · расход. «Na podstawie» будет примечанием к расходу.</p></div>
                 </div>)}
 
                 <div className="bg-muted/50 p-3 rounded-lg space-y-2">
