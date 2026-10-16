@@ -297,6 +297,7 @@ serve(async (req) => {
       for (const part of rangeParts) {
         const clearResponse = await fetch(`${base}/values/${encodeURIComponent(part.range)}:clear`, { method: "POST", headers, body: "{}" });
         if (!clearResponse.ok) return json({ error: "Google Sheets range cleanup failed" }, 500);
+        if (part.valueOffset >= dataWidth) continue;
         const response = await fetch(`${base}/values/${encodeURIComponent(part.range)}?valueInputOption=USER_ENTERED`, {
           method: "PUT", headers, body: JSON.stringify({ values: valuesForRangePart(values, part) }),
         });
@@ -425,6 +426,7 @@ serve(async (req) => {
       for (const part of archiveRangeParts) {
         const clearResponse = await fetch(`${base}/values/${encodeURIComponent(part.range)}:clear`, { method: "POST", headers, body: "{}" });
         if (!clearResponse.ok) return json({ error: "Google Sheets range cleanup failed" }, 500);
+        if (part.valueOffset >= headersRow.length) continue;
         const response = await fetch(`${base}/values/${encodeURIComponent(part.range)}?valueInputOption=USER_ENTERED`, {
           method: "PUT", headers, body: JSON.stringify({ values: valuesForRangePart(table, part) }),
         });
