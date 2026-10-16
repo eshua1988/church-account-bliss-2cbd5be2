@@ -215,6 +215,24 @@ const rangeBounds = (sheetId: number, range: string, sheet: GoogleSheet) => {
   };
 };
 
+// When a saved export changes from A:Z to A:B;D:Z, C can still contain a
+// header and values written by the earlier export. Clear only those newly
+// skipped gaps so they visibly remain unused on every following export.
+const skippedColumnBounds = (sheetId: number, parts: RangePart[], sheet: GoogleSheet) =>
+  parts.slice(1).flatMap((part, index) => {
+    const previous = parts[index];
+    const gapStart = previous.startColumnIndex + previous.columnCount;
+    if (gapStart >= part.startColumnIndex) return [];
+    const previousBounds = rangeBounds(sheetId, previous.range, sheet);
+    return [{
+      sheetId,
+      startRowIndex: previousBounds.startRowIndex,
+      endRowIndex: previousBounds.endRowIndex,
+      startColumnIndex: gapStart,
+      endColumnIndex: part.startColumnIndex,
+    }];
+  });
+
 async function googleToken() {
   const credentials = JSON.parse(Deno.env.get("GOOGLE_SHEETS_CREDENTIALS") || "{}");
   if (!credentials.client_email || !credentials.private_key) throw new Error("Google Sheets credentials are not configured");
@@ -279,6 +297,7 @@ serve(async (req) => {
       const dataWidth = Math.max(...values.map((row: unknown[]) => row.length), 1);
       const rangeParts = splitRangeParts(range, dataWidth);
       if (!rangeParts.length) return json({ error: "Invalid Google Sheets range" }, 400);
+      const skippedRanges = skippedColumnBounds(sheet.properties.sheetId, rangeParts, sheet);
 
       // Old exported notes must not survive a new full export, even if rows or
       // categories have moved.  Each configured block is handled separately
@@ -286,11 +305,16 @@ serve(async (req) => {
       const clearNotesResponse = await fetch(`${base}:batchUpdate`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ requests: rangeParts.map(part => ({ repeatCell: {
-          range: rangeBounds(sheet.properties.sheetId, part.range, sheet),
-          cell: { note: "" },
-          fields: "note",
-        } })) }),
+        body: JSON.stringify({ requests: [
+          ...rangeParts.map(part => ({ repeatCell: {
+            range: rangeBounds(sheet.properties.sheetId, part.range, sheet),
+            cell: { note: "" },
+            fields: "note",
+          } })),
+          // `updateCells` with no row data clears stale values and notes in
+          // the columns deliberately omitted by the new configuration.
+          ...skippedRanges.map(range => ({ updateCells: { range, fields: "userEnteredValue,note" } })),
+        ] }),
       });
       if (!clearNotesResponse.ok) return json({ error: "Google Sheets note cleanup failed" }, 500);
 
@@ -418,10 +442,14 @@ serve(async (req) => {
       if (typeof archiveSheet?.properties?.sheetId !== "number") return json({ error: "Archive sheet was not found for note cleanup" }, 500);
       const archiveRangeParts = splitRangeParts(range, headersRow.length);
       if (!archiveRangeParts.length) return json({ error: "Invalid Google Sheets range" }, 400);
-      const clearArchiveNotes = await fetch(`${base}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests: archiveRangeParts.map(part => ({ repeatCell: {
-        range: rangeBounds(archiveSheet.properties.sheetId, part.range, archiveSheet),
-        cell: { note: "" }, fields: "note",
-      } })) }) });
+      const skippedArchiveRanges = skippedColumnBounds(archiveSheet.properties.sheetId, archiveRangeParts, archiveSheet);
+      const clearArchiveNotes = await fetch(`${base}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests: [
+        ...archiveRangeParts.map(part => ({ repeatCell: {
+          range: rangeBounds(archiveSheet.properties.sheetId, part.range, archiveSheet),
+          cell: { note: "" }, fields: "note",
+        } })),
+        ...skippedArchiveRanges.map(range => ({ updateCells: { range, fields: "userEnteredValue,note" } })),
+      ] }) });
       if (!clearArchiveNotes.ok) return json({ error: "Google Sheets archive note cleanup failed" }, 500);
       for (const part of archiveRangeParts) {
         const clearResponse = await fetch(`${base}/values/${encodeURIComponent(part.range)}:clear`, { method: "POST", headers, body: "{}" });
