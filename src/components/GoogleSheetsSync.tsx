@@ -427,7 +427,7 @@ export const syncAllConfiguredGoogleSheetExports = async (
 export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategoryName, onDeleteTransaction, expenseCategories = [] }: GoogleSheetsSyncProps) => {
   const { toast } = useToast();
   const { user } = useAuth();
-  const [isExporting, setIsExporting] = useState(false);
+  const [exportingIds, setExportingIds] = useState<Set<string>>(() => new Set());
   const [isImporting, setIsImporting] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [autoSync, setAutoSync] = useState(() => {
@@ -896,11 +896,17 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
       return false;
     }
     
-    setIsExporting(true);
-    const success = await syncToSheets(transactions, target);
-    setIsExporting(false);
-    
-    return success;
+    const exportId = target?.id || 'legacy-transactions';
+    setExportingIds(current => new Set(current).add(exportId));
+    try {
+      return await syncToSheets(transactions, target);
+    } finally {
+      setExportingIds(current => {
+        const next = new Set(current);
+        next.delete(exportId);
+        return next;
+      });
+    }
   };
 
   const handleSync = async (target?: SheetExport) => {
@@ -1060,7 +1066,8 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
       return;
     }
 
-    setIsExporting(true);
+    const exportId = target?.id || 'legacy-pdf';
+    setExportingIds(current => new Set(current).add(exportId));
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Пожалуйста, войдите в систему повторно');
@@ -1112,7 +1119,11 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
         variant: 'destructive',
       });
     } finally {
-      setIsExporting(false);
+      setExportingIds(current => {
+        const next = new Set(current);
+        next.delete(exportId);
+        return next;
+      });
     }
   };
 
@@ -1248,7 +1259,7 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
         {exports.map(target => <div key={target.id} className="w-full flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-3 text-left">
           {target.export_type === 'pdf' ? <FileDown className="h-4 w-4 text-amber-500" /> : <Table2 className="h-4 w-4 text-primary" />}
           <div className="min-w-0 flex-1"><p className="text-sm font-medium">{target.export_type === 'pdf' ? 'Экспорт данных PDF' : 'Экспорт транзакций'}</p><p className="text-xs text-muted-foreground truncate">Таблица: {target.spreadsheet_id.slice(0, 12)}… · {target.sheet_range}</p></div>
-          <div className="flex items-center gap-1"><Button variant="ghost" size="icon" onClick={() => target.export_type === 'pdf' ? syncArchivedPdfExports(target) : handleSync(target)} disabled={isExporting} title="Синхронизация"><RefreshCw className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => openSpreadsheet(target.spreadsheet_id)} title="Открыть таблицу"><ExternalLink className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => openExportSettings(target.export_type, target)} title="Изменить"><Settings className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => deleteExport(target)} title="Удалить"><Trash2 className="h-4 w-4" /></Button></div>
+          <div className="flex items-center gap-1"><Button variant="ghost" size="icon" onClick={() => target.export_type === 'pdf' ? syncArchivedPdfExports(target) : handleSync(target)} disabled={exportingIds.has(target.id)} title="Синхронизация"><RefreshCw className={`h-4 w-4 ${exportingIds.has(target.id) ? 'animate-spin' : ''}`} /></Button><Button variant="ghost" size="icon" onClick={() => openSpreadsheet(target.spreadsheet_id)} title="Открыть таблицу"><ExternalLink className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => openExportSettings(target.export_type, target)} title="Изменить"><Settings className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => deleteExport(target)} title="Удалить"><Trash2 className="h-4 w-4" /></Button></div>
         </div>)}
         <Button variant="outline" className="w-full gap-2" onClick={() => openExportSettings('transactions')}><Plus className="h-4 w-4" />Добавить экспорт</Button>
       </div>
