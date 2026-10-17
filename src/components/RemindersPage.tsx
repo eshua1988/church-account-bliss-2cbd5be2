@@ -1,5 +1,6 @@
 import { ChangeEvent, useEffect, useState } from 'react';
-import { Bell, CalendarDays, FileText, Loader2, Paperclip, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Bell, CalendarDays, CircleStop, FileText, Loader2, Paperclip, Pencil, Plus, Trash2, X } from 'lucide-react';
+import fontkit from '@pdf-lib/fontkit';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -7,16 +8,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ROBOTO_FONT_BASE64 } from '@/lib/robotoFont';
 
 type Attachment = { path: string; name: string; type: string; source?: 'reminder' | 'archive' };
 type Repeat = 'once' | 'weekly' | 'monthly' | 'yearly';
-type ArchivedPdf = { path: string; name: string; label: string };
+type ArchivedPdf = { path: string; name: string; label: string; amount: number; currency: string; departmentName: string; basis: string; issuedTo: string; categoryId: string };
 type Reminder = {
   id: string;
   title: string;
   message: string;
   created_at: string;
-  metadata: { full_name?: string; contact?: string; attachments?: Attachment[]; reminder_date?: string; reminder_time?: string; repeat?: Repeat } | null;
+  metadata: { full_name?: string; contact?: string; attachments?: Attachment[]; reminder_date?: string; reminder_time?: string; repeat?: Repeat; recurring_pdf?: Record<string, unknown> | null; closed_at?: string | null } | null;
 };
 
 const safeFileName = (name: string) => name.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -29,7 +31,7 @@ const fromRow = (row: any): Reminder => ({
   title: row.full_name,
   message: row.message,
   created_at: row.created_at,
-  metadata: { full_name: row.full_name, contact: row.contact, attachments: row.attachments || [], reminder_date: row.reminder_date, reminder_time: String(row.reminder_time || '09:00').slice(0, 5), repeat: row.repeat },
+  metadata: { full_name: row.full_name, contact: row.contact, attachments: row.attachments || [], reminder_date: row.reminder_date, reminder_time: String(row.reminder_time || '09:00').slice(0, 5), repeat: row.repeat, recurring_pdf: row.recurring_pdf || null, closed_at: row.closed_at || null },
 });
 
 export const RemindersPage = () => {
@@ -38,6 +40,7 @@ export const RemindersPage = () => {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [closingId, setClosingId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<Reminder | null>(null);
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
@@ -59,8 +62,9 @@ export const RemindersPage = () => {
     if (!user) return;
     setLoading(true);
     const { data, error } = await remindersTable()
-      .select('id, full_name, contact, message, attachments, reminder_date, reminder_time, repeat, created_at')
+      .select('id, full_name, contact, message, attachments, reminder_date, reminder_time, repeat, recurring_pdf, closed_at, created_at')
       .eq('user_id', user.id)
+      .is('closed_at', null)
       .order('created_at', { ascending: false });
     if (error) toast({ title: 'Не удалось загрузить напоминания', description: error.message, variant: 'destructive' });
     else setReminders((data || []).map(fromRow));
@@ -94,10 +98,11 @@ export const RemindersPage = () => {
     if (!user) return;
     resetForm();
     setIsArchivePdfReminder(true);
+    setRepeat('monthly');
     setOpen(true);
     const { data, error } = await (supabase as any)
       .from('pdf_archive_entries')
-      .select('source_pdf_path, issued_to, amount, currency, department_name, document_date, created_at')
+      .select('source_pdf_path, issued_to, amount, currency, category_id, department_name, basis, document_date, created_at')
       .eq('user_id', user.id)
       .not('source_pdf_path', 'is', null)
       .order('document_date', { ascending: false })
@@ -115,7 +120,17 @@ export const RemindersPage = () => {
       const issuedTo = String(entry.issued_to || 'PDF без получателя');
       const amount = Number.isFinite(Number(entry.amount)) ? `${entry.amount} ${entry.currency || ''}`.trim() : '';
       const department = String(entry.department_name || 'без отдела');
-      return [{ path, name: path.split('/').pop() || 'PDF из архива', label: [date, issuedTo, amount, department].filter(Boolean).join(' · ') }];
+      return [{
+        path,
+        name: path.split('/').pop() || 'PDF из архива',
+        label: [date, issuedTo, amount, department].filter(Boolean).join(' · '),
+        amount: Number(entry.amount),
+        currency: String(entry.currency || 'PLN'),
+        departmentName: String(entry.department_name || ''),
+        basis: String(entry.basis || ''),
+        issuedTo,
+        categoryId: String(entry.category_id || ''),
+      }];
     });
     setArchivedPdfs(options);
   };
@@ -157,6 +172,10 @@ export const RemindersPage = () => {
       toast({ title: 'Заполните все поля', description: 'Укажите имя, контакт и текст напоминания.', variant: 'destructive' });
       return;
     }
+    if (isArchivePdfReminder && !selectedArchivedPdfPath) {
+      toast({ title: 'Выберите PDF', description: 'Для постоянной выплаты нужен документ из PDF-архива.', variant: 'destructive' });
+      return;
+    }
 
     setSaving(true);
     const uploadedPaths: string[] = [];
@@ -184,7 +203,19 @@ export const RemindersPage = () => {
         attachments,
         reminder_date: reminderDate,
         reminder_time: reminderTime,
-        repeat,
+        // A decision from a PDF is always a monthly commitment. The original
+        // document is attached once; the database scheduler creates monthly
+        // accounting rows without duplicating that document.
+        repeat: isArchivePdfReminder ? 'monthly' : repeat,
+        recurring_pdf: archivedPdf ? {
+          amount: archivedPdf.amount,
+          currency: archivedPdf.currency,
+          department_name: archivedPdf.departmentName,
+          basis: archivedPdf.basis,
+          issued_to: archivedPdf.issuedTo,
+          category_id: archivedPdf.categoryId,
+          source_pdf_path: archivedPdf.path,
+        } : null,
       };
       const { error } = editing
         ? await remindersTable().update(values).eq('id', editing.id)
@@ -237,11 +268,47 @@ export const RemindersPage = () => {
     toast({ title: 'Напоминание удалено' });
   };
 
+  const closeRecurringPdfReminder = async (reminder: Reminder) => {
+    const recurringPdf = reminder.metadata?.recurring_pdf;
+    const pdfPath = String(recurringPdf?.source_pdf_path || '');
+    if (!recurringPdf || !pdfPath) return;
+    if (!window.confirm(`Завершить выплату для «${reminder.title}»? Новые ежемесячные PDF-транзакции больше не будут создаваться.`)) return;
+    setClosingId(reminder.id);
+    try {
+      const { data: originalPdf, error: downloadError } = await supabase.storage.from('documents').download(pdfPath);
+      if (downloadError || !originalPdf) throw downloadError || new Error('Исходный PDF не найден');
+      const { PDFDocument, rgb } = await import('pdf-lib');
+      const pdfDoc = await PDFDocument.load(await originalPdf.arrayBuffer());
+      pdfDoc.registerFontkit(fontkit);
+      const fontBytes = Uint8Array.from(atob(ROBOTO_FONT_BASE64), character => character.charCodeAt(0));
+      const font = await pdfDoc.embedFont(fontBytes);
+      const page = pdfDoc.getPage(0);
+      const endedOn = new Date().toLocaleDateString('pl-PL');
+      const note = `Data zakończenia wypłat: ${endedOn}`;
+      page.drawRectangle({ x: 38, y: 28, width: 245, height: 18, color: rgb(1, 1, 1) });
+      page.drawText(note, { x: 40, y: 34, size: 8.5, font, color: rgb(0, 0, 0) });
+      const { error: uploadError } = await supabase.storage.from('documents').upload(
+        pdfPath,
+        new Blob([await pdfDoc.save() as BlobPart], { type: 'application/pdf' }),
+        { contentType: 'application/pdf', upsert: true },
+      );
+      if (uploadError) throw uploadError;
+      const { error: closeError } = await remindersTable().update({ closed_at: new Date().toISOString(), next_notification_at: null }).eq('id', reminder.id);
+      if (closeError) throw closeError;
+      await load();
+      toast({ title: 'Выплата завершена', description: `Карточка закрыта, в PDF отмечена дата ${endedOn}.` });
+    } catch (error) {
+      toast({ title: 'Не удалось завершить выплату', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+    } finally {
+      setClosingId(null);
+    }
+  };
+
   return <section className="animate-fade-in mx-auto max-w-4xl space-y-5">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><h1 className="text-2xl font-bold">Напоминания</h1><p className="text-muted-foreground">Выберите дату, повторение и сохраните контакт с файлами в одной карточке.</p></div>
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" className="gap-2" onClick={() => void openArchivePdfReminder()}><FileText className="h-4 w-4" />Добавить PDF</Button>
+        <Button className="gap-2" onClick={() => void openArchivePdfReminder()}><FileText className="h-4 w-4" />Добавить PDF</Button>
         <Button className="gap-2" onClick={openNewReminder}><Plus className="h-4 w-4" />Добавить напоминание</Button>
       </div>
     </div>
@@ -252,8 +319,8 @@ export const RemindersPage = () => {
         <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="font-semibold">{reminder.metadata?.full_name || reminder.title}</h2><p className="text-sm text-muted-foreground break-words">{reminder.metadata?.contact || 'Контакт не указан'}</p></div><Bell className="h-5 w-5 shrink-0 text-primary" /></div>
         <p className="mt-3 whitespace-pre-wrap text-sm">{reminder.message}</p>
         <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground"><CalendarDays className="h-3.5 w-3.5" />{reminder.metadata?.reminder_date ? new Date(`${reminder.metadata.reminder_date}T12:00:00`).toLocaleDateString('ru-RU') : 'Дата не указана'} в {reminder.metadata?.reminder_time || '09:00'} · {repeatLabel[reminder.metadata?.repeat || 'once']}</p>
-        <p className="mt-1 text-xs text-muted-foreground">Вложений: {attachments.length} · создано {new Date(reminder.created_at).toLocaleDateString('ru-RU')}</p>
-        <div className="mt-4 flex gap-2"><Button variant="outline" className="flex-1 gap-2" onClick={() => void openPreview(reminder)}><Paperclip className="h-4 w-4" />Просмотреть</Button><Button variant="ghost" size="icon" onClick={() => openEditReminder(reminder)} aria-label="Редактировать напоминание"><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive" onClick={() => void deleteReminder(reminder)} aria-label="Удалить напоминание"><Trash2 className="h-4 w-4" /></Button></div>
+        <p className="mt-1 text-xs text-muted-foreground">{reminder.metadata?.recurring_pdf ? 'Постоянная ежемесячная выплата по PDF · ' : ''}Вложений: {attachments.length} · создано {new Date(reminder.created_at).toLocaleDateString('ru-RU')}</p>
+        <div className="mt-4 flex flex-wrap gap-2"><Button variant="outline" className="flex-1 gap-2" onClick={() => void openPreview(reminder)}><Paperclip className="h-4 w-4" />Просмотреть</Button>{reminder.metadata?.recurring_pdf && <Button variant="outline" className="gap-2 text-destructive hover:text-destructive" disabled={closingId === reminder.id} onClick={() => void closeRecurringPdfReminder(reminder)}>{closingId === reminder.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CircleStop className="h-4 w-4" />}Завершить выплату</Button>}<Button variant="ghost" size="icon" onClick={() => openEditReminder(reminder)} aria-label="Редактировать напоминание"><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive" onClick={() => void deleteReminder(reminder)} aria-label="Удалить напоминание"><Trash2 className="h-4 w-4" /></Button></div>
       </article>;
     })}</div>}
 
