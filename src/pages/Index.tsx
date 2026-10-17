@@ -198,13 +198,41 @@ const Index = () => {
 
   const handleSync = useCallback(async () => {
     setIsConfiguredExportsSyncing(true);
+    const startedAt = new Date().toISOString();
+    const updateLiveItem = (item: SyncReportItem) => {
+      setSyncReport(current => {
+        const items = current?.completedAt === startedAt ? [...current.items] : [];
+        const index = items.findIndex(candidate => candidate.id === item.id);
+        if (index === -1) items.push(item);
+        else items[index] = item;
+        return { completedAt: startedAt, items };
+      });
+    };
+    updateLiveItem({ id: 'bank', title: 'Импорт из банка', status: 'queued', details: ['Ожидает запуска'] });
+    updateLiveItem({ id: 'cloud', title: 'Облачные PDF-архивы', status: 'queued', details: ['Ожидает запуска'] });
     try {
       // Each integration is independent: one failed destination must never
       // cancel exports to the others.
+      const configuredExportsTask = syncAllConfiguredGoogleSheetExports(
+        transactions,
+        expenseCategories,
+        getAllTransactions,
+        updateLiveItem,
+      );
+      const bankTask = (async () => {
+        updateLiveItem({ id: 'bank', title: 'Импорт из банка', status: 'running', details: ['Синхронизация выполняется'] });
+        const item = await handleBankSync();
+        updateLiveItem(item);
+        return item;
+      })();
+      const cloudTask = (async () => {
+        updateLiveItem({ id: 'cloud', title: 'Облачные PDF-архивы', status: 'running', details: ['Синхронизация выполняется'] });
+        return syncNotificationArchivesToCloud(notifications);
+      })();
       const [configuredExports, bank, cloud] = await Promise.allSettled([
-        syncAllConfiguredGoogleSheetExports(transactions, expenseCategories, getAllTransactions),
-        handleBankSync(),
-        syncNotificationArchivesToCloud(notifications),
+        configuredExportsTask,
+        bankTask,
+        cloudTask,
       ]);
       const reportItems: SyncReportItem[] = [];
 
@@ -234,9 +262,11 @@ const Index = () => {
 
       if (cloud.status === 'fulfilled') {
         const cloudResult = cloud.value;
-        reportItems.push(cloudResult.skipped
+        const cloudItem: SyncReportItem = cloudResult.skipped
           ? { id: 'cloud', title: 'Облачные PDF-архивы', status: cloudResult.errors.length > 0 ? 'error' : 'skipped', details: [cloudResult.errors.length > 0 ? cloudResult.errors.join('; ') : 'Нет подключённых облачных хранилищ'] }
-          : { id: 'cloud', title: 'Облачные PDF-архивы', status: cloudResult.errors.length > 0 ? 'error' : 'success', details: [`Архивов обработано: ${cloudResult.archives}; файлов загружено: ${cloudResult.uploaded}`, ...cloudResult.errors] });
+          : { id: 'cloud', title: 'Облачные PDF-архивы', status: cloudResult.errors.length > 0 ? 'error' : 'success', details: [`Архивов обработано: ${cloudResult.archives}; файлов загружено: ${cloudResult.uploaded}`, ...cloudResult.errors] };
+        reportItems.push(cloudItem);
+        updateLiveItem(cloudItem);
         if (cloudResult.uploaded > 0) {
           toast({ title: 'Облачные архивы обновлены', description: `Загружено файлов: ${cloudResult.uploaded}` });
         }
@@ -244,7 +274,9 @@ const Index = () => {
           toast({ title: 'Ошибка синхронизации облака', description: cloudResult.errors.join('; '), variant: 'destructive' });
         }
       } else {
-        reportItems.push({ id: 'cloud', title: 'Облачные PDF-архивы', status: 'error', details: [String(cloud.reason)] });
+        const cloudItem: SyncReportItem = { id: 'cloud', title: 'Облачные PDF-архивы', status: 'error', details: [String(cloud.reason)] };
+        reportItems.push(cloudItem);
+        updateLiveItem(cloudItem);
         toast({ title: 'Ошибка синхронизации облака', description: String(cloud.reason), variant: 'destructive' });
       }
 

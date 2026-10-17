@@ -3,6 +3,7 @@ import { LanguageSelector } from './LanguageSelector';
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
   Book,
+  Clock3,
   Building2,
   CheckCircle2,
   ClipboardList,
@@ -16,6 +17,7 @@ import {
   Heart,
   Home,
   Landmark,
+  Loader2,
   Menu,
   Moon,
   Plus,
@@ -69,7 +71,7 @@ export interface SyncReportItem {
   id: string;
   title: string;
   details: string[];
-  status: 'success' | 'error' | 'skipped';
+  status: 'success' | 'error' | 'skipped' | 'queued' | 'running';
 }
 
 export interface SyncReport {
@@ -423,7 +425,7 @@ export const Header = ({
                       {syncReport?.items.map(item => (
                         <div key={item.id} className="rounded-lg border p-3">
                           <div className="flex items-center gap-2 font-medium">
-                            {item.status === 'success' ? <CheckCircle2 className="h-4 w-4 text-success" /> : item.status === 'error' ? <XCircle className="h-4 w-4 text-destructive" /> : <ClipboardList className="h-4 w-4 text-muted-foreground" />}
+                            {item.status === 'success' ? <CheckCircle2 className="h-4 w-4 text-success" /> : item.status === 'error' ? <XCircle className="h-4 w-4 text-destructive" /> : item.status === 'running' ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : item.status === 'queued' ? <Clock3 className="h-4 w-4 text-orange-500" /> : <ClipboardList className="h-4 w-4 text-muted-foreground" />}
                             <span>{item.title}</span>
                           </div>
                           <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">

@@ -344,6 +344,7 @@ export const syncAllConfiguredGoogleSheetExports = async (
   transactions: ExportSyncTransaction[],
   expenseCategories: ExportSyncCategory[],
   getAllTransactions?: () => Promise<Transaction[]>,
+  onProgress?: (item: { id: string; title: string; status: 'queued' | 'running' | 'success' | 'error'; details: string[] }) => void,
 ) => {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Пожалуйста, войдите в систему повторно');
@@ -371,55 +372,43 @@ export const syncAllConfiguredGoogleSheetExports = async (
 
   const allTransactions = allTransactionsResult as ExportSyncTransaction[];
   const archiveEntries = (archiveEntriesResult.data || []) as PdfArchiveExportEntry[];
-  const results = await Promise.allSettled(exports.map(async (target) => {
-    if (target.export_type === 'transactions') {
+  exports.forEach((target, index) => {
+    const title = `Google Sheets — ${target.export_type === 'pdf' ? 'PDF-архив' : 'транзакции'}`;
+    const location = `${target.spreadsheet_id.slice(0, 12)}… · ${target.sheet_range}`;
+    onProgress?.({ id: `sheets-${target.id || index}`, title, status: 'queued', details: [location] });
+  });
+  const items: Array<{ id: string; title: string; status: 'success' | 'error'; details: string[] }> = [];
+  for (const [index, target] of exports.entries()) {
+    const title = `Google Sheets — ${target.export_type === 'pdf' ? 'PDF-архив' : 'транзакции'}`;
+    const location = `${target.spreadsheet_id.slice(0, 12)}… · ${target.sheet_range}`;
+    const id = `sheets-${target.id || index}`;
+    onProgress?.({ id, title, status: 'running', details: [location] });
+    try {
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sheets-export`, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
           accessToken: session.access_token,
-          action: 'write',
+          action: target.export_type === 'transactions' ? 'write' : 'archive_pdf_export',
           ...(target.id ? { exportId: target.id } : {}),
-          values: buildTransactionExportValues(allTransactions, expenseCategories, target),
+          values: target.export_type === 'transactions'
+            ? buildTransactionExportValues(allTransactions, expenseCategories, target)
+            : buildPdfArchiveExportRows(archiveEntries, target),
         }),
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        throw new Error(payload?.error || `Ошибка экспорта транзакций (${response.status})`);
+        throw new Error(payload?.error || `Ошибка экспорта ${target.export_type === 'pdf' ? 'PDF' : 'транзакций'} (${response.status})`);
       }
-      return { target, title: `Google Sheets — ${target.export_type === 'pdf' ? 'PDF-архив' : 'транзакции'}` };
+      const item = { id, title, status: 'success' as const, details: [location] };
+      items.push(item);
+      onProgress?.(item);
+    } catch (error) {
+      const item = { id, title, status: 'error' as const, details: [location, error instanceof Error ? error.message : String(error)] };
+      items.push(item);
+      onProgress?.(item);
     }
-
-    const archiveRows = buildPdfArchiveExportRows(archiveEntries, target);
-
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sheets-export`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        accessToken: session.access_token,
-        action: 'archive_pdf_export',
-        ...(target.id ? { exportId: target.id } : {}),
-        values: archiveRows,
-      }),
-    });
-    if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      throw new Error(payload?.error || `Ошибка экспорта PDF (${response.status})`);
-    }
-  }));
-
-  const items = results.map((result, index) => {
-    const target = exports[index];
-    const title = `Google Sheets — ${target.export_type === 'pdf' ? 'PDF-архив' : 'транзакции'}`;
-    const location = `${target.spreadsheet_id.slice(0, 12)}… · ${target.sheet_range}`;
-    if (result.status === 'fulfilled') return { id: `sheets-${target.id || index}`, title, status: 'success' as const, details: [location] };
-    return {
-      id: `sheets-${target.id || index}`,
-      title,
-      status: 'error' as const,
-      details: [location, result.reason instanceof Error ? result.reason.message : String(result.reason)],
-    };
-  });
+  }
   const errors = items.filter(item => item.status === 'error').flatMap(item => item.details.slice(1));
   return { configured: exports.length, completed: exports.length - errors.length, failed: errors.length, errors, items };
 };
