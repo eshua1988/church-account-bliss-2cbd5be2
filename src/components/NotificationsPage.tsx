@@ -1346,9 +1346,20 @@ export const NotificationsPage = () => {
         }
       }
 
+      // An archived payout has a separate accounting row which drives the
+      // PDF transactions table. Keep it in sync with the notification and
+      // regenerated document as well; otherwise the table shows the old
+      // department even though the PDF itself already has the new one.
+      const { error: archiveEntryError } = await (supabase as any)
+        .from('pdf_archive_entries')
+        .update({ department_name: selectedDepartment })
+        .eq('source_notification_id', departmentTarget.id)
+        .eq('user_id', departmentTarget.user_id);
+      if (archiveEntryError) throw archiveEntryError;
+
       await refetchNotifications();
       setDepartmentTarget(null);
-      toast({ title: 'Отдел изменён', description: 'Уведомление и PDF обновлены' });
+      toast({ title: 'Отдел изменён', description: 'Уведомление, PDF и таблица PDF-транзакций обновлены' });
     } catch (error) {
       toast({
         title: 'Не удалось изменить отдел',
