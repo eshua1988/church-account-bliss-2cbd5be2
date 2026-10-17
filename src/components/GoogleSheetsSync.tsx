@@ -38,6 +38,7 @@ export type SheetExport = {
 };
 
 const AUTO_SYNC_KEY = 'google_sheets_auto_sync';
+const AUTO_SYNC_RECONCILE_INTERVAL = 60_000;
 const AUTO_DELETE_CHECK_KEY = 'google_sheets_auto_delete_check';
 const DELETE_CHECK_INTERVAL = 60000; // 1 minute
 
@@ -727,6 +728,28 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
       return () => clearTimeout(timeoutId);
     }
   }, [transactions, autoSync, syncToSheets, toast, spreadsheetId]);
+
+  // Google Sheets does not notify the browser when somebody clears a cell.
+  // Reconcile configured exports while auto-sync is enabled so a manually
+  // cleared purple conflict cell is restored from the application on the next
+  // check, without requiring a click on the refresh button.
+  useEffect(() => {
+    if (!autoSync || !user || exports.length === 0) return;
+    let isReconciling = false;
+    const reconcile = async () => {
+      if (isReconciling) return;
+      isReconciling = true;
+      try {
+        await syncAllConfiguredGoogleSheetExports(transactions, expenseCategories, getAllTransactions);
+      } catch (error) {
+        console.error('Automatic Google Sheets reconciliation failed:', error);
+      } finally {
+        isReconciling = false;
+      }
+    };
+    const intervalId = setInterval(reconcile, AUTO_SYNC_RECONCILE_INTERVAL);
+    return () => clearInterval(intervalId);
+  }, [autoSync, user, exports, transactions, expenseCategories, getAllTransactions]);
 
   const handleAutoSyncChange = (enabled: boolean) => {
     if (!spreadsheetId && enabled) {
