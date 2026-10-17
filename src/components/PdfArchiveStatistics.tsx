@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Archive, FileText } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Currency, Transaction, TransactionCategory } from '@/types/transaction';
@@ -10,6 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { openPdfUrl } from '@/lib/pdfDownload';
 import { syncPdfArchiveExportsOnly } from '@/components/GoogleSheetsSync';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface PdfArchiveStatisticsProps {
   categories: { id: string; name: string; type: string }[];
@@ -24,7 +25,31 @@ const asCurrency = (value: unknown): Currency =>
 export const PdfArchiveStatistics = ({ categories, getCategoryName }: PdfArchiveStatisticsProps) => {
   const { t } = useTranslation();
   const { toast } = useToast();
+  const { user } = useAuth();
   const { entries } = usePdfArchiveEntries();
+  const [protocolSourceIds, setProtocolSourceIds] = useState<string[]>([]);
+  const [protocolSourcePaths, setProtocolSourcePaths] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!user) {
+      setProtocolSourceIds([]);
+      setProtocolSourcePaths([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await (supabase as any)
+        .from('reminders')
+        .select('recurring_pdf')
+        .eq('user_id', user.id)
+        .not('recurring_pdf', 'is', null);
+      if (error || cancelled) return;
+      const decisions = (data || []).map((row: any) => row.recurring_pdf || {});
+      setProtocolSourceIds(decisions.map((decision: any) => String(decision.source_entry_id || '')).filter(Boolean));
+      setProtocolSourcePaths(decisions.map((decision: any) => String(decision.source_pdf_path || '')).filter(Boolean));
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
   const archiveTransactions = useMemo<Transaction[]>(() => entries.map(entry => {
     const date = new Date(entry.document_date);
     const basis = entry.basis || entry.department_name || 'Архивный PDF';
@@ -43,6 +68,15 @@ export const PdfArchiveStatistics = ({ categories, getCategoryName }: PdfArchive
       comment: 'PDF-архив',
     };
   }), [entries]);
+
+  const protocolTransactions = useMemo(() => {
+    const ids = new Set(protocolSourceIds);
+    const paths = new Set(protocolSourcePaths);
+    return archiveTransactions.filter(transaction =>
+      ids.has(transaction.id.replace(/^pdf-/, '')) ||
+      Boolean(transaction.sourcePdfPath && paths.has(transaction.sourcePdfPath)),
+    );
+  }, [archiveTransactions, protocolSourceIds, protocolSourcePaths]);
 
   const availableCurrencies = useMemo(() => [...new Set(archiveTransactions.map(transaction => transaction.currency))] as Currency[], [archiveTransactions]);
 
@@ -123,6 +157,7 @@ export const PdfArchiveStatistics = ({ categories, getCategoryName }: PdfArchive
       <TabsList className="flex-wrap h-auto gap-1 p-1">
         <TabsTrigger value="balance" className="text-xs sm:text-sm">{t('balanceByCurrency')}</TabsTrigger>
         <TabsTrigger value="table" className="text-xs sm:text-sm">{t('transactionsTable')}</TabsTrigger>
+        <TabsTrigger value="protocols" className="text-xs sm:text-sm">Протоколы</TabsTrigger>
         <TabsTrigger value="calculator" className="text-xs sm:text-sm">Калькулятор</TabsTrigger>
       </TabsList>
       <TabsContent value="balance">
@@ -132,6 +167,11 @@ export const PdfArchiveStatistics = ({ categories, getCategoryName }: PdfArchive
         })}</div>}
       </TabsContent>
       <TabsContent value="table"><StatisticsTable transactions={archiveTransactions} getCategoryName={getCategoryName} categories={categories} onOpenPdf={openSourcePdf} onDeleteSelected={deleteSelectedArchiveTransactions} /></TabsContent>
+      <TabsContent value="protocols">
+        {protocolTransactions.length === 0
+          ? <div className="rounded-xl border border-dashed p-10 text-center text-muted-foreground"><FileText className="mx-auto mb-3 h-10 w-10 opacity-40" />Для карточек выплат пока нет PDF-транзакций.</div>
+          : <StatisticsTable transactions={protocolTransactions} getCategoryName={getCategoryName} categories={categories} onOpenPdf={openSourcePdf} />}
+      </TabsContent>
       <TabsContent value="calculator"><StatisticsTable transactions={archiveTransactions} getCategoryName={getCategoryName} categories={categories} calculatorMode /></TabsContent>
     </Tabs>
   </section>;
