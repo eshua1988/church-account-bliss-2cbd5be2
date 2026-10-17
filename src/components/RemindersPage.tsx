@@ -204,7 +204,7 @@ export const RemindersPage = () => {
       const attachments: Attachment[] = [...existingAttachments];
       const selectedPdf = archivedPdfs.find(item => item.path === selectedArchivedPdfPath);
       const priorRecurringPdf = editing?.metadata?.recurring_pdf;
-      const archivedPdf = selectedPdf || (isArchivePdfReminder && selectedArchivedPdfPath ? {
+      const archivedPdf: ArchivedPdf | undefined = selectedPdf || (isArchivePdfReminder && selectedArchivedPdfPath ? {
         path: selectedArchivedPdfPath,
         name: selectedArchivedPdfPath.split('/').pop() || 'PDF из архива',
         label: '',
@@ -214,7 +214,7 @@ export const RemindersPage = () => {
         basis: String(priorRecurringPdf?.basis || ''),
         issuedTo: String(priorRecurringPdf?.issued_to || fullName.trim()),
         categoryId: String(priorRecurringPdf?.category_id || ''),
-      } satisfies ArchivedPdf);
+      } : undefined);
       if (archivedPdf && !attachments.some(item => item.path === archivedPdf.path)) {
         // This points to an existing archive file. It must never be deleted
         // when the reminder is later edited or removed.
