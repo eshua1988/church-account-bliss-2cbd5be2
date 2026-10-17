@@ -88,6 +88,7 @@ Deno.serve(async (req) => {
     let totalExisting = 0
     let totalMissing = 0
     let totalExtra = 0
+    let totalRemovedExtra = 0
     const missingTransactions = []
     const extraTransactions = []
     const allSyncDebug = []
@@ -299,6 +300,25 @@ Deno.serve(async (req) => {
         description: t.bank_title || t.description,
       }))
 
+      // Rows in `existing` are exclusively previous imports from this bank
+      // (the query is scoped by user and source). If the bank's current BOOK
+      // history no longer contains one of them, it is stale bank data, not a
+      // manual application transaction. Remove it so the application balance
+      // remains equal to the balance shown by the bank.
+      const staleIds = extraForBank.map(t => t.id).filter(Boolean)
+      if (staleIds.length > 0) {
+        const { error: staleDeleteError } = await db.from('transactions')
+          .delete()
+          .eq('user_id', user_id)
+          .eq('source', source)
+          .in('id', staleIds)
+        if (staleDeleteError) {
+          insertError = String(staleDeleteError.message)
+        } else {
+          totalRemovedExtra += staleIds.length
+        }
+      }
+
       // The reconciliation result is the authoritative import list. This
       // prevents a second deduplication pass from dropping the missing row.
       const seenExternalIds = new Set()
@@ -424,9 +444,10 @@ Deno.serve(async (req) => {
       bank_total: totalTx,
       app_total: totalExisting,
       missing: Math.max(totalMissing - totalImported, 0),
-      extra: totalExtra,
+      extra: Math.max(totalExtra - totalRemovedExtra, 0),
+      removed_extra: totalRemovedExtra,
       missing_transactions: totalImported > 0 ? [] : missingTransactions,
-      extra_transactions: extraTransactions,
+      extra_transactions: totalRemovedExtra > 0 ? [] : extraTransactions,
       errors: allSyncDebug.filter(d => d.insert_error).map(d => d.insert_error),
       date_from: connections.map(c => c.last_sync_at ? new Date(c.last_sync_at).toISOString().split('T')[0] : '2020-01-01').join(', '),
       banks: connections.map(c => c.bank_name),

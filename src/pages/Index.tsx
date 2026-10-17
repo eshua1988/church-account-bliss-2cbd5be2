@@ -182,8 +182,9 @@ const Index = () => {
         title: 'Импорт из банка',
         status: 'success',
         details: [
-          `В банке: ${Number(json.bank_total ?? json.total ?? 0).toLocaleString('ru-RU')}; добавлено: ${Number(json.imported ?? 0).toLocaleString('ru-RU')}`,
+          `Операций в банке: ${Number(json.bank_total ?? json.total ?? 0).toLocaleString('ru-RU')}; добавлено: ${Number(json.imported ?? 0).toLocaleString('ru-RU')}`,
           `Отсутствуют в приложении: ${Number(json.missing ?? 0).toLocaleString('ru-RU')}; лишних в приложении: ${Number(json.extra ?? 0).toLocaleString('ru-RU')}`,
+          ...(Number(json.removed_extra ?? 0) > 0 ? [`Удалено устаревших банковских операций: ${Number(json.removed_extra).toLocaleString('ru-RU')}`] : []),
         ],
       };
     } catch (e) {
