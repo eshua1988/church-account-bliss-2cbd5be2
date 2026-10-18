@@ -1,5 +1,5 @@
 import { ChangeEvent, useEffect, useState } from 'react';
-import { Bell, CalendarDays, CircleStop, FileText, Loader2, Paperclip, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Bell, CalendarDays, CircleStop, FileText, Loader2, Paperclip, Pencil, Plus, Settings, Trash2, X } from 'lucide-react';
 import fontkit from '@pdf-lib/fontkit';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -33,6 +33,7 @@ const isPdfPaymentReminder = (reminder: Reminder) => Boolean(
 const repeatLabel: Record<Repeat, string> = { once: 'Один раз', weekly: 'Раз в неделю', monthly: 'Раз в месяц', yearly: 'Раз в год' };
 const today = () => new Date().toISOString().slice(0, 10);
 const remindersTable = () => supabase.from('reminders' as any) as any;
+const reminderSettingsTable = () => (supabase as any).from('reminder_settings') as any;
 const fromRow = (row: any): Reminder => ({
   id: row.id,
   title: row.full_name,
@@ -58,9 +59,15 @@ export const RemindersPage = () => {
   const [editing, setEditing] = useState<Reminder | null>(null);
   const [existingAttachments, setExistingAttachments] = useState<Attachment[]>([]);
   const [removedAttachmentPaths, setRemovedAttachmentPaths] = useState<string[]>([]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
   const [reminderDate, setReminderDate] = useState(today());
   const [reminderTime, setReminderTime] = useState('09:00');
   const [repeat, setRepeat] = useState<Repeat>('once');
+  const [pdfStartDate, setPdfStartDate] = useState(today());
+  const [pdfRepeat, setPdfRepeat] = useState<Repeat>('monthly');
+  const [reminderToClose, setReminderToClose] = useState<Reminder | null>(null);
+  const [paymentEndDate, setPaymentEndDate] = useState(today());
   const [isArchivePdfReminder, setIsArchivePdfReminder] = useState(false);
   const [archivedPdfs, setArchivedPdfs] = useState<ArchivedPdf[]>([]);
   const [selectedArchivedPdfPath, setSelectedArchivedPdfPath] = useState('');
@@ -82,7 +89,49 @@ export const RemindersPage = () => {
 
   useEffect(() => { void load(); }, [user]);
 
-  const writePdfPayoutTotal = async (pdfPath: string, total: number, currency: 'PLN' | 'EUR' | 'USD', endedOn?: string) => {
+  const loadSettings = async () => {
+    if (!user) return;
+    const { data, error } = await reminderSettingsTable()
+      .select('reminder_date, reminder_time, repeat')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (error) {
+      toast({ title: 'Не удалось загрузить настройки уведомлений', description: error.message, variant: 'destructive' });
+      return;
+    }
+    if (data) {
+      setReminderDate(data.reminder_date || today());
+      setReminderTime(String(data.reminder_time || '09:00').slice(0, 5));
+      setRepeat(data.repeat || 'once');
+    }
+  };
+
+  useEffect(() => { void loadSettings(); }, [user]);
+
+  const saveSettings = async () => {
+    if (!user) return;
+    setSavingSettings(true);
+    try {
+      const settings = { user_id: user.id, reminder_date: reminderDate, reminder_time: reminderTime, repeat, updated_at: new Date().toISOString() };
+      const { error: settingsError } = await reminderSettingsTable().upsert(settings, { onConflict: 'user_id' });
+      if (settingsError) throw settingsError;
+      const { error: remindersError } = await remindersTable()
+        .update({ reminder_date: reminderDate, reminder_time: reminderTime, repeat })
+        .eq('user_id', user.id)
+        .is('closed_at', null)
+        .is('recurring_pdf', null);
+      if (remindersError) throw remindersError;
+      await load();
+      setSettingsOpen(false);
+      toast({ title: 'Настройки сохранены', description: 'Они применены ко всем активным карточкам.' });
+    } catch (error) {
+      toast({ title: 'Не удалось сохранить настройки', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const writePdfPayoutTotal = async (pdfPath: string, total: number, currency: 'PLN' | 'EUR' | 'USD', startedOn?: string, endedOn?: string) => {
     const { data: originalPdf, error: downloadError } = await supabase.storage.from('documents').download(pdfPath);
     if (downloadError || !originalPdf) throw downloadError || new Error('Исходный PDF не найден');
     const { PDFDocument, rgb } = await import('pdf-lib');
@@ -96,6 +145,12 @@ export const RemindersPage = () => {
     const mmY = height / 297;
     const symbol = currency === 'PLN' ? 'zł' : currency === 'EUR' ? '€' : '$';
     const totalText = `${symbol} ${total.toLocaleString('pl-PL', { maximumFractionDigits: 2 })}`;
+    const dateText = [startedOn, endedOn].filter(Boolean).join(' - ');
+    if (dateText) {
+      // Date is the value cell on the first row of the payout template.
+      page.drawRectangle({ x: 57 * mmX, y: height - 55 * mmY, width: 47 * mmX, height: 10 * mmY, color: rgb(1, 1, 1) });
+      page.drawText(dateText, { x: 59 * mmX, y: height - 51 * mmY, size: dateText.length > 12 ? 6.5 : 9, font, color: rgb(0, 0, 0), maxWidth: 44 * mmX });
+    }
     // The payout template has the amount value at 155–190 mm on the first row.
     page.drawRectangle({ x: 154 * mmX, y: height - 55 * mmY, width: 37 * mmX, height: 10 * mmY, color: rgb(1, 1, 1) });
     page.drawText(totalText, { x: 157 * mmX, y: height - 51 * mmY, size: 9, font, color: rgb(0, 0, 0) });
@@ -120,7 +175,7 @@ export const RemindersPage = () => {
       if (!pdfPath || !sourceEntryId || !['PLN', 'EUR', 'USD'].includes(currency)) return;
       const { data } = await (supabase as any).from('pdf_archive_entries').select('amount').eq('id', sourceEntryId).maybeSingle();
       const total = Number(data?.amount);
-      if (Number.isFinite(total)) await writePdfPayoutTotal(pdfPath, total, currency as 'PLN' | 'EUR' | 'USD');
+      if (Number.isFinite(total)) await writePdfPayoutTotal(pdfPath, total, currency as 'PLN' | 'EUR' | 'USD', reminder.metadata?.reminder_date);
     })).catch(error => console.warn('Could not refresh PDF payment totals', error));
   }, [user, reminders]);
 
@@ -132,14 +187,13 @@ export const RemindersPage = () => {
     setExistingAttachments([]);
     setRemovedAttachmentPaths([]);
     setEditing(null);
-    setReminderDate(today());
-    setReminderTime('09:00');
-    setRepeat('once');
     setIsArchivePdfReminder(false);
     setArchivedPdfs([]);
     setSelectedArchivedPdfPath('');
     setPaymentAmount('');
     setPaymentCurrency('PLN');
+    setPdfStartDate(today());
+    setPdfRepeat('monthly');
   };
 
   const openNewReminder = () => {
@@ -151,7 +205,8 @@ export const RemindersPage = () => {
     if (!user) return;
     resetForm();
     setIsArchivePdfReminder(true);
-    setRepeat('monthly');
+    setPdfStartDate(today());
+    setPdfRepeat('monthly');
     setOpen(true);
     const { data, error } = await (supabase as any)
       .from('pdf_archive_entries')
@@ -199,13 +254,12 @@ export const RemindersPage = () => {
     setMessage(reminder.message);
     setExistingAttachments(reminder.metadata?.attachments || []);
     setFiles([]);
-    setReminderDate(reminder.metadata?.reminder_date || today());
-    setReminderTime(reminder.metadata?.reminder_time || '09:00');
-    setRepeat(reminder.metadata?.repeat || 'once');
     setIsArchivePdfReminder(isPdfPayment);
     setArchivedPdfs([]);
     setSelectedArchivedPdfPath(String(recurringPdf?.source_pdf_path || archiveAttachment?.path || ''));
     setPaymentAmount(recurringPdf?.amount !== undefined ? String(recurringPdf.amount) : '');
+    setPdfStartDate(reminder.metadata?.reminder_date || today());
+    setPdfRepeat(reminder.metadata?.repeat || 'monthly');
     const savedCurrency = String(recurringPdf?.currency || 'PLN').toUpperCase();
     setPaymentCurrency(savedCurrency === 'EUR' || savedCurrency === 'USD' ? savedCurrency : 'PLN');
     setOpen(true);
@@ -274,16 +328,17 @@ export const RemindersPage = () => {
         attachments.push({ path, name: file.name, type: file.type });
       }
 
+      const scheduleDate = isArchivePdfReminder ? pdfStartDate : reminderDate;
+      const scheduleRepeat = isArchivePdfReminder ? pdfRepeat : repeat;
       const values = {
         full_name: fullName.trim(),
         contact: contact.trim(),
         message: message.trim(),
         attachments,
-        reminder_date: reminderDate,
+        // These scheduling values are global and apply to every card.
+        reminder_date: scheduleDate,
         reminder_time: reminderTime,
-        // The date and recurrence on the card define when the accumulated
-        // payment is added to the original PDF transaction.
-        repeat,
+        repeat: scheduleRepeat,
         recurring_pdf: archivedPdf ? {
           amount: parsedPaymentAmount,
           currency: paymentCurrency,
@@ -299,6 +354,10 @@ export const RemindersPage = () => {
         ? await remindersTable().update(values).eq('id', editing.id)
         : await remindersTable().insert({ ...values, user_id: user.id });
       if (error) throw error;
+      if (archivedPdf?.id) {
+        const { error: archiveUpdateError } = await (supabase as any).from('pdf_archive_entries').update({ document_date: scheduleDate }).eq('id', archivedPdf.id).eq('user_id', user.id);
+        if (archiveUpdateError) throw archiveUpdateError;
+      }
       if (editing && removedAttachmentPaths.length > 0) await supabase.storage.from('documents').remove(removedAttachmentPaths);
 
       toast({ title: editing ? 'Напоминание изменено' : 'Напоминание добавлено', description: 'Карточка и вложения сохранены.' });
@@ -346,7 +405,7 @@ export const RemindersPage = () => {
     toast({ title: 'Напоминание удалено' });
   };
 
-  const closeRecurringPdfReminder = async (reminder: Reminder) => {
+  const closeRecurringPdfReminder = async (reminder: Reminder, endedOn: string) => {
     const recurringPdf = reminder.metadata?.recurring_pdf;
     const archiveAttachment = reminder.metadata?.attachments?.find(attachment => attachment.source === 'archive');
     const pdfPath = String(recurringPdf?.source_pdf_path || archiveAttachment?.path || '');
@@ -354,20 +413,19 @@ export const RemindersPage = () => {
       toast({ title: 'PDF не найден', description: 'В карточке нет исходного PDF для отметки даты окончания.', variant: 'destructive' });
       return;
     }
-    if (!window.confirm(`Завершить выплату для «${reminder.title}»? Новые суммы больше не будут добавляться к PDF-транзакции.`)) return;
     setClosingId(reminder.id);
     try {
       const sourceEntryId = String(recurringPdf?.source_entry_id || '');
       const { data: entry, error: entryError } = await (supabase as any).from('pdf_archive_entries').select('amount, currency').eq('id', sourceEntryId).single();
       if (entryError || !entry) throw entryError || new Error('Исходная PDF-транзакция не найдена');
-      const endedOn = new Date().toLocaleDateString('pl-PL');
       const currency = String(entry.currency || recurringPdf?.currency || 'PLN').toUpperCase();
       if (!['PLN', 'EUR', 'USD'].includes(currency)) throw new Error('Неподдерживаемая валюта PDF-выплаты');
-      await writePdfPayoutTotal(pdfPath, Number(entry.amount), currency as 'PLN' | 'EUR' | 'USD', endedOn);
+      const startedOn = reminder.metadata?.reminder_date || '';
+      await writePdfPayoutTotal(pdfPath, Number(entry.amount), currency as 'PLN' | 'EUR' | 'USD', startedOn, endedOn);
       const { error: closeError } = await remindersTable().update({ closed_at: new Date().toISOString(), next_notification_at: null }).eq('id', reminder.id);
       if (closeError) throw closeError;
       await load();
-      toast({ title: 'Выплата завершена', description: `Карточка закрыта, в PDF отмечена дата ${endedOn}.` });
+      toast({ title: 'Выплата завершена', description: `Карточка закрыта, в PDF указан период ${startedOn} - ${endedOn}.` });
     } catch (error) {
       toast({ title: 'Не удалось завершить выплату', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
     } finally {
@@ -379,6 +437,7 @@ export const RemindersPage = () => {
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><h1 className="text-2xl font-bold">Напоминания</h1><p className="text-muted-foreground">Выберите дату, повторение и сохраните контакт с файлами в одной карточке.</p></div>
       <div className="flex flex-wrap gap-2">
+        <Button variant="outline" className="gap-2" onClick={() => setSettingsOpen(true)}><Settings className="h-4 w-4" />Настройки</Button>
         <Button className="gap-2" onClick={() => void openArchivePdfReminder()}><FileText className="h-4 w-4" />Добавить PDF</Button>
         <Button className="gap-2" onClick={openNewReminder}><Plus className="h-4 w-4" />Добавить напоминание</Button>
       </div>
@@ -391,14 +450,37 @@ export const RemindersPage = () => {
         <p className="mt-3 whitespace-pre-wrap text-sm">{reminder.message}</p>
         <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground"><CalendarDays className="h-3.5 w-3.5" />{reminder.metadata?.reminder_date ? new Date(`${reminder.metadata.reminder_date}T12:00:00`).toLocaleDateString('ru-RU') : 'Дата не указана'} в {reminder.metadata?.reminder_time || '09:00'} · {repeatLabel[reminder.metadata?.repeat || 'once']}</p>
         <p className="mt-1 text-xs text-muted-foreground">{isPdfPaymentReminder(reminder) ? `Постоянная выплата по PDF (${repeatLabel[reminder.metadata?.repeat || 'monthly']}) · ` : ''}Вложений: {attachments.length} · создано {new Date(reminder.created_at).toLocaleDateString('ru-RU')}</p>
-        <div className="mt-4 flex flex-wrap gap-2"><Button variant="outline" className="flex-1 gap-2" onClick={() => void openPreview(reminder)}><Paperclip className="h-4 w-4" />Просмотреть</Button>{isPdfPaymentReminder(reminder) && <Button variant="outline" className="gap-2 text-destructive hover:text-destructive" disabled={closingId === reminder.id} onClick={() => void closeRecurringPdfReminder(reminder)}>{closingId === reminder.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CircleStop className="h-4 w-4" />}Завершить выплату</Button>}<Button variant="ghost" size="icon" onClick={() => openEditReminder(reminder)} aria-label="Редактировать напоминание"><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive" onClick={() => void deleteReminder(reminder)} aria-label="Удалить напоминание"><Trash2 className="h-4 w-4" /></Button></div>
+        <div className="mt-4 flex flex-wrap gap-2"><Button variant="outline" className="flex-1 gap-2" onClick={() => void openPreview(reminder)}><Paperclip className="h-4 w-4" />Просмотреть</Button>{isPdfPaymentReminder(reminder) && <Button variant="outline" className="gap-2 text-destructive hover:text-destructive" disabled={closingId === reminder.id} onClick={() => { setReminderToClose(reminder); setPaymentEndDate(today()); }}>{closingId === reminder.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CircleStop className="h-4 w-4" />}Завершить выплату</Button>}<Button variant="ghost" size="icon" onClick={() => openEditReminder(reminder)} aria-label="Редактировать напоминание"><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive" onClick={() => void deleteReminder(reminder)} aria-label="Удалить напоминание"><Trash2 className="h-4 w-4" /></Button></div>
       </article>;
     })}</div>}
 
     <Dialog open={open} onOpenChange={(value) => { setOpen(value); if (!value) resetForm(); }}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>{editing ? 'Редактировать напоминание' : isArchivePdfReminder ? 'Новое напоминание с PDF' : 'Новое напоминание'}</DialogTitle><DialogDescription>{isArchivePdfReminder ? 'Заполните данные напоминания и выберите PDF, который уже есть в архиве.' : 'Выберите дату и периодичность, а также добавьте или удалите фото и PDF.'}</DialogDescription></DialogHeader>
-        <div className="space-y-4"><div className="space-y-2"><label htmlFor="reminder-name" className="text-sm font-medium">Имя и фамилия</label><Input id="reminder-name" value={fullName} onChange={event => setFullName(event.target.value)} /></div><div className="space-y-2"><label htmlFor="reminder-contact" className="text-sm font-medium">Телефон или конто</label><Input id="reminder-contact" value={contact} onChange={event => setContact(event.target.value)} /></div><div className="grid gap-4 sm:grid-cols-3"><div className="space-y-2"><label htmlFor="reminder-date" className="text-sm font-medium">Когда</label><Input id="reminder-date" type="date" value={reminderDate} onChange={event => setReminderDate(event.target.value)} /></div><div className="space-y-2"><label htmlFor="reminder-time" className="text-sm font-medium">Во сколько</label><Input id="reminder-time" type="time" value={reminderTime} onChange={event => setReminderTime(event.target.value)} /></div><div className="space-y-2"><label htmlFor="reminder-repeat" className="text-sm font-medium">Как часто</label><select id="reminder-repeat" value={repeat} onChange={event => setRepeat(event.target.value as Repeat)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="once">Один раз</option><option value="weekly">Раз в неделю</option><option value="monthly">Раз в месяц</option><option value="yearly">Раз в год</option></select></div></div><div className="space-y-2"><label htmlFor="reminder-text" className="text-sm font-medium">Текст напоминания</label><Textarea id="reminder-text" value={message} onChange={event => setMessage(event.target.value)} rows={5} /></div>{isArchivePdfReminder && <><div className="space-y-2"><label htmlFor="reminder-archive-pdf" className="text-sm font-medium">PDF из архива</label><select id="reminder-archive-pdf" value={selectedArchivedPdfPath} onChange={event => { const path = event.target.value; setSelectedArchivedPdfPath(path); const pdf = archivedPdfs.find(item => item.path === path); if (pdf) { setPaymentAmount(String(pdf.amount)); setPaymentCurrency(pdf.currency === 'EUR' || pdf.currency === 'USD' ? pdf.currency : 'PLN'); } }} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">Выберите PDF</option>{archivedPdfs.map(pdf => <option key={pdf.path} value={pdf.path}>{pdf.label}</option>)}</select>{archivedPdfs.length === 0 && <p className="text-xs text-muted-foreground">В PDF-архиве пока нет документов с сохранённым файлом.</p>}</div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><label htmlFor="payment-amount" className="text-sm font-medium">Сумма ежемесячной выплаты</label><Input id="payment-amount" inputMode="decimal" placeholder="Например, 1000" value={paymentAmount} onChange={event => setPaymentAmount(event.target.value)} /></div><div className="space-y-2"><label htmlFor="payment-currency" className="text-sm font-medium">Валюта выплаты</label><select id="payment-currency" value={paymentCurrency} onChange={event => setPaymentCurrency(event.target.value as 'PLN' | 'EUR' | 'USD')} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="PLN">Польский злотый (PLN)</option><option value="EUR">Евро (EUR)</option><option value="USD">Доллар США (USD)</option></select></div></div></>}<div className="space-y-2"><label htmlFor="reminder-files" className="text-sm font-medium">Добавить фото и PDF</label><Input id="reminder-files" type="file" accept="image/*,application/pdf" multiple onChange={chooseFiles} />{existingAttachments.length > 0 && <ul className="space-y-1 text-sm text-muted-foreground">{existingAttachments.map(item => <li className="flex items-center justify-between gap-2" key={item.path}><span className="truncate">{item.name}</span><Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeExistingAttachment(item)} aria-label={`Удалить ${item.name}`}><X className="h-4 w-4" /></Button></li>)}</ul>}{files.length > 0 && <ul className="space-y-1 text-sm text-muted-foreground">{files.map(file => <li className="flex items-center justify-between gap-2" key={`${file.name}-${file.lastModified}`}><span className="truncate">{file.name}</span><Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeNewFile(file)} aria-label={`Удалить ${file.name}`}><X className="h-4 w-4" /></Button></li>)}</ul>}</div></div>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>{editing ? 'Редактировать напоминание' : isArchivePdfReminder ? 'Новое напоминание с PDF' : 'Новое напоминание'}</DialogTitle><DialogDescription>{isArchivePdfReminder ? 'Заполните данные напоминания и выберите PDF, который уже есть в архиве.' : 'Заполните карточку и добавьте или удалите фото и PDF. Время уведомлений задаётся в настройках.'}</DialogDescription></DialogHeader>
+        <div className="space-y-4"><div className="space-y-2"><label htmlFor="reminder-name" className="text-sm font-medium">Имя и фамилия</label><Input id="reminder-name" value={fullName} onChange={event => setFullName(event.target.value)} /></div><div className="space-y-2"><label htmlFor="reminder-contact" className="text-sm font-medium">Телефон или конто</label><Input id="reminder-contact" value={contact} onChange={event => setContact(event.target.value)} /></div><div className="space-y-2"><label htmlFor="reminder-text" className="text-sm font-medium">Текст напоминания</label><Textarea id="reminder-text" value={message} onChange={event => setMessage(event.target.value)} rows={5} /></div>{isArchivePdfReminder && <><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><label htmlFor="pdf-payment-start-date" className="text-sm font-medium">Когда</label><Input id="pdf-payment-start-date" type="date" value={pdfStartDate} onChange={event => setPdfStartDate(event.target.value)} /></div><div className="space-y-2"><label htmlFor="pdf-payment-repeat" className="text-sm font-medium">Как часто</label><select id="pdf-payment-repeat" value={pdfRepeat} onChange={event => setPdfRepeat(event.target.value as Repeat)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="once">Один раз</option><option value="weekly">Раз в неделю</option><option value="monthly">Раз в месяц</option><option value="yearly">Раз в год</option></select></div></div><p className="text-xs text-muted-foreground">Эта дата станет основной датой PDF и будет началом подсчёта выплат.</p><div className="space-y-2"><label htmlFor="reminder-archive-pdf" className="text-sm font-medium">PDF из архива</label><select id="reminder-archive-pdf" value={selectedArchivedPdfPath} onChange={event => { const path = event.target.value; setSelectedArchivedPdfPath(path); const pdf = archivedPdfs.find(item => item.path === path); if (pdf) { setPaymentAmount(String(pdf.amount)); setPaymentCurrency(pdf.currency === 'EUR' || pdf.currency === 'USD' ? pdf.currency : 'PLN'); } }} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">Выберите PDF</option>{archivedPdfs.map(pdf => <option key={pdf.path} value={pdf.path}>{pdf.label}</option>)}</select>{archivedPdfs.length === 0 && <p className="text-xs text-muted-foreground">В PDF-архиве пока нет документов с сохранённым файлом.</p>}</div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><label htmlFor="payment-amount" className="text-sm font-medium">Сумма ежемесячной выплаты</label><Input id="payment-amount" inputMode="decimal" placeholder="Например, 1000" value={paymentAmount} onChange={event => setPaymentAmount(event.target.value)} /></div><div className="space-y-2"><label htmlFor="payment-currency" className="text-sm font-medium">Валюта выплаты</label><select id="payment-currency" value={paymentCurrency} onChange={event => setPaymentCurrency(event.target.value as 'PLN' | 'EUR' | 'USD')} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="PLN">Польский злотый (PLN)</option><option value="EUR">Евро (EUR)</option><option value="USD">Доллар США (USD)</option></select></div></div></>}<div className="space-y-2"><label htmlFor="reminder-files" className="text-sm font-medium">Добавить фото и PDF</label><Input id="reminder-files" type="file" accept="image/*,application/pdf" multiple onChange={chooseFiles} />{existingAttachments.length > 0 && <ul className="space-y-1 text-sm text-muted-foreground">{existingAttachments.map(item => <li className="flex items-center justify-between gap-2" key={item.path}><span className="truncate">{item.name}</span><Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeExistingAttachment(item)} aria-label={`Удалить ${item.name}`}><X className="h-4 w-4" /></Button></li>)}</ul>}{files.length > 0 && <ul className="space-y-1 text-sm text-muted-foreground">{files.map(file => <li className="flex items-center justify-between gap-2" key={`${file.name}-${file.lastModified}`}><span className="truncate">{file.name}</span><Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeNewFile(file)} aria-label={`Удалить ${file.name}`}><X className="h-4 w-4" /></Button></li>)}</ul>}</div></div>
         <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Отмена</Button><Button onClick={() => void saveReminder()} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editing ? 'Сохранить' : 'Создать'}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Настройки уведомлений</DialogTitle>
+          <DialogDescription>Дата, время и периодичность едины для всех текущих и новых обычных карточек. У PDF-карточек дата и периодичность задаются отдельно.</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="space-y-2"><label htmlFor="global-reminder-date" className="text-sm font-medium">Когда</label><Input id="global-reminder-date" type="date" value={reminderDate} onChange={event => setReminderDate(event.target.value)} /></div>
+          <div className="space-y-2"><label htmlFor="global-reminder-time" className="text-sm font-medium">Во сколько</label><Input id="global-reminder-time" type="time" value={reminderTime} onChange={event => setReminderTime(event.target.value)} /></div>
+          <div className="space-y-2"><label htmlFor="global-reminder-repeat" className="text-sm font-medium">Как часто</label><select id="global-reminder-repeat" value={repeat} onChange={event => setRepeat(event.target.value as Repeat)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="once">Один раз</option><option value="weekly">Раз в неделю</option><option value="monthly">Раз в месяц</option><option value="yearly">Раз в год</option></select></div>
+        </div>
+        <DialogFooter><Button variant="outline" onClick={() => setSettingsOpen(false)}>Отмена</Button><Button onClick={() => void saveSettings()} disabled={savingSettings}>{savingSettings && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Сохранить</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={Boolean(reminderToClose)} onOpenChange={(value) => { if (!value) setReminderToClose(null); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader><DialogTitle>Завершить выплату</DialogTitle><DialogDescription>Выберите дату окончания. Она будет добавлена через тире к основной дате в PDF, а карточка будет закрыта.</DialogDescription></DialogHeader>
+        <div className="space-y-2"><label htmlFor="payment-end-date" className="text-sm font-medium">Дата завершения</label><Input id="payment-end-date" type="date" value={paymentEndDate} onChange={event => setPaymentEndDate(event.target.value)} /></div>
+        <DialogFooter><Button variant="outline" onClick={() => setReminderToClose(null)}>Отмена</Button><Button variant="destructive" disabled={!reminderToClose || closingId === reminderToClose.id} onClick={() => { if (!reminderToClose) return; void closeRecurringPdfReminder(reminderToClose, paymentEndDate).then(() => setReminderToClose(null)); }}>{closingId === reminderToClose?.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Завершить выплату</Button></DialogFooter>
       </DialogContent>
     </Dialog>
 
