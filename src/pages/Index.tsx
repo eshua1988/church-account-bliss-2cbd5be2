@@ -735,6 +735,7 @@ const Index = () => {
                           <span className="font-semibold">Протоколы</span>
                           {openSettings.shareProtocols ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
                         </button>
+                        {!openSettings.shareProtocols && <PublicLinkHeaderActions kind="protocols" />}
                       </div>
                       {openSettings.shareProtocols && <div className="border-t p-3 sm:p-4"><ShareProtocolsLink /></div>}
                     </div>

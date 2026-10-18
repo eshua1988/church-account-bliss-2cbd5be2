@@ -7,7 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
-type PublicLinkKind = 'payout' | 'deposit' | 'transactions' | 'analytics';
+type PublicLinkKind = 'payout' | 'deposit' | 'transactions' | 'analytics' | 'protocols';
 
 interface PublicLink {
   id: string;
@@ -20,6 +20,7 @@ const kindLabels: Record<PublicLinkKind, string> = {
   deposit: 'Приходный ордер',
   transactions: 'Таблица транзакций',
   analytics: 'Аналитика',
+  protocols: 'Протоколы',
 };
 
 export const PublicLinkHeaderActions = ({ kind }: { kind: PublicLinkKind }) => {
@@ -35,6 +36,7 @@ export const PublicLinkHeaderActions = ({ kind }: { kind: PublicLinkKind }) => {
     if (kind === 'payout') return `${baseUrl}/payout/${encodeURIComponent(token)}`;
     if (kind === 'deposit') return `${baseUrl}/deposit/${encodeURIComponent(token)}`;
     if (kind === 'analytics') return `${baseUrl}/#/analytics/${encodeURIComponent(token)}`;
+    if (kind === 'protocols') return `${baseUrl}/#/protocols/${encodeURIComponent(token)}`;
     return `${baseUrl}/#/transactions/${encodeURIComponent(token)}`;
   };
 
@@ -65,9 +67,13 @@ export const PublicLinkHeaderActions = ({ kind }: { kind: PublicLinkKind }) => {
           .eq('owner_user_id', user.id)
           .order('created_at', { ascending: false });
         const transactionLinks = (data || []) as PublicLink[];
-        setLinks(transactionLinks.filter(link => kind === 'analytics'
-          ? Boolean(link.name?.startsWith('[Аналитика]'))
-          : !link.name?.startsWith('[Аналитика]')));
+        setLinks(transactionLinks.filter(link => {
+          const isAnalytics = Boolean(link.name?.startsWith('[Аналитика]'));
+          const isProtocols = Boolean(link.name?.startsWith('[Протоколы]'));
+          if (kind === 'analytics') return isAnalytics;
+          if (kind === 'protocols') return isProtocols;
+          return !isAnalytics && !isProtocols;
+        }));
       }
       setLoading(false);
     };
