@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ROBOTO_FONT_BASE64 } from '@/lib/robotoFont';
+import { amountInPolishWords } from '@/lib/amountInWords';
 
 type Attachment = { path: string; name: string; type: string; source?: 'reminder' | 'archive' };
 type Repeat = 'once' | 'weekly' | 'monthly' | 'yearly';
@@ -80,6 +81,48 @@ export const RemindersPage = () => {
   };
 
   useEffect(() => { void load(); }, [user]);
+
+  const writePdfPayoutTotal = async (pdfPath: string, total: number, currency: 'PLN' | 'EUR' | 'USD', endedOn?: string) => {
+    const { data: originalPdf, error: downloadError } = await supabase.storage.from('documents').download(pdfPath);
+    if (downloadError || !originalPdf) throw downloadError || new Error('Исходный PDF не найден');
+    const { PDFDocument, rgb } = await import('pdf-lib');
+    const pdfDoc = await PDFDocument.load(await originalPdf.arrayBuffer());
+    pdfDoc.registerFontkit(fontkit);
+    const fontBytes = Uint8Array.from(atob(ROBOTO_FONT_BASE64), character => character.charCodeAt(0));
+    const font = await pdfDoc.embedFont(fontBytes);
+    const page = pdfDoc.getPage(0);
+    const { width, height } = page.getSize();
+    const mmX = width / 210;
+    const mmY = height / 297;
+    const symbol = currency === 'PLN' ? 'zł' : currency === 'EUR' ? '€' : '$';
+    const totalText = `${symbol} ${total.toLocaleString('pl-PL', { maximumFractionDigits: 2 })}`;
+    // The payout template has the amount value at 155–190 mm on the first row.
+    page.drawRectangle({ x: 154 * mmX, y: height - 55 * mmY, width: 37 * mmX, height: 10 * mmY, color: rgb(1, 1, 1) });
+    page.drawText(totalText, { x: 157 * mmX, y: height - 51 * mmY, size: 9, font, color: rgb(0, 0, 0) });
+    const note = `Łączna kwota wypłat: ${totalText} (${amountInPolishWords(total, currency)})${endedOn ? ` · Data zakończenia wypłat: ${endedOn}` : ''}`;
+    page.drawRectangle({ x: 13 * mmX, y: 9 * mmY, width: 184 * mmX, height: 8 * mmY, color: rgb(1, 1, 1) });
+    page.drawText(note, { x: 14 * mmX, y: 12 * mmY, size: 7.2, font, color: rgb(0, 0, 0), maxWidth: 180 * mmX });
+    const { error: uploadError } = await supabase.storage.from('documents').upload(
+      pdfPath,
+      new Blob([await pdfDoc.save() as BlobPart], { type: 'application/pdf' }),
+      { contentType: 'application/pdf', upsert: true },
+    );
+    if (uploadError) throw uploadError;
+  };
+
+  useEffect(() => {
+    if (!user || reminders.length === 0) return;
+    void Promise.all(reminders.filter(isPdfPaymentReminder).map(async reminder => {
+      const recurring = reminder.metadata?.recurring_pdf;
+      const pdfPath = String(recurring?.source_pdf_path || reminder.metadata?.attachments?.find(item => item.source === 'archive')?.path || '');
+      const sourceEntryId = String(recurring?.source_entry_id || '');
+      const currency = String(recurring?.currency || 'PLN').toUpperCase();
+      if (!pdfPath || !sourceEntryId || !['PLN', 'EUR', 'USD'].includes(currency)) return;
+      const { data } = await (supabase as any).from('pdf_archive_entries').select('amount').eq('id', sourceEntryId).maybeSingle();
+      const total = Number(data?.amount);
+      if (Number.isFinite(total)) await writePdfPayoutTotal(pdfPath, total, currency as 'PLN' | 'EUR' | 'USD');
+    })).catch(error => console.warn('Could not refresh PDF payment totals', error));
+  }, [user, reminders]);
 
   const resetForm = () => {
     setFullName('');
@@ -314,24 +357,13 @@ export const RemindersPage = () => {
     if (!window.confirm(`Завершить выплату для «${reminder.title}»? Новые суммы больше не будут добавляться к PDF-транзакции.`)) return;
     setClosingId(reminder.id);
     try {
-      const { data: originalPdf, error: downloadError } = await supabase.storage.from('documents').download(pdfPath);
-      if (downloadError || !originalPdf) throw downloadError || new Error('Исходный PDF не найден');
-      const { PDFDocument, rgb } = await import('pdf-lib');
-      const pdfDoc = await PDFDocument.load(await originalPdf.arrayBuffer());
-      pdfDoc.registerFontkit(fontkit);
-      const fontBytes = Uint8Array.from(atob(ROBOTO_FONT_BASE64), character => character.charCodeAt(0));
-      const font = await pdfDoc.embedFont(fontBytes);
-      const page = pdfDoc.getPage(0);
+      const sourceEntryId = String(recurringPdf?.source_entry_id || '');
+      const { data: entry, error: entryError } = await (supabase as any).from('pdf_archive_entries').select('amount, currency').eq('id', sourceEntryId).single();
+      if (entryError || !entry) throw entryError || new Error('Исходная PDF-транзакция не найдена');
       const endedOn = new Date().toLocaleDateString('pl-PL');
-      const note = `Data zakończenia wypłat: ${endedOn}`;
-      page.drawRectangle({ x: 38, y: 28, width: 245, height: 18, color: rgb(1, 1, 1) });
-      page.drawText(note, { x: 40, y: 34, size: 8.5, font, color: rgb(0, 0, 0) });
-      const { error: uploadError } = await supabase.storage.from('documents').upload(
-        pdfPath,
-        new Blob([await pdfDoc.save() as BlobPart], { type: 'application/pdf' }),
-        { contentType: 'application/pdf', upsert: true },
-      );
-      if (uploadError) throw uploadError;
+      const currency = String(entry.currency || recurringPdf?.currency || 'PLN').toUpperCase();
+      if (!['PLN', 'EUR', 'USD'].includes(currency)) throw new Error('Неподдерживаемая валюта PDF-выплаты');
+      await writePdfPayoutTotal(pdfPath, Number(entry.amount), currency as 'PLN' | 'EUR' | 'USD', endedOn);
       const { error: closeError } = await remindersTable().update({ closed_at: new Date().toISOString(), next_notification_at: null }).eq('id', reminder.id);
       if (closeError) throw closeError;
       await load();
