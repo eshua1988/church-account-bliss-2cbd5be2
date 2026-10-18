@@ -21,6 +21,7 @@ import { SharePayoutLink } from '@/components/SharePayoutLink';
 import { ShareDepositLink } from '@/components/ShareDepositLink';
 import { ShareTransactionsLink } from '@/components/ShareTransactionsLink';
 import { ShareAnalyticsLink } from '@/components/ShareAnalyticsLink';
+import { ShareProtocolsLink } from '@/components/ShareProtocolsLink';
 import { PublicLinkHeaderActions } from '@/components/PublicLinkHeaderActions';
 import { NotificationsPage } from '@/components/NotificationsPage';
 import { BankingPage } from '@/components/BankingPage';
@@ -726,6 +727,16 @@ const Index = () => {
                         {!openSettings.shareAnalytics && <PublicLinkHeaderActions kind="analytics" />}
                       </div>
                       {openSettings.shareAnalytics && <div className="border-t p-3 sm:p-4"><ShareAnalyticsLink /></div>}
+                    </div>
+
+                    <div className="overflow-hidden rounded-xl border border-border">
+                      <div className="flex items-center gap-2 px-4 py-2">
+                        <button type="button" onClick={() => toggleSetting('shareProtocols')} className="flex min-w-0 flex-1 items-center justify-between gap-3 py-2 text-left hover:text-primary">
+                          <span className="font-semibold">Протоколы</span>
+                          {openSettings.shareProtocols ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+                        </button>
+                      </div>
+                      {openSettings.shareProtocols && <div className="border-t p-3 sm:p-4"><ShareProtocolsLink /></div>}
                     </div>
                   </div>
                 )}
