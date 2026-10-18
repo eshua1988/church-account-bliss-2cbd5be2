@@ -417,12 +417,32 @@ export const RemindersPage = () => {
     setClosingId(reminder.id);
     try {
       const sourceEntryId = String(recurringPdf?.source_entry_id || '');
-      const { data: entry, error: entryError } = await (supabase as any).from('pdf_archive_entries').select('amount, currency').eq('id', sourceEntryId).single();
+      const { data: entry, error: entryError } = await (supabase as any).from('pdf_archive_entries').select('currency').eq('id', sourceEntryId).single();
       if (entryError || !entry) throw entryError || new Error('Исходная PDF-транзакция не найдена');
+      // Amount is always the sum of entered recurring payments.  Amount that
+      // happened to be printed in the original PDF is deliberately excluded.
+      const { error: deleteFutureError } = await (supabase as any)
+        .from('recurring_pdf_payment_occurrences')
+        .delete()
+        .eq('reminder_id', reminder.id)
+        .gt('scheduled_for', endedOn);
+      if (deleteFutureError) throw deleteFutureError;
+      const { data: occurrences, error: occurrencesError } = await (supabase as any)
+        .from('recurring_pdf_payment_occurrences')
+        .select('amount')
+        .eq('reminder_id', reminder.id);
+      if (occurrencesError) throw occurrencesError;
+      const paymentTotal = (occurrences || []).reduce((total: number, occurrence: any) => total + Number(occurrence.amount || 0), 0);
+      const { error: totalUpdateError } = await (supabase as any)
+        .from('pdf_archive_entries')
+        .update({ amount: paymentTotal })
+        .eq('id', sourceEntryId)
+        .eq('user_id', user.id);
+      if (totalUpdateError) throw totalUpdateError;
       const currency = String(entry.currency || recurringPdf?.currency || 'PLN').toUpperCase();
       if (!['PLN', 'EUR', 'USD'].includes(currency)) throw new Error('Неподдерживаемая валюта PDF-выплаты');
       const startedOn = String(recurringPdf?.payment_start_date || '');
-      await writePdfPayoutTotal(pdfPath, Number(entry.amount), currency as 'PLN' | 'EUR' | 'USD', startedOn, endedOn);
+      await writePdfPayoutTotal(pdfPath, paymentTotal, currency as 'PLN' | 'EUR' | 'USD', startedOn, endedOn);
       const { error: closeError } = await remindersTable().update({ closed_at: new Date().toISOString(), next_notification_at: null }).eq('id', reminder.id);
       if (closeError) throw closeError;
       await load();
