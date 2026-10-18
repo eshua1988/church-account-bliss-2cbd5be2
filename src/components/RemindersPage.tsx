@@ -118,8 +118,7 @@ export const RemindersPage = () => {
       const { error: remindersError } = await remindersTable()
         .update({ reminder_date: reminderDate, reminder_time: reminderTime, repeat })
         .eq('user_id', user.id)
-        .is('closed_at', null)
-        .is('recurring_pdf', null);
+        .is('closed_at', null);
       if (remindersError) throw remindersError;
       await load();
       setSettingsOpen(false);
@@ -175,7 +174,7 @@ export const RemindersPage = () => {
       if (!pdfPath || !sourceEntryId || !['PLN', 'EUR', 'USD'].includes(currency)) return;
       const { data } = await (supabase as any).from('pdf_archive_entries').select('amount').eq('id', sourceEntryId).maybeSingle();
       const total = Number(data?.amount);
-      if (Number.isFinite(total)) await writePdfPayoutTotal(pdfPath, total, currency as 'PLN' | 'EUR' | 'USD', reminder.metadata?.reminder_date);
+      if (Number.isFinite(total)) await writePdfPayoutTotal(pdfPath, total, currency as 'PLN' | 'EUR' | 'USD', String(recurring?.payment_start_date || ''));
     })).catch(error => console.warn('Could not refresh PDF payment totals', error));
   }, [user, reminders]);
 
@@ -258,8 +257,9 @@ export const RemindersPage = () => {
     setArchivedPdfs([]);
     setSelectedArchivedPdfPath(String(recurringPdf?.source_pdf_path || archiveAttachment?.path || ''));
     setPaymentAmount(recurringPdf?.amount !== undefined ? String(recurringPdf.amount) : '');
-    setPdfStartDate(reminder.metadata?.reminder_date || today());
-    setPdfRepeat(reminder.metadata?.repeat || 'monthly');
+    setPdfStartDate(String(recurringPdf?.payment_start_date || today()));
+    const savedPaymentRepeat = String(recurringPdf?.payment_repeat || 'monthly');
+    setPdfRepeat(savedPaymentRepeat === 'once' || savedPaymentRepeat === 'weekly' || savedPaymentRepeat === 'yearly' ? savedPaymentRepeat : 'monthly');
     const savedCurrency = String(recurringPdf?.currency || 'PLN').toUpperCase();
     setPaymentCurrency(savedCurrency === 'EUR' || savedCurrency === 'USD' ? savedCurrency : 'PLN');
     setOpen(true);
@@ -328,17 +328,16 @@ export const RemindersPage = () => {
         attachments.push({ path, name: file.name, type: file.type });
       }
 
-      const scheduleDate = isArchivePdfReminder ? pdfStartDate : reminderDate;
-      const scheduleRepeat = isArchivePdfReminder ? pdfRepeat : repeat;
       const values = {
         full_name: fullName.trim(),
         contact: contact.trim(),
         message: message.trim(),
         attachments,
         // These scheduling values are global and apply to every card.
-        reminder_date: scheduleDate,
+        // Notification timing is shared across every card, including PDF cards.
+        reminder_date: reminderDate,
         reminder_time: reminderTime,
-        repeat: scheduleRepeat,
+        repeat,
         recurring_pdf: archivedPdf ? {
           amount: parsedPaymentAmount,
           currency: paymentCurrency,
@@ -348,6 +347,8 @@ export const RemindersPage = () => {
           category_id: archivedPdf.categoryId,
           source_pdf_path: archivedPdf.path,
           source_entry_id: archivedPdf.id,
+          payment_start_date: pdfStartDate,
+          payment_repeat: pdfRepeat,
         } : null,
       };
       const { error } = editing
@@ -355,7 +356,7 @@ export const RemindersPage = () => {
         : await remindersTable().insert({ ...values, user_id: user.id });
       if (error) throw error;
       if (archivedPdf?.id) {
-        const { error: archiveUpdateError } = await (supabase as any).from('pdf_archive_entries').update({ document_date: scheduleDate }).eq('id', archivedPdf.id).eq('user_id', user.id);
+        const { error: archiveUpdateError } = await (supabase as any).from('pdf_archive_entries').update({ document_date: pdfStartDate }).eq('id', archivedPdf.id).eq('user_id', user.id);
         if (archiveUpdateError) throw archiveUpdateError;
       }
       if (editing && removedAttachmentPaths.length > 0) await supabase.storage.from('documents').remove(removedAttachmentPaths);
@@ -420,7 +421,7 @@ export const RemindersPage = () => {
       if (entryError || !entry) throw entryError || new Error('Исходная PDF-транзакция не найдена');
       const currency = String(entry.currency || recurringPdf?.currency || 'PLN').toUpperCase();
       if (!['PLN', 'EUR', 'USD'].includes(currency)) throw new Error('Неподдерживаемая валюта PDF-выплаты');
-      const startedOn = reminder.metadata?.reminder_date || '';
+      const startedOn = String(recurringPdf?.payment_start_date || '');
       await writePdfPayoutTotal(pdfPath, Number(entry.amount), currency as 'PLN' | 'EUR' | 'USD', startedOn, endedOn);
       const { error: closeError } = await remindersTable().update({ closed_at: new Date().toISOString(), next_notification_at: null }).eq('id', reminder.id);
       if (closeError) throw closeError;
@@ -449,7 +450,7 @@ export const RemindersPage = () => {
         <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="font-semibold">{reminder.metadata?.full_name || reminder.title}</h2><p className="text-sm text-muted-foreground break-words">{reminder.metadata?.contact || 'Контакт не указан'}</p></div><Bell className="h-5 w-5 shrink-0 text-primary" /></div>
         <p className="mt-3 whitespace-pre-wrap text-sm">{reminder.message}</p>
         <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground"><CalendarDays className="h-3.5 w-3.5" />{reminder.metadata?.reminder_date ? new Date(`${reminder.metadata.reminder_date}T12:00:00`).toLocaleDateString('ru-RU') : 'Дата не указана'} в {reminder.metadata?.reminder_time || '09:00'} · {repeatLabel[reminder.metadata?.repeat || 'once']}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{isPdfPaymentReminder(reminder) ? `Постоянная выплата по PDF (${repeatLabel[reminder.metadata?.repeat || 'monthly']}) · ` : ''}Вложений: {attachments.length} · создано {new Date(reminder.created_at).toLocaleDateString('ru-RU')}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{isPdfPaymentReminder(reminder) ? `Постоянная выплата по PDF (${repeatLabel[(String(reminder.metadata?.recurring_pdf?.payment_repeat || 'monthly') as Repeat)]}) · ` : ''}Вложений: {attachments.length} · создано {new Date(reminder.created_at).toLocaleDateString('ru-RU')}</p>
         <div className="mt-4 flex flex-wrap gap-2"><Button variant="outline" className="flex-1 gap-2" onClick={() => void openPreview(reminder)}><Paperclip className="h-4 w-4" />Просмотреть</Button>{isPdfPaymentReminder(reminder) && <Button variant="outline" className="gap-2 text-destructive hover:text-destructive" disabled={closingId === reminder.id} onClick={() => { setReminderToClose(reminder); setPaymentEndDate(today()); }}>{closingId === reminder.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CircleStop className="h-4 w-4" />}Завершить выплату</Button>}<Button variant="ghost" size="icon" onClick={() => openEditReminder(reminder)} aria-label="Редактировать напоминание"><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive" onClick={() => void deleteReminder(reminder)} aria-label="Удалить напоминание"><Trash2 className="h-4 w-4" /></Button></div>
       </article>;
     })}</div>}
