@@ -48,6 +48,22 @@ const languageFlags: Record<Language, string> = {
   uk: '🇺🇦',
 };
 
+// Android keyboards often enter a decimal comma, while an input[type=number]
+// may reject it completely. Keep the value as text and normalise it ourselves.
+const normaliseAmount = (value: string) => {
+  const cleaned = value.replace(/\s/g, '').replace(',', '.').replace(/[^\d.]/g, '');
+  const [integer = '', ...decimals] = cleaned.split('.');
+  return decimals.length ? `${integer}.${decimals.join('')}` : integer;
+};
+const isPositiveAmount = (value: string) => {
+  const amount = Number(normaliseAmount(value));
+  return Number.isFinite(amount) && amount > 0;
+};
+const dateFromNativeInput = (value: string) => {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day, 12);
+};
+
 // Translations for all UI text
 const translations: Record<Language, Record<string, string>> = {
   pl: {
@@ -860,7 +876,7 @@ const PublicPayout = () => {
 
   const handleInputChange = (field: keyof PayoutFormData, value: string | Date) => {
     if (field === 'amountInWords') return;
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData(prev => ({ ...prev, [field]: field === 'amount' && typeof value === 'string' ? normaliseAmount(value) : value }));
   };
 
   // Canvas drawing handlers
@@ -1420,6 +1436,10 @@ const PublicPayout = () => {
 
   const handleSubmit = async () => {
     if (!token) return;
+    if (!continuingPayout && !isPositiveAmount(formData.amount)) {
+      toast({ title: 'Проверьте сумму', description: 'Введите сумму больше нуля.', variant: 'destructive' });
+      return;
+    }
     if (isProcessingAttachments) {
       toast({ title: 'Подождите', description: 'Файлы ещё добавляются.' });
       return;
@@ -1624,7 +1644,7 @@ const PublicPayout = () => {
   // For continuing payout, require images
   const isFormValid = !isProcessingAttachments && (continuingPayout
     ? attachedImages.length > 0 
-    : (formData.amount && formData.issuedTo && formData.departmentName && formData.basis && formData.amountInWords && (imagesOptional || attachedImages.length > 0)));
+    : (isPositiveAmount(formData.amount) && formData.issuedTo && formData.departmentName && formData.basis && formData.amountInWords && (imagesOptional || attachedImages.length > 0)));
 
   if (loading) {
     return (
@@ -2323,6 +2343,10 @@ const PublicPayout = () => {
                 <div className="flex items-center justify-between gap-3 pt-1">
                   <Button
                     onClick={() => {
+                      // On Android, an open software keyboard/popover can consume the
+                      // first tap. Blur and close it before changing the wizard step.
+                      setCategorySearchOpen(false);
+                      (document.activeElement as HTMLElement | null)?.blur();
                       if (currentStep > 1) {
                         setCurrentStep(currentStep - 1);
                       } else {
@@ -2339,10 +2363,14 @@ const PublicPayout = () => {
 
                   {currentStep < totalSteps && (
                     <Button
-                      onClick={() => setCurrentStep(currentStep + 1)}
+                      onClick={() => {
+                        setCategorySearchOpen(false);
+                        (document.activeElement as HTMLElement | null)?.blur();
+                        window.setTimeout(() => setCurrentStep(step => step + 1), 0);
+                      }}
                       disabled={
-                        (currentStep === 1 && (!formData.amount || !formData.issuedTo)) ||
-                        (currentStep === 2 && (!formData.departmentName || !formData.basis)) ||
+                        (currentStep === 1 && (!isPositiveAmount(formData.amount) || !formData.issuedTo.trim())) ||
+                        (currentStep === 2 && (!formData.departmentName.trim() || !formData.basis.trim())) ||
                         (currentStep === 3 && (!imagesOptional && attachedImages.length === 0)) ||
                         (currentStep === 4 && !hasSignature)
                       }
@@ -2624,28 +2652,11 @@ const PublicPayout = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div className="space-y-2">
                         <Label>{t.date} *</Label>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button
-                              variant="outline"
-                              className={cn(
-                                'w-full justify-start text-left font-normal',
-                                !formData.date && 'text-muted-foreground'
-                              )}
-                            >
-                              <Calendar className="mr-2 h-4 w-4" />
-                              {format(formData.date, 'dd.MM.yyyy')}
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0">
-                            <CalendarComponent
-                              mode="single"
-                              selected={formData.date}
-                              onSelect={(date) => date && handleInputChange('date', date)}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
+                        <Input
+                          type="date"
+                          value={format(formData.date, 'yyyy-MM-dd')}
+                          onChange={(event) => event.target.value && handleInputChange('date', dateFromNativeInput(event.target.value))}
+                        />
                       </div>
                       
                       <div className="space-y-2">
@@ -2662,8 +2673,10 @@ const PublicPayout = () => {
                             </SelectContent>
                           </Select>
                           <Input
-                            type="number"
-                            step="0.01"
+                            type="text"
+                            inputMode="decimal"
+                            autoComplete="off"
+                            pattern="[0-9]*[.,]?[0-9]*"
                             placeholder="0.00"
                             value={formData.amount}
                             onChange={(e) => { handleInputChange('amount', e.target.value); setConversionInfo(null); }}
@@ -2741,64 +2754,15 @@ const PublicPayout = () => {
                     {/* Department Name */}
                     <div className="space-y-2">
                       <Label>{t.department} *</Label>
-                      <Popover open={categorySearchOpen} onOpenChange={(open) => { setCategorySearchOpen(open); if (!open) setCategorySearchQuery(''); }}>
-                        <PopoverTrigger asChild>
-                          <button
-                            type="button"
-                            className={cn(
-                              'flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
-                              !formData.departmentName && 'text-muted-foreground'
-                            )}
-                          >
-                            <span className="truncate">{formData.departmentName || t.selectCategory}</span>
-                            <ChevronDown className="h-4 w-4 opacity-50 shrink-0 ml-2" />
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                          <div className="flex items-center border-b px-3">
-                            <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
-                            <input
-                              className="flex h-10 w-full bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                              placeholder={t.selectCategory + '...'}
-                              value={categorySearchQuery}
-                              onChange={(e) => setCategorySearchQuery(e.target.value)}
-                              autoFocus
-                            />
-                            {categorySearchQuery && (
-                              <button type="button" onClick={() => setCategorySearchQuery('')} className="opacity-50 hover:opacity-100">
-                                <X className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
-                          <div className="max-h-60 overflow-y-auto p-1">
-                            {filteredCategories.length === 0 ? (
-                              <div className="py-6 text-center text-sm text-muted-foreground">
-                                {categorySearchQuery ? `Ничего не найдено` : 'Нет категорий'}
-                              </div>
-                            ) : (
-                              filteredCategories.map((category) => (
-                                <button
-                                  key={category.id}
-                                  type="button"
-                                  className={cn(
-                                    'relative flex w-full cursor-default select-none items-center rounded-sm px-3 py-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground',
-                                    formData.departmentName === category.name && 'bg-accent font-medium'
-                                  )}
-                                  onClick={() => handleCategorySelect(category.name)}
-                                >
-                                  {formData.departmentName === category.name && (
-                                    <Check className="mr-2 h-4 w-4 shrink-0" />
-                                  )}
-                                  {formData.departmentName !== category.name && (
-                                    <span className="mr-6" />
-                                  )}
-                                  {category.name}
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        </PopoverContent>
-                      </Popover>
+                      <select
+                        value={formData.departmentName}
+                        onChange={(event) => handleCategorySelect(event.target.value)}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                      >
+                        <option value="">{t.selectCategory}</option>
+                        {filteredCategories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}
+                      </select>
+                      <p className="text-xs text-muted-foreground">Выбор категории использует системное меню телефона для надёжной работы на Android.</p>
                     </div>
                     
                     {/* Basis */}
