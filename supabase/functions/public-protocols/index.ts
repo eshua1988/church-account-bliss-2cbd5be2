@@ -25,7 +25,7 @@ Deno.serve(async (request) => {
 
     if (action === 'load') {
       const [{ data: settings }, { data: documents, error }] = await Promise.all([
-        supabase.from('protocol_link_settings').select('attendees, secretary_name, pastor_name, google_sheet_url, cloud_name').eq('link_token', token).single(),
+        supabase.from('protocol_link_settings').select('attendees, secretary_name, pastor_name, google_sheet_url, cloud_name, church_name, church_header_image, show_church_header').eq('link_token', token).single(),
         supabase.from('protocol_documents').select('*').eq('link_token', token).order('created_at', { ascending: false }),
       ]);
       if (error) throw error;
@@ -43,7 +43,7 @@ Deno.serve(async (request) => {
         secretary_name: String(payload.secretary_name || '').slice(0, 200),
         pastor_name: String(payload.pastor_name || '').slice(0, 200),
         google_sheet_url: String(payload.google_sheet_url || '').slice(0, 1000),
-        cloud_name: String(payload.cloud_name || '').slice(0, 200), updated_at: new Date().toISOString(),
+        cloud_name: String(payload.cloud_name || '').slice(0, 200), church_name: String(payload.church_name || '').slice(0, 300), church_header_image: payload.church_header_image ? String(payload.church_header_image).slice(0, 3_000_000) : null, show_church_header: Boolean(payload.show_church_header), updated_at: new Date().toISOString(),
       }).eq('link_token', token).select().single();
       if (error) throw error;
       return json({ settings: data });
