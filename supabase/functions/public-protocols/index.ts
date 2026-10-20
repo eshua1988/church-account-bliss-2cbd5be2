@@ -94,6 +94,18 @@ Deno.serve(async (request) => {
       return json({ document: { ...data, pdf_url: url?.signedUrl || null } });
     }
 
+    // Signed storage URLs are intentionally short-lived.  ZIP exports ask for
+    // a fresh URL so an archive can still be built from older open pages.
+    if (action === 'get-pdf-url') {
+      const { data, error } = await supabase.from('protocol_documents').select('id, pdf_path')
+        .eq('id', String(body.id || '')).eq('link_token', token).is('deleted_at', null).maybeSingle();
+      if (error) throw error;
+      if (!data) return json({ error: 'Protocol not found' }, 404);
+      const { data: url, error: urlError } = await supabase.storage.from('protocol-documents').createSignedUrl(data.pdf_path, 60 * 60);
+      if (urlError || !url?.signedUrl) throw urlError || new Error('Could not create PDF URL');
+      return json({ pdf_url: url.signedUrl });
+    }
+
     if (action === 'load-trash') {
       const { data: documents, error } = await supabase.from('protocol_documents').select('*')
         .eq('link_token', token).not('deleted_at', 'is', null).order('deleted_at', { ascending: false });
