@@ -17,6 +17,7 @@ const BankCallback = lazy(() => import("./pages/BankCallback"));
 const PublicDeposit = lazy(() => import("./pages/PublicDeposit"));
 const PublicAnalytics = lazy(() => import("./pages/PublicAnalytics"));
 const PublicProtocols = lazy(() => import("./pages/PublicProtocols"));
+const PastorProtocolSignature = lazy(() => import("./pages/PastorProtocolSignature"));
 
 const queryClient = new QueryClient();
 
@@ -102,6 +103,7 @@ const App = () => (
               <Route path="/transactions/:token" element={<PublicTransactions />} />
               <Route path="/analytics/:token" element={<PublicAnalytics />} />
               <Route path="/protocols/:token" element={<PublicProtocols />} />
+              <Route path="/protocols/:token/sign/:signToken" element={<PastorProtocolSignature />} />
               <Route path="/sign" element={<SignaturePad />} />
               <Route 
                 path="/" 

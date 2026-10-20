@@ -25,7 +25,7 @@ Deno.serve(async (request) => {
 
     if (action === 'load') {
       const [{ data: settings }, { data: documents, error }] = await Promise.all([
-        supabase.from('protocol_link_settings').select('attendees, secretary_name, pastor_name, google_sheet_url, cloud_name, church_name, church_header_image, show_church_header').eq('link_token', token).single(),
+        supabase.from('protocol_link_settings').select('attendees, secretary_name, secretary_signature, pastor_name, google_sheet_url, cloud_name, church_name, church_header_image, show_church_header').eq('link_token', token).single(),
         supabase.from('protocol_documents').select('*').eq('link_token', token).order('created_at', { ascending: false }),
       ]);
       if (error) throw error;
@@ -41,6 +41,7 @@ Deno.serve(async (request) => {
       const { data, error } = await supabase.from('protocol_link_settings').update({
         attendees: Array.isArray(payload.attendees) ? payload.attendees.map((item: unknown) => String(item).trim()).filter(Boolean).slice(0, 300) : [],
         secretary_name: String(payload.secretary_name || '').slice(0, 200),
+        secretary_signature: payload.secretary_signature ? String(payload.secretary_signature).slice(0, 3_000_000) : null,
         pastor_name: String(payload.pastor_name || '').slice(0, 200),
         google_sheet_url: String(payload.google_sheet_url || '').slice(0, 1000),
         cloud_name: String(payload.cloud_name || '').slice(0, 200), church_name: String(payload.church_name || '').slice(0, 300), church_header_image: payload.church_header_image ? String(payload.church_header_image).slice(0, 3_000_000) : null, show_church_header: Boolean(payload.show_church_header), updated_at: new Date().toISOString(),
@@ -63,7 +64,7 @@ Deno.serve(async (request) => {
         present: Array.isArray(protocol.present) ? protocol.present : [], absent: Array.isArray(protocol.absent) ? protocol.absent : [],
         content: String(protocol.content).slice(0, 30000), secretary_name: String(protocol.secretary_name || '').slice(0, 200),
         pastor_name: String(protocol.pastor_name || '').slice(0, 200), secretary_signature: protocol.secretary_signature || null,
-        pastor_signature: protocol.pastor_signature || null, pdf_path: filePath,
+        pastor_signature: null, pdf_path: filePath,
       }).select().single();
       if (error) { await supabase.storage.from('protocol-documents').remove([filePath]); throw error; }
       const { data: url } = await supabase.storage.from('protocol-documents').createSignedUrl(filePath, 60 * 60);
@@ -73,6 +74,40 @@ Deno.serve(async (request) => {
     if (action === 'set-archived') {
       const { data, error } = await supabase.from('protocol_documents').update({ archived: Boolean(body.archived) }).eq('id', String(body.id || '')).eq('link_token', token).select().single();
       if (error) throw error;
+      const { data: url } = await supabase.storage.from('protocol-documents').createSignedUrl(data.pdf_path, 60 * 60);
+      return json({ document: { ...data, pdf_url: url?.signedUrl || null } });
+    }
+
+    // Signing is intentionally available without the protocol-workspace link.
+    // A random per-document token is the capability and is cleared after use.
+    if (action === 'load-signing') {
+      const signToken = String(body.sign_token || '');
+      const { data, error } = await supabase.from('protocol_documents')
+        .select('id, pastor_name, pastor_signed_at, pdf_path, protocol_date, council')
+        .eq('pastor_sign_token', signToken).maybeSingle();
+      if (error) throw error;
+      if (!data) return json({ error: 'Signing link not found' }, 404);
+      const { data: url } = await supabase.storage.from('protocol-documents').createSignedUrl(data.pdf_path, 60 * 60);
+      return json({ document: { ...data, pdf_url: url?.signedUrl || null } });
+    }
+
+    if (action === 'sign') {
+      const signToken = String(body.sign_token || '');
+      const pdf = String(body.pdf_base64 || '');
+      const signature = String(body.pastor_signature || '');
+      if (!pdf || pdf.length > 12_000_000 || !signature.startsWith('data:image/')) return json({ error: 'Invalid signature' }, 400);
+      const { data: document, error: findError } = await supabase.from('protocol_documents')
+        .select('id, pdf_path, pastor_signed_at').eq('pastor_sign_token', signToken).maybeSingle();
+      if (findError) throw findError;
+      if (!document) return json({ error: 'Signing link not found' }, 404);
+      if (document.pastor_signed_at) return json({ error: 'This protocol has already been signed' }, 409);
+      const { error: uploadError } = await supabase.storage.from('protocol-documents').upload(document.pdf_path, pdfBytes(pdf), { contentType: 'application/pdf', upsert: true });
+      if (uploadError) throw uploadError;
+      const { data, error } = await supabase.from('protocol_documents').update({
+        pastor_signature: signature.slice(0, 3_000_000), pastor_signed_at: new Date().toISOString(), pastor_sign_token: crypto.randomUUID(),
+      }).eq('id', document.id).eq('pastor_sign_token', signToken).is('pastor_signed_at', null).select().maybeSingle();
+      if (error) throw error;
+      if (!data) return json({ error: 'This protocol has already been signed' }, 409);
       const { data: url } = await supabase.storage.from('protocol-documents').createSignedUrl(data.pdf_path, 60 * 60);
       return json({ document: { ...data, pdf_url: url?.signedUrl || null } });
     }
