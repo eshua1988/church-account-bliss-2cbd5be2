@@ -23,10 +23,20 @@ Deno.serve(async (request) => {
     await supabase.from('protocol_link_settings').upsert({ link_token: token, owner_user_id: link.owner_user_id }, { onConflict: 'link_token', ignoreDuplicates: true });
     const action = String(body.action || 'load');
 
+    // A trash item can be restored for two days.  Removal is also performed
+    // here so it works without requiring a database cron extension.
+    const expiry = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: expired } = await supabase.from('protocol_documents').select('id, pdf_path')
+      .eq('link_token', token).lt('deleted_at', expiry);
+    if (expired?.length) {
+      await supabase.storage.from('protocol-documents').remove(expired.map(item => item.pdf_path));
+      await supabase.from('protocol_documents').delete().in('id', expired.map(item => item.id));
+    }
+
     if (action === 'load') {
       const [{ data: settings }, { data: documents, error }] = await Promise.all([
         supabase.from('protocol_link_settings').select('attendees, secretary_name, secretary_signature, pastor_name, google_sheet_url, cloud_name, church_name, church_header_image, show_church_header').eq('link_token', token).single(),
-        supabase.from('protocol_documents').select('*').eq('link_token', token).order('created_at', { ascending: false }),
+        supabase.from('protocol_documents').select('*').eq('link_token', token).is('deleted_at', null).order('created_at', { ascending: false }),
       ]);
       if (error) throw error;
       const items = await Promise.all((documents || []).map(async (document) => {
@@ -78,13 +88,41 @@ Deno.serve(async (request) => {
       return json({ document: { ...data, pdf_url: url?.signedUrl || null } });
     }
 
+    if (action === 'load-trash') {
+      const { data: documents, error } = await supabase.from('protocol_documents').select('*')
+        .eq('link_token', token).not('deleted_at', 'is', null).order('deleted_at', { ascending: false });
+      if (error) throw error;
+      const items = await Promise.all((documents || []).map(async (document) => {
+        const { data } = await supabase.storage.from('protocol-documents').createSignedUrl(document.pdf_path, 60 * 60);
+        return { ...document, pdf_url: data?.signedUrl || null };
+      }));
+      return json({ documents: items });
+    }
+
+    if (action === 'move-to-trash') {
+      const { data, error } = await supabase.from('protocol_documents').update({ deleted_at: new Date().toISOString() })
+        .eq('id', String(body.id || '')).eq('link_token', token).is('deleted_at', null).select().maybeSingle();
+      if (error) throw error;
+      if (!data) return json({ error: 'Protocol not found' }, 404);
+      return json({ document: data });
+    }
+
+    if (action === 'restore-from-trash') {
+      const { data, error } = await supabase.from('protocol_documents').update({ deleted_at: null })
+        .eq('id', String(body.id || '')).eq('link_token', token).not('deleted_at', 'is', null).select().maybeSingle();
+      if (error) throw error;
+      if (!data) return json({ error: 'Protocol not found or already permanently deleted' }, 404);
+      const { data: url } = await supabase.storage.from('protocol-documents').createSignedUrl(data.pdf_path, 60 * 60);
+      return json({ document: { ...data, pdf_url: url?.signedUrl || null } });
+    }
+
     // Signing is intentionally available without the protocol-workspace link.
     // A random per-document token is the capability and is cleared after use.
     if (action === 'load-signing') {
       const signToken = String(body.sign_token || '');
       const { data, error } = await supabase.from('protocol_documents')
         .select('id, pastor_name, pastor_signed_at, pdf_path, protocol_date, council')
-        .eq('pastor_sign_token', signToken).maybeSingle();
+        .eq('pastor_sign_token', signToken).is('deleted_at', null).maybeSingle();
       if (error) throw error;
       if (!data) return json({ error: 'Signing link not found' }, 404);
       const { data: url } = await supabase.storage.from('protocol-documents').createSignedUrl(data.pdf_path, 60 * 60);
@@ -97,7 +135,7 @@ Deno.serve(async (request) => {
       const signature = String(body.pastor_signature || '');
       if (!pdf || pdf.length > 12_000_000 || !signature.startsWith('data:image/')) return json({ error: 'Invalid signature' }, 400);
       const { data: document, error: findError } = await supabase.from('protocol_documents')
-        .select('id, pdf_path, pastor_signed_at').eq('pastor_sign_token', signToken).maybeSingle();
+        .select('id, pdf_path, pastor_signed_at').eq('pastor_sign_token', signToken).is('deleted_at', null).maybeSingle();
       if (findError) throw findError;
       if (!document) return json({ error: 'Signing link not found' }, 404);
       if (document.pastor_signed_at) return json({ error: 'This protocol has already been signed' }, 409);
