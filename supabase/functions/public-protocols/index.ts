@@ -35,7 +35,7 @@ Deno.serve(async (request) => {
 
     if (action === 'load') {
       const [{ data: settings }, { data: documents, error }] = await Promise.all([
-        supabase.from('protocol_link_settings').select('attendees, secretary_name, secretary_signature, pastor_name, google_sheet_url, cloud_name, church_name, church_header_image, show_church_header').eq('link_token', token).single(),
+        supabase.from('protocol_link_settings').select('attendees, councils, secretary_name, secretary_signature, pastor_name, google_sheet_url, cloud_name, church_name, church_header_image, show_church_header').eq('link_token', token).single(),
         supabase.from('protocol_documents').select('*').eq('link_token', token).is('deleted_at', null).order('created_at', { ascending: false }),
       ]);
       if (error) throw error;
@@ -48,8 +48,14 @@ Deno.serve(async (request) => {
 
     if (action === 'save-settings') {
       const payload = body.settings || {};
+      const councils = Array.isArray(payload.councils) ? payload.councils.map((item: any, index: number) => ({
+        id: String(item?.id || `council-${index + 1}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 60),
+        name: String(item?.name || '').trim().slice(0, 120),
+        attendees: Array.isArray(item?.attendees) ? item.attendees.map((person: unknown) => String(person).trim()).filter(Boolean).slice(0, 300) : [],
+      })).filter((item: any) => item.id && item.name).slice(0, 30) : null;
       const { data, error } = await supabase.from('protocol_link_settings').update({
         attendees: Array.isArray(payload.attendees) ? payload.attendees.map((item: unknown) => String(item).trim()).filter(Boolean).slice(0, 300) : [],
+        ...(councils ? { councils } : {}),
         secretary_name: String(payload.secretary_name || '').slice(0, 200),
         secretary_signature: payload.secretary_signature ? String(payload.secretary_signature).slice(0, 3_000_000) : null,
         pastor_name: String(payload.pastor_name || '').slice(0, 200),
@@ -69,7 +75,7 @@ Deno.serve(async (request) => {
       const { error: uploadError } = await supabase.storage.from('protocol-documents').upload(filePath, pdfBytes(pdf), { contentType: 'application/pdf', upsert: false });
       if (uploadError) throw uploadError;
       const { data, error } = await supabase.from('protocol_documents').insert({
-        id, link_token: token, owner_user_id: link.owner_user_id, council: protocol.council === 'elders' ? 'elders' : 'church',
+        id, link_token: token, owner_user_id: link.owner_user_id, council: String(protocol.council || '').slice(0, 60) || 'elders',
         protocol_date: protocol.protocol_date, protocol_time: protocol.protocol_time || null, place: String(protocol.place || '').slice(0, 500),
         present: Array.isArray(protocol.present) ? protocol.present : [], absent: Array.isArray(protocol.absent) ? protocol.absent : [],
         content: String(protocol.content).slice(0, 30000), secretary_name: String(protocol.secretary_name || '').slice(0, 200),
