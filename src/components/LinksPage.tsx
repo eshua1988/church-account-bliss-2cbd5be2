@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Cloud, ExternalLink, FileDown, Link as LinkIcon, Loader2, Table2 } from 'lucide-react';
+import { Cloud, ExternalLink, FileDown, FileText, Link as LinkIcon, Loader2, Table2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 
-type LinkKind = 'payout' | 'deposit' | 'transactions' | 'analytics' | 'sheet' | 'cloud';
+type LinkKind = 'payout' | 'deposit' | 'transactions' | 'analytics' | 'protocols' | 'sheet' | 'cloud';
 
 type LinkItem = {
   id: string;
@@ -27,6 +27,7 @@ const labels: Record<LinkKind, string> = {
   deposit: 'Приходные ордера',
   transactions: 'Таблицы транзакций',
   analytics: 'Аналитика',
+  protocols: 'Протоколы',
   sheet: 'Google Таблица',
   cloud: 'Облако',
 };
@@ -44,6 +45,7 @@ const iconFor = (kind: LinkKind) => {
   if (kind === 'sheet') return <Table2 className="mt-0.5 h-5 w-5 text-primary" />;
   if (kind === 'cloud') return <Cloud className="mt-0.5 h-5 w-5 text-primary" />;
   if (kind === 'payout' || kind === 'deposit') return <FileDown className="mt-0.5 h-5 w-5 text-primary" />;
+  if (kind === 'protocols') return <FileText className="mt-0.5 h-5 w-5 text-primary" />;
   return <LinkIcon className="mt-0.5 h-5 w-5 text-primary" />;
 };
 
@@ -80,10 +82,12 @@ export const LinksPage = () => {
         };
       });
       const transactionLinks = (transactions.data || []).map((link: any): LinkItem => {
-        const kind: LinkKind = link.name?.startsWith('[Аналитика]') ? 'analytics' : 'transactions';
+        const kind: LinkKind = link.name?.startsWith('[Протоколы]')
+          ? 'protocols'
+          : link.name?.startsWith('[Аналитика]') ? 'analytics' : 'transactions';
         return {
           id: `public-transaction-${link.id}`,
-          name: link.name?.replace(/^\[Аналитика\]\s*/, '') || labels[kind],
+          name: link.name?.replace(/^\[(?:Аналитика|Протоколы)\]\s*/, '') || labels[kind],
           description: labels[kind],
           kind,
           href: `${base}/#/${kind}/${encodeURIComponent(link.token)}`,
