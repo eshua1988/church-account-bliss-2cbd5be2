@@ -29,7 +29,7 @@ export default function PastorProtocolSignature() {
     const { PDFDocument } = await import('pdf-lib'); const pdf = await PDFDocument.load(await response.arrayBuffer());
     const signature = canvasRef.current.toDataURL('image/png'); const image = await pdf.embedPng(signature); const page = pdf.getPages().at(-1)!; const scale = Math.min(145 / image.width, 52 / image.height);
     // Matches the pastor signature block in the generated protocol PDF.
-    page.drawImage(image, { x: 313.64, y: 156, width: image.width * scale, height: image.height * scale });
+    page.drawImage(image, { x: 313.64, y: 89, width: image.width * scale, height: image.height * scale });
     const bytes = await pdf.save(); await invoke('sign', { pastor_signature: signature, pdf_base64: base64(bytes) });
     setDocument((value: any) => ({ ...value, pastor_signed_at: new Date().toISOString() })); setMessage('Протокол подписан. Эта ссылка больше не действует.');
   } catch (error) { setMessage(error instanceof Error ? error.message : 'Не удалось сохранить подпись'); } finally { setSaving(false); } };
