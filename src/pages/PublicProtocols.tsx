@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import JSZip from 'jszip';
 import fontkit from '@pdf-lib/fontkit';
 import { Archive, Bell, Download, FileDown, FileText, Loader2, Plus, Settings, Table2, Users, X } from 'lucide-react';
@@ -21,10 +21,12 @@ const dateText = (date: string, time?: string) => new Intl.DateTimeFormat('ru-RU
 
 export default function PublicProtocols() {
   const { token = '' } = useParams(); const [valid, setValid] = useState<boolean | null>(null); const [section, setSection] = useState<Section>('create'); const [tab, setTab] = useState<'main' | 'archive'>('main'); const [saving, setSaving] = useState(false);
+  const settingsLoaded = useRef(false);
   const [settings, setSettings] = useState<ProtocolSettings>(emptySettings); const [protocols, setProtocols] = useState<Protocol[]>([]); const [council, setCouncil] = useState<Council>('elders'); const [date, setDate] = useState(today()); const [time, setTime] = useState(''); const [place, setPlace] = useState(''); const [present, setPresent] = useState<string[]>([]); const [absent, setAbsent] = useState<string[]>([]); const [content, setContent] = useState(''); const [secretary, setSecretary] = useState(''); const [pastor, setPastor] = useState(''); const [secretarySignature, setSecretarySignature] = useState(''); const [pastorSignature, setPastorSignature] = useState(''); const [picker, setPicker] = useState<'present' | 'absent' | null>(null); const [newPerson, setNewPerson] = useState('');
   const invoke = useCallback(async (action: string, extra = {}) => { const { data, error } = await supabase.functions.invoke('public-protocols', { body: { token, action, ...extra } }); if (error || data?.error) throw new Error(data?.error || error.message); return data; }, [token]);
-  const reload = useCallback(async () => { try { const data = await invoke('load'); const next = { ...emptySettings, ...(data.settings || {}) }; setSettings(next); setProtocols(data.documents || []); setSecretary(next.secretary_name); setPastor(next.pastor_name); setValid(true); } catch { setValid(false); } }, [invoke]);
+  const reload = useCallback(async () => { try { const cached = localStorage.getItem(`protocol-settings:${token}`); const data = await invoke('load'); const next = { ...emptySettings, ...(data.settings || {}), ...(cached ? JSON.parse(cached) : {}) }; setSettings(next); setProtocols(data.documents || []); setSecretary(next.secretary_name); setPastor(next.pastor_name); settingsLoaded.current = true; setValid(true); } catch { setValid(false); } }, [invoke, token]);
   useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => { if (!settingsLoaded.current || !token) return; localStorage.setItem(`protocol-settings:${token}`, JSON.stringify(settings)); const timer = window.setTimeout(() => { void invoke('save-settings', { settings }); }, 600); return () => window.clearTimeout(timer); }, [settings, token, invoke]);
   const active = useMemo(() => protocols.filter(item => !item.archived), [protocols]); const archived = useMemo(() => protocols.filter(item => item.archived), [protocols]);
   const toggle = (person: string, type: 'present' | 'absent') => (type === 'present' ? setPresent : setAbsent)(current => current.includes(person) ? current.filter(item => item !== person) : [...current, person]);
   const addPerson = () => { const people = newPerson.split(',').map(value => value.trim()).filter(Boolean); if (!people.length) return; setSettings(value => ({ ...value, attendees: [...value.attendees, ...people.filter(person => !value.attendees.includes(person))] })); setNewPerson(''); };
