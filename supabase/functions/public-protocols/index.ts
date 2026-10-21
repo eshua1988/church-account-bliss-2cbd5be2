@@ -20,14 +20,28 @@ Deno.serve(async (request) => {
     const { data: link } = await supabase.from('shared_transaction_links').select('owner_user_id, name, is_active').eq('token', token).maybeSingle();
     if (!link?.is_active || !String(link.name || '').startsWith('[Протоколы]')) return json({ error: 'Link is inactive or not found' }, 404);
 
-    await supabase.from('protocol_link_settings').upsert({ link_token: token, owner_user_id: link.owner_user_id }, { onConflict: 'link_token', ignoreDuplicates: true });
     const action = String(body.action || 'load');
+    const isSigningAction = action === 'load-signing' || action === 'sign';
+    const authHeader = request.headers.get('Authorization') || request.headers.get('authorization') || '';
+    const authClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
+      global: { headers: authHeader ? { Authorization: authHeader } : {} },
+    });
+    const { data: { user: protocolUser } } = await authClient.auth.getUser();
+    if (!isSigningAction && !protocolUser) return json({ error: 'Войдите в аккаунт протоколов' }, 401);
+    const workspaceUserId = protocolUser?.id || null;
+    if (!isSigningAction && workspaceUserId) {
+      const { error: workspaceError } = await supabase.from('protocol_link_settings').upsert(
+        { link_token: token, owner_user_id: workspaceUserId },
+        { onConflict: 'link_token,owner_user_id', ignoreDuplicates: true },
+      );
+      if (workspaceError) throw workspaceError;
+    }
 
     // A trash item can be restored for two days.  Removal is also performed
     // here so it works without requiring a database cron extension.
     const expiry = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
     const { data: expired } = await supabase.from('protocol_documents').select('id, pdf_path')
-      .eq('link_token', token).lt('deleted_at', expiry);
+      .eq('link_token', token).eq('owner_user_id', workspaceUserId).lt('deleted_at', expiry);
     if (expired?.length) {
       await supabase.storage.from('protocol-documents').remove(expired.map(item => item.pdf_path));
       await supabase.from('protocol_documents').delete().in('id', expired.map(item => item.id));
@@ -35,8 +49,8 @@ Deno.serve(async (request) => {
 
     if (action === 'load') {
       const [{ data: settings }, { data: documents, error }] = await Promise.all([
-        supabase.from('protocol_link_settings').select('attendees, councils, secretary_name, secretary_signature, pastor_name, google_sheet_url, cloud_name, church_name, church_header_image, show_church_header').eq('link_token', token).single(),
-        supabase.from('protocol_documents').select('*').eq('link_token', token).is('deleted_at', null).order('created_at', { ascending: false }),
+        supabase.from('protocol_link_settings').select('attendees, councils, secretary_name, secretary_signature, pastor_name, google_sheet_url, cloud_name, google_drive_client_id, church_name, church_header_image, show_church_header').eq('link_token', token).eq('owner_user_id', workspaceUserId).single(),
+        supabase.from('protocol_documents').select('*').eq('link_token', token).eq('owner_user_id', workspaceUserId).is('deleted_at', null).order('created_at', { ascending: false }),
       ]);
       if (error) throw error;
       const items = await Promise.all((documents || []).map(async (document) => {
@@ -60,8 +74,8 @@ Deno.serve(async (request) => {
         secretary_signature: payload.secretary_signature ? String(payload.secretary_signature).slice(0, 3_000_000) : null,
         pastor_name: String(payload.pastor_name || '').slice(0, 200),
         google_sheet_url: String(payload.google_sheet_url || '').slice(0, 1000),
-        cloud_name: String(payload.cloud_name || '').slice(0, 200), church_name: String(payload.church_name || '').slice(0, 300), church_header_image: payload.church_header_image ? String(payload.church_header_image).slice(0, 3_000_000) : null, show_church_header: Boolean(payload.show_church_header), updated_at: new Date().toISOString(),
-      }).eq('link_token', token).select().single();
+        cloud_name: String(payload.cloud_name || '').slice(0, 200), google_drive_client_id: String(payload.google_drive_client_id || '').slice(0, 300), church_name: String(payload.church_name || '').slice(0, 300), church_header_image: payload.church_header_image ? String(payload.church_header_image).slice(0, 3_000_000) : null, show_church_header: Boolean(payload.show_church_header), updated_at: new Date().toISOString(),
+      }).eq('link_token', token).eq('owner_user_id', workspaceUserId).select().single();
       if (error) throw error;
       return json({ settings: data });
     }
@@ -71,11 +85,11 @@ Deno.serve(async (request) => {
       const pdf = String(protocol.pdf_base64 || '');
       if (!pdf || pdf.length > 12_000_000 || !String(protocol.content || '').trim()) return json({ error: 'Invalid protocol document' }, 400);
       const id = crypto.randomUUID();
-      const filePath = `${link.owner_user_id}/${token}/${id}.pdf`;
+      const filePath = `${workspaceUserId}/${token}/${id}.pdf`;
       const { error: uploadError } = await supabase.storage.from('protocol-documents').upload(filePath, pdfBytes(pdf), { contentType: 'application/pdf', upsert: false });
       if (uploadError) throw uploadError;
       const { data, error } = await supabase.from('protocol_documents').insert({
-        id, link_token: token, owner_user_id: link.owner_user_id, council: String(protocol.council || '').slice(0, 60) || 'elders',
+        id, link_token: token, owner_user_id: workspaceUserId, council: String(protocol.council || '').slice(0, 60) || 'elders',
         protocol_date: protocol.protocol_date, protocol_time: protocol.protocol_time || null, place: String(protocol.place || '').slice(0, 500),
         present: Array.isArray(protocol.present) ? protocol.present : [], absent: Array.isArray(protocol.absent) ? protocol.absent : [],
         content: String(protocol.content).slice(0, 30000), secretary_name: String(protocol.secretary_name || '').slice(0, 200),
@@ -88,7 +102,7 @@ Deno.serve(async (request) => {
     }
 
     if (action === 'set-archived') {
-      const { data, error } = await supabase.from('protocol_documents').update({ archived: Boolean(body.archived) }).eq('id', String(body.id || '')).eq('link_token', token).select().single();
+      const { data, error } = await supabase.from('protocol_documents').update({ archived: Boolean(body.archived) }).eq('id', String(body.id || '')).eq('link_token', token).eq('owner_user_id', workspaceUserId).select().single();
       if (error) throw error;
       const { data: url } = await supabase.storage.from('protocol-documents').createSignedUrl(data.pdf_path, 60 * 60);
       return json({ document: { ...data, pdf_url: url?.signedUrl || null } });
@@ -98,7 +112,7 @@ Deno.serve(async (request) => {
     // a fresh URL so an archive can still be built from older open pages.
     if (action === 'get-pdf-url') {
       const { data, error } = await supabase.from('protocol_documents').select('id, pdf_path')
-        .eq('id', String(body.id || '')).eq('link_token', token).is('deleted_at', null).maybeSingle();
+        .eq('id', String(body.id || '')).eq('link_token', token).eq('owner_user_id', workspaceUserId).is('deleted_at', null).maybeSingle();
       if (error) throw error;
       if (!data) return json({ error: 'Protocol not found' }, 404);
       const { data: url, error: urlError } = await supabase.storage.from('protocol-documents').createSignedUrl(data.pdf_path, 60 * 60);
@@ -108,7 +122,7 @@ Deno.serve(async (request) => {
 
     if (action === 'load-trash') {
       const { data: documents, error } = await supabase.from('protocol_documents').select('*')
-        .eq('link_token', token).not('deleted_at', 'is', null).order('deleted_at', { ascending: false });
+        .eq('link_token', token).eq('owner_user_id', workspaceUserId).not('deleted_at', 'is', null).order('deleted_at', { ascending: false });
       if (error) throw error;
       const items = await Promise.all((documents || []).map(async (document) => {
         const { data } = await supabase.storage.from('protocol-documents').createSignedUrl(document.pdf_path, 60 * 60);
@@ -119,7 +133,7 @@ Deno.serve(async (request) => {
 
     if (action === 'move-to-trash') {
       const { data, error } = await supabase.from('protocol_documents').update({ deleted_at: new Date().toISOString() })
-        .eq('id', String(body.id || '')).eq('link_token', token).is('deleted_at', null).select().maybeSingle();
+        .eq('id', String(body.id || '')).eq('link_token', token).eq('owner_user_id', workspaceUserId).is('deleted_at', null).select().maybeSingle();
       if (error) throw error;
       if (!data) return json({ error: 'Protocol not found' }, 404);
       return json({ document: data });
@@ -127,7 +141,7 @@ Deno.serve(async (request) => {
 
     if (action === 'restore-from-trash') {
       const { data, error } = await supabase.from('protocol_documents').update({ deleted_at: null })
-        .eq('id', String(body.id || '')).eq('link_token', token).not('deleted_at', 'is', null).select().maybeSingle();
+        .eq('id', String(body.id || '')).eq('link_token', token).eq('owner_user_id', workspaceUserId).not('deleted_at', 'is', null).select().maybeSingle();
       if (error) throw error;
       if (!data) return json({ error: 'Protocol not found or already permanently deleted' }, 404);
       const { data: url } = await supabase.storage.from('protocol-documents').createSignedUrl(data.pdf_path, 60 * 60);
