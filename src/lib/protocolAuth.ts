@@ -8,7 +8,9 @@ const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 export const protocolAuth = createClient(url, key, {
   auth: {
     storage: localStorage,
-    storageKey: 'church-account-protocol-auth',
+    // A versioned, protocol-only key deliberately prevents inheriting an
+    // already-open finance-app session from an earlier version.
+    storageKey: 'church-account-protocol-auth-v2',
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
