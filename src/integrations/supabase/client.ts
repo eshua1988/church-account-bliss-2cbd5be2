@@ -13,5 +13,8 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     storage: localStorage,
     persistSession: true,
     autoRefreshToken: true,
+    // OAuth callbacks for protocol links are handled by protocolAuth, so they
+    // never overwrite the independent session of the finance application.
+    detectSessionInUrl: !window.location.pathname.includes('/protocols/'),
   }
 });
