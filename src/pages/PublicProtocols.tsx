@@ -390,5 +390,5 @@ export default function PublicProtocols() {
         string,
         typeof FileText
     ]>).map(([id, label, Icon]) => <button key={id} type="button" onClick={() => { setSection(id); if (id === 'trash')
-        void loadTrash(); }} className={`flex flex-col items-center gap-1 rounded-md py-1 text-[11px] ${section === id ? 'text-primary' : 'text-muted-foreground'}`}><Icon className="h-5 w-5"/>{label}</button>)}</nav>}</section></div></main>;
+        void loadTrash(); }} className={`flex flex-col items-center gap-1 rounded-md py-1 text-[11px] ${section === id ? 'text-primary' : 'text-muted-foreground'}`}><Icon className="h-5 w-5"/>{label}</button>)}</nav>}</>}</section></div></main>;
 }
