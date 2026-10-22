@@ -27,18 +27,22 @@
     <script>
       (function () {
         var routeMatch = window.location.pathname.match(/\/(payout|deposit|transactions)\/[^/]+\/?$/);
-        var publicType = routeMatch ? routeMatch[1] : null;
+        var protocolHashMatch = window.location.hash.match(/^#\/protocols\/[^/]+\/?$/);
+        var publicType = routeMatch ? routeMatch[1] : (protocolHashMatch ? 'protocols' : null);
         var pathParts = window.location.pathname.split('/').filter(Boolean);
         var basePath = window.location.hostname.endsWith('github.io') && pathParts.length
           ? '/' + pathParts[0] + '/'
           : '/';
         var publicRoute = publicType
-          ? window.location.pathname.slice(basePath.length - 1) + window.location.search
+          ? (publicType === 'protocols'
+            ? window.location.hash.slice(1)
+            : window.location.pathname.slice(basePath.length - 1) + window.location.search)
           : null;
         var appTitles = {
           payout: 'Dowód wypłaty',
           deposit: 'Dowód wpłaty',
-          transactions: 'Таблица транзакций'
+          transactions: 'Таблица транзакций',
+          protocols: 'Протоколы'
         };
 
         if (publicType) {

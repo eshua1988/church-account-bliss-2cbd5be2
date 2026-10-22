@@ -44,7 +44,7 @@ function PwaHome() {
   const publicPwaType = launchSource?.endsWith('-pwa')
     ? launchSource.slice(0, -4)
     : null;
-  const isPublicPwaLaunch = ['payout', 'deposit', 'transactions'].includes(publicPwaType || '');
+  const isPublicPwaLaunch = ['payout', 'deposit', 'transactions', 'protocols'].includes(publicPwaType || '');
   let lastPublicPath: string | null = null;
 
   if (isPublicPwaLaunch && publicPwaType) {
