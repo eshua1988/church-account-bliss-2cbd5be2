@@ -58,6 +58,8 @@ const download = (blob: Blob, name: string) => { const url = URL.createObjectURL
 const dateText = (date: string, time?: string) => new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(`${date}T12:00:00`)) + ` г.${time ? ` ${time}` : ''}`;
 export default function PublicProtocols() {
     const { token = '' } = useParams(); const isPublicSubmission = new URLSearchParams(window.location.search).get('public') === '1';
+    const protocolBasePath = import.meta.env.BASE_URL.endsWith('/') ? import.meta.env.BASE_URL.slice(0, -1) : import.meta.env.BASE_URL;
+    const publicProtocolUrl = `${window.location.origin}${protocolBasePath}/#/protocols/${encodeURIComponent(token)}?public=1`;
     const [protocolUser, setProtocolUser] = useState<User | null>(null);
     const [authLoading, setAuthLoading] = useState(true);
     const [googleLoginLoading, setGoogleLoginLoading] = useState(false);
