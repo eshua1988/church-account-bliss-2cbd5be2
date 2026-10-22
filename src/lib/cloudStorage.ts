@@ -78,7 +78,7 @@ export const renewGoogleDriveToken = async (connection: CloudConnection): Promis
   return new Promise((resolve, reject) => {
     const client = (window as any).google.accounts.oauth2.initTokenClient({
       client_id: connection.clientId.trim(),
-      scope: 'https://www.googleapis.com/auth/drive',
+      scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/spreadsheets',
       callback: (response: {
         access_token?: string;
         expires_in?: number;
