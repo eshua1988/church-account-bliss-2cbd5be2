@@ -398,7 +398,9 @@ export default function PublicProtocols() {
         const firstRow = (await existing.json()).values?.[0] || [];
         const rows = archived.slice().sort((a, b) => a.protocol_date.localeCompare(b.protocol_date)).map(item => [item.protocol_date, councilName(item.council), item.protocol_time || '', item.place || '', item.present.join(', '), item.absent.join(', '), item.content, item.secretary_name || '', item.pastor_name || '', item.created_at]);
         const values = firstRow.length ? rows : [['Дата', 'Совет', 'Время', 'Место', 'Присутствовали', 'Отсутствовали', 'Текст протокола', 'Секретарь', 'Ведущий пастор', 'Создан'], ...rows];
-        const append = await fetch(`${endpoint}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ values }) });
+        // RAW запрещает Google Sheets преобразовывать "1.", даты и другие
+        // фрагменты текста: содержимое остаётся в точности как в PDF-протоколе.
+        const append = await fetch(`${endpoint}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ values }) });
         if (!append.ok) {
             const details = await append.json().catch(() => null);
             const message = details?.error?.message;
