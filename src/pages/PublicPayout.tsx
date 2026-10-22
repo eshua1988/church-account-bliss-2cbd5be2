@@ -369,6 +369,7 @@ interface AttachedImage {
   preview: string;
   isFromPdf?: boolean;
   pageNumber?: number;
+  pdfPageCount?: number;
 }
 
 interface PayoutFormData {
@@ -1089,40 +1090,40 @@ const PublicPayout = () => {
 
   const stopDrawingFull = () => setIsDrawingFull(false);
 
-  // Image attachment handlers with PDF support
+  // Image attachment handlers with PDF support.  A previous implementation
+  // rasterised every page of a selected PDF at 2× resolution just to create
+  // thumbnails.  On phones this could consume all available memory and leave
+  // the form looking frozen.  The original PDF is merged unchanged below, so
+  // one small first-page preview is sufficient here.
   const convertPdfToImages = async (file: File): Promise<AttachedImage[]> => {
     try {
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      const images: AttachedImage[] = [];
-      
-      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-        const page = await pdf.getPage(pageNum);
-        const canvas = document.createElement('canvas');
-        const scale = 2;
-        const viewport = page.getViewport({ scale });
-        
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        
-        const context = canvas.getContext('2d');
-        if (!context) continue;
-        
-        await page.render({
-          canvasContext: context,
-          viewport: viewport,
-        }).promise;
-        
-        const preview = canvas.toDataURL('image/png');
-        images.push({
-          file,
-          preview,
-          isFromPdf: true,
-          pageNumber: pageNum,
-        });
-      }
-      
-      return images;
+      const pdfPageCount = pdf.numPages;
+      const page = await pdf.getPage(1);
+      const viewport = page.getViewport({ scale: 0.65 });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.min(Math.ceil(viewport.width), 720);
+      canvas.height = Math.min(Math.ceil(viewport.height), 960);
+      const context = canvas.getContext('2d');
+      if (!context) return [];
+
+      const scale = Math.min(canvas.width / viewport.width, canvas.height / viewport.height);
+      const compactViewport = page.getViewport({ scale: 0.65 * scale });
+      canvas.width = Math.max(1, Math.ceil(compactViewport.width));
+      canvas.height = Math.max(1, Math.ceil(compactViewport.height));
+      await page.render({ canvasContext: context, viewport: compactViewport }).promise;
+      const preview = canvas.toDataURL('image/jpeg', 0.65);
+      page.cleanup();
+      await pdf.destroy();
+
+      return [{
+        file,
+        preview,
+        isFromPdf: true,
+        pageNumber: 1,
+        pdfPageCount,
+      }];
     } catch (error) {
       console.error('Error converting PDF to images:', error);
       return [];
@@ -1137,9 +1138,27 @@ const PublicPayout = () => {
     if (!files) return;
 
     const newImages: AttachedImage[] = [];
+    const maxAttachmentBytes = 15 * 1024 * 1024;
+    const maxAttachmentCount = 10;
     setIsProcessingAttachments(true);
     try {
       for (const file of Array.from(files)) {
+        if (file.size > maxAttachmentBytes) {
+          toast({
+            variant: 'destructive',
+            title: 'Файл слишком большой',
+            description: `«${file.name}» больше 15 МБ. Уменьшите файл и выберите его снова.`,
+          });
+          continue;
+        }
+        if (attachedImages.length + newImages.length >= maxAttachmentCount) {
+          toast({
+            variant: 'destructive',
+            title: 'Слишком много вложений',
+            description: 'К одному расходному ордеру можно добавить до 10 файлов.',
+          });
+          break;
+        }
         if (file.type.startsWith('image/')) {
           const preview = URL.createObjectURL(file);
           newImages.push({ file, preview });
@@ -2559,7 +2578,7 @@ const PublicPayout = () => {
                             />
                             {img.isFromPdf && (
                               <div className="absolute top-1 left-1 bg-primary/80 text-white text-xs px-1.5 py-0.5 rounded">
-                                P{img.pageNumber}
+                                PDF · {img.pdfPageCount || 1} стр.
                               </div>
                             )}
                             <button
@@ -2854,7 +2873,7 @@ const PublicPayout = () => {
                                   className="w-full h-24 object-cover rounded-lg border border-border"
                                 />
                               {img.isFromPdf && (
-                                <span className="absolute top-1 left-1 rounded bg-primary/85 px-1.5 py-0.5 text-xs text-primary-foreground">PDF · {img.pageNumber}</span>
+                                <span className="absolute top-1 left-1 rounded bg-primary/85 px-1.5 py-0.5 text-xs text-primary-foreground">PDF · {img.pdfPageCount || 1} стр.</span>
                               )}
                                 <button
                                   type="button"
