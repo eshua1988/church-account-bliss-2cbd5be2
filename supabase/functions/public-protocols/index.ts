@@ -21,14 +21,21 @@ Deno.serve(async (request) => {
     if (!link?.is_active || !String(link.name || '').startsWith('[Протоколы]')) return json({ error: 'Link is inactive or not found' }, 404);
 
     const action = String(body.action || 'load');
+    const isPublicAction = Boolean(body.public) && (action === 'load' || action === 'create');
     const isSigningAction = action === 'load-signing' || action === 'sign';
     const authHeader = request.headers.get('Authorization') || request.headers.get('authorization') || '';
     const authClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
       global: { headers: authHeader ? { Authorization: authHeader } : {} },
     });
     const { data: { user: protocolUser } } = await authClient.auth.getUser();
-    if (!isSigningAction && !protocolUser) return json({ error: 'Войдите в аккаунт протоколов' }, 401);
-    const workspaceUserId = protocolUser?.id || null;
+    if (!isSigningAction && !isPublicAction && !protocolUser) return json({ error: 'Войдите в аккаунт протоколов' }, 401);
+    let workspaceUserId = protocolUser?.id || null;
+    if (isPublicAction && !workspaceUserId) {
+      const { data: publicSettings } = await supabase.from('protocol_link_settings')
+        .select('owner_user_id').eq('link_token', token).order('updated_at', { ascending: false }).limit(1).maybeSingle();
+      workspaceUserId = publicSettings?.owner_user_id || null;
+      if (!workspaceUserId) return json({ error: 'Настройки протокола ещё не подготовлены владельцем ссылки' }, 404);
+    }
     if (!isSigningAction && workspaceUserId) {
       const { error: workspaceError } = await supabase.from('protocol_link_settings').upsert(
         { link_token: token, owner_user_id: workspaceUserId },
