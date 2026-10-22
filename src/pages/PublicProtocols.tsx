@@ -238,8 +238,6 @@ export default function PublicProtocols() {
             page.drawText(settings.pastor_name || '____________________', { x: pastorX, y: signatureY, size: 11, font });
             const bytes = await pdf.save();
             const data = await invoke('create', { protocol: { council, protocol_date: date, protocol_time: time || null, place, present, absent, content, secretary_name: settings.secretary_name, pastor_name: settings.pastor_name, secretary_signature: settings.secretary_signature || null, pdf_base64: bytesToBase64(bytes) } });
-            const filename = `Протокол_${council}_${date}_${Date.now()}.pdf`;
-            download(new Blob([bytes as BlobPart], { type: 'application/pdf' }), filename);
             setProtocols(value => [data.document, ...value]);
             setContent('');
             setPresent([]);
