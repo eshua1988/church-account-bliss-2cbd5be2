@@ -376,12 +376,11 @@ export default function PublicProtocols() {
         const index = connections.findIndex(item => item.id === `protocol-google-${token}-${protocolUser.id}` && item.enabled && isCloudEnabledOnDevice(item));
         if (index < 0)
             throw new Error('Сначала подключите Google Drive в настройках — это даст доступ к Google Таблицам.');
-        let connection = connections[index];
-        if (!hasCloudCredentials(connection)) {
-            connection = await renewGoogleDriveToken(connection);
-            connections[index] = connection;
-            saveCloudConnections(connections);
-        }
+        // Запрашиваем новый токен всегда: ранее подключённый Drive мог быть
+        // авторизован до добавления разрешения на Google Sheets.
+        const connection = await renewGoogleDriveToken(connections[index]);
+        connections[index] = connection;
+        saveCloudConnections(connections);
         const tokenValue = connection.accessToken?.trim();
         if (!tokenValue)
             throw new Error('Не удалось получить доступ к Google Таблицам');
@@ -389,14 +388,23 @@ export default function PublicProtocols() {
         const endpoint = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${range}`;
         const headers = { Authorization: `Bearer ${tokenValue}` };
         const existing = await fetch(endpoint, { headers });
-        if (!existing.ok)
-            throw new Error(existing.status === 401 ? 'Доступ Google истёк. Подключите Google Drive ещё раз.' : 'Не удалось открыть указанный лист Google Таблицы');
+        if (!existing.ok) {
+            const details = await existing.json().catch(() => null);
+            const message = details?.error?.message;
+            if (existing.status === 401) throw new Error('Доступ Google истёк. Подключите Google Drive ещё раз.');
+            if (existing.status === 403) throw new Error(message || 'Google отклонил доступ к таблице. Убедитесь, что таблица доступна этому Google-аккаунту и включён Google Sheets API.');
+            throw new Error(message || 'Не удалось открыть указанный лист Google Таблицы');
+        }
         const firstRow = (await existing.json()).values?.[0] || [];
         const rows = archived.slice().sort((a, b) => a.protocol_date.localeCompare(b.protocol_date)).map(item => [item.protocol_date, councilName(item.council), item.protocol_time || '', item.place || '', item.present.join(', '), item.absent.join(', '), item.content, item.secretary_name || '', item.pastor_name || '', item.created_at]);
         const values = firstRow.length ? rows : [['Дата', 'Совет', 'Время', 'Место', 'Присутствовали', 'Отсутствовали', 'Текст протокола', 'Секретарь', 'Ведущий пастор', 'Создан'], ...rows];
         const append = await fetch(`${endpoint}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ values }) });
-        if (!append.ok)
-            throw new Error(append.status === 401 ? 'Доступ Google истёк. Подключите Google Drive ещё раз.' : 'Не удалось записать данные в Google Таблицу');
+        if (!append.ok) {
+            const details = await append.json().catch(() => null);
+            const message = details?.error?.message;
+            if (append.status === 401) throw new Error('Доступ Google истёк. Подключите Google Drive ещё раз.');
+            throw new Error(message || 'Не удалось записать данные в Google Таблицу');
+        }
         window.open(googleSheetTargetUrl(), '_blank', 'noopener,noreferrer');
         window.alert(`В Google Таблицу экспортировано протоколов: ${rows.length}`);
     }
