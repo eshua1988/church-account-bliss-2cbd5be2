@@ -26,16 +26,17 @@
 
     <script>
       (function () {
-        var routeMatch = window.location.pathname.match(/\/(payout|deposit|transactions)\/[^/]+\/?$/);
-        var protocolHashMatch = window.location.hash.match(/^#\/protocols\/[^/]+\/?$/);
-        var publicType = routeMatch ? routeMatch[1] : (protocolHashMatch ? 'protocols' : null);
+        var routeMatch = window.location.pathname.match(/\/(payout|deposit|transactions|protocols)\/[^/]+\/?$/);
+        var protocolHashMatch = window.location.hash.match(/^#\/protocols\/[^/?]+\/?(?:\?.*)?$/);
+        var launchedProtocolsPwa = new URLSearchParams(window.location.search).get('source') === 'protocols-pwa';
+        var publicType = routeMatch ? routeMatch[1] : (protocolHashMatch || launchedProtocolsPwa ? 'protocols' : null);
         var pathParts = window.location.pathname.split('/').filter(Boolean);
         var basePath = window.location.hostname.endsWith('github.io') && pathParts.length
           ? '/' + pathParts[0] + '/'
           : '/';
         var publicRoute = publicType
           ? (publicType === 'protocols'
-            ? window.location.hash.slice(1)
+            ? (protocolHashMatch ? window.location.hash.slice(1) : window.location.pathname.slice(basePath.length - 1) + window.location.search)
             : window.location.pathname.slice(basePath.length - 1) + window.location.search)
           : null;
         var appTitles = {
@@ -45,12 +46,22 @@
           protocols: 'Протоколы'
         };
 
-        if (publicType) {
+        if (publicType && !launchedProtocolsPwa) {
           document.title = appTitles[publicType];
           document.querySelector('meta[name="apple-mobile-web-app-title"]').content = appTitles[publicType];
           localStorage.setItem('pwa:last-public-' + publicType, publicRoute);
           document.cookie = 'pwa_last_public_' + publicType + '=' + encodeURIComponent(publicRoute)
             + '; Path=' + basePath + '; Max-Age=31536000; SameSite=Lax; Secure';
+        }
+
+        if (launchedProtocolsPwa) {
+          document.title = appTitles.protocols;
+          document.querySelector('meta[name="apple-mobile-web-app-title"]').content = appTitles.protocols;
+          var savedProtocolRoute = localStorage.getItem('pwa:last-public-protocols');
+          if (savedProtocolRoute) {
+            window.location.replace(basePath + '#' + savedProtocolRoute);
+            return;
+          }
         }
 
         var manifest = document.createElement('link');
