@@ -36,14 +36,18 @@ export const createR2SignedUrl = async (
     service: 's3',
     region: 'auto',
   });
-  const headers = options.contentType ? { 'content-type': options.contentType } : undefined;
-  const request = await client.sign(`${endpoint}/${bucket}/${encodeObjectPath(objectPath)}`, {
+  // R2 expects the expiry as a query parameter before signing. Passing a
+  // non-standard `expires` option to aws4fetch leaves its 24-hour default in
+  // place and, with some paths, yields a SignatureDoesNotMatch response.
+  const url = new URL(`${endpoint}/${bucket}/${encodeObjectPath(objectPath)}`);
+  url.searchParams.set('X-Amz-Expires', String(
+    Math.min(Math.max(options.expiresInSeconds ?? 900, 60), 3600),
+  ));
+  const request = await client.sign(new Request(url, {
     method,
-    headers,
-    aws: {
-      signQuery: true,
-      expires: Math.min(Math.max(options.expiresInSeconds ?? 900, 60), 3600),
-    },
+    headers: options.contentType ? { 'content-type': options.contentType } : undefined,
+  }), {
+    aws: { signQuery: true },
   });
   return request.url;
 };
