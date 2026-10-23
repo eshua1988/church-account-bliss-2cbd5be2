@@ -51,7 +51,10 @@
     transactions: 'church-transactions-rounded.png',
     protocols: 'church-protokols-rounded.png'
   };
-  var appIcon = basePath + (publicType ? appIcons[publicType] : 'church-finances-text.png');
+  // Version the icon and manifest URLs. Safari and Chromium otherwise retain
+  // a previous PWA icon even after the PNG itself was replaced.
+  var appAssetsVersion = '20261023-finances-v2';
+  var appIcon = basePath + (publicType ? appIcons[publicType] : 'church-finances-text.png') + '?v=' + appAssetsVersion;
   document.querySelector('link[rel="icon"]').href = appIcon;
   document.querySelector('link[rel="apple-touch-icon"]').href = appIcon;
 
@@ -75,7 +78,7 @@
 
         var manifest = document.createElement('link');
         manifest.rel = 'manifest';
-        manifest.href = basePath + (publicType ? publicType + '-manifest.webmanifest' : 'manifest.webmanifest');
+        manifest.href = basePath + (publicType ? publicType + '-manifest.webmanifest' : 'manifest.webmanifest') + '?v=' + appAssetsVersion;
         document.head.appendChild(manifest);
       }());
     </script>
