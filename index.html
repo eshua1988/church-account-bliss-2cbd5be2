@@ -3,16 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Church Hub</title>
+    <title>Church Finances</title>
     <meta name="description" content="Система финансового учета церкви" />
     <meta name="author" content="Church Account Bliss" />
     <meta name="theme-color" content="#3b82f6" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Church Hub" />
+    <meta name="apple-mobile-web-app-title" content="Church Finances" />
     <meta name="mobile-web-app-capable" content="yes" />
 
-    <meta property="og:title" content="Church Hub" />
+    <meta property="og:title" content="Church Finances" />
     <meta property="og:description" content="Система финансового учета церкви" />
     <meta property="og:type" content="website" />
     <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
@@ -46,12 +46,12 @@
           protocols: 'Church Protokols'
         };
   var appIcons = {
-    payout: 'church-spending-orders.png',
-    deposit: 'church-income-orders.png',
-    transactions: 'church-transactions.png',
-    protocols: 'church-protokols.png'
+    payout: 'church-spending-orders-rounded.png',
+    deposit: 'church-income-orders-rounded.png',
+    transactions: 'church-transactions-rounded.png',
+    protocols: 'church-protokols-rounded.png'
   };
-  var appIcon = basePath + (publicType ? appIcons[publicType] : 'Kosciol.ico.png');
+  var appIcon = basePath + (publicType ? appIcons[publicType] : 'church-finances.png');
   document.querySelector('link[rel="icon"]').href = appIcon;
   document.querySelector('link[rel="apple-touch-icon"]').href = appIcon;
 
