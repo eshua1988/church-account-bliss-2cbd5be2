@@ -9,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { readPublicLinkCache, writePublicLinkCache } from '@/lib/publicLinkCache';
 
 type Period = 'week' | 'month' | 'quarter' | 'year' | 'all';
 type TransactionFilter = 'all' | 'income' | 'expense';
@@ -57,10 +58,20 @@ const PublicAnalytics = () => {
         from.setDate(from.getDate() - periodDays[period]);
         return from.toISOString().slice(0, 10);
       })();
+    const cacheKey = `public-analytics:${token}:${period}:${analyticsSource}`;
+    const cached = readPublicLinkCache<Response>(cacheKey);
+    if (cached) {
+      setData(cached);
+      return;
+    }
     setData(null);
     supabase.functions.invoke<Response>('public-transactions', {
       body: { token, action: 'analytics', fromDate, analyticsSource },
-    }).then(({ data }) => setData(data || { valid: false }));
+    }).then(({ data }) => {
+      const response = data || { valid: false };
+      if (response.valid) writePublicLinkCache(cacheKey, response, 5 * 60 * 1000);
+      setData(response);
+    });
   }, [token, period, analyticsSource]);
 
   const summary = data?.analytics;

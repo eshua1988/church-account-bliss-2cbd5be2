@@ -26,6 +26,7 @@ import { CurrencyConverter } from '@/components/CurrencyConverter';
 import { loadHeaderSettings } from '@/components/Header';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { readPublicLinkCache, writePublicLinkCache } from '@/lib/publicLinkCache';
 
 // Keep the worker in the Vite build. The CDN path used before is not published
 // for the installed PDF.js version and caused PDF attachments to fail with 404.
@@ -740,10 +741,14 @@ const PublicPayout = () => {
       }
 
       try {
-        // Validate token via secure edge function (doesn't expose tokens or user IDs)
-        const { data: validationData, error: validationError } = await supabase.functions.invoke('validate-payout-token', {
-          body: { token }
-        });
+        // Validation returns only public form settings. Reusing the value in
+        // this browser session avoids duplicate requests when the link is
+        // reopened, but expires quickly if an owner changes the link.
+        const cacheKey = `public-payout-settings:${token}`;
+        const cached = readPublicLinkCache<any>(cacheKey);
+        const { data: validationData, error: validationError } = cached
+          ? { data: cached, error: null }
+          : await supabase.functions.invoke('validate-payout-token', { body: { token } });
 
         if (validationError) throw validationError;
         
@@ -752,6 +757,8 @@ const PublicPayout = () => {
           setLoading(false);
           return;
         }
+
+        if (!cached) writePublicLinkCache(cacheKey, validationData, 10 * 60 * 1000);
 
         // Set link info (token is stored locally, not fetched from DB)
         setSharedLink({

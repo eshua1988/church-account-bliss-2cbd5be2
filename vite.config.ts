@@ -55,6 +55,18 @@ export default defineConfig(({ mode }) => ({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,ttf}'],
         runtimeCaching: [
           {
+            // The app shell is already precached at build time. This keeps
+            // other same-origin assets (for example files loaded after an app
+            // update) available without a new download on every visit.
+            urlPattern: ({ url, request }) => request.method === 'GET' && url.origin === self.location.origin,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'church-app-runtime-assets',
+              expiration: { maxEntries: 80, maxAgeSeconds: 60 * 60 * 24 * 7 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: 'CacheFirst',
             options: {

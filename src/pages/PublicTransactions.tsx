@@ -19,6 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import { CURRENCY_SYMBOLS, Transaction } from '@/types/transaction';
 import DateRangeFilter from '@/components/DateRangeFilter';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { readPublicLinkCache, writePublicLinkCache } from '@/lib/publicLinkCache';
 
 interface Category {
   id: string;
@@ -196,16 +197,22 @@ const PublicTransactions = () => {
       }
 
       try {
-        const { data, error: functionError } = await supabase.functions.invoke<PublicTransactionsResponse>(
-          'public-transactions',
-          { body: { token, cursor: append ? nextCursorRef.current : undefined, requesterName: settingsPersonName } },
-        );
-
-        if (functionError) {
-          console.error('Public transactions function error:', functionError);
-          throw functionError;
+        const cacheKey = `public-transactions:${token}:${settingsPersonName || 'visitor'}`;
+        const cached = !append ? readPublicLinkCache<PublicTransactionsResponse>(cacheKey) : null;
+        let data = cached;
+        if (!data) {
+          const { data: responseData, error: functionError } = await supabase.functions.invoke<PublicTransactionsResponse>(
+            'public-transactions',
+            { body: { token, cursor: append ? nextCursorRef.current : undefined, requesterName: settingsPersonName } },
+          );
+          if (functionError) {
+            console.error('Public transactions function error:', functionError);
+            throw functionError;
+          }
+          data = responseData;
         }
 
+        if (!cached && !append && data?.valid) writePublicLinkCache(cacheKey, data, 5 * 60 * 1000);
         if (!data?.valid) {
           console.warn('Public transactions link rejected:', data?.error);
           setError('Ссылка не найдена или неактивна');

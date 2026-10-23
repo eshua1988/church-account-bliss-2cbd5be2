@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ROBOTO_FONT_BASE64 } from '@/lib/robotoFont';
 import { CloudConnection, hasCloudCredentials, isCloudEnabledOnDevice, loadCloudConnections, renewGoogleDriveToken, saveCloudConnections, uploadCloudArchive } from '@/lib/cloudStorage';
 import { ProtocolPwaInstall } from '@/components/ProtocolPwaInstall';
+import { readPublicLinkCache, writePublicLinkCache } from '@/lib/publicLinkCache';
 const today = () => new Date().toISOString().slice(0, 10);
 const defaultCouncils = [{ id: 'elders', name: 'Пресвитерский совет', attendees: [] as string[] }, { id: 'church', name: 'Церковный совет', attendees: [] as string[] }];
 const monthFolders = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
@@ -110,8 +111,21 @@ export default function PublicProtocols() {
         setTrash([]);
         setValid(true);
         return;
-    } try {
+    }
+    const cacheKey = `public-protocol-load:${token}:${isPublicSubmission ? 'form' : 'workspace'}`;
+    // Public forms never contain the owner's private archive. A ten-minute
+    // session cache removes repeat calls made while a visitor fills the form.
+    const cached = isPublicSubmission ? readPublicLinkCache<any>(cacheKey) : null;
+    if (cached) {
+        setSettings({ ...emptySettings, ...(cached.settings || {}) });
+        setProtocols(cached.documents || []);
+        settingsLoaded.current = true;
+        setValid(true);
+        return;
+    }
+    try {
         const data = await invoke('load');
+        if (isPublicSubmission) writePublicLinkCache(cacheKey, data, 10 * 60 * 1000);
         setSettings({ ...emptySettings, ...(data.settings || {}) });
         setProtocols(data.documents || []);
         settingsLoaded.current = true;

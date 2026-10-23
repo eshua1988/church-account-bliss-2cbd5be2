@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { type DepositCurrency } from '@/lib/amountInWords';
 import { copyDepositIdentity } from '@/lib/depositEntryCopy';
+import { readPublicLinkCache, writePublicLinkCache } from '@/lib/publicLinkCache';
 
 interface IncomeCategory {
   id: string;
@@ -123,8 +124,18 @@ const PublicDeposit = () => {
     document.title = 'Dowód wpłaty';
     if (appleTitle) appleTitle.content = 'Dowód wpłaty';
 
-    supabase.functions.invoke('validate-payout-token', { body: { token } })
+    // Validation returns only public form settings. Keep it during this
+    // browser session so reopening the same public link does not call the
+    // function again.
+    const cacheKey = `public-deposit-settings:${token}`;
+    const cached = readPublicLinkCache<any>(cacheKey);
+    const request = cached
+      ? Promise.resolve({ data: cached })
+      : supabase.functions.invoke('validate-payout-token', { body: { token } });
+
+    request
       .then(({ data }) => {
+        if (!cached && data?.valid) writePublicLinkCache(cacheKey, data, 10 * 60 * 1000);
         const isDeposit = data?.valid && data?.linkType === 'deposit';
         setValid(Boolean(isDeposit));
         setOrganizationName(data?.organizationName || organizationName);
