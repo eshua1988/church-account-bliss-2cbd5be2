@@ -84,6 +84,27 @@ const uploadPdfToSignedTarget = async (target: any, file: Blob) => {
   if (error) throw error;
 };
 
+// Always read PDFs through the Edge Function. It first tries R2 and then the
+// legacy Supabase bucket, which keeps historic PDFs editable during migration.
+// In particular, do not hand the browser an R2 GET URL: old files may not yet
+// exist in R2 and direct presigned requests are brittle in installed PWAs.
+const downloadProtectedPdf = async (
+  supabaseUrl: string,
+  supabaseKey: string,
+  filePath: string,
+  userId: string,
+) => {
+  const params = new URLSearchParams({ action: 'download', filePath, userId });
+  const response = await fetch(`${supabaseUrl}/functions/v1/upload-payout-pdf?${params}`, {
+    headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Ошибка загрузки PDF: HTTP ${response.status}`);
+  }
+  return response.blob();
+};
+
 const NotificationCard = ({
   notification,
   onMarkAsRead,
@@ -820,14 +841,9 @@ export const NotificationsPage = () => {
       const supabaseUrl = (supabase as any).supabaseUrl as string;
       const supabaseKey = (supabase as any).supabaseKey as string;
       const edgeHeaders = { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` };
-      const signParams = new URLSearchParams({ action: 'sign', filePath: pdfPath, userId: target.user_id });
-      const signResponse = await fetch(`${supabaseUrl}/functions/v1/upload-payout-pdf?${signParams}`, { headers: edgeHeaders });
-      const signResult = await signResponse.json();
-      if (!signResponse.ok || !signResult.signedUrl) throw new Error(signResult.error || 'Не удалось открыть PDF');
-      const sourceResponse = await fetch(signResult.signedUrl);
-      if (!sourceResponse.ok) throw new Error(`Ошибка загрузки PDF: HTTP ${sourceResponse.status}`);
-
-      const originalBytes = new Uint8Array(await sourceResponse.arrayBuffer());
+      const originalBytes = new Uint8Array(await (await downloadProtectedPdf(
+        supabaseUrl, supabaseKey, pdfPath, target.user_id,
+      )).arrayBuffer());
       const { PDFDocument, rgb } = await import('pdf-lib');
       const pdfDoc = await PDFDocument.load(originalBytes);
       pdfDoc.registerFontkit(fontkit);
@@ -908,14 +924,9 @@ export const NotificationsPage = () => {
     const supabaseUrl = (supabase as any).supabaseUrl as string;
     const supabaseKey = (supabase as any).supabaseKey as string;
     const edgeHeaders = { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` };
-    const signParams = new URLSearchParams({ action: 'sign', filePath: pdfPath, userId: depositPdfTarget.user_id });
-    const signResponse = await fetch(`${supabaseUrl}/functions/v1/upload-payout-pdf?${signParams}`, { headers: edgeHeaders });
-    const signResult = await signResponse.json();
-    if (!signResponse.ok || !signResult.signedUrl) throw new Error(signResult.error || 'Не удалось открыть PDF');
-    const sourceResponse = await fetch(signResult.signedUrl);
-    if (!sourceResponse.ok) throw new Error(`Ошибка загрузки PDF: HTTP ${sourceResponse.status}`);
-
-    const originalBytes = new Uint8Array(await sourceResponse.arrayBuffer());
+    const originalBytes = new Uint8Array(await (await downloadProtectedPdf(
+      supabaseUrl, supabaseKey, pdfPath, depositPdfTarget.user_id,
+    )).arrayBuffer());
     const [{ PDFDocument, rgb }, pdfjsLib] = await Promise.all([import('pdf-lib'), import('pdfjs-dist')]);
     const pdfDoc = await PDFDocument.load(originalBytes);
     pdfDoc.registerFontkit(fontkit);
@@ -1034,23 +1045,9 @@ export const NotificationsPage = () => {
       const supabaseUrl = (supabase as any).supabaseUrl as string;
       const supabaseKey = (supabase as any).supabaseKey as string;
       const edgeHeaders = { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` };
-      const signParams = new URLSearchParams({
-        action: 'sign',
-        filePath: pdfPath,
-        userId: depositPdfTarget.user_id,
-      });
-      const signResponse = await fetch(
-        `${supabaseUrl}/functions/v1/upload-payout-pdf?${signParams}`,
-        { headers: edgeHeaders },
-      );
-      const signResult = await signResponse.json();
-      if (!signResponse.ok || !signResult.signedUrl) {
-        throw new Error(signResult.error || 'Не удалось открыть PDF');
-      }
-      const sourceResponse = await fetch(signResult.signedUrl);
-      if (!sourceResponse.ok) throw new Error(`Ошибка загрузки PDF: HTTP ${sourceResponse.status}`);
-
-      const originalBytes = new Uint8Array(await sourceResponse.arrayBuffer());
+      const originalBytes = new Uint8Array(await (await downloadProtectedPdf(
+        supabaseUrl, supabaseKey, pdfPath, depositPdfTarget.user_id,
+      )).arrayBuffer());
       const { PDFDocument } = await import('pdf-lib');
       const pdfDoc = await PDFDocument.load(originalBytes);
       const receiptIndexes = signAllDepositReceipts
@@ -1206,26 +1203,8 @@ export const NotificationsPage = () => {
     const supabaseUrl = (supabase as any).supabaseUrl as string;
     const supabaseKey = (supabase as any).supabaseKey as string;
     const edgeHeaders = { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` };
-    const downloadProtectedFile = async (filePath: string) => {
-      const params = new URLSearchParams({
-        action: 'sign',
-        filePath,
-        userId: notification.user_id,
-      });
-      const signResponse = await fetch(
-        `${supabaseUrl}/functions/v1/upload-payout-pdf?${params}`,
-        { headers: edgeHeaders },
-      );
-      const signResult = await signResponse.json();
-      if (!signResponse.ok || !signResult.signedUrl) {
-        throw new Error(signResult.error || `Не удалось открыть ${filePath.split('/').pop()}`);
-      }
-      const fileResponse = await fetch(signResult.signedUrl);
-      if (!fileResponse.ok) {
-        throw new Error(`Ошибка загрузки файла: HTTP ${fileResponse.status}`);
-      }
-      return fileResponse.blob();
-    };
+    const downloadProtectedFile = (filePath: string) =>
+      downloadProtectedPdf(supabaseUrl, supabaseKey, filePath, notification.user_id);
     // Edit the original PDF instead of rebuilding it. This preserves every
     // attachment page and the recipient signature already embedded in the file.
     const [{ PDFDocument, rgb }, pdfjsLib] = await Promise.all([
@@ -1489,22 +1468,8 @@ export const NotificationsPage = () => {
 
     const supabaseUrl = (supabase as any).supabaseUrl as string;
     const supabaseKey = (supabase as any).supabaseKey as string;
-    const params = new URLSearchParams({
-      action: 'sign',
-      filePath,
-      userId: notification.user_id,
-    });
-    const signResponse = await fetch(
-      `${supabaseUrl}/functions/v1/upload-payout-pdf?${params}`,
-      { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } },
-    );
-    const signResult = await signResponse.json();
-    if (!signResult.signedUrl) throw new Error(signResult.error || 'Не удалось получить PDF');
-
-    const pdfResponse = await fetch(signResult.signedUrl);
-    if (!pdfResponse.ok) throw new Error(`Ошибка загрузки PDF: HTTP ${pdfResponse.status}`);
     return {
-      blob: await pdfResponse.blob(),
+      blob: await downloadProtectedPdf(supabaseUrl, supabaseKey, filePath, notification.user_id),
       name: filePath.split('/').pop() || `${notification.id}.pdf`,
     };
   };
