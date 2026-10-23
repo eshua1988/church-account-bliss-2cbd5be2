@@ -60,11 +60,10 @@ Deno.serve(async (request) => {
         supabase.from('protocol_documents').select('*').eq('link_token', token).eq('owner_user_id', workspaceUserId).is('deleted_at', null).order('created_at', { ascending: false }),
       ]);
       if (error) throw error;
-      const items = await Promise.all((documents || []).map(async (document) => {
-        const { data } = await supabase.storage.from('protocol-documents').createSignedUrl(document.pdf_path, 60 * 60);
-        return { ...document, pdf_url: data?.signedUrl || null };
-      }));
-      return json({ settings: settings || {}, documents: items });
+      // Listing a workspace must not sign every archived PDF. Large archives
+      // previously produced hundreds of Storage requests on each refresh.
+      // A signed URL is created only after the user opens that particular PDF.
+      return json({ settings: settings || {}, documents: documents || [] });
     }
 
     if (action === 'save-settings') {
@@ -105,15 +104,13 @@ Deno.serve(async (request) => {
         pastor_signature: null, pdf_path: filePath,
       }).select().single();
       if (error) { await supabase.storage.from('protocol-documents').remove([filePath]); throw error; }
-      const { data: url } = await supabase.storage.from('protocol-documents').createSignedUrl(filePath, 60 * 60);
-      return json({ document: { ...data, pdf_url: url?.signedUrl || null } });
+      return json({ document: data });
     }
 
     if (action === 'set-archived') {
       const { data, error } = await supabase.from('protocol_documents').update({ archived: Boolean(body.archived) }).eq('id', String(body.id || '')).eq('link_token', token).eq('owner_user_id', workspaceUserId).select().single();
       if (error) throw error;
-      const { data: url } = await supabase.storage.from('protocol-documents').createSignedUrl(data.pdf_path, 60 * 60);
-      return json({ document: { ...data, pdf_url: url?.signedUrl || null } });
+      return json({ document: data });
     }
 
     // Signed storage URLs are intentionally short-lived.  ZIP exports ask for
@@ -132,11 +129,7 @@ Deno.serve(async (request) => {
       const { data: documents, error } = await supabase.from('protocol_documents').select('*')
         .eq('link_token', token).eq('owner_user_id', workspaceUserId).not('deleted_at', 'is', null).order('deleted_at', { ascending: false });
       if (error) throw error;
-      const items = await Promise.all((documents || []).map(async (document) => {
-        const { data } = await supabase.storage.from('protocol-documents').createSignedUrl(document.pdf_path, 60 * 60);
-        return { ...document, pdf_url: data?.signedUrl || null };
-      }));
-      return json({ documents: items });
+      return json({ documents: documents || [] });
     }
 
     if (action === 'move-to-trash') {
@@ -152,8 +145,7 @@ Deno.serve(async (request) => {
         .eq('id', String(body.id || '')).eq('link_token', token).eq('owner_user_id', workspaceUserId).not('deleted_at', 'is', null).select().maybeSingle();
       if (error) throw error;
       if (!data) return json({ error: 'Protocol not found or already permanently deleted' }, 404);
-      const { data: url } = await supabase.storage.from('protocol-documents').createSignedUrl(data.pdf_path, 60 * 60);
-      return json({ document: { ...data, pdf_url: url?.signedUrl || null } });
+      return json({ document: data });
     }
 
     // Signing is intentionally available without the protocol-workspace link.
@@ -186,8 +178,7 @@ Deno.serve(async (request) => {
       }).eq('id', document.id).eq('pastor_sign_token', signToken).is('pastor_signed_at', null).select().maybeSingle();
       if (error) throw error;
       if (!data) return json({ error: 'This protocol has already been signed' }, 409);
-      const { data: url } = await supabase.storage.from('protocol-documents').createSignedUrl(data.pdf_path, 60 * 60);
-      return json({ document: { ...data, pdf_url: url?.signedUrl || null } });
+      return json({ document: data });
     }
     return json({ error: 'Unknown action' }, 400);
   } catch (error) {
