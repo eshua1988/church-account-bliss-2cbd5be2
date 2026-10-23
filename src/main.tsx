@@ -2,15 +2,9 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 
-// Workbox cached tokenized public routes (for example /protocols/<token>),
-// which could leave the installed app without a network response.  Remove the
-// legacy worker and its caches once this version is loaded.
-if ("serviceWorker" in navigator) {
-  void navigator.serviceWorker
-    .getRegistrations()
-    .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())));
-}
-
+// An earlier Workbox version cached tokenized public routes (for example
+// /protocols/<token>).  Only remove its old caches: the current sw.js also
+// delivers push notifications, so it must remain registered.
 if ("caches" in window) {
   void caches
     .keys()
