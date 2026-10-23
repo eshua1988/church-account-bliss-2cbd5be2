@@ -162,25 +162,23 @@ const NotificationCard = ({
         return;
       }
 
-      // Use Edge Function (service_role) to create signed URL — avoids client auth token issues
+      // Fetch through the Edge Function. It reads R2 server-to-server, so the
+      // browser never receives an R2 signed URL that could be cached or altered.
       const supabaseUrl = (supabase as any).supabaseUrl as string;
       const supabaseKey = (supabase as any).supabaseKey as string;
       const userId = notification.user_id;
-      const params = new URLSearchParams({ action: 'sign', filePath, userId });
+      const params = new URLSearchParams({ action: 'download', filePath, userId });
       const res = await fetch(
         `${supabaseUrl}/functions/v1/upload-payout-pdf?${params}`,
         { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
       );
-      const json = await res.json();
-
-      if (json.signedUrl) {
-        // Storage keeps the same PDF path after a cashier signature is saved.
-        // A cache-busting query ensures Chrome does not show its old copy.
-        openPdfUrl(`${json.signedUrl}${json.signedUrl.includes('?') ? '&' : '?'}v=${Date.now()}`);
-      } else {
-        console.error('[PDF sign] error from edge function:', json);
-        toast({ title: 'Ошибка', description: json.error || 'Не удалось получить ссылку на PDF', variant: 'destructive' });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || `HTTP ${res.status}`);
       }
+      const objectUrl = URL.createObjectURL(await res.blob());
+      openPdfUrl(objectUrl);
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
     } catch (e) {
       console.error('PDF download error:', e);
       toast({ title: 'Ошибка загрузки PDF', variant: 'destructive' });

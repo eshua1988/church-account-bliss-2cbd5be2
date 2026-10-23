@@ -53,8 +53,19 @@ export const createR2SignedUrl = async (
 };
 
 export const downloadFromR2 = async (objectPath: string) => {
-  const url = await createR2SignedUrl(objectPath, 'GET');
-  const response = await fetch(url);
+  const endpoint = required('R2_ENDPOINT').replace(/\/$/, '');
+  const bucket = required('R2_BUCKET');
+  const client = new AwsClient({
+    accessKeyId: required('R2_ACCESS_KEY_ID'),
+    secretAccessKey: required('R2_SECRET_ACCESS_KEY'),
+    service: 's3',
+    region: 'auto',
+  });
+  // Server-to-server signing uses an Authorization header instead of an URL
+  // signature. This avoids browser-facing SignatureDoesNotMatch failures.
+  const response = await client.fetch(`${endpoint}/${bucket}/${encodeObjectPath(objectPath)}`, {
+    method: 'GET',
+  });
   if (!response.ok) throw new Error(`R2 download failed: HTTP ${response.status}`);
   return response.blob();
 };

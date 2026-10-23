@@ -202,6 +202,42 @@ Deno.serve(async (req) => {
         });
       }
 
+      if (action === 'download') {
+        const userId = url.searchParams.get('userId');
+        if (!userId || !filePath.startsWith(userId + '/')) {
+          return new Response(JSON.stringify({ error: 'Forbidden' }), {
+            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        let fileData: Blob | null = null;
+        try {
+          if (isR2Configured()) fileData = await downloadFromR2(filePath);
+        } catch (error) {
+          console.warn('R2 download failed, trying legacy Storage:', error);
+        }
+        if (!fileData) {
+          const { data, error } = await supabase.storage.from('documents').download(filePath);
+          if (error || !data) {
+            return new Response(JSON.stringify({ error: error?.message || 'File not found' }), {
+              status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+          fileData = data;
+        }
+
+        const fileName = filePath.split('/').pop() || 'document.pdf';
+        return new Response(fileData.stream(), {
+          status: 200,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `inline; filename="${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}"`,
+            'Cache-Control': 'no-store',
+          },
+        });
+      }
+
       return new Response(JSON.stringify({ error: 'Unknown action' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
