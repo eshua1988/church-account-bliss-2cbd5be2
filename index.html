@@ -21,8 +21,11 @@
     <meta name="twitter:site" content="@Lovable" />
     <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
     
-    <link rel="icon" type="image/png" />
-    <link rel="apple-touch-icon" />
+    <!-- These must be present in the original HTML. Safari and Chromium can
+         capture an app icon before JavaScript has a chance to change it. -->
+    <link rel="icon" type="image/png" href="./church-finances-text.png?v=20261024-finances-v3" />
+    <link rel="apple-touch-icon" href="./church-finances-text.png?v=20261024-finances-v3" />
+    <link rel="manifest" href="./manifest.webmanifest?v=20261024-finances-v3" />
 
     <script>
       (function () {
@@ -53,7 +56,7 @@
   };
   // Version the icon and manifest URLs. Safari and Chromium otherwise retain
   // a previous PWA icon even after the PNG itself was replaced.
-  var appAssetsVersion = '20261023-finances-v2';
+  var appAssetsVersion = '20261024-finances-v3';
   var appIcon = basePath + (publicType ? appIcons[publicType] : 'church-finances-text.png') + '?v=' + appAssetsVersion;
   document.querySelector('link[rel="icon"]').href = appIcon;
   document.querySelector('link[rel="apple-touch-icon"]').href = appIcon;
@@ -76,10 +79,8 @@
           }
         }
 
-        var manifest = document.createElement('link');
-        manifest.rel = 'manifest';
+        var manifest = document.querySelector('link[rel="manifest"]');
         manifest.href = basePath + (publicType ? publicType + '-manifest.webmanifest' : 'manifest.webmanifest') + '?v=' + appAssetsVersion;
-        document.head.appendChild(manifest);
       }());
     </script>
     
