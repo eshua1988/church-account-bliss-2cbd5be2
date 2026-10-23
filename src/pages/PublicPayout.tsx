@@ -1146,7 +1146,7 @@ const PublicPayout = () => {
 
     const newImages: AttachedImage[] = [];
     const maxAttachmentBytes = 15 * 1024 * 1024;
-    const maxAttachmentCount = 10;
+    const maxAttachmentCount = 30;
     setIsProcessingAttachments(true);
     try {
       for (const file of Array.from(files)) {
@@ -1162,7 +1162,7 @@ const PublicPayout = () => {
           toast({
             variant: 'destructive',
             title: 'Слишком много вложений',
-            description: 'К одному расходному ордеру можно добавить до 10 файлов.',
+            description: 'К одному расходному ордеру можно добавить до 30 файлов.',
           });
           break;
         }

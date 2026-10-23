@@ -120,17 +120,23 @@ Deno.serve(async (req) => {
           });
         }
         if (isR2Configured()) {
-          const contentType = 'application/pdf';
-          const r2SignedUrl = await createR2SignedUrl(resolvedFilePath, 'PUT', { contentType });
-          return new Response(JSON.stringify({
-            r2SignedUrl,
-            path: resolvedFilePath,
-            filePath: resolvedFilePath,
-            contentType,
-            ...(isPreparedUpload ? { folderKey } : {}),
-          }), {
-            status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          try {
+            const contentType = 'application/pdf';
+            const r2SignedUrl = await createR2SignedUrl(resolvedFilePath, 'PUT', { contentType });
+            return new Response(JSON.stringify({
+              r2SignedUrl,
+              path: resolvedFilePath,
+              filePath: resolvedFilePath,
+              contentType,
+              ...(isPreparedUpload ? { folderKey } : {}),
+            }), {
+              status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          } catch (error) {
+            // A secret may be temporarily unavailable or a new R2 key may not
+            // have propagated yet. Do not prevent a payout from being sent.
+            console.error('R2 upload URL failed, using legacy Storage:', error);
+          }
         }
 
         // Legacy Storage fallback during the migration.

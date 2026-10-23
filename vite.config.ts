@@ -58,7 +58,13 @@ export default defineConfig(({ mode }) => ({
             // The app shell is already precached at build time. This keeps
             // other same-origin assets (for example files loaded after an app
             // update) available without a new download on every visit.
-            urlPattern: ({ url, request }) => request.method === 'GET' && url.origin === self.location.origin,
+            // Public routes are application navigations, not static assets.
+            // Caching their token-specific URLs here causes Workbox's
+            // "no-response" error after an update or on the first visit.
+            urlPattern: ({ url, request }) =>
+              request.method === 'GET' &&
+              request.mode !== 'navigate' &&
+              url.origin === self.location.origin,
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'church-app-runtime-assets',
