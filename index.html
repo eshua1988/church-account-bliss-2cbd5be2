@@ -21,8 +21,8 @@
     <meta name="twitter:site" content="@Lovable" />
     <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
     
-    <link rel="icon" href="/Kosciol.ico.png" type="image/png" />
-    <link rel="apple-touch-icon" href="/Kosciol.ico.png" />
+    <link rel="icon" type="image/png" />
+    <link rel="apple-touch-icon" />
 
     <script>
       (function () {
@@ -45,6 +45,15 @@
           transactions: 'Church Transactions',
           protocols: 'Church Protokols'
         };
+  var appIcons = {
+    payout: 'church-spending-orders.png',
+    deposit: 'church-income-orders.png',
+    transactions: 'church-transactions.png',
+    protocols: 'church-protokols.png'
+  };
+  var appIcon = basePath + (publicType ? appIcons[publicType] : 'Kosciol.ico.png');
+  document.querySelector('link[rel="icon"]').href = appIcon;
+  document.querySelector('link[rel="apple-touch-icon"]').href = appIcon;
 
         if (publicType && !launchedProtocolsPwa) {
           document.title = appTitles[publicType];
