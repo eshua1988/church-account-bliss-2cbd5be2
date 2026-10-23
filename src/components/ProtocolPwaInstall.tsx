@@ -33,8 +33,8 @@ export function ProtocolPwaInstall({ token }: Props) {
       document.head.appendChild(manifestLink);
     }
     manifestLink.href = manifestHref;
-    document.title = 'Протоколы';
-    if (appleTitle) appleTitle.content = 'Протоколы';
+    document.title = 'Church Protokols';
+    if (appleTitle) appleTitle.content = 'Church Protokols';
 
     const standalone = window.matchMedia('(display-mode: standalone)').matches
       || (navigator as Navigator & { standalone?: boolean }).standalone === true;

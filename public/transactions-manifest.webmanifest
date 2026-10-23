@@ -1,7 +1,7 @@
 {
   "id": "./transactions-pwa",
-  "name": "Таблица транзакций",
-  "short_name": "Транзакции",
+  "name": "Church Transactions",
+  "short_name": "Church Transactions",
   "description": "Просмотр и поиск транзакций по общедоступной ссылке",
   "lang": "ru",
   "dir": "ltr",
@@ -12,8 +12,8 @@
   "theme_color": "#3b82f6",
   "background_color": "#ffffff",
   "icons": [
-    { "src": "./Kosciol.ico.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "./Kosciol.ico.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "./Kosciol.ico.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "./church-transactions.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "./church-transactions.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "./church-transactions.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }
