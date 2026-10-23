@@ -1547,8 +1547,9 @@ const PublicPayout = () => {
               headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` },
             });
             const urlData = await urlRes.json();
-            if (urlData.signedUrl) {
-              const putRes = await fetch(urlData.signedUrl, {
+            const uploadUrl = urlData.r2SignedUrl || urlData.signedUrl;
+            if (uploadUrl) {
+              const putRes = await fetch(uploadUrl, {
                 method: 'PUT',
                 body: pdfResult.pdfBlob,
                 headers: { 'Content-Type': 'application/pdf' },
@@ -1595,10 +1596,11 @@ const PublicPayout = () => {
         { headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` } },
       ), 30000);
       const prepareData = await prepareResponse.json().catch(() => ({}));
-      if (!prepareResponse.ok || !prepareData.signedUrl || !prepareData.filePath || !prepareData.folderKey) {
+      const prepareUploadUrl = prepareData.r2SignedUrl || prepareData.signedUrl;
+      if (!prepareResponse.ok || !prepareUploadUrl || !prepareData.filePath || !prepareData.folderKey) {
         throw new Error(prepareData.error || 'Не удалось подготовить загрузку PDF');
       }
-      const uploadResponse = await withTimeout(fetch(prepareData.signedUrl, {
+      const uploadResponse = await withTimeout(fetch(prepareUploadUrl, {
         method: 'PUT',
         body: pdfResult.pdfBlob,
         headers: { 'Content-Type': 'application/pdf' },

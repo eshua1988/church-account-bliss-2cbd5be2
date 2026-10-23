@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createR2SignedUrl, downloadFromR2, isR2Configured } from "../_shared/r2.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,14 +22,21 @@ async function sendPdfToOwnerTelegram(
 
   const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') || '';
 
-  // Get the PDF bytes from Storage
-  const { data: fileData, error: downloadError } = await supabase.storage
-    .from('documents')
-    .download(pdfPath);
-
-  if (downloadError || !fileData) {
-    console.error('Failed to download PDF from storage:', downloadError);
-    return;
+  // New files live in R2. Keep the Storage fallback until the historic files
+  // have been migrated, so no existing receipt becomes unavailable.
+  let fileData: Blob | null = null;
+  try {
+    if (isR2Configured()) fileData = await downloadFromR2(pdfPath);
+  } catch (error) {
+    console.warn('R2 PDF download failed, trying legacy Storage:', error);
+  }
+  if (!fileData) {
+    const { data, error } = await supabase.storage.from('documents').download(pdfPath);
+    if (error || !data) {
+      console.error('Failed to download PDF from storage:', error);
+      return;
+    }
+    fileData = data;
   }
 
   const bytes = new Uint8Array(await fileData.arrayBuffer());
@@ -111,8 +119,21 @@ Deno.serve(async (req) => {
             status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        // Create a signed upload URL so the anonymous client can PUT the PDF directly
-        // upsert: true is required so a re-upload overwrites the old PDF (e.g. sans-photos original)
+        if (isR2Configured()) {
+          const contentType = 'application/pdf';
+          const r2SignedUrl = await createR2SignedUrl(resolvedFilePath, 'PUT', { contentType });
+          return new Response(JSON.stringify({
+            r2SignedUrl,
+            path: resolvedFilePath,
+            filePath: resolvedFilePath,
+            contentType,
+            ...(isPreparedUpload ? { folderKey } : {}),
+          }), {
+            status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Legacy Storage fallback during the migration.
         const { data, error } = await supabase.storage
           .from('documents')
           .createSignedUploadUrl(resolvedFilePath, { upsert: true });
@@ -147,6 +168,18 @@ Deno.serve(async (req) => {
             status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
+        if (isR2Configured()) {
+          try {
+            const signedUrl = await createR2SignedUrl(filePath, 'GET', { expiresInSeconds: 3600 });
+            return new Response(JSON.stringify({ signedUrl }), {
+              status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          } catch (error) {
+            // A missing historic object must still be served from Supabase.
+            console.warn('R2 signed URL failed, trying legacy Storage:', error);
+          }
+        }
+
         const { data, error } = await supabase.storage
           .from('documents')
           .createSignedUrl(filePath, 3600);

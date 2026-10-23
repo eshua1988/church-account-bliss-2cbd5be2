@@ -62,6 +62,28 @@ const isDepositNotification = (notification: Notification) =>
 
 const NOTIFICATIONS_PAGE_SIZE = 25;
 
+// R2 uploads use a short-lived URL returned by the Edge Function. During the
+// migration, old deployments can still return a Supabase signed-upload token.
+const uploadPdfToSignedTarget = async (target: any, file: Blob) => {
+  if (target.r2SignedUrl) {
+    const response = await fetch(target.r2SignedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/pdf' },
+      body: file,
+    });
+    if (!response.ok) throw new Error(`R2 upload failed: HTTP ${response.status}`);
+    return;
+  }
+  if (!target.path || !target.token) throw new Error('Не удалось получить доступ для сохранения PDF');
+  const { error } = await supabase.storage.from('documents').uploadToSignedUrl(
+    target.path,
+    target.token,
+    file,
+    { contentType: 'application/pdf' },
+  );
+  if (error) throw error;
+};
+
 const NotificationCard = ({
   notification,
   onMarkAsRead,
@@ -842,14 +864,8 @@ export const NotificationsPage = () => {
       const uploadParams = new URLSearchParams({ action: 'upload-url', filePath: pdfPath, token });
       const uploadResponse = await fetch(`${supabaseUrl}/functions/v1/upload-payout-pdf?${uploadParams}`, { headers: edgeHeaders });
       const uploadResult = await uploadResponse.json();
-      if (!uploadResponse.ok || !uploadResult.path || !uploadResult.token) throw new Error(uploadResult.error || 'Не удалось получить доступ для сохранения PDF');
-      const { error: uploadError } = await supabase.storage.from('documents').uploadToSignedUrl(
-        uploadResult.path,
-        uploadResult.token,
-        new Blob([await pdfDoc.save() as BlobPart], { type: 'application/pdf' }),
-        { contentType: 'application/pdf' },
-      );
-      if (uploadError) throw uploadError;
+      if (!uploadResponse.ok) throw new Error(uploadResult.error || 'Не удалось получить доступ для сохранения PDF');
+      await uploadPdfToSignedTarget(uploadResult, new Blob([await pdfDoc.save() as BlobPart], { type: 'application/pdf' }));
 
       const first = receipts[0];
       const updatedMetadata = {
@@ -972,11 +988,8 @@ export const NotificationsPage = () => {
     const uploadParams = new URLSearchParams({ action: 'upload-url', filePath: pdfPath, token });
     const uploadResponse = await fetch(`${supabaseUrl}/functions/v1/upload-payout-pdf?${uploadParams}`, { headers: edgeHeaders });
     const uploadResult = await uploadResponse.json();
-    if (!uploadResponse.ok || !uploadResult.path || !uploadResult.token) throw new Error(uploadResult.error || 'Не удалось получить доступ для сохранения PDF');
-    const { error: uploadError } = await supabase.storage
-      .from('documents')
-      .uploadToSignedUrl(uploadResult.path, uploadResult.token, new Blob([await pdfDoc.save() as BlobPart], { type: 'application/pdf' }), { contentType: 'application/pdf' });
-    if (uploadError) throw uploadError;
+    if (!uploadResponse.ok) throw new Error(uploadResult.error || 'Не удалось получить доступ для сохранения PDF');
+    await uploadPdfToSignedTarget(uploadResult, new Blob([await pdfDoc.save() as BlobPart], { type: 'application/pdf' }));
 
     const updatedMetadata = clearSignature
       ? { ...meta, cashier: null, cashier_signed: false }
@@ -1140,18 +1153,10 @@ export const NotificationsPage = () => {
         { headers: edgeHeaders },
       );
       const uploadResult = await uploadResponse.json();
-      if (!uploadResponse.ok || !uploadResult.path || !uploadResult.token) {
+      if (!uploadResponse.ok) {
         throw new Error(uploadResult.error || 'Не удалось получить доступ для сохранения PDF');
       }
-      const { error: uploadError } = await supabase.storage
-        .from('documents')
-        .uploadToSignedUrl(
-          uploadResult.path,
-          uploadResult.token,
-          new Blob([updatedBytes as BlobPart], { type: 'application/pdf' }),
-          { contentType: 'application/pdf' },
-        );
-      if (uploadError) throw uploadError;
+      await uploadPdfToSignedTarget(uploadResult, new Blob([updatedBytes as BlobPart], { type: 'application/pdf' }));
 
       const receipts = Array.isArray(meta.receipts)
         ? (meta.receipts as Array<Record<string, unknown>>).map((receipt, index) =>
@@ -1305,15 +1310,10 @@ export const NotificationsPage = () => {
       { headers: edgeHeaders },
     );
     const uploadUrlResult = await uploadUrlResponse.json();
-    if (!uploadUrlResponse.ok || !uploadUrlResult.token || !uploadUrlResult.path) {
+    if (!uploadUrlResponse.ok) {
       throw new Error(uploadUrlResult.error || 'Не удалось получить доступ для обновления PDF');
     }
-    const { error: uploadError } = await supabase.storage
-      .from('documents')
-      .uploadToSignedUrl(uploadUrlResult.path, uploadUrlResult.token, pdfBlob, {
-        contentType: 'application/pdf',
-      });
-    if (uploadError) throw uploadError;
+    await uploadPdfToSignedTarget(uploadUrlResult, pdfBlob);
     return pdfPath;
   };
 
