@@ -30,16 +30,18 @@ const getPdfBlob = async (notification: Notification) => {
 
   const supabaseUrl = (supabase as any).supabaseUrl as string;
   const supabaseKey = (supabase as any).supabaseKey as string;
-  const params = new URLSearchParams({ action: 'sign', filePath, userId: notification.user_id });
-  const signedResponse = await fetch(
+  // The Edge Function reads R2 first and falls back to legacy Supabase Storage.
+  // Old archives have not been copied to R2 yet, so a direct R2 signed link
+  // produces 404 even though the document still exists in Supabase.
+  const params = new URLSearchParams({ action: 'download', filePath, userId: notification.user_id });
+  const response = await fetch(
     `${supabaseUrl}/functions/v1/upload-payout-pdf?${params}`,
     { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } },
   );
-  const signed = await signedResponse.json();
-  if (!signed.signedUrl) throw new Error(signed.error || 'Не удалось получить ссылку на PDF');
-
-  const response = await fetch(signed.signedUrl);
-  if (!response.ok) throw new Error(`PDF HTTP ${response.status}`);
+  if (!response.ok) {
+    const result = await response.json().catch(() => ({}));
+    throw new Error(result.error || `PDF HTTP ${response.status}`);
+  }
   return {
     blob: await response.blob(),
     name: filePath.split('/').pop() || `${notification.id}.pdf`,
