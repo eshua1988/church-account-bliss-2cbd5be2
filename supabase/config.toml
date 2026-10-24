@@ -36,5 +36,8 @@ verify_jwt = false
 [functions.church-hub-invite]
 verify_jwt = false
 
+[functions.church-hub-accept-invite]
+verify_jwt = false
+
 [functions.generate-payout-pdf]
 verify_jwt = false
