@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createR2SignedUrl, downloadFromR2, isR2Configured } from "../_shared/r2.ts";
+import { createR2SignedUrl, downloadFromR2, isR2Configured, r2ObjectExists } from "../_shared/r2.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -176,10 +176,12 @@ Deno.serve(async (req) => {
         }
         if (isR2Configured()) {
           try {
-            const signedUrl = await createR2SignedUrl(filePath, 'GET', { expiresInSeconds: 3600 });
-            return new Response(JSON.stringify({ signedUrl }), {
-              status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
+            if (await r2ObjectExists(filePath)) {
+              const signedUrl = await createR2SignedUrl(filePath, 'GET', { expiresInSeconds: 3600 });
+              return new Response(JSON.stringify({ signedUrl }), {
+                status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              });
+            }
           } catch (error) {
             // A missing historic object must still be served from Supabase.
             console.warn('R2 signed URL failed, trying legacy Storage:', error);
