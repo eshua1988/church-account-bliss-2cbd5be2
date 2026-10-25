@@ -82,25 +82,33 @@ DROP POLICY IF EXISTS "Room leaders manage membership" ON public.church_hub_room
 DROP POLICY IF EXISTS "Members read room messages" ON public.church_hub_room_messages;
 DROP POLICY IF EXISTS "Members write room messages" ON public.church_hub_room_messages;
 
+DROP POLICY IF EXISTS "Hub users can read permitted rooms" ON public.church_hub_rooms;
 CREATE POLICY "Hub users can read permitted rooms" ON public.church_hub_rooms
   FOR SELECT TO authenticated USING (public.church_hub_room_can_access(id));
+DROP POLICY IF EXISTS "Hub leaders create rooms" ON public.church_hub_rooms;
 CREATE POLICY "Hub leaders create rooms" ON public.church_hub_rooms
   FOR INSERT TO authenticated
   WITH CHECK (owner_id = auth.uid() AND public.hub_is_leader(workspace_id));
+DROP POLICY IF EXISTS "Room owners update rooms" ON public.church_hub_rooms;
 CREATE POLICY "Room owners update rooms" ON public.church_hub_rooms
   FOR UPDATE TO authenticated USING (owner_id = auth.uid()) WITH CHECK (owner_id = auth.uid());
+DROP POLICY IF EXISTS "Room owners delete rooms" ON public.church_hub_rooms;
 CREATE POLICY "Room owners delete rooms" ON public.church_hub_rooms
   FOR DELETE TO authenticated USING (owner_id = auth.uid());
 
+DROP POLICY IF EXISTS "Permitted users read room membership" ON public.church_hub_room_members;
 CREATE POLICY "Permitted users read room membership" ON public.church_hub_room_members
   FOR SELECT TO authenticated USING (public.church_hub_room_can_access(room_id));
+DROP POLICY IF EXISTS "Room managers manage membership" ON public.church_hub_room_members;
 CREATE POLICY "Room managers manage membership" ON public.church_hub_room_members
   FOR ALL TO authenticated
   USING (public.church_hub_room_can_manage(room_id))
   WITH CHECK (public.church_hub_room_can_manage(room_id));
 
+DROP POLICY IF EXISTS "Permitted users read messages" ON public.church_hub_room_messages;
 CREATE POLICY "Permitted users read messages" ON public.church_hub_room_messages
   FOR SELECT TO authenticated USING (public.church_hub_room_can_access(room_id));
+DROP POLICY IF EXISTS "Permitted users send messages" ON public.church_hub_room_messages;
 CREATE POLICY "Permitted users send messages" ON public.church_hub_room_messages
   FOR INSERT TO authenticated
   WITH CHECK (author_id = auth.uid() AND public.church_hub_room_can_access(room_id));

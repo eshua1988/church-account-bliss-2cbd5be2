@@ -34,17 +34,24 @@ RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS
   SELECT EXISTS (SELECT 1 FROM public.church_hub_room_members WHERE room_id = target_room AND user_id = auth.uid());
 $$;
 
+DROP POLICY IF EXISTS "Room members can read rooms" ON public.church_hub_rooms;
 CREATE POLICY "Room members can read rooms" ON public.church_hub_rooms FOR SELECT
   USING (room_type = 'church' OR public.is_church_hub_room_member(id) OR owner_id = auth.uid());
+DROP POLICY IF EXISTS "Owners create rooms" ON public.church_hub_rooms;
 CREATE POLICY "Owners create rooms" ON public.church_hub_rooms FOR INSERT WITH CHECK (owner_id = auth.uid());
+DROP POLICY IF EXISTS "Owners manage rooms" ON public.church_hub_rooms;
 CREATE POLICY "Owners manage rooms" ON public.church_hub_rooms FOR UPDATE USING (owner_id = auth.uid());
 
+DROP POLICY IF EXISTS "Members can read room membership" ON public.church_hub_room_members;
 CREATE POLICY "Members can read room membership" ON public.church_hub_room_members FOR SELECT
   USING (public.is_church_hub_room_member(room_id) OR user_id = auth.uid());
+DROP POLICY IF EXISTS "Room leaders manage membership" ON public.church_hub_room_members;
 CREATE POLICY "Room leaders manage membership" ON public.church_hub_room_members FOR ALL
   USING (EXISTS (SELECT 1 FROM public.church_hub_room_members m WHERE m.room_id = room_id AND m.user_id = auth.uid() AND m.role IN ('owner','leader')));
 
+DROP POLICY IF EXISTS "Members read room messages" ON public.church_hub_room_messages;
 CREATE POLICY "Members read room messages" ON public.church_hub_room_messages FOR SELECT
   USING (public.is_church_hub_room_member(room_id));
+DROP POLICY IF EXISTS "Members write room messages" ON public.church_hub_room_messages;
 CREATE POLICY "Members write room messages" ON public.church_hub_room_messages FOR INSERT
   WITH CHECK (author_id = auth.uid() AND public.is_church_hub_room_member(room_id));

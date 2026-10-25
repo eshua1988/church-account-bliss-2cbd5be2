@@ -1,5 +1,6 @@
 -- A room stays visible in the department directory, while its messages remain private.
 DROP POLICY IF EXISTS "Hub users can read permitted rooms" ON public.church_hub_rooms;
+DROP POLICY IF EXISTS "Hub members can view room directory" ON public.church_hub_rooms;
 CREATE POLICY "Hub members can view room directory" ON public.church_hub_rooms
   FOR SELECT TO authenticated USING (public.hub_is_member(workspace_id));
 
@@ -16,6 +17,7 @@ CREATE TABLE IF NOT EXISTS public.church_hub_room_join_requests (
 
 ALTER TABLE public.church_hub_room_join_requests ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Members request room access" ON public.church_hub_room_join_requests;
 CREATE POLICY "Members request room access" ON public.church_hub_room_join_requests
   FOR INSERT TO authenticated
   WITH CHECK (
@@ -26,12 +28,15 @@ CREATE POLICY "Members request room access" ON public.church_hub_room_join_reque
     )
   );
 
+DROP POLICY IF EXISTS "Requesters view own requests" ON public.church_hub_room_join_requests;
 CREATE POLICY "Requesters view own requests" ON public.church_hub_room_join_requests
   FOR SELECT TO authenticated USING (requester_id = auth.uid());
 
+DROP POLICY IF EXISTS "Room managers review requests" ON public.church_hub_room_join_requests;
 CREATE POLICY "Room managers review requests" ON public.church_hub_room_join_requests
   FOR SELECT TO authenticated USING (public.church_hub_room_can_manage(room_id));
 
+DROP POLICY IF EXISTS "Room managers update requests" ON public.church_hub_room_join_requests;
 CREATE POLICY "Room managers update requests" ON public.church_hub_room_join_requests
   FOR UPDATE TO authenticated
   USING (public.church_hub_room_can_manage(room_id))

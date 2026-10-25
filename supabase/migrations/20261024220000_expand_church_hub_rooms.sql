@@ -50,6 +50,7 @@ VALUES ('church-hub-room-files', 'church-hub-room-files', false, 26214400)
 ON CONFLICT (id) DO UPDATE SET public = false, file_size_limit = 26214400;
 
 DROP POLICY IF EXISTS "Room participants read private files" ON storage.objects;
+DROP POLICY IF EXISTS "Room participants read private files" ON storage.objects;
 CREATE POLICY "Room participants read private files" ON storage.objects
   FOR SELECT TO authenticated
   USING (
@@ -57,6 +58,7 @@ CREATE POLICY "Room participants read private files" ON storage.objects
     AND public.church_hub_room_can_access((storage.foldername(name))[1]::uuid)
   );
 
+DROP POLICY IF EXISTS "Room participants upload private files" ON storage.objects;
 DROP POLICY IF EXISTS "Room participants upload private files" ON storage.objects;
 CREATE POLICY "Room participants upload private files" ON storage.objects
   FOR INSERT TO authenticated
@@ -66,6 +68,7 @@ CREATE POLICY "Room participants upload private files" ON storage.objects
     AND owner_id = auth.uid()::text
   );
 
+DROP POLICY IF EXISTS "Authors remove own private files" ON storage.objects;
 DROP POLICY IF EXISTS "Authors remove own private files" ON storage.objects;
 CREATE POLICY "Authors remove own private files" ON storage.objects
   FOR DELETE TO authenticated

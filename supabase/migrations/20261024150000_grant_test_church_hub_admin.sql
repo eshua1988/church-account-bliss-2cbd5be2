@@ -67,11 +67,13 @@ AS $$
 $$;
 
 DROP POLICY IF EXISTS "Room owners update rooms" ON public.church_hub_rooms;
+DROP POLICY IF EXISTS "Room owners update rooms" ON public.church_hub_rooms;
 CREATE POLICY "Room owners update rooms" ON public.church_hub_rooms
   FOR UPDATE TO authenticated
   USING (public.church_hub_room_can_manage(id))
   WITH CHECK (public.church_hub_room_can_manage(id));
 
+DROP POLICY IF EXISTS "Room owners delete rooms" ON public.church_hub_rooms;
 DROP POLICY IF EXISTS "Room owners delete rooms" ON public.church_hub_rooms;
 CREATE POLICY "Room owners delete rooms" ON public.church_hub_rooms
   FOR DELETE TO authenticated

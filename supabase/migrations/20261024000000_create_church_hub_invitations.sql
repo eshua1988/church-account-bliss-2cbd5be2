@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS public.church_hub_invitations (
 
 ALTER TABLE public.church_hub_invitations ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Inviters manage their Church Hub invitations" ON public.church_hub_invitations;
 CREATE POLICY "Inviters manage their Church Hub invitations"
   ON public.church_hub_invitations FOR ALL
   USING (auth.uid() = inviter_id)
