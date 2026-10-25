@@ -10,7 +10,8 @@ interface PublicTransactionsRequest {
   includeNotifications?: boolean;
   action?: 'analytics' | 'add-rule-terms' | 'sync-bank' | 'export-sheets' | 'save-sheets-settings' | 'save-export-source' | 'delete-export-source' | 'save-registration-source' | 'delete-registration-source' | 'reconcile-registration-sheets' | 'list-sheets';
   fromDate?: string;
-  analyticsSource?: 'bank' | 'pdf';
+  toDate?: string;
+  analyticsSource?: 'all' | 'bank' | 'pdf';
   cursor?: {
     date: string;
     createdAt: string;
@@ -787,13 +788,10 @@ Deno.serve(async (req) => {
       const fromDate = /^\d{4}-\d{2}-\d{2}$/.test(body.fromDate || '')
         ? body.fromDate
         : new Date(Date.now() - 31 * 86400000).toISOString().slice(0, 10);
+      const toDate = /^\d{4}-\d{2}-\d{2}$/.test(body.toDate || '') ? body.toDate : null;
       const { data: analytics, error: analyticsError } = await supabase.rpc(
         'public_analytics_summary',
-        {
-          target_user_id: linkData.owner_user_id,
-          from_date: fromDate,
-          analytics_source: body.analyticsSource === 'pdf' ? 'pdf' : 'bank',
-        },
+        { target_user_id: linkData.owner_user_id, from_date: fromDate, to_date: toDate, analytics_source: ['all', 'bank', 'pdf'].includes(body.analyticsSource || '') ? body.analyticsSource : 'all' },
       );
       if (analyticsError) {
         return new Response(JSON.stringify({ valid: false, error: 'Failed to aggregate analytics' }), {

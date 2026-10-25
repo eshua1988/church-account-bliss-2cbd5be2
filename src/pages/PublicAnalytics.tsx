@@ -10,10 +10,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { readPublicLinkCache, writePublicLinkCache } from '@/lib/publicLinkCache';
+import { DateRangeFilter } from '@/components/DateRangeFilter';
 
 type Period = 'week' | 'month' | 'quarter' | 'year' | 'all';
 type TransactionFilter = 'all' | 'income' | 'expense';
-type AnalyticsSource = 'bank' | 'pdf';
+type AnalyticsSource = 'all' | 'bank' | 'pdf';
+type DateRange = { from?: Date; to?: Date };
 interface CurrencyTotal { type: 'income' | 'expense'; currency: string; amount: number; transaction_count: number }
 interface DepartmentTotal { department_name: string; currency: string; income: number; expense: number }
 interface CategoryTotal { category_name: string; currency: string; income: number; expense: number; income_count: number; expense_count: number }
@@ -46,19 +48,18 @@ const PublicAnalytics = () => {
   const { token = '' } = useParams();
   const [period, setPeriod] = useState<Period>('all');
   const [transactionFilter, setTransactionFilter] = useState<TransactionFilter>('all');
-  const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('bank');
+  const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('all');
+  const [customDateRange, setCustomDateRange] = useState<DateRange>({});
   const [currency, setCurrency] = useState('');
   const [data, setData] = useState<Response | null>(null);
 
   useEffect(() => {
-    const fromDate = period === 'all'
-      ? '1900-01-01'
-      : (() => {
-        const from = new Date();
-        from.setDate(from.getDate() - periodDays[period]);
-        return from.toISOString().slice(0, 10);
-      })();
-    const cacheKey = `public-analytics:${token}:${period}:${analyticsSource}`;
+    const dateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const fromDate = customDateRange.from ? dateKey(customDateRange.from) : period === 'all' ? '1900-01-01' : (() => {
+      const from = new Date(); from.setDate(from.getDate() - periodDays[period]); return dateKey(from);
+    })();
+    const toDate = customDateRange.to ? dateKey(customDateRange.to) : undefined;
+    const cacheKey = `public-analytics:${token}:${period}:${analyticsSource}:${fromDate}:${toDate || ''}`;
     const cached = readPublicLinkCache<Response>(cacheKey);
     if (cached) {
       setData(cached);
@@ -66,13 +67,13 @@ const PublicAnalytics = () => {
     }
     setData(null);
     supabase.functions.invoke<Response>('public-transactions', {
-      body: { token, action: 'analytics', fromDate, analyticsSource },
+      body: { token, action: 'analytics', fromDate, toDate, analyticsSource },
     }).then(({ data }) => {
       const response = data || { valid: false };
       if (response.valid) writePublicLinkCache(cacheKey, response, 5 * 60 * 1000);
       setData(response);
     });
-  }, [token, period, analyticsSource]);
+  }, [token, period, analyticsSource, customDateRange.from, customDateRange.to]);
 
   const summary = data?.analytics;
   const currencies = useMemo(() => Array.from(new Set(summary?.currencyTotals.map(row => row.currency) || [])), [summary]);
@@ -152,6 +153,7 @@ const PublicAnalytics = () => {
           <div className="space-y-3">
             <h1 className="flex items-center gap-2 text-2xl font-bold"><BarChart3 />Публичная аналитика</h1>
             <div className="flex flex-wrap gap-2" aria-label="Источник аналитики">
+              <Button variant={analyticsSource === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setAnalyticsSource('all')}>Банк + PDF</Button>
               <Button variant={analyticsSource === 'bank' ? 'default' : 'outline'} size="sm" onClick={() => setAnalyticsSource('bank')}>Банк</Button>
               <Button variant={analyticsSource === 'pdf' ? 'default' : 'outline'} size="sm" onClick={() => setAnalyticsSource('pdf')}>PDF Аналитика</Button>
             </div>
@@ -166,8 +168,9 @@ const PublicAnalytics = () => {
                 </SelectContent>
               </Select>
             )}
+            <DateRangeFilter value={customDateRange} onChange={setCustomDateRange} />
             {(Object.keys(labels) as Period[]).map(value => (
-              <Button key={value} variant={period === value ? 'default' : 'outline'} size="sm" onClick={() => setPeriod(value)}>{labels[value]}</Button>
+              <Button key={value} variant={period === value && !customDateRange.from && !customDateRange.to ? 'default' : 'outline'} size="sm" onClick={() => { setPeriod(value); setCustomDateRange({}); }}>{labels[value]}</Button>
             ))}
           </div>
         </div>
