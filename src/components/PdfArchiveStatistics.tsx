@@ -103,7 +103,8 @@ export const PdfArchiveStatistics = ({ categories, getCategoryName }: PdfArchive
       });
       const result = await response.json();
       if (!response.ok || !result.signedUrl) throw new Error(result.error || 'Не удалось получить ссылку на PDF');
-      openPdfUrl(`${result.signedUrl}${result.signedUrl.includes('?') ? '&' : '?'}v=${Date.now()}`);
+      // The signature covers the complete query string; do not append cache-busters.
+      openPdfUrl(result.signedUrl);
     } catch (error) {
       console.error('Error opening source PDF:', error);
       toast({ title: 'Не удалось открыть PDF', description: 'Проверьте, что исходный файл ещё доступен.', variant: 'destructive' });
