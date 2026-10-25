@@ -70,6 +70,9 @@ export const DateRangeFilter = ({ value, onChange }: DateRangeFilterProps) => {
 
         <Calendar
           mode={mode === 'range' ? 'range' : 'single'}
+          captionLayout="dropdown-buttons"
+          fromYear={2000}
+          toYear={new Date().getFullYear() + 5}
           selected={mode === 'range' ? (localRange as any) : (localRange.from as any)}
           onSelect={(r: any) => {
             if (!r) return;
