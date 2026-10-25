@@ -15,6 +15,7 @@ import { DateRangeFilter } from '@/components/DateRangeFilter';
 type TransactionFilter = 'all' | 'income' | 'expense';
 type AnalyticsSource = 'all' | 'bank' | 'pdf';
 type ChartKey = 'dynamics' | 'cumulative' | 'departments' | 'incomeCategories' | 'expenseCategories' | 'dailyNet';
+type TableKey = 'monthlySummary';
 type DateRange = { from?: Date; to?: Date };
 interface CurrencyTotal { type: 'income' | 'expense'; currency: string; amount: number; transaction_count: number }
 interface DepartmentTotal { department_name: string; currency: string; income: number; expense: number }
@@ -38,6 +39,7 @@ const chartLabels: Record<ChartKey, string> = {
   expenseCategories: 'Расходы по категориям',
   dailyNet: 'Дневной чистый результат',
 };
+const tableLabels: Record<TableKey, string> = { monthlySummary: 'Сводка по месяцам' };
 const COLORS = ['#22c55e', '#ef4444', '#3b82f6', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
 const number = (value: unknown) => Number(value) || 0;
 const money = (value: unknown) => number(value).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
@@ -45,6 +47,12 @@ const ChartCard = ({ title, children, onClose }: { title: string; children: Reac
   <Card>
     <CardHeader className="flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-lg">{title}</CardTitle><Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={onClose} title="Скрыть график" aria-label="Скрыть график"><X className="h-4 w-4" /></Button></CardHeader>
     <CardContent className="h-[22rem] sm:h-[26rem]">{children}</CardContent>
+  </Card>
+);
+const TableCard = ({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) => (
+  <Card>
+    <CardHeader className="flex-row items-center justify-between space-y-0"><CardTitle className="text-lg">{title}</CardTitle><Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={onClose} title="Скрыть таблицу" aria-label="Скрыть таблицу"><X className="h-4 w-4" /></Button></CardHeader>
+    <CardContent>{children}</CardContent>
   </Card>
 );
 const axisTick = { fill: 'hsl(var(--muted-foreground))', fontSize: 13 };
@@ -58,6 +66,7 @@ const PublicAnalytics = () => {
   const [currency, setCurrency] = useState('');
   const [data, setData] = useState<Response | null>(null);
   const [visibleCharts, setVisibleCharts] = useState<ChartKey[]>(['dynamics', 'cumulative']);
+  const [visibleTables, setVisibleTables] = useState<TableKey[]>([]);
 
   useEffect(() => {
     const dateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -141,8 +150,32 @@ const PublicAnalytics = () => {
   const expenseAmount = showExpense ? totals.filter(row => row.type === 'expense').reduce((sum, row) => sum + number(row.amount), 0) : 0;
   const incomeCount = showIncome ? totals.filter(row => row.type === 'income').reduce((sum, row) => sum + number(row.transaction_count), 0) : 0;
   const expenseCount = showExpense ? totals.filter(row => row.type === 'expense').reduce((sum, row) => sum + number(row.transaction_count), 0) : 0;
+  const tableCurrencies = currency ? [currency] : currencies;
+  const monthlyRows = Object.values((summary.dailyTotals || [])
+    .filter(row => isSelectedCurrency(row.currency))
+    .reduce<Record<string, { month: string; values: Record<string, { income: number; expense: number }> }>>((result, row) => {
+      const month = row.date.slice(0, 7);
+      const monthEntry = result[month] ||= { month, values: {} };
+      const value = monthEntry.values[row.currency] ||= { income: 0, expense: 0 };
+      value.income += showIncome ? number(row.income) : 0;
+      value.expense += showExpense ? number(row.expense) : 0;
+      return result;
+    }, {}))
+    .sort((left, right) => left.month.localeCompare(right.month));
+  const monthlyTotals = tableCurrencies.reduce<Record<string, { income: number; expense: number }>>((result, currencyCode) => {
+    result[currencyCode] = monthlyRows.reduce((total, row) => {
+      const value = row.values[currencyCode] || { income: 0, expense: 0 };
+      total.income += value.income;
+      total.expense += value.expense;
+      return total;
+    }, { income: 0, expense: 0 });
+    return result;
+  }, {});
+  const monthLabel = (month: string) => new Date(`${month}-01T00:00:00`).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
   const toggleChart = (chart: ChartKey) => setVisibleCharts(current => current.includes(chart) ? current.filter(item => item !== chart) : [...current, chart]);
   const hideChart = (chart: ChartKey) => setVisibleCharts(current => current.filter(item => item !== chart));
+  const toggleTable = (table: TableKey) => setVisibleTables(current => current.includes(table) ? current.filter(item => item !== table) : [...current, table]);
+  const hideTable = (table: TableKey) => setVisibleTables(current => current.filter(item => item !== table));
 
   return (
     <main className="min-h-screen bg-background p-3 sm:p-8">
@@ -171,6 +204,12 @@ const PublicAnalytics = () => {
               <summary className="flex h-10 cursor-pointer list-none items-center rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent">Графики</summary>
               <div className="absolute right-0 z-20 mt-2 w-72 space-y-1 rounded-md border bg-popover p-3 shadow-md">
                 {(Object.keys(chartLabels) as ChartKey[]).map(chart => <label key={chart} className="flex cursor-pointer items-center gap-3 rounded px-2 py-2 text-sm hover:bg-accent"><input type="checkbox" className="h-4 w-4" checked={visibleCharts.includes(chart)} onChange={() => toggleChart(chart)} /><span>{chartLabels[chart]}</span></label>)}
+              </div>
+            </details>
+            <details className="relative">
+              <summary className="flex h-10 cursor-pointer list-none items-center rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent">Таблицы</summary>
+              <div className="absolute right-0 z-20 mt-2 w-64 space-y-1 rounded-md border bg-popover p-3 shadow-md">
+                {(Object.keys(tableLabels) as TableKey[]).map(table => <label key={table} className="flex cursor-pointer items-center gap-3 rounded px-2 py-2 text-sm hover:bg-accent"><input type="checkbox" className="h-4 w-4" checked={visibleTables.includes(table)} onChange={() => toggleTable(table)} /><span>{tableLabels[table]}</span></label>)}
               </div>
             </details>
           </div>
@@ -204,6 +243,20 @@ const PublicAnalytics = () => {
           {visibleCharts.includes('expenseCategories') && <ChartCard title={chartLabels.expenseCategories} onClose={() => hideChart('expenseCategories')}><ResponsiveContainer><PieChart><Pie data={categories.filter(row => row.expense > 0).slice(0, 10)} dataKey="expense" nameKey="name" outerRadius={120} label>{categories.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip formatter={money} contentStyle={tooltipStyle} /><Legend wrapperStyle={{ fontSize: 14 }} /></PieChart></ResponsiveContainer></ChartCard>}
           {visibleCharts.includes('dailyNet') && <ChartCard title={chartLabels.dailyNet} onClose={() => hideChart('dailyNet')}><ResponsiveContainer><BarChart data={daily}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="date" tick={axisTick} minTickGap={28} interval="preserveStartEnd" /><YAxis tick={axisTick} width={72} /><Tooltip formatter={money} contentStyle={tooltipStyle} /><Bar dataKey="balance" name="Баланс">{daily.map((row, index) => <Cell key={index} fill={row.balance >= 0 ? '#22c55e' : '#ef4444'} />)}</Bar></BarChart></ResponsiveContainer></ChartCard>}
         </div>
+        {visibleTables.includes('monthlySummary') && <TableCard title="Доходы, расходы и остаток по месяцам" onClose={() => hideTable('monthlySummary')}>
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full min-w-[760px] border-collapse text-sm">
+              <thead className="bg-muted/60">
+                <tr className="border-b"><th rowSpan={2} className="border-r px-3 py-2 text-left font-semibold">Месяц</th><th colSpan={tableCurrencies.length} className="border-r px-3 py-2 text-center font-semibold text-green-600">Доходы</th><th colSpan={tableCurrencies.length} className="border-r px-3 py-2 text-center font-semibold text-red-500">Расходы</th><th colSpan={tableCurrencies.length} className="px-3 py-2 text-center font-semibold">Остаток</th></tr>
+                <tr>{['income', 'expense', 'balance'].map(group => tableCurrencies.map(currencyCode => <th key={`${group}-${currencyCode}`} className="border-r px-3 py-2 text-right font-medium">{currencyCode}</th>))}</tr>
+              </thead>
+              <tbody>
+                {monthlyRows.map(row => <tr key={row.month} className="border-b last:border-0 hover:bg-muted/30"><td className="border-r px-3 py-2 font-medium capitalize">{monthLabel(row.month)}</td>{tableCurrencies.map(currencyCode => <td key={`income-${currencyCode}`} className="border-r px-3 py-2 text-right text-green-600">{money(row.values[currencyCode]?.income)}</td>)}{tableCurrencies.map(currencyCode => <td key={`expense-${currencyCode}`} className="border-r px-3 py-2 text-right text-red-500">{money(row.values[currencyCode]?.expense)}</td>)}{tableCurrencies.map(currencyCode => { const value = row.values[currencyCode] || { income: 0, expense: 0 }; const balance = value.income - value.expense; return <td key={`balance-${currencyCode}`} className={`px-3 py-2 text-right font-medium ${balance >= 0 ? 'text-green-600' : 'text-red-500'}`}>{money(balance)}</td>; })}</tr>)}
+              </tbody>
+              <tfoot className="border-t-2 bg-muted/60 font-semibold"><tr><td className="border-r px-3 py-2">Итого</td>{tableCurrencies.map(currencyCode => <td key={`total-income-${currencyCode}`} className="border-r px-3 py-2 text-right text-green-600">{money(monthlyTotals[currencyCode]?.income)}</td>)}{tableCurrencies.map(currencyCode => <td key={`total-expense-${currencyCode}`} className="border-r px-3 py-2 text-right text-red-500">{money(monthlyTotals[currencyCode]?.expense)}</td>)}{tableCurrencies.map(currencyCode => { const value = monthlyTotals[currencyCode] || { income: 0, expense: 0 }; const balance = value.income - value.expense; return <td key={`total-balance-${currencyCode}`} className={`px-3 py-2 text-right ${balance >= 0 ? 'text-green-600' : 'text-red-500'}`}>{money(balance)}</td>; })}</tr></tfoot>
+            </table>
+          </div>
+        </TableCard>}
 
         <Card><CardHeader><CardTitle className="flex gap-2"><Building2 />Аналитика по отделам</CardTitle></CardHeader><CardContent className="space-y-2">
           {departments.map(row => <div key={row.name} className="grid gap-2 rounded border p-3 sm:grid-cols-3"><strong>{row.name}</strong><span className="text-green-500">Доход: {money(row.income)} {currency}</span><span className="text-red-500">Расход: {money(row.expense)} {currency}</span></div>)}
