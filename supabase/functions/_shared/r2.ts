@@ -69,8 +69,6 @@ export const downloadFromR2 = async (objectPath: string) => {
   if (!response.ok) throw new Error(`R2 download failed: HTTP ${response.status}`);
   return response.blob();
 };
-/** Check an object without transferring the PDF itself. */
-export const r2ObjectExists = async (objectPath: string) => {
   const endpoint = required('R2_ENDPOINT').replace(/\/$/, '');
   const bucket = required('R2_BUCKET');
   const client = new AwsClient({
@@ -86,3 +84,13 @@ export const r2ObjectExists = async (objectPath: string) => {
   if (!response.ok) throw new Error(`R2 object check failed: HTTP ${response.status}`);
   return true;
 };
+=======
+
+export const uploadToR2 = async (objectPath: string, body: BodyInit, contentType: string) => {
+  const endpoint = required('R2_ENDPOINT').replace(/\/$/, '');
+  const bucket = required('R2_BUCKET');
+  const client = new AwsClient({ accessKeyId: required('R2_ACCESS_KEY_ID'), secretAccessKey: required('R2_SECRET_ACCESS_KEY'), service: 's3', region: 'auto' });
+  const response = await client.fetch(`${endpoint}/${bucket}/${encodeObjectPath(objectPath)}`, { method: 'PUT', headers: { 'content-type': contentType }, body });
+  if (!response.ok) throw new Error(`R2 upload failed: HTTP ${response.status}`);
+};
+>>>>>>> de10a0c (Add editable R2-backed protocols)
