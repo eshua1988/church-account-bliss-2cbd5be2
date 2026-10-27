@@ -57,7 +57,7 @@ Deno.serve(async (request) => {
 
     if (action === 'load') {
       const [{ data: settings }, { data: documents, error }] = await Promise.all([
-        supabase.from('protocol_link_settings').select('attendees, councils, secretary_name, secretary_signature, pastor_name, google_sheet_url, google_sheet_name, cloud_name, google_drive_client_id, church_name, church_header_image, show_church_header, church_header_style').eq('link_token', token).eq('owner_user_id', workspaceUserId).single(),
+        supabase.from('protocol_link_settings').select('attendees, councils, secretary_name, secretary_signature, pastor_name, google_sheet_url, google_sheet_name, cloud_name, google_drive_client_id, church_name, church_header_image, show_church_header, church_header_style, church_header_text_style, church_header_font_size').eq('link_token', token).eq('owner_user_id', workspaceUserId).single(),
         supabase.from('protocol_documents').select('*').eq('link_token', token).eq('owner_user_id', workspaceUserId).is('deleted_at', null).order('created_at', { ascending: false }),
       ]);
       if (error) throw error;
@@ -82,7 +82,7 @@ Deno.serve(async (request) => {
         pastor_name: String(payload.pastor_name || '').slice(0, 200),
         google_sheet_url: String(payload.google_sheet_url || '').slice(0, 1000),
         google_sheet_name: String(payload.google_sheet_name || '').trim().slice(0, 200),
-        cloud_name: String(payload.cloud_name || '').slice(0, 200), google_drive_client_id: String(payload.google_drive_client_id || '').slice(0, 300), church_name: String(payload.church_name || '').slice(0, 300), church_header_image: payload.church_header_image ? String(payload.church_header_image).slice(0, 3_000_000) : null, show_church_header: Boolean(payload.show_church_header), church_header_style: ['classic', 'warm', 'midnight'].includes(String(payload.church_header_style)) ? String(payload.church_header_style) : 'classic', updated_at: new Date().toISOString(),
+        cloud_name: String(payload.cloud_name || '').slice(0, 200), google_drive_client_id: String(payload.google_drive_client_id || '').slice(0, 300), church_name: String(payload.church_name || '').slice(0, 300), church_header_image: payload.church_header_image ? String(payload.church_header_image).slice(0, 3_000_000) : null, show_church_header: Boolean(payload.show_church_header), church_header_style: ['classic', 'warm', 'midnight'].includes(String(payload.church_header_style)) ? String(payload.church_header_style) : 'classic', church_header_text_style: ['regular', 'bold', 'italic'].includes(String(payload.church_header_text_style)) ? String(payload.church_header_text_style) : 'regular', church_header_font_size: Math.min(28, Math.max(12, Number(payload.church_header_font_size) || 20)), updated_at: new Date().toISOString(),
       }).eq('link_token', token).eq('owner_user_id', workspaceUserId).select().single();
       if (error) throw error;
       return json({ settings: data });
