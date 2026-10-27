@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import JSZip from 'jszip';
 import fontkit from '@pdf-lib/fontkit';
+import { PDFDocument, rgb } from 'pdf-lib';
 import { Archive, Bell, Check, CircleUserRound, CloudUpload, Download, ExternalLink, FileDown, FileText, Loader2, LogIn, LogOut, Menu, Pencil, Plus, RefreshCw, RotateCcw, Settings, Table2, Trash2, Users, X } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { User } from '@supabase/supabase-js';
@@ -197,7 +198,6 @@ export default function PublicProtocols() {
             return;
         setSaving(true);
         try {
-            const { PDFDocument, rgb } = await import('pdf-lib');
             const pdf = await PDFDocument.create();
             pdf.registerFontkit(fontkit);
             const font = await pdf.embedFont(Uint8Array.from(atob(ROBOTO_FONT_BASE64), char => char.charCodeAt(0)));
