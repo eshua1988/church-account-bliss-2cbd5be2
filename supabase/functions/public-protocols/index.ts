@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createR2SignedUrl, isR2Configured, uploadToR2 } from '../_shared/r2.ts';
+import { createR2SignedUrl, isR2Configured, r2ObjectExists, uploadToR2 } from '../_shared/r2.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -135,7 +135,10 @@ Deno.serve(async (request) => {
         .eq('id', String(body.id || '')).eq('link_token', token).eq('owner_user_id', workspaceUserId).is('deleted_at', null).maybeSingle();
       if (error) throw error;
       if (!data) return json({ error: 'Protocol not found' }, 404);
-      try { if (!isR2Configured()) throw new Error('R2 is not configured'); return json({ pdf_url: await createR2SignedUrl(data.pdf_path, 'GET', { expiresInSeconds: 3600 }) }); }
+      try {
+        if (!isR2Configured() || !(await r2ObjectExists(data.pdf_path))) throw new Error('R2 object is not available');
+        return json({ pdf_url: await createR2SignedUrl(data.pdf_path, 'GET', { expiresInSeconds: 3600 }) });
+      }
       catch (_) { const { data: url, error: urlError } = await supabase.storage.from('protocol-documents').createSignedUrl(data.pdf_path, 60 * 60); if (urlError || !url?.signedUrl) throw urlError || new Error('Could not create PDF URL'); return json({ pdf_url: url.signedUrl }); }
     }
 
