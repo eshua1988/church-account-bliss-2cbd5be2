@@ -24,7 +24,7 @@ Deno.serve(async (request) => {
   const admin = createClient(url, serviceKey);
   const { data: invitation, error: invitationError } = await admin
     .from('church_hub_invitations')
-    .select('id,inviter_id,name,department,role,status')
+    .select('id,inviter_id,status')
     .eq('id', invitationId)
     .single();
   if (invitationError || !invitation || invitation.status !== 'pending') {
@@ -40,15 +40,18 @@ Deno.serve(async (request) => {
     .single();
   if (workspaceError || !workspace) return Response.json({ error: 'Пространство Church Hub пригласившего не найдено.' }, { status: 404, headers: corsHeaders });
 
+  // Do not copy fields from the invitation: the invited person owns and
+  // completes their profile after accepting it.
   const { error: memberError } = await admin.from('hub_members').upsert({
     workspace_id: workspace.id,
     user_id: user.id,
     role: 'member',
-    display_name: invitation.name,
-    department: invitation.department,
-  }, { onConflict: 'workspace_id,user_id' });
+    display_name: user.user_metadata?.display_name || user.user_metadata?.full_name || user.email?.split('@')[0] || 'Участник',
+    email: user.email || null,
+    telegram_username: user.user_metadata?.telegram_username?.replace(/^@/, '') || null,
+  }, { onConflict: 'workspace_id,user_id', ignoreDuplicates: true });
   if (memberError) return Response.json({ error: memberError.message }, { status: 500, headers: corsHeaders });
 
   await admin.from('church_hub_invitations').update({ status: 'accepted', accepted_at: new Date().toISOString() }).eq('id', invitation.id);
-  return Response.json({ workspaceId: workspace.id, department: invitation.department }, { headers: corsHeaders });
+  return Response.json({ workspaceId: workspace.id, profileRequired: true }, { headers: corsHeaders });
 });

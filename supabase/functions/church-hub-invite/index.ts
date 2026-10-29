@@ -7,9 +7,6 @@ const corsHeaders = {
 
 type InviteRequest = {
   telegramUsername: string;
-  name: string;
-  department: string;
-  role: string;
   hubUrl: string;
 };
 
@@ -28,19 +25,27 @@ Deno.serve(async (req) => {
 
   const body = await req.json() as InviteRequest;
   const username = body.telegramUsername.replace(/^@/, "").trim();
-  if (!/^[A-Za-z0-9_]{5,32}$/.test(username) || !body.name?.trim() || !body.department?.trim() || !body.role?.trim() || !body.hubUrl?.startsWith("http")) {
-    return new Response(JSON.stringify({ error: "Проверьте данные приглашения" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  if (!/^[A-Za-z0-9_]{5,32}$/.test(username) || !body.hubUrl?.startsWith("http")) {
+    return new Response(JSON.stringify({ error: "Укажите корректный Telegram username и адрес Church Hub" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 
   const admin = createClient(supabaseUrl, serviceKey);
   const { data: recipient } = await admin.from("telegram_users").select("telegram_chat_id").ilike("telegram_username", username).eq("is_active", true).maybeSingle();
   if (!recipient) return new Response(JSON.stringify({ error: "Пользователь @" + username + " ещё не запустил Telegram-бота Church Hub" }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-  const { data: invitation, error } = await admin.from("church_hub_invitations").insert({ inviter_id: user.id, telegram_username: username, name: body.name.trim(), department: body.department.trim(), role: body.role.trim() }).select("id").single();
+  // The invite contains only the recipient's Telegram account.  Name,
+  // department and ministry role are completed by the invited person later.
+  const { data: invitation, error } = await admin.from("church_hub_invitations").insert({
+    inviter_id: user.id,
+    telegram_username: username,
+    name: "",
+    department: "",
+    role: "",
+  }).select("id").single();
   if (error || !invitation) throw error || new Error("Не удалось создать приглашение");
 
   const link = `${body.hubUrl.replace(/\/$/, "")}?invite=${invitation.id}`;
-  const text = `Вас приглашают к совместному служению в Church Hub.\n\nОтдел: ${body.department}\nРоль: ${body.role}\n\nОткройте приглашение и войдите: ${link}`;
+  const text = `Вас приглашают к совместному служению в Church Hub.\n\nОткройте приглашение, войдите и заполните свой профиль: ${link}`;
   const sent = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: recipient.telegram_chat_id, text, disable_web_page_preview: true }) });
   if (!sent.ok) return new Response(JSON.stringify({ error: "Приглашение сохранено, но Telegram не принял сообщение" }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   return new Response(JSON.stringify({ invitationId: invitation.id }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
