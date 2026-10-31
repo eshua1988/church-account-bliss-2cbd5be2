@@ -108,6 +108,25 @@ Deno.serve(async (request) => {
       return json({ document: data });
     }
 
+    if (action === 'create-excerpt') {
+      const protocol = body.protocol || {};
+      const pdf = String(protocol.pdf_base64 || '');
+      if (!pdf || pdf.length > 12_000_000 || !String(protocol.content || '').trim()) return json({ error: 'Invalid protocol excerpt' }, 400);
+      const id = crypto.randomUUID();
+      const filePath = `${workspaceUserId}/${token}/${id}.pdf`;
+      try { if (!isR2Configured()) throw new Error('R2 is not configured'); await uploadToR2(filePath, pdfBytes(pdf), 'application/pdf'); }
+      catch (r2Error) { console.warn('R2 excerpt upload failed, using legacy Storage:', r2Error); const { error: uploadError } = await supabase.storage.from('protocol-documents').upload(filePath, pdfBytes(pdf), { contentType: 'application/pdf', upsert: false }); if (uploadError) throw uploadError; }
+      const { data, error } = await supabase.from('protocol_documents').insert({
+        id, link_token: token, owner_user_id: workspaceUserId, council: String(protocol.council || '').slice(0, 60) || 'elders',
+        protocol_date: protocol.protocol_date, protocol_time: protocol.protocol_time || null, place: String(protocol.place || '').slice(0, 500),
+        present: Array.isArray(protocol.present) ? protocol.present : [], absent: Array.isArray(protocol.absent) ? protocol.absent : [],
+        content: String(protocol.content).slice(0, 30000), secretary_name: String(protocol.secretary_name || '').slice(0, 200),
+        pastor_name: 'Выписка из протокола', secretary_signature: protocol.secretary_signature || null, pastor_signature: null, pdf_path: filePath,
+      }).select().single();
+      if (error) throw error;
+      return json({ document: data });
+    }
+
     if (action === 'update') {
       const protocol = body.protocol || {}; const pdf = String(protocol.pdf_base64 || ''); const id = String(body.id || '');
       if (!id || !pdf || pdf.length > 12_000_000 || !String(protocol.content || '').trim()) return json({ error: 'Invalid protocol document' }, 400);
