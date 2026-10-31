@@ -193,8 +193,15 @@ Deno.serve(async (request) => {
         .eq('pastor_sign_token', signToken).is('deleted_at', null).maybeSingle();
       if (error) throw error;
       if (!data) return json({ error: 'Signing link not found' }, 404);
-      const { data: url } = await supabase.storage.from('protocol-documents').createSignedUrl(data.pdf_path, 60 * 60);
-      return json({ document: { ...data, pdf_url: url?.signedUrl || null } });
+      try {
+        if (!isR2Configured() || !(await r2ObjectExists(data.pdf_path))) throw new Error('R2 object is not available');
+        return json({ document: { ...data, pdf_url: await createR2SignedUrl(data.pdf_path, 'GET', { expiresInSeconds: 3600 }) } });
+      }
+      catch (_) {
+        const { data: url, error: urlError } = await supabase.storage.from('protocol-documents').createSignedUrl(data.pdf_path, 60 * 60);
+        if (urlError || !url?.signedUrl) throw urlError || new Error('Could not create PDF URL');
+        return json({ document: { ...data, pdf_url: url.signedUrl } });
+      }
     }
 
     if (action === 'sign') {
@@ -207,8 +214,8 @@ Deno.serve(async (request) => {
       if (findError) throw findError;
       if (!document) return json({ error: 'Signing link not found' }, 404);
       if (document.pastor_signed_at) return json({ error: 'This protocol has already been signed' }, 409);
-      const { error: uploadError } = await supabase.storage.from('protocol-documents').upload(document.pdf_path, pdfBytes(pdf), { contentType: 'application/pdf', upsert: true });
-      if (uploadError) throw uploadError;
+      try { if (!isR2Configured()) throw new Error('R2 is not configured'); await uploadToR2(document.pdf_path, pdfBytes(pdf), 'application/pdf'); }
+      catch (_) { const { error: uploadError } = await supabase.storage.from('protocol-documents').upload(document.pdf_path, pdfBytes(pdf), { contentType: 'application/pdf', upsert: true }); if (uploadError) throw uploadError; }
       const { data, error } = await supabase.from('protocol_documents').update({
         pastor_signature: signature.slice(0, 3_000_000), pastor_signed_at: new Date().toISOString(), pastor_sign_token: crypto.randomUUID(),
       }).eq('id', document.id).eq('pastor_sign_token', signToken).is('pastor_signed_at', null).select().maybeSingle();
