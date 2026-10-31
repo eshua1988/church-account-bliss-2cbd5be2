@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import fontkit from '@pdf-lib/fontkit';
 import { PDFDocument, rgb } from 'pdf-lib';
 import { CheckSquare, FileDown } from 'lucide-react';
@@ -15,6 +15,7 @@ type Protocol = {
   absent: string[];
   content: string;
   archived: boolean;
+  pastor_name?: string;
 };
 
 type Props = {
@@ -23,6 +24,7 @@ type Props = {
   secretaryName: string;
   secretarySignature: string;
   onSave: (protocol: Protocol, content: string, validity: string, pdfBase64: string) => Promise<void>;
+  editingExcerpt?: Protocol | null;
 };
 
 const formatDate = (date: string, time?: string) =>
@@ -30,14 +32,23 @@ const formatDate = (date: string, time?: string) =>
 
 const numberedLines = (content: string) => content.split(/\r?\n/).map(value => value.trim()).filter(value => /^\d+(?:\.\d+)*\.\s+/.test(value));
 
-export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName, secretarySignature, onSave }: Props) {
+export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName, secretarySignature, onSave, editingExcerpt }: Props) {
   const archived = protocols.filter(protocol => protocol.archived);
   const [protocolId, setProtocolId] = useState('');
   const [selectedLines, setSelectedLines] = useState<string[]>([]);
   const [validity, setValidity] = useState('До следующего решения');
   const [saving, setSaving] = useState(false);
-  const protocol = archived.find(item => item.id === protocolId);
+  const candidates = editingExcerpt && !archived.some(item => item.id === editingExcerpt.id) ? [editingExcerpt, ...archived] : archived;
+  const protocol = candidates.find(item => item.id === protocolId);
   const lines = useMemo(() => protocol ? numberedLines(protocol.content) : [], [protocol]);
+
+  useEffect(() => {
+    if (!editingExcerpt) return;
+    setProtocolId(editingExcerpt.id);
+    setSelectedLines(numberedLines(editingExcerpt.content));
+    const storedValidity = editingExcerpt.pastor_name?.split('|')[1];
+    if (storedValidity === 'До следующего решения' || storedValidity === 'Одноразовая') setValidity(storedValidity);
+  }, [editingExcerpt]);
 
   const chooseProtocol = (id: string) => {
     setProtocolId(id);
@@ -112,7 +123,7 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
     <label className="block space-y-2 text-sm font-medium">Протокол из архива
       <select value={protocolId} onChange={event => chooseProtocol(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
         <option value="">Выберите протокол</option>
-        {archived.map(item => <option key={item.id} value={item.id}>{formatDate(item.protocol_date, item.protocol_time)} — {item.place || 'место не указано'}</option>)}
+        {candidates.map(item => <option key={item.id} value={item.id}>{formatDate(item.protocol_date, item.protocol_time)} — {item.place || 'место не указано'}</option>)}
       </select>
     </label>
     {protocolId && <div className="space-y-3 rounded-lg border p-4">

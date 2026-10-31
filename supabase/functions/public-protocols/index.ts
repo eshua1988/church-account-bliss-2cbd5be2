@@ -121,8 +121,24 @@ Deno.serve(async (request) => {
         protocol_date: protocol.protocol_date, protocol_time: protocol.protocol_time || null, place: String(protocol.place || '').slice(0, 500),
         present: Array.isArray(protocol.present) ? protocol.present : [], absent: Array.isArray(protocol.absent) ? protocol.absent : [],
         content: String(protocol.content).slice(0, 30000), secretary_name: String(protocol.secretary_name || '').slice(0, 200),
-        pastor_name: 'Выписка из протокола', secretary_signature: protocol.secretary_signature || null, pastor_signature: null, pdf_path: filePath,
+        pastor_name: `Выписка из протокола|${['До следующего решения', 'Одноразовая'].includes(String(protocol.excerpt_validity)) ? protocol.excerpt_validity : 'До следующего решения'}`, secretary_signature: protocol.secretary_signature || null, pastor_signature: null, pdf_path: filePath,
       }).select().single();
+      if (error) throw error;
+      return json({ document: data });
+    }
+
+    if (action === 'update-excerpt') {
+      const protocol = body.protocol || {}; const pdf = String(protocol.pdf_base64 || ''); const id = String(body.id || '');
+      if (!id || !pdf || pdf.length > 12_000_000 || !String(protocol.content || '').trim()) return json({ error: 'Invalid protocol excerpt' }, 400);
+      const { data: existing, error: findError } = await supabase.from('protocol_documents').select('pdf_path, pastor_name').eq('id', id).eq('link_token', token).eq('owner_user_id', workspaceUserId).is('deleted_at', null).maybeSingle();
+      if (findError) throw findError;
+      if (!existing || !String(existing.pastor_name || '').startsWith('Выписка из протокола')) return json({ error: 'Excerpt not found' }, 404);
+      try { if (!isR2Configured()) throw new Error('R2 is not configured'); await uploadToR2(existing.pdf_path, pdfBytes(pdf), 'application/pdf'); }
+      catch (_) { const { error: uploadError } = await supabase.storage.from('protocol-documents').upload(existing.pdf_path, pdfBytes(pdf), { contentType: 'application/pdf', upsert: true }); if (uploadError) throw uploadError; }
+      const { data, error } = await supabase.from('protocol_documents').update({
+        content: String(protocol.content).slice(0, 30000), secretary_name: String(protocol.secretary_name || '').slice(0, 200), secretary_signature: protocol.secretary_signature || null,
+        pastor_name: `Выписка из протокола|${['До следующего решения', 'Одноразовая'].includes(String(protocol.excerpt_validity)) ? protocol.excerpt_validity : 'До следующего решения'}`,
+      }).eq('id', id).eq('link_token', token).eq('owner_user_id', workspaceUserId).select().single();
       if (error) throw error;
       return json({ document: data });
     }
