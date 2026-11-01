@@ -387,30 +387,20 @@ const applyTransactionExportFormatting = async (
   if (!response.ok) throw new Error("Google Sheets transaction formatting failed");
 };
 
-// The old transaction table stored department columns and text such as
-// "100 PLN". It cannot be converted in place into numeric currency cells, so
-// reset only the configured export range once before writing the new layout.
-const resetLegacyTransactionLayout = async (
+// Transaction export is a generated view, so it is rebuilt inside its exact
+// configured range on every sync. This prevents old sort orders or columns
+// from overlapping new data after transactions are added or changed.
+const resetTransactionExport = async (
   base: string,
   headers: Record<string, string>,
   parts: RangePart[],
 ) => {
-  const ranges = parts.map(part => `ranges=${encodeURIComponent(part.range)}`).join("&");
-  const read = await fetch(`${base}/values:batchGet?${ranges}&valueRenderOption=FORMATTED_VALUE`, { headers });
-  if (!read.ok) throw new Error("Google Sheets header check failed");
-  const current = await read.json() as { valueRanges?: Array<{ values?: unknown[][] }> };
-  const currentHeaders = (current.valueRanges || []).flatMap(item => item.values?.[0] || []).map(value => String(value ?? "").trim());
-  if (currentHeaders.length === 0) return;
-  const isCurrent = currentHeaders.includes("Расходы PLN")
-    && currentHeaders.some(header => header.startsWith("За месяц · Доход PLN"))
-    && currentHeaders.some(header => header.startsWith("За месяц · Расходы PLN"));
-  if (isCurrent) return;
   const clear = await fetch(`${base}/values:batchClear`, {
     method: "POST",
     headers,
     body: JSON.stringify({ ranges: parts.map(part => part.range) }),
   });
-  if (!clear.ok) throw new Error("Google Sheets legacy layout cleanup failed");
+  if (!clear.ok) throw new Error("Google Sheets transaction export cleanup failed");
 };
 
 async function googleToken() {
@@ -477,7 +467,7 @@ serve(async (req) => {
       const dataWidth = Math.max(...values.map((row: unknown[]) => row.length), 1);
       const rangeParts = splitRangeParts(range, dataWidth);
       if (!rangeParts.length) return json({ error: "Invalid Google Sheets range" }, 400);
-      await resetLegacyTransactionLayout(base, headers, rangeParts);
+      await resetTransactionExport(base, headers, rangeParts);
       await writeIntoEmptyCells(base, headers, sheet, rangeParts, values);
       await applyTransactionExportFormatting(base, headers, sheet, rangeParts, values);
       return json({ success: true });

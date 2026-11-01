@@ -251,7 +251,9 @@ const buildTransactionExportValues = (
     monthlyTotals.set(monthKey, totals);
   }
 
-  const sortedDates = [...byDate.keys()].sort((left, right) => right.localeCompare(left));
+  // Ascending order places the monthly total directly before the next month:
+  // 28.10 → "За месяц: 10.2026" → 01.11.
+  const sortedDates = [...byDate.keys()].sort((left, right) => left.localeCompare(right));
   const rows: Array<Array<string | number>> = [];
 
   for (const [dateIndex, dayKey] of sortedDates.entries()) {
@@ -259,7 +261,9 @@ const buildTransactionExportValues = (
     const dayTransactions = [...(byDate.get(dayKey) || [])]
       .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
 
-    for (const transaction of dayTransactions) {
+    // Dates belong to income rows only. An expense-only day is exported on a
+    // row with an empty date cell, as requested.
+    for (const transaction of dayTransactions.filter(item => item.type === 'income')) {
       const currency = normaliseExportCurrency(transaction.currency);
       const column = currencyColumnByKey.get(`${transaction.type}:${currency}`);
       if (column === undefined) continue;
@@ -268,6 +272,17 @@ const buildTransactionExportValues = (
       if (!row) {
         row = new Array(headers.length).fill('');
         row[0] = new Date(`${dayKey}T00:00:00`).toLocaleDateString('pl-PL');
+        dayRows.push(row);
+      }
+      row[column] = Number(transaction.amount);
+    }
+    for (const transaction of dayTransactions.filter(item => item.type === 'expense')) {
+      const currency = normaliseExportCurrency(transaction.currency);
+      const column = currencyColumnByKey.get(`${transaction.type}:${currency}`);
+      if (column === undefined) continue;
+      let row = dayRows.find(candidate => !candidate[column]);
+      if (!row) {
+        row = new Array(headers.length).fill('');
         dayRows.push(row);
       }
       row[column] = Number(transaction.amount);
