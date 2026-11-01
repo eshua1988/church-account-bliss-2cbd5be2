@@ -39,6 +39,12 @@ const applyCurrencyColumns = (rawValues: unknown) => {
   if (!Array.isArray(rawValues) || rawValues.length === 0 || !Array.isArray(rawValues[0])) return rawValues;
   const input = rawValues as unknown[][];
   const inputHeaders = input[0].map(value => String(value ?? "").trim());
+  const hasMonthlyRows = input.slice(1).some(row => String(row[0] ?? "").startsWith("За месяц:"));
+  const width = Math.max(...input.map(row => row.length), 0);
+  // A previous browser build already sends the five generated columns but may
+  // omit their names. Keep those columns intact; completeTransactionHeaders
+  // below restores the missing labels.
+  if (hasMonthlyRows && width >= 5) return rawValues;
   // The current transaction layout deliberately has income and expense for
   // every currency plus two monthly-total columns. It must stay untouched;
   // this converter only exists for cached clients using the older layout.
@@ -114,7 +120,26 @@ const applyCurrencyColumns = (rawValues: unknown) => {
     return result;
   });
 
-  return [["Дата", ...currencyHeaders, ...categoryHeaders], ...rows];
+  return [["Дата", ...currencyHeaders], ...rows];
+};
+
+// Older installed PWA versions can send a table whose data rows already use
+// expense and monthly-total columns, while its first row still contains only
+// "Дата" and "Доход PLN". Complete that header from the occupied columns so
+// the sheet remains readable until every client has refreshed.
+const completeTransactionHeaders = (rawValues: unknown) => {
+  if (!Array.isArray(rawValues) || rawValues.length === 0 || !Array.isArray(rawValues[0])) return rawValues;
+  const rows = rawValues as unknown[][];
+  const width = Math.max(...rows.map(row => row.length), 0);
+  const current = rows[0].map(value => String(value ?? "").trim());
+  if (width < 5 || current.some(header => header.startsWith("За месяц ·"))) return rawValues;
+  const header = [...current];
+  if (!header[0]) header[0] = "Дата";
+  if (!header[1]) header[1] = "Доход PLN";
+  if (!header[2]) header[2] = "Расходы PLN";
+  if (!header[3]) header[3] = "За месяц · Доход PLN";
+  if (!header[4]) header[4] = "За месяц · Расходы PLN";
+  return [header, ...rows.slice(1)];
 };
 
 // Google Sheets receives actual numbers; the pattern selects its native
@@ -478,7 +503,7 @@ serve(async (req) => {
     const base = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`;
     const headers = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
     if (body.action === "write") {
-      const values = applyCurrencyColumns(body.values || []);
+      const values = completeTransactionHeaders(applyCurrencyColumns(body.values || []));
       const metadataResponse = await fetch(`${base}?fields=sheets.properties`, { headers });
       if (!metadataResponse.ok) return json({ error: "Google Sheets metadata failed" }, 500);
       const metadata = await metadataResponse.json();
