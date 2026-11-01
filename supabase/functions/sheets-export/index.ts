@@ -387,6 +387,27 @@ const applyTransactionExportFormatting = async (
   if (!response.ok) throw new Error("Google Sheets transaction formatting failed");
 };
 
+// Header names describe the generated export schema and must be updated even
+// when a sheet previously contained a blank or cached header row.
+const writeTransactionHeaders = async (
+  base: string,
+  headers: Record<string, string>,
+  parts: RangePart[],
+  table: unknown[][],
+) => {
+  const headerRow = table[0] || [];
+  const writes = parts.map(part => ({
+    range: `${part.range.includes("!") ? part.range.slice(0, part.range.indexOf("!") + 1) : ""}${columnLetter(part.startColumnIndex)}${rangeBounds(0, part.range, { properties: {} }).startRowIndex + 1}`,
+    values: [headerRow.slice(part.valueOffset, part.valueOffset + part.columnCount)],
+  }));
+  const response = await fetch(`${base}/values:batchUpdate`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ valueInputOption: "USER_ENTERED", data: writes }),
+  });
+  if (!response.ok) throw new Error("Google Sheets header write failed");
+};
+
 // Transaction export is a generated view, so it is rebuilt inside its exact
 // configured range on every sync. This prevents old sort orders or columns
 // from overlapping new data after transactions are added or changed.
@@ -469,6 +490,7 @@ serve(async (req) => {
       if (!rangeParts.length) return json({ error: "Invalid Google Sheets range" }, 400);
       await resetTransactionExport(base, headers, rangeParts);
       await writeIntoEmptyCells(base, headers, sheet, rangeParts, values);
+      await writeTransactionHeaders(base, headers, rangeParts, values);
       await applyTransactionExportFormatting(base, headers, sheet, rangeParts, values);
       return json({ success: true });
     }
