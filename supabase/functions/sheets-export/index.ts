@@ -39,12 +39,11 @@ const applyCurrencyColumns = (rawValues: unknown) => {
   if (!Array.isArray(rawValues) || rawValues.length === 0 || !Array.isArray(rawValues[0])) return rawValues;
   const input = rawValues as unknown[][];
   const inputHeaders = input[0].map(value => String(value ?? "").trim());
-  const hasMonthlyRows = input.slice(1).some(row => String(row[0] ?? "").startsWith("За месяц:"));
   const width = Math.max(...input.map(row => row.length), 0);
   // A previous browser build already sends the five generated columns but may
   // omit their names. Keep those columns intact; completeTransactionHeaders
   // below restores the missing labels.
-  if (hasMonthlyRows && width >= 5) return rawValues;
+  if (width >= 5) return rawValues;
   // The current transaction layout deliberately has income and expense for
   // every currency plus two monthly-total columns. It must stay untouched;
   // this converter only exists for cached clients using the older layout.
@@ -421,9 +420,14 @@ const writeTransactionHeaders = async (
   table: unknown[][],
 ) => {
   const headerRow = table[0] || [];
+  const hasCompleteSchema = headerRow.includes("Расходы PLN")
+    && headerRow.some(value => String(value).startsWith("За месяц · Доход PLN"))
+    && headerRow.some(value => String(value).startsWith("За месяц · Расходы PLN"));
+  const canonicalPlnHeaders = ["Дата", "Доход PLN", "Расходы PLN", "За месяц · Доход PLN", "За месяц · Расходы PLN"];
+  const headersToWrite = hasCompleteSchema ? headerRow : canonicalPlnHeaders;
   const writes = parts.map(part => ({
     range: `${part.range.includes("!") ? part.range.slice(0, part.range.indexOf("!") + 1) : ""}${columnLetter(part.startColumnIndex)}${rangeBounds(0, part.range, { properties: {} }).startRowIndex + 1}`,
-    values: [headerRow.slice(part.valueOffset, part.valueOffset + part.columnCount)],
+    values: [headersToWrite.slice(part.valueOffset, part.valueOffset + part.columnCount)],
   }));
   const response = await fetch(`${base}/values:batchUpdate`, {
     method: "POST",
@@ -510,7 +514,9 @@ serve(async (req) => {
       const sheet = configuredSheet(metadata, range);
       if (typeof sheet?.properties?.sheetId !== "number") return json({ error: "Google Sheet was not found" }, 500);
 
-      const dataWidth = Math.max(...values.map((row: unknown[]) => row.length), 1);
+      // A transaction export always reserves Date, income, expense and both
+      // monthly totals, even when a cached client omitted header names.
+      const dataWidth = Math.max(...values.map((row: unknown[]) => row.length), 5);
       const rangeParts = splitRangeParts(range, dataWidth);
       if (!rangeParts.length) return json({ error: "Invalid Google Sheets range" }, 400);
       await resetTransactionExport(base, headers, rangeParts);
