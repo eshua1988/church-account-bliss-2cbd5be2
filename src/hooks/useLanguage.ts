@@ -288,10 +288,10 @@ export const translations = {
 
   // Charts
   statistics: {
-    pl: 'Statystyki',
-    ru: 'Статистика',
-    en: 'Statistics',
-    uk: 'Статистика',
+    pl: 'Saldo',
+    ru: 'Баланс',
+    en: 'Balance',
+    uk: 'Баланс',
   },
   categoryDistribution: {
     pl: 'Rozkład według kategorii',

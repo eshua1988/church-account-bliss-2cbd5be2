@@ -1,4 +1,4 @@
-import { BarChart3, Settings, FileText, Wallet, LogOut, Key, Mail, ExternalLink, Building2, Bell } from 'lucide-react';
+import { BarChart3, Settings, FileText, Wallet, LogOut, Key, Mail, ExternalLink, Building2, ListTodo, BellRing } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
@@ -36,6 +36,13 @@ import { useNotifications } from '@/hooks/useNotifications';
 
 type TabType = 'balance' | 'statistics' | 'payout' | 'settings' | 'notifications' | 'banking' | 'links' | 'reminders';
 
+const ReminderIcon = ({ className }: { className?: string }) => (
+  <span className={cn('relative inline-flex', className)}>
+    <ListTodo className="h-full w-full" />
+    <BellRing className="absolute -bottom-1 -right-1 h-2.5 w-2.5 rounded-full bg-background p-px" />
+  </span>
+);
+
 interface AppSidebarProps {
   activeTab: TabType;
   onTabChange: (tab: TabType) => void;
@@ -69,7 +76,7 @@ export const AppSidebar = ({
     { id: 'settings' as const, icon: Settings, label: t('settings') },
     { id: 'notifications' as const, icon: Mail, label: 'Уведомления' },
     { id: 'links' as const, icon: ExternalLink, label: 'Ссылки' },
-    { id: 'reminders' as const, icon: Bell, label: 'Напоминания' },
+    { id: 'reminders' as const, icon: ReminderIcon, label: 'Напоминания' },
   ];
 
   const handleTabChange = (tab: TabType) => {
