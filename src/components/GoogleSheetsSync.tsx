@@ -345,6 +345,7 @@ export const syncAllConfiguredGoogleSheetExports = async (
   expenseCategories: ExportSyncCategory[],
   getAllTransactions?: () => Promise<Transaction[]>,
   onProgress?: (item: { id: string; title: string; status: 'queued' | 'running' | 'success' | 'error'; details: string[] }) => void,
+  exportIds?: string[],
 ) => {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Пожалуйста, войдите в систему повторно');
@@ -367,7 +368,9 @@ export const syncAllConfiguredGoogleSheetExports = async (
   // Only exports visible in Settings are run here. Legacy profile fields can
   // point to the same spreadsheet with an old range and would otherwise create
   // a hidden duplicate export on every top-level synchronization.
-  const exports = [...savedExports];
+  const exports = exportIds?.length
+    ? savedExports.filter(target => exportIds.includes(target.id))
+    : [...savedExports];
   if (exports.length === 0) return { configured: 0, completed: 0, failed: 0, errors: [] as string[] };
 
   const allTransactions = allTransactionsResult as ExportSyncTransaction[];

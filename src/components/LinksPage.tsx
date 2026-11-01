@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Cloud, Copy, ExternalLink, FileDown, FileText, Link as LinkIcon, Loader2, Table2 } from 'lucide-react';
+import { Cloud, Copy, ExternalLink, FileDown, FileText, Link as LinkIcon, Loader2, RefreshCw, Table2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,11 @@ type LinkItem = {
   description: string;
   kind: LinkKind;
   href: string;
+  syncExportId?: string;
+};
+
+type LinksPageProps = {
+  onSyncSheetExport?: (exportId: string) => Promise<void>;
 };
 
 type CloudConnection = {
@@ -50,11 +55,12 @@ const iconFor = (kind: LinkKind) => {
   return <LinkIcon className="mt-0.5 h-5 w-5 text-primary" />;
 };
 
-export const LinksPage = () => {
+export const LinksPage = ({ onSyncSheetExport }: LinksPageProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [links, setLinks] = useState<LinkItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncingExportIds, setSyncingExportIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!user) {
@@ -101,6 +107,7 @@ export const LinksPage = () => {
         description: item.sheet_range || labels.sheet,
         kind: 'sheet',
         href: `https://docs.google.com/spreadsheets/d/${encodeURIComponent(item.spreadsheet_id)}`,
+        syncExportId: item.id,
       }));
       const cloudConnections = (auth.data.user?.user_metadata?.cloud_connections || []) as CloudConnection[];
       const cloudLinks = cloudConnections.flatMap((connection, index): LinkItem[] => {
@@ -142,9 +149,26 @@ export const LinksPage = () => {
     }
   };
 
+  const syncSheetExport = async (exportId: string) => {
+    if (!onSyncSheetExport) return;
+    setSyncingExportIds(current => new Set(current).add(exportId));
+    try {
+      await onSyncSheetExport(exportId);
+      toast({ title: 'Синхронизация завершена' });
+    } catch (error) {
+      toast({ title: 'Ошибка синхронизации', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+    } finally {
+      setSyncingExportIds(current => {
+        const next = new Set(current);
+        next.delete(exportId);
+        return next;
+      });
+    }
+  };
+
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-7 w-7 animate-spin text-muted-foreground" /></div>;
   return <section className="animate-fade-in mx-auto max-w-3xl space-y-5">
     <div><h1 className="text-2xl font-bold">Ссылки</h1><p className="text-muted-foreground">{description}</p></div>
-    {links.length === 0 ? <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">Ссылок пока нет. Добавьте экспорт, облачную папку или публичную ссылку в настройках.</div> : <div className="grid gap-3 sm:grid-cols-2">{links.map(link => <div key={link.id} className="rounded-xl border bg-card p-4"><div className="mb-4 flex items-start gap-3">{iconFor(link.kind)}<div><p className="font-semibold">{link.name}</p><p className="text-sm text-muted-foreground">{link.description}</p></div></div><div className="grid grid-cols-2 gap-2"><Button variant="outline" className="gap-2" onClick={() => void copyLink(link.href)}><Copy className="h-4 w-4" />Копировать</Button><Button className="gap-2" asChild><a href={link.href} target="_blank" rel="noopener noreferrer">Открыть <ExternalLink className="h-4 w-4" /></a></Button></div></div>)}</div>}
+    {links.length === 0 ? <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">Ссылок пока нет. Добавьте экспорт, облачную папку или публичную ссылку в настройках.</div> : <div className="grid gap-3 sm:grid-cols-2">{links.map(link => <div key={link.id} className="rounded-xl border bg-card p-4"><div className="mb-4 flex items-start gap-3">{iconFor(link.kind)}<div><p className="font-semibold">{link.name}</p><p className="text-sm text-muted-foreground">{link.description}</p></div></div><div className="flex gap-2"><Button variant="outline" className="min-w-0 flex-1 gap-2" onClick={() => void copyLink(link.href)}><Copy className="h-4 w-4" />Копировать</Button>{link.syncExportId && <Button variant="outline" size="icon" title="Синхронизировать" aria-label="Синхронизировать" disabled={syncingExportIds.has(link.syncExportId)} onClick={() => void syncSheetExport(link.syncExportId)}><RefreshCw className={`h-4 w-4 ${syncingExportIds.has(link.syncExportId) ? 'animate-spin' : ''}`} /></Button>}<Button className="min-w-0 flex-1 gap-2" asChild><a href={link.href} target="_blank" rel="noopener noreferrer">Открыть <ExternalLink className="h-4 w-4" /></a></Button></div></div>)}</div>}
   </section>;
 };

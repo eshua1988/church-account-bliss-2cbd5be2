@@ -791,7 +791,16 @@ const Index = () => {
             <NotificationsPage />
           )}
 
-          {activeTab === 'links' && <LinksPage />}
+          {activeTab === 'links' && <LinksPage onSyncSheetExport={async exportId => {
+            const result = await syncAllConfiguredGoogleSheetExports(
+              transactions,
+              expenseCategories,
+              getAllTransactions,
+              undefined,
+              [exportId],
+            );
+            if (result.failed > 0) throw new Error(result.errors.join('; '));
+          }} />}
 
           {activeTab === 'reminders' && <RemindersPage />}
 
