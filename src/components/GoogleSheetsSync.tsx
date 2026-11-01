@@ -210,75 +210,76 @@ const orderExportCurrencies = (transactions: ExportSyncTransaction[]) => {
 
 const buildTransactionExportValues = (
   transactions: ExportSyncTransaction[],
-  expenseCategories: ExportSyncCategory[],
+  _expenseCategories: ExportSyncCategory[],
   target: SheetExport,
 ) => {
   const exportTransactions = transactions.filter(transaction => isInExportPeriod(transaction.date, target));
-  const sortedExpense = uniqueExpenseCategories(expenseCategories);
   const currencies = orderExportCurrencies(exportTransactions);
-  const currencyColumns = currencies.flatMap(currency => currency === 'PLN'
-    ? [{ currency, type: 'income' as const, header: 'Доход PLN' }]
-    : [
-        { currency, type: 'income' as const, header: `Доход ${currency}` },
-        { currency, type: 'expense' as const, header: `Расходы ${currency}` },
-      ]);
+  const currencyColumns = currencies.flatMap(currency => [
+    { currency, type: 'income' as const, header: `Доход ${currency}` },
+    { currency, type: 'expense' as const, header: `Расходы ${currency}` },
+  ]);
   const headers = [
     'Дата',
     ...currencyColumns.map(column => column.header),
-    ...sortedExpense.map(category => category.name),
-    'Прочее (расход)',
+    'Доходы за месяц',
+    'Расходы за месяц',
   ];
   const currencyColumnByKey = new Map(
     currencyColumns.map((column, index) => [`${column.type}:${column.currency}`, index + 1]),
   );
-  const departmentColumnStart = currencyColumns.length + 1;
-  const fallbackColumn = headers.length - 1;
   const byDate = new Map<string, ExportSyncTransaction[]>();
+  const monthlyTotals = new Map<string, { income: Map<string, number>; expense: Map<string, number> }>();
 
   for (const transaction of exportTransactions) {
-    const date = new Date(transaction.date).toLocaleDateString('pl-PL');
-    const sameDay = byDate.get(date) || [];
+    const dayKey = new Date(transaction.date).toISOString().slice(0, 10);
+    const sameDay = byDate.get(dayKey) || [];
     sameDay.push(transaction);
-    byDate.set(date, sameDay);
+    byDate.set(dayKey, sameDay);
+    const monthKey = dayKey.slice(0, 7);
+    const totals = monthlyTotals.get(monthKey) || { income: new Map<string, number>(), expense: new Map<string, number>() };
+    const total = totals[transaction.type].get(normaliseExportCurrency(transaction.currency)) || 0;
+    totals[transaction.type].set(normaliseExportCurrency(transaction.currency), total + Number(transaction.amount || 0));
+    monthlyTotals.set(monthKey, totals);
   }
 
-  const sortedDates = [...byDate.keys()].sort((left, right) => {
-    const toTime = (value: string) => {
-      const [day, month, year] = value.split('.');
-      return new Date(+year, +month - 1, +day).getTime();
-    };
-    return toTime(right) - toTime(left);
-  });
+  const sortedDates = [...byDate.keys()].sort((left, right) => right.localeCompare(left));
   const rows: string[][] = [];
+  const formatTotal = (totals: Map<string, number>) => currencies
+    .filter(currency => totals.has(currency))
+    .map(currency => `${new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 2 }).format(totals.get(currency) || 0)} ${currency}`)
+    .join('; ');
 
-  for (const date of sortedDates) {
+  for (const [dateIndex, dayKey] of sortedDates.entries()) {
     const dayRows: string[][] = [];
-    const dayTransactions = [...(byDate.get(date) || [])]
+    const dayTransactions = [...(byDate.get(dayKey) || [])]
       .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
 
     for (const transaction of dayTransactions) {
       const currency = normaliseExportCurrency(transaction.currency);
-      let column = currencyColumnByKey.get(`${transaction.type}:${currency}`) ?? fallbackColumn;
-
-      // Foreign-currency expenses are kept with that currency even when they
-      // belong to a department. Department columns remain PLN expenses only.
-      if (transaction.type === 'expense' && currency === 'PLN') {
-        let categoryIndex = sortedExpense.findIndex(category => category.id === transaction.category);
-        if (categoryIndex === -1 && transaction.departmentName) {
-          categoryIndex = sortedExpense.findIndex(category => category.name === transaction.departmentName);
-        }
-        if (categoryIndex !== -1) column = departmentColumnStart + categoryIndex;
-      }
+      const column = currencyColumnByKey.get(`${transaction.type}:${currency}`);
+      if (column === undefined) continue;
 
       let row = dayRows.find(candidate => !candidate[column]);
       if (!row) {
         row = new Array(headers.length).fill('');
-        row[0] = date;
+        row[0] = new Date(`${dayKey}T00:00:00`).toLocaleDateString('pl-PL');
         dayRows.push(row);
       }
       row[column] = `${transaction.amount} ${transaction.currency}`;
     }
     rows.push(...dayRows);
+
+    const isLastDateOfMonth = dateIndex === sortedDates.length - 1 || sortedDates[dateIndex + 1].slice(0, 7) !== dayKey.slice(0, 7);
+    if (isLastDateOfMonth) {
+      const summary = new Array(headers.length).fill('');
+      const [year, month] = dayKey.slice(0, 7).split('-');
+      const totals = monthlyTotals.get(dayKey.slice(0, 7))!;
+      summary[0] = `За месяц: ${month}.${year}`;
+      summary[headers.length - 2] = formatTotal(totals.income);
+      summary[headers.length - 1] = formatTotal(totals.expense);
+      rows.push(summary);
+    }
   }
 
   return [headers, ...rows];
@@ -891,6 +892,17 @@ export const GoogleSheetsSync = ({ transactions, getAllTransactions, getCategory
     const exportId = target?.id || 'legacy-transactions';
     setExportingIds(current => new Set(current).add(exportId));
     try {
+      if (target?.id) {
+        const result = await syncAllConfiguredGoogleSheetExports(
+          transactions,
+          expenseCategories,
+          getAllTransactions,
+          undefined,
+          [target.id],
+        );
+        if (result.failed > 0) throw new Error(result.errors.join('; '));
+        return result.completed === 1;
+      }
       return await syncToSheets(transactions, target);
     } finally {
       setExportingIds(current => {

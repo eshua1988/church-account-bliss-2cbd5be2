@@ -39,6 +39,11 @@ const applyCurrencyColumns = (rawValues: unknown) => {
   if (!Array.isArray(rawValues) || rawValues.length === 0 || !Array.isArray(rawValues[0])) return rawValues;
   const input = rawValues as unknown[][];
   const inputHeaders = input[0].map(value => String(value ?? "").trim());
+  // The current transaction layout deliberately has income and expense for
+  // every currency plus two monthly-total columns. It must stay untouched;
+  // this converter only exists for cached clients using the older layout.
+  if (inputHeaders.includes("Доход PLN") && inputHeaders.includes("Расходы PLN")
+    && inputHeaders.includes("Доходы за месяц") && inputHeaders.includes("Расходы за месяц")) return rawValues;
   const incomeColumns = new Map<number, string | null>();
   const expenseColumns = new Map<number, string>();
   const currencies = new Set<string>();
