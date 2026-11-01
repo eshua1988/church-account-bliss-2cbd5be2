@@ -43,7 +43,8 @@ const applyCurrencyColumns = (rawValues: unknown) => {
   // every currency plus two monthly-total columns. It must stay untouched;
   // this converter only exists for cached clients using the older layout.
   if (inputHeaders.includes("Доход PLN") && inputHeaders.includes("Расходы PLN")
-    && inputHeaders.includes("Доходы за месяц") && inputHeaders.includes("Расходы за месяц")) return rawValues;
+    && inputHeaders.some(header => header.startsWith("За месяц · Доход PLN"))
+    && inputHeaders.some(header => header.startsWith("За месяц · Расходы PLN"))) return rawValues;
   const incomeColumns = new Map<number, string | null>();
   const expenseColumns = new Map<number, string>();
   const currencies = new Set<string>();
@@ -334,6 +335,89 @@ const writeIntoEmptyCells = async (
   return { blocked: new Set(conflicts.map(cell => `${cell.row}:${cell.column}`)) };
 };
 
+const applyTransactionExportFormatting = async (
+  base: string,
+  headers: Record<string, string>,
+  sheet: GoogleSheet,
+  parts: RangePart[],
+  table: unknown[][],
+) => {
+  const sheetId = Number(sheet.properties?.sheetId);
+  const headerRow = (table[0] || []).map(value => String(value ?? ""));
+  const physicalColumn = (logicalColumn: number) => {
+    const part = parts.find(candidate => logicalColumn >= candidate.valueOffset && logicalColumn < candidate.valueOffset + candidate.columnCount);
+    return part ? part.startColumnIndex + logicalColumn - part.valueOffset : -1;
+  };
+  const bounds = rangeBounds(sheetId, parts[0].range, sheet);
+  const startRow = bounds.startRowIndex;
+  const endRow = startRow + table.length;
+  const income = { red: 0.87, green: 0.96, blue: 0.87 };
+  const expense = { red: 1, green: 0.88, blue: 0.88 };
+  const monthly = { red: 0.79, green: 0.87, blue: 0.98 };
+  const requests: unknown[] = [];
+
+  headerRow.forEach((header, logicalColumn) => {
+    const match = header.match(/(?:За месяц · )?(Доход|Расходы)\s+(.+)$/);
+    const column = physicalColumn(logicalColumn);
+    if (!match || column < 0) return;
+    const isIncome = match[1] === "Доход";
+    requests.push({ repeatCell: {
+      range: { sheetId, startRowIndex: startRow + 1, endRowIndex: endRow, startColumnIndex: column, endColumnIndex: column + 1 },
+      cell: { userEnteredFormat: { backgroundColor: isIncome ? income : expense, numberFormat: { type: "CURRENCY", pattern: currencyPattern(match[2]) } } },
+      fields: "userEnteredFormat.backgroundColor,userEnteredFormat.numberFormat",
+    } });
+  });
+
+  table.slice(1).forEach((row, offset) => {
+    if (!String(row[0] ?? "").startsWith("За месяц:")) return;
+    requests.push({ repeatCell: {
+      range: { sheetId, startRowIndex: startRow + offset + 1, endRowIndex: startRow + offset + 2, startColumnIndex: bounds.startColumnIndex, endColumnIndex: bounds.startColumnIndex + Math.max(...table.map(item => item.length), 1) },
+      cell: { userEnteredFormat: { backgroundColor: monthly, textFormat: { bold: true } } },
+      fields: "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold",
+    } });
+    headerRow.forEach((header, logicalColumn) => {
+      const column = physicalColumn(logicalColumn);
+      if (column < 0) return;
+      if (header.startsWith("За месяц · Доход ") || header.startsWith("За месяц · Расходы ")) {
+        requests.push({ repeatCell: {
+          range: { sheetId, startRowIndex: startRow + offset + 1, endRowIndex: startRow + offset + 2, startColumnIndex: column, endColumnIndex: column + 1 },
+          cell: { userEnteredFormat: { backgroundColor: header.startsWith("За месяц · Доход ") ? income : expense } },
+          fields: "userEnteredFormat.backgroundColor",
+        } });
+      }
+    });
+  });
+  if (!requests.length) return;
+  const response = await fetch(`${base}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests }) });
+  if (!response.ok) throw new Error("Google Sheets transaction formatting failed");
+};
+
+// The old transaction table stored department columns and text such as
+// "100 PLN". It cannot be converted in place into numeric currency cells, so
+// reset only the configured export range once before writing the new layout.
+const resetLegacyTransactionLayout = async (
+  base: string,
+  headers: Record<string, string>,
+  parts: RangePart[],
+) => {
+  const ranges = parts.map(part => `ranges=${encodeURIComponent(part.range)}`).join("&");
+  const read = await fetch(`${base}/values:batchGet?${ranges}&valueRenderOption=FORMATTED_VALUE`, { headers });
+  if (!read.ok) throw new Error("Google Sheets header check failed");
+  const current = await read.json() as { valueRanges?: Array<{ values?: unknown[][] }> };
+  const currentHeaders = (current.valueRanges || []).flatMap(item => item.values?.[0] || []).map(value => String(value ?? "").trim());
+  if (currentHeaders.length === 0) return;
+  const isCurrent = currentHeaders.includes("Расходы PLN")
+    && currentHeaders.some(header => header.startsWith("За месяц · Доход PLN"))
+    && currentHeaders.some(header => header.startsWith("За месяц · Расходы PLN"));
+  if (isCurrent) return;
+  const clear = await fetch(`${base}/values:batchClear`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ ranges: parts.map(part => part.range) }),
+  });
+  if (!clear.ok) throw new Error("Google Sheets legacy layout cleanup failed");
+};
+
 async function googleToken() {
   const credentials = JSON.parse(Deno.env.get("GOOGLE_SHEETS_CREDENTIALS") || "{}");
   if (!credentials.client_email || !credentials.private_key) throw new Error("Google Sheets credentials are not configured");
@@ -398,7 +482,9 @@ serve(async (req) => {
       const dataWidth = Math.max(...values.map((row: unknown[]) => row.length), 1);
       const rangeParts = splitRangeParts(range, dataWidth);
       if (!rangeParts.length) return json({ error: "Invalid Google Sheets range" }, 400);
+      await resetLegacyTransactionLayout(base, headers, rangeParts);
       await writeIntoEmptyCells(base, headers, sheet, rangeParts, values);
+      await applyTransactionExportFormatting(base, headers, sheet, rangeParts, values);
       return json({ success: true });
     }
     if (archive) {

@@ -219,14 +219,20 @@ const buildTransactionExportValues = (
     { currency, type: 'income' as const, header: `Доход ${currency}` },
     { currency, type: 'expense' as const, header: `Расходы ${currency}` },
   ]);
+  const monthlyColumns = currencies.flatMap(currency => [
+    { currency, type: 'income' as const, header: `За месяц · Доход ${currency}` },
+    { currency, type: 'expense' as const, header: `За месяц · Расходы ${currency}` },
+  ]);
   const headers = [
     'Дата',
     ...currencyColumns.map(column => column.header),
-    'Доходы за месяц',
-    'Расходы за месяц',
+    ...monthlyColumns.map(column => column.header),
   ];
   const currencyColumnByKey = new Map(
     currencyColumns.map((column, index) => [`${column.type}:${column.currency}`, index + 1]),
+  );
+  const monthlyColumnByKey = new Map(
+    monthlyColumns.map((column, index) => [`${column.type}:${column.currency}`, index + 1 + currencyColumns.length]),
   );
   const byDate = new Map<string, ExportSyncTransaction[]>();
   const monthlyTotals = new Map<string, { income: Map<string, number>; expense: Map<string, number> }>();
@@ -244,14 +250,10 @@ const buildTransactionExportValues = (
   }
 
   const sortedDates = [...byDate.keys()].sort((left, right) => right.localeCompare(left));
-  const rows: string[][] = [];
-  const formatTotal = (totals: Map<string, number>) => currencies
-    .filter(currency => totals.has(currency))
-    .map(currency => `${new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 2 }).format(totals.get(currency) || 0)} ${currency}`)
-    .join('; ');
+  const rows: Array<Array<string | number>> = [];
 
   for (const [dateIndex, dayKey] of sortedDates.entries()) {
-    const dayRows: string[][] = [];
+    const dayRows: Array<Array<string | number>> = [];
     const dayTransactions = [...(byDate.get(dayKey) || [])]
       .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
 
@@ -266,7 +268,7 @@ const buildTransactionExportValues = (
         row[0] = new Date(`${dayKey}T00:00:00`).toLocaleDateString('pl-PL');
         dayRows.push(row);
       }
-      row[column] = `${transaction.amount} ${transaction.currency}`;
+      row[column] = Number(transaction.amount);
     }
     rows.push(...dayRows);
 
@@ -276,8 +278,10 @@ const buildTransactionExportValues = (
       const [year, month] = dayKey.slice(0, 7).split('-');
       const totals = monthlyTotals.get(dayKey.slice(0, 7))!;
       summary[0] = `За месяц: ${month}.${year}`;
-      summary[headers.length - 2] = formatTotal(totals.income);
-      summary[headers.length - 1] = formatTotal(totals.expense);
+      currencies.forEach(currency => {
+        summary[monthlyColumnByKey.get(`income:${currency}`)!] = totals.income.get(currency) || 0;
+        summary[monthlyColumnByKey.get(`expense:${currency}`)!] = totals.expense.get(currency) || 0;
+      });
       rows.push(summary);
     }
   }
