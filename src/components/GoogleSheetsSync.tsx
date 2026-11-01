@@ -199,13 +199,15 @@ const normaliseExportCurrency = (currency: string) => currency.trim().toUpperCas
 
 const orderExportCurrencies = (transactions: ExportSyncTransaction[]) => {
   const currencies = new Set(transactions.map(transaction => normaliseExportCurrency(transaction.currency)));
-  const otherCurrencies = [...currencies]
-    .filter(currency => !PRIMARY_CURRENCY_ORDER.includes(currency))
-    .sort((left, right) => left.localeCompare(right));
-
-  // Keep the three standard currencies visible even during a period in which one
-  // of them has no transactions. This keeps the sheet layout stable between syncs.
-  return [...PRIMARY_CURRENCY_ORDER, ...otherCurrencies];
+  // A currency appears only after the first transaction in it. This keeps an
+  // PLN-only sheet compact while preserving deterministic order when USD, EUR,
+  // or another currency is later used.
+  return [...currencies].sort((left, right) => {
+    const leftIndex = PRIMARY_CURRENCY_ORDER.indexOf(left);
+    const rightIndex = PRIMARY_CURRENCY_ORDER.indexOf(right);
+    if (leftIndex !== -1 || rightIndex !== -1) return (leftIndex === -1 ? Infinity : leftIndex) - (rightIndex === -1 ? Infinity : rightIndex);
+    return left.localeCompare(right);
+  });
 };
 
 const buildTransactionExportValues = (

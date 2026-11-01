@@ -83,19 +83,15 @@ const applyCurrencyColumns = (rawValues: unknown) => {
 
   const orderedCurrencies = [...currencies].filter(Boolean).sort(currencySort);
   if (!orderedCurrencies.includes("PLN")) orderedCurrencies.unshift("PLN");
-  const currencyHeaders = orderedCurrencies.flatMap(currency => currency === "PLN"
-    ? [`Доход ${currency}`]
-    : [`Доход ${currency}`, `Расходы ${currency}`]);
+  const currencyHeaders = orderedCurrencies.flatMap(currency => [`Доход ${currency}`, `Расходы ${currency}`]);
   const currencyColumn = new Map<string, number>();
   currencyHeaders.forEach((header, index) => currencyColumn.set(header, index + 1));
-  const categoryIndexes = inputHeaders
+  const legacyExpenseIndexes = inputHeaders
     .map((_, index) => index)
     .filter(index => index !== 0 && !incomeColumns.has(index) && !expenseColumns.has(index));
-  const categoryHeaders = categoryIndexes.map(index => inputHeaders[index]);
-  const categoryStart = currencyHeaders.length + 1;
 
   const rows = input.slice(1).map(row => {
-    const result = new Array(1 + currencyHeaders.length + categoryHeaders.length).fill("");
+    const result = new Array(1 + currencyHeaders.length).fill("");
     result[0] = row[0] ?? "";
     incomeColumns.forEach((declaredCurrency, index) => {
       if (!row[index]) return;
@@ -108,13 +104,12 @@ const applyCurrencyColumns = (rawValues: unknown) => {
       const target = currencyColumn.get(`Расходы ${currency}`);
       if (target !== undefined && row[index]) result[target] = row[index];
     });
-    categoryIndexes.forEach((sourceIndex, categoryIndex) => {
+    legacyExpenseIndexes.forEach(sourceIndex => {
       if (!row[sourceIndex]) return;
       const parsed = parseSheetCurrency(row[sourceIndex]);
       const currency = normaliseCurrency(parsed?.currency || "PLN");
-      const foreignExpense = currency !== "PLN" ? currencyColumn.get(`Расходы ${currency}`) : undefined;
-      if (foreignExpense !== undefined) result[foreignExpense] = row[sourceIndex];
-      else result[categoryStart + categoryIndex] = row[sourceIndex];
+      const expenseColumn = currencyColumn.get(`Расходы ${currency}`);
+      if (expenseColumn !== undefined) result[expenseColumn] = row[sourceIndex];
     });
     return result;
   });
