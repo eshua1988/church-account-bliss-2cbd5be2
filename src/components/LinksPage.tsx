@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Cloud, ExternalLink, FileDown, FileText, Link as LinkIcon, Loader2, Table2 } from 'lucide-react';
+import { Cloud, Copy, ExternalLink, FileDown, FileText, Link as LinkIcon, Loader2, Table2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
 
 type LinkKind = 'payout' | 'deposit' | 'transactions' | 'analytics' | 'protocols' | 'sheet' | 'cloud';
 
@@ -51,6 +52,7 @@ const iconFor = (kind: LinkKind) => {
 
 export const LinksPage = () => {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [links, setLinks] = useState<LinkItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -131,9 +133,18 @@ export const LinksPage = () => {
 
   const description = 'Все публичные ссылки, настроенные Google Таблицы и облачные папки собраны в одном месте.';
 
+  const copyLink = async (href: string) => {
+    try {
+      await navigator.clipboard.writeText(href);
+      toast({ title: 'Ссылка скопирована' });
+    } catch {
+      toast({ title: 'Не удалось скопировать ссылку', variant: 'destructive' });
+    }
+  };
+
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-7 w-7 animate-spin text-muted-foreground" /></div>;
   return <section className="animate-fade-in mx-auto max-w-3xl space-y-5">
     <div><h1 className="text-2xl font-bold">Ссылки</h1><p className="text-muted-foreground">{description}</p></div>
-    {links.length === 0 ? <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">Ссылок пока нет. Добавьте экспорт, облачную папку или публичную ссылку в настройках.</div> : <div className="grid gap-3 sm:grid-cols-2">{links.map(link => <div key={link.id} className="rounded-xl border bg-card p-4"><div className="mb-4 flex items-start gap-3">{iconFor(link.kind)}<div><p className="font-semibold">{link.name}</p><p className="text-sm text-muted-foreground">{link.description}</p></div></div><Button className="w-full gap-2" asChild><a href={link.href} target="_blank" rel="noopener noreferrer">Открыть <ExternalLink className="h-4 w-4" /></a></Button></div>)}</div>}
+    {links.length === 0 ? <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">Ссылок пока нет. Добавьте экспорт, облачную папку или публичную ссылку в настройках.</div> : <div className="grid gap-3 sm:grid-cols-2">{links.map(link => <div key={link.id} className="rounded-xl border bg-card p-4"><div className="mb-4 flex items-start gap-3">{iconFor(link.kind)}<div><p className="font-semibold">{link.name}</p><p className="text-sm text-muted-foreground">{link.description}</p></div></div><div className="grid grid-cols-2 gap-2"><Button variant="outline" className="gap-2" onClick={() => void copyLink(link.href)}><Copy className="h-4 w-4" />Копировать</Button><Button className="gap-2" asChild><a href={link.href} target="_blank" rel="noopener noreferrer">Открыть <ExternalLink className="h-4 w-4" /></a></Button></div></div>)}</div>}
   </section>;
 };
