@@ -251,9 +251,9 @@ const buildTransactionExportValues = (
     monthlyTotals.set(monthKey, totals);
   }
 
-  // Ascending order places the monthly total directly before the next month:
-  // 28.10 → "За месяц: 10.2026" → 01.11.
-  const sortedDates = [...byDate.keys()].sort((left, right) => left.localeCompare(right));
+  // Newest transactions stay at the top. The monthly total follows the last
+  // (oldest) transaction of that month, immediately before the prior month.
+  const sortedDates = [...byDate.keys()].sort((left, right) => right.localeCompare(left));
   const rows: Array<Array<string | number>> = [];
 
   for (const [dateIndex, dayKey] of sortedDates.entries()) {
