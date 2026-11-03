@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Header, type SyncReport, type SyncReportItem } from '@/components/Header';
 import { CurrencyBalanceCard } from '@/components/CurrencyBalanceCard';
@@ -38,6 +38,7 @@ import { RemindersPage } from '@/components/RemindersPage';
 import { PdfArchiveStatistics } from '@/components/PdfArchiveStatistics';
 
 const SYNC_REPORT_STORAGE_KEY = 'church-sync-report-v1';
+const SYNC_QUEUE_STORAGE_KEY = 'church-sync-queue-v1';
 
 const loadSyncReport = (): SyncReport | null => {
   try {
@@ -112,6 +113,8 @@ const Index = () => {
   const [isBankSyncing, setIsBankSyncing] = useState(false);
   const [isConfiguredExportsSyncing, setIsConfiguredExportsSyncing] = useState(false);
   const [syncReport, setSyncReport] = useState<SyncReport | null>(loadSyncReport);
+  const [retryingSyncItemIds, setRetryingSyncItemIds] = useState<string[]>([]);
+  const resumedSyncRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -201,6 +204,9 @@ const Index = () => {
   const handleSync = useCallback(async () => {
     setIsConfiguredExportsSyncing(true);
     const startedAt = new Date().toISOString();
+    // The browser keeps running while the window is minimised. If it is closed
+    // or restarted, this marker resumes the full sync after the next sign-in.
+    localStorage.setItem(SYNC_QUEUE_STORAGE_KEY, JSON.stringify({ requestedAt: startedAt }));
     const updateLiveItem = (item: SyncReportItem) => {
       setSyncReport(current => {
         const items = current?.completedAt === startedAt ? [...current.items] : [];
@@ -297,8 +303,62 @@ const Index = () => {
       }
     } finally {
       setIsConfiguredExportsSyncing(false);
+      localStorage.removeItem(SYNC_QUEUE_STORAGE_KEY);
     }
   }, [handleBankSync, notifications, toast, transactions, expenseCategories, getAllTransactions]);
+
+  const updateSyncReportItem = useCallback((item: SyncReportItem) => {
+    setSyncReport(current => {
+      const items = [...(current?.items || [])];
+      const index = items.findIndex(candidate => candidate.id === item.id);
+      if (index === -1) items.push(item);
+      else items[index] = item;
+      const next = { completedAt: new Date().toISOString(), items };
+      localStorage.setItem(SYNC_REPORT_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const handleRetrySyncItem = useCallback(async (id: string) => {
+    if (isSyncing || retryingSyncItemIds.includes(id)) return;
+    setRetryingSyncItemIds(current => [...current, id]);
+    localStorage.setItem(SYNC_QUEUE_STORAGE_KEY, JSON.stringify({ requestedAt: new Date().toISOString(), retryItemId: id }));
+    updateSyncReportItem({ id, title: syncReport?.items.find(item => item.id === id)?.title || 'Синхронизация', status: 'running', details: ['Синхронизация выполняется'] });
+    try {
+      if (id === 'bank') {
+        updateSyncReportItem(await handleBankSync());
+        return;
+      }
+      if (id === 'cloud') {
+        const result = await syncNotificationArchivesToCloud(notifications);
+        updateSyncReportItem(result.skipped
+          ? { id, title: 'Облачные PDF-архивы', status: result.errors.length ? 'error' : 'skipped', details: [result.errors.length ? result.errors.join('; ') : 'Нет подключённых облачных хранилищ'] }
+          : { id, title: 'Облачные PDF-архивы', status: result.errors.length ? 'error' : 'success', details: [`Архивов обработано: ${result.archives}; файлов загружено: ${result.uploaded}`, ...result.errors] });
+        return;
+      }
+      if (id.startsWith('sheets-')) {
+        const exportId = id.slice('sheets-'.length);
+        const result = await syncAllConfiguredGoogleSheetExports(transactions, expenseCategories, getAllTransactions, updateSyncReportItem, [exportId]);
+        updateSyncReportItem(result.items?.[0] || { id, title: 'Google Sheets', status: 'skipped', details: ['Экспорт больше не настроен'] });
+      }
+    } catch (error) {
+      updateSyncReportItem({ id, title: syncReport?.items.find(item => item.id === id)?.title || 'Синхронизация', status: 'error', details: [error instanceof Error ? error.message : String(error)] });
+    } finally {
+      setRetryingSyncItemIds(current => current.filter(item => item !== id));
+      localStorage.removeItem(SYNC_QUEUE_STORAGE_KEY);
+    }
+  }, [expenseCategories, getAllTransactions, handleBankSync, isSyncing, notifications, retryingSyncItemIds, syncReport?.items, transactions, updateSyncReportItem]);
+
+  useEffect(() => {
+    if (transactionsLoading || categoriesLoading || resumedSyncRef.current) return;
+    try {
+      if (!localStorage.getItem(SYNC_QUEUE_STORAGE_KEY)) return;
+      resumedSyncRef.current = true;
+      void handleSync();
+    } catch {
+      // Storage is optional; a manual synchronization remains available.
+    }
+  }, [handleSync, transactionsLoading, categoriesLoading]);
 
   const incomeByCategory = getTransactionsByCategory('income');
   const expenseByCategory = getTransactionsByCategory('expense');
@@ -490,6 +550,8 @@ const Index = () => {
         onSync={handleSync}
         isSyncing={isSyncing}
         syncReport={syncReport}
+        onRetrySyncItem={handleRetrySyncItem}
+        retryingSyncItemIds={retryingSyncItemIds}
         incomeCategories={getIncomeCategories()}
         expenseCategories={getExpenseCategories()}
       />

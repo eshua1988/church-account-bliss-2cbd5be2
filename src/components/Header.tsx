@@ -242,7 +242,9 @@ interface HeaderProps {
   onOpenMobileMenu?: () => void;
   onAddTransaction?: (transaction: Omit<Transaction, 'id' | 'createdAt'>) => Promise<void>;
   onSync?: () => void;
+  onRetrySyncItem?: (id: string) => void;
   isSyncing?: boolean;
+  retryingSyncItemIds?: string[];
   syncReport?: SyncReport | null;
   incomeCategories?: Category[];
   expenseCategories?: Category[];
@@ -254,7 +256,9 @@ export const Header = ({
   onOpenMobileMenu,
   onAddTransaction,
   onSync,
+  onRetrySyncItem,
   isSyncing = false,
+  retryingSyncItemIds = [],
   syncReport,
   incomeCategories = [],
   expenseCategories = [],
@@ -424,9 +428,24 @@ export const Header = ({
                       </div>
                       {syncReport?.items.map(item => (
                         <div key={item.id} className="rounded-lg border p-3">
-                          <div className="flex items-center gap-2 font-medium">
-                            {item.status === 'success' ? <CheckCircle2 className="h-4 w-4 text-success" /> : item.status === 'error' ? <XCircle className="h-4 w-4 text-destructive" /> : item.status === 'running' ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : item.status === 'queued' ? <Clock3 className="h-4 w-4 text-orange-500" /> : <ClipboardList className="h-4 w-4 text-muted-foreground" />}
-                            <span>{item.title}</span>
+                          <div className="flex items-center justify-between gap-2 font-medium">
+                            <div className="flex min-w-0 items-center gap-2">
+                              {item.status === 'success' ? <CheckCircle2 className="h-4 w-4 shrink-0 text-success" /> : item.status === 'error' ? <XCircle className="h-4 w-4 shrink-0 text-destructive" /> : item.status === 'running' ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" /> : item.status === 'queued' ? <Clock3 className="h-4 w-4 shrink-0 text-orange-500" /> : <ClipboardList className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                              <span className="truncate">{item.title}</span>
+                            </div>
+                            {onRetrySyncItem && (
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="shrink-0"
+                                onClick={() => onRetrySyncItem(item.id)}
+                                disabled={isSyncing || retryingSyncItemIds.includes(item.id) || item.status === 'running'}
+                                aria-label={`Синхронизировать: ${item.title}`}
+                                title="Запустить синхронизацию отдельно"
+                              >
+                                <RefreshCw className={`h-4 w-4 ${retryingSyncItemIds.includes(item.id) ? 'animate-spin' : ''}`} />
+                              </Button>
+                            )}
                           </div>
                           <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
                             {item.details.map(detail => <p key={detail}>{detail}</p>)}
