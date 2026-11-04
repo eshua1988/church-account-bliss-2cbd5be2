@@ -106,18 +106,18 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
       const width = 595.28, height = 841.89, margin = 58;
       const page = pdf.addPage([width, height]);
       let y = height - 58;
-      const write = (value: string, size = 11, gap = 6) => {
+      const write = (value: string, size = 11, gap = 6, options: { x?: number; color?: ReturnType<typeof rgb> } = {}) => {
         let row = '';
         for (const word of value.trim().split(/\s+/)) {
           const candidate = row ? `${row} ${word}` : word;
           if (font.widthOfTextAtSize(candidate, size) > width - margin * 2 && row) {
-            page.drawText(row, { x: margin, y, size, font, color: rgb(0, 0, 0) });
+            page.drawText(row, { x: options.x ?? margin, y, size, font, color: options.color ?? rgb(0, 0, 0) });
             y -= size + gap;
             row = word;
           } else row = candidate;
         }
         if (row) {
-          page.drawText(row, { x: margin, y, size, font, color: rgb(0, 0, 0) });
+          page.drawText(row, { x: options.x ?? margin, y, size, font, color: options.color ?? rgb(0, 0, 0) });
           y -= size + gap;
         }
       };
@@ -141,7 +141,7 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
         write(line, 11, 8);
         const comment = comments[line]?.trim();
         if (comment) {
-          write(`Комментарий: ${comment}`, 10, 6);
+          write(`(${comment})`, 9, 5, { x: margin + 14, color: rgb(.35, .35, .35) });
           y -= 5;
         }
         y -= 8;
