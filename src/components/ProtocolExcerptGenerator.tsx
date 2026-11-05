@@ -34,6 +34,25 @@ const formatDate = (date: string, time?: string) =>
 
 const numberedLines = (content: string) => content.split(/\r?\n/).map(value => value.trim()).filter(value => /^\d+(?:\.\d+)*\.\s+/.test(value));
 
+const expenseDepartments = [
+  'Админ-хозяйственный отдел',
+  'Благотворительный отдел',
+  'Детский отдел',
+  'Диаконский отдел',
+  'Женский отдел',
+  'Миссионерский отдел',
+  'Молодежный отдел',
+  'Пасторский отдел',
+  'Подростковый отдел',
+  'Медиа отдел',
+  'Мужской отдел',
+  'Музыкальный отдел',
+  'Общецерковный отдел',
+  'Прочее (расход)',
+  'Решение братского совета',
+  'Ученичества отдел',
+];
+
 const excerptSelection = (content: string) => {
   const lines: string[] = [];
   const comments: Record<string, string> = {};
@@ -221,7 +240,7 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
     {expenseDraftOpen && protocol && <div className="space-y-5 rounded-xl border border-primary/30 bg-primary/5 p-4 sm:p-6">
       <div><h2 className="text-xl font-bold">Расходный ордер</h2><p className="mt-1 text-sm text-muted-foreground">Заполняются только данные, которых нет в выписке. Окно остаётся внутри раздела протоколов.</p></div>
       <div className="grid gap-4 sm:grid-cols-3"><label className="space-y-2 text-sm font-medium">Дата<Input type="date" value={protocol.protocol_date} readOnly/></label><label className="space-y-2 text-sm font-medium">Сумма *<Input type="number" min="0" step="0.01" value={expenseAmount} onChange={event => setExpenseAmount(event.target.value)} placeholder="0,00"/></label><label className="space-y-2 text-sm font-medium">Валюта<select value={expenseCurrency} onChange={event => setExpenseCurrency(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option>PLN</option><option>EUR</option><option>USD</option><option>UAH</option></select></label><label className="space-y-2 text-sm font-medium sm:col-span-2">Выдано (имя и фамилия)<Input value={secretaryName} readOnly aria-readonly="true"/></label><label className="space-y-2 text-sm font-medium">Счёт для перевода<Input value={expenseAccount} onChange={event => setExpenseAccount(event.target.value)} placeholder="Если нужен"/></label></div>
-      <div className="space-y-3 rounded-lg border bg-card p-4"><p className="font-medium">Шаг 2 — отдел и основание</p><label className="block space-y-2 text-sm font-medium">Отдел *<Input value={expenseDepartment} onChange={event => setExpenseDepartment(event.target.value)} placeholder="Выберите или укажите отдел"/></label><label className="block space-y-2 text-sm font-medium">Основание<Textarea value={excerptContent} readOnly rows={5}/></label></div>
+      <div className="space-y-3 rounded-lg border bg-card p-4"><p className="font-medium">Шаг 2 — отдел и основание</p><label className="block space-y-2 text-sm font-medium">Отдел *<select value={expenseDepartment} onChange={event => setExpenseDepartment(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="" disabled>Выберите отдел</option>{expenseDepartments.map(department => <option key={department} value={department}>{department}</option>)}</select></label><label className="block space-y-2 text-sm font-medium">Основание<Textarea value={excerptContent} readOnly rows={5}/></label></div>
       <div className="space-y-3 rounded-lg border bg-card p-4"><p className="font-medium">Шаг 3 — вложение</p><p className="flex items-center gap-2 text-sm"><FileDown className="h-4 w-4 text-primary"/>Выписка из протокола.pdf будет приложена к ордеру.</p></div>
       <div className="space-y-3 rounded-lg border bg-card p-4"><p className="font-medium">Шаг 4 — подпись секретаря</p><div className="flex flex-wrap items-center gap-3"><p className="text-sm">{secretaryName || 'Секретарь'}</p>{secretarySignature ? <img src={secretarySignature} alt="Подпись секретаря" className="h-14 w-32 rounded border bg-white object-contain p-1"/> : <p className="text-sm text-destructive">Добавьте подпись секретаря в настройках протоколов.</p>}</div></div>
       <p className="text-xs text-muted-foreground">Предзаполнены: дата, имя секретаря, основание из маркеров и комментариев, выписка PDF и подпись секретаря. Нужно указать сумму и отдел.</p>
