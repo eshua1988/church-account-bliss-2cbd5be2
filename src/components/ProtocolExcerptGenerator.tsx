@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import fontkit from '@pdf-lib/fontkit';
 import { PDFDocument, rgb } from 'pdf-lib';
-import { FileDown, MessageSquare } from 'lucide-react';
+import { FileDown, MessageSquare, ReceiptText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { ROBOTO_FONT_BASE64 } from '@/lib/robotoFont';
 
 type Protocol = {
@@ -23,7 +25,7 @@ type Props = {
   churchName: string;
   secretaryName: string;
   secretarySignature: string;
-  onSave: (protocol: Protocol, content: string, validity: string, pdfBase64: string) => Promise<void>;
+  onSave: (protocol: Protocol, content: string, validity: string, pdfBase64: string, createExpenseOrder?: boolean) => Promise<void>;
   editingExcerpt?: Protocol | null;
 };
 
@@ -35,6 +37,7 @@ const numberedLines = (content: string) => content.split(/\r?\n/).map(value => v
 const excerptSelection = (content: string) => {
   const lines: string[] = [];
   const comments: Record<string, string> = {};
+  const validities: Record<string, string> = {};
   let currentLine = '';
   for (const rawValue of content.split(/\r?\n/)) {
     const value = rawValue.trim();
@@ -45,10 +48,14 @@ const excerptSelection = (content: string) => {
       continue;
     }
     if (!currentLine) continue;
+    if (/^Срок действия:\s*/i.test(value)) {
+      validities[currentLine] = value.replace(/^Срок действия:\s*/i, '');
+      continue;
+    }
     const comment = value.replace(/^Комментарий:\s*/i, '');
     comments[currentLine] = [comments[currentLine], comment].filter(Boolean).join('\n');
   }
-  return { lines, comments };
+  return { lines, comments, validities };
 };
 
 export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName, secretarySignature, onSave, editingExcerpt }: Props) {
@@ -56,9 +63,14 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
   const [protocolId, setProtocolId] = useState('');
   const [selectedLines, setSelectedLines] = useState<string[]>([]);
   const [comments, setComments] = useState<Record<string, string>>({});
+  const [validities, setValidities] = useState<Record<string, string>>({});
   const [commentEditorLine, setCommentEditorLine] = useState<string | null>(null);
-  const [validity, setValidity] = useState('До следующего решения');
   const [saving, setSaving] = useState(false);
+  const [expenseDraftOpen, setExpenseDraftOpen] = useState(false);
+  const [expenseAmount, setExpenseAmount] = useState('');
+  const [expenseCurrency, setExpenseCurrency] = useState('PLN');
+  const [expenseDepartment, setExpenseDepartment] = useState('');
+  const [expenseAccount, setExpenseAccount] = useState('');
   const candidates = editingExcerpt && !archived.some(item => item.id === editingExcerpt.id) ? [editingExcerpt, ...archived] : archived;
   const protocol = candidates.find(item => item.id === protocolId);
   const lines = useMemo(() => protocol ? numberedLines(protocol.content) : [], [protocol]);
@@ -69,14 +81,18 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
     const selection = excerptSelection(editingExcerpt.content);
     setSelectedLines(selection.lines);
     setComments(selection.comments);
+    setValidities(selection.validities);
     const storedValidity = editingExcerpt.pastor_name?.split('|')[1];
-    if (storedValidity === 'До следующего решения' || storedValidity === 'Одноразовая') setValidity(storedValidity);
+    if (storedValidity === 'До следующего решения' || storedValidity === 'Одноразовая') {
+      setValidities(current => Object.fromEntries(selection.lines.map(line => [line, current[line] || storedValidity])));
+    }
   }, [editingExcerpt]);
 
   const chooseProtocol = (id: string) => {
     setProtocolId(id);
     setSelectedLines([]);
     setComments({});
+    setValidities({});
     setCommentEditorLine(null);
   };
 
@@ -87,16 +103,22 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
       delete next[line];
       return next;
     });
+    setValidities(previous => {
+      const next = { ...previous };
+      delete next[line];
+      return next;
+    });
     setCommentEditorLine(currentEditor => currentEditor === line ? null : currentEditor);
     return current.filter(item => item !== line);
   });
 
+  const validityFor = (line: string) => validities[line] || 'До следующего решения';
   const excerptContent = selectedLines.map(line => {
     const comment = comments[line]?.trim();
-    return comment ? `${line}\nКомментарий: ${comment}` : line;
+    return [line, comment ? `Комментарий: ${comment}` : '', `Срок действия: ${validityFor(line)}`].filter(Boolean).join('\n');
   }).join('\n');
 
-  const savePdf = async () => {
+  const savePdf = async (createExpenseOrder = false) => {
     if (!protocol || selectedLines.length === 0) return;
     setSaving(true);
     try {
@@ -144,10 +166,9 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
           write(`(${comment})`, 9, 5, { x: margin + 14, color: rgb(.35, .35, .35) });
           y -= 5;
         }
+        write(`Срок действия: ${validityFor(line)}`, 9, 5, { x: margin + 14, color: rgb(.35, .35, .35) });
         y -= 8;
       });
-      y -= 12;
-      write(`Срок действия: ${validity}`, 10, 8);
       const signatureY = 105;
       if (secretarySignature) {
         const image = await pdf.embedPng(secretarySignature);
@@ -159,7 +180,9 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
       const bytes = await pdf.save();
       let binary = '';
       for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
-      await onSave(protocol, excerptContent, validity, btoa(binary));
+      const distinctValidities = [...new Set(selectedLines.map(validityFor))];
+      await onSave(protocol, excerptContent, distinctValidities.length === 1 ? distinctValidities[0] : 'Несколько сроков', btoa(binary), createExpenseOrder);
+      if (createExpenseOrder) setExpenseDraftOpen(true);
     } finally {
       setSaving(false);
     }
@@ -184,13 +207,24 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
             <span className="flex-1 text-sm">{line}</span>
             {selected && <Button type="button" variant={editorOpen || comments[line] ? 'secondary' : 'outline'} size="sm" className="shrink-0" onClick={() => setCommentEditorLine(current => current === line ? null : line)}><MessageSquare className="mr-1 h-4 w-4"/>Комментарий</Button>}
           </div>
+          {selected && <label className="ml-7 mt-3 block max-w-sm space-y-1 text-xs font-medium text-muted-foreground">Срок действия этого пункта
+            <select value={validityFor(line)} onChange={event => setValidities(current => ({ ...current, [line]: event.target.value }))} className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground"><option>До следующего решения</option><option>Одноразовая</option></select>
+          </label>}
           {selected && editorOpen && <div className="ml-7 mt-3 space-y-2"><label className="text-xs font-medium text-muted-foreground">Комментарий будет размещён под этим пунктом в выписке PDF</label><textarea value={comments[line] || ''} onChange={event => setComments(current => ({ ...current, [line]: event.target.value }))} rows={3} placeholder="Введите комментарий" className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"/></div>}
         </div>;
       }) : <p className="text-sm text-muted-foreground">В этом протоколе не найдены нумерованные пункты вида «1.», «1.1» или «1.1.1».</p>}
     </div>}
-    <label className="block space-y-2 text-sm font-medium">Срок действия
-      <select value={validity} onChange={event => setValidity(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option>До следующего решения</option><option>Одноразовая</option></select>
-    </label>
-    <Button type="button" disabled={!protocol || selectedLines.length === 0 || saving} onClick={() => void savePdf()}>{saving ? 'Создание PDF…' : <><FileDown className="mr-2 h-4 w-4"/>Сохранить PDF</>}</Button>
+    <div className="flex flex-wrap gap-2">
+      <Button type="button" disabled={!protocol || selectedLines.length === 0 || saving} onClick={() => void savePdf()}>{saving ? 'Создание PDF…' : <><FileDown className="mr-2 h-4 w-4"/>Сохранить PDF</>}</Button>
+      <Button type="button" variant="outline" disabled={!protocol || selectedLines.length === 0 || saving} onClick={() => void savePdf(true)}><ReceiptText className="mr-2 h-4 w-4"/>Добавить в расходный ордер</Button>
+    </div>
+    {expenseDraftOpen && protocol && <div className="space-y-5 rounded-xl border border-primary/30 bg-primary/5 p-4 sm:p-6">
+      <div><h2 className="text-xl font-bold">Расходный ордер</h2><p className="mt-1 text-sm text-muted-foreground">Заполняются только данные, которых нет в выписке. Окно остаётся внутри раздела протоколов.</p></div>
+      <div className="grid gap-4 sm:grid-cols-3"><label className="space-y-2 text-sm font-medium">Дата<Input type="date" value={protocol.protocol_date} readOnly/></label><label className="space-y-2 text-sm font-medium">Сумма *<Input type="number" min="0" step="0.01" value={expenseAmount} onChange={event => setExpenseAmount(event.target.value)} placeholder="0,00"/></label><label className="space-y-2 text-sm font-medium">Валюта<select value={expenseCurrency} onChange={event => setExpenseCurrency(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option>PLN</option><option>EUR</option><option>USD</option><option>UAH</option></select></label><label className="space-y-2 text-sm font-medium sm:col-span-2">Выдано (имя и фамилия)<Input value={secretaryName} readOnly aria-readonly="true"/></label><label className="space-y-2 text-sm font-medium">Счёт для перевода<Input value={expenseAccount} onChange={event => setExpenseAccount(event.target.value)} placeholder="Если нужен"/></label></div>
+      <div className="space-y-3 rounded-lg border bg-card p-4"><p className="font-medium">Шаг 2 — отдел и основание</p><label className="block space-y-2 text-sm font-medium">Отдел *<Input value={expenseDepartment} onChange={event => setExpenseDepartment(event.target.value)} placeholder="Выберите или укажите отдел"/></label><label className="block space-y-2 text-sm font-medium">Основание<Textarea value={excerptContent} readOnly rows={5}/></label></div>
+      <div className="space-y-3 rounded-lg border bg-card p-4"><p className="font-medium">Шаг 3 — вложение</p><p className="flex items-center gap-2 text-sm"><FileDown className="h-4 w-4 text-primary"/>Выписка из протокола.pdf будет приложена к ордеру.</p></div>
+      <div className="space-y-3 rounded-lg border bg-card p-4"><p className="font-medium">Шаг 4 — подпись секретаря</p><div className="flex flex-wrap items-center gap-3"><p className="text-sm">{secretaryName || 'Секретарь'}</p>{secretarySignature ? <img src={secretarySignature} alt="Подпись секретаря" className="h-14 w-32 rounded border bg-white object-contain p-1"/> : <p className="text-sm text-destructive">Добавьте подпись секретаря в настройках протоколов.</p>}</div></div>
+      <p className="text-xs text-muted-foreground">Предзаполнены: дата, имя секретаря, основание из маркеров и комментариев, выписка PDF и подпись секретаря. Нужно указать сумму и отдел.</p>
+    </div>}
   </section>;
 }

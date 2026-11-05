@@ -195,15 +195,17 @@ export default function PublicProtocols() {
     const loadTrash = async () => { const data = await invoke('load-trash'); setTrash(data.documents || []); };
     const moveToTrash = async (item: Protocol) => { await invoke('move-to-trash', { id: item.id }); setProtocols(value => value.filter(protocol => protocol.id !== item.id)); await loadTrash(); };
     const restoreFromTrash = async (item: Protocol) => { const data = await invoke('restore-from-trash', { id: item.id }); setTrash(value => value.filter(protocol => protocol.id !== item.id)); setProtocols(value => [data.document, ...value]); };
-    const createExcerpt = async (source: Protocol, excerptContent: string, excerptValidity: string, pdfBase64: string) => {
+    const createExcerpt = async (source: Protocol, excerptContent: string, excerptValidity: string, pdfBase64: string, createExpenseOrder = false) => {
         setSaving(true);
         try {
             const action = editingExcerpt ? 'update-excerpt' : 'create-excerpt';
             const data = await invoke(action, { ...(editingExcerpt ? { id: editingExcerpt.id } : {}), protocol: { council: source.council, protocol_date: source.protocol_date, protocol_time: source.protocol_time || null, place: source.place, present: source.present, absent: source.absent, content: excerptContent, secretary_name: settings.secretary_name, secretary_signature: settings.secretary_signature || null, excerpt_validity: excerptValidity, pdf_base64: pdfBase64 } });
             setProtocols(value => editingExcerpt ? value.map(item => item.id === editingExcerpt.id ? data.document : item) : [data.document, ...value]);
             setEditingExcerpt(null);
-            setSection('notifications');
-            setTab('main');
+            if (!createExpenseOrder) {
+                setSection('notifications');
+                setTab('main');
+            }
         } finally { setSaving(false); }
     };
     const create = async (event: FormEvent) => {
