@@ -52,6 +52,7 @@ jobs:
       - name: Deploy changed Edge Functions
         env:
           FUNCTIONS: ${{ steps.functions.outputs.names }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           if [ -z "$FUNCTIONS" ]; then
             echo "No Edge Function source changes to deploy."
@@ -67,5 +68,3 @@ jobs:
               supabase functions deploy $fn --project-ref htepbcotdqrewbxmasbf
             fi
           done
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
