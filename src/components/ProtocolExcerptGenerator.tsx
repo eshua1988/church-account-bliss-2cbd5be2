@@ -67,11 +67,25 @@ const payoutAmountInWords = (amount: number, currency: string) => {
     return `${hundreds[Math.floor(value / 100)]}${value % 100 ? ` ${spellHundreds(value % 100)}` : ''}`;
   };
   const whole = Math.floor(amount);
-  const thousands = Math.floor(whole / 1000);
-  const rest = whole % 1000;
-  const thousandWord = thousands % 100 >= 11 && thousands % 100 <= 19 ? 'tysięcy' : thousands % 10 === 1 ? 'tysiąc' : thousands % 10 >= 2 && thousands % 10 <= 4 ? 'tysiące' : 'tysięcy';
+  const groupWord = (value: number, forms: [string, string, string]) => {
+    const lastTwo = value % 100;
+    if (lastTwo >= 11 && lastTwo <= 19) return forms[2];
+    if (value % 10 === 1) return forms[0];
+    if (value % 10 >= 2 && value % 10 <= 4) return forms[1];
+    return forms[2];
+  };
+  const groups: Array<[number, [string, string, string] | null]> = [
+    [Math.floor(whole / 1_000_000_000), ['miliard', 'miliardy', 'miliardów']],
+    [Math.floor(whole / 1_000_000) % 1000, ['milion', 'miliony', 'milionów']],
+    [Math.floor(whole / 1000) % 1000, ['tysiąc', 'tysiące', 'tysięcy']],
+    [whole % 1000, null],
+  ];
   const currencyWord = currency === 'PLN' ? (whole % 100 >= 11 && whole % 100 <= 19 ? 'złotych' : whole % 10 === 1 ? 'złoty' : whole % 10 >= 2 && whole % 10 <= 4 ? 'złote' : 'złotych') : currency;
-  const value = `${thousands ? `${spellHundreds(thousands)} ${thousandWord} ` : ''}${rest || !thousands ? spellHundreds(rest) : ''} ${currencyWord}`.trim();
+  const valueParts = groups.flatMap(([group, forms]) => {
+    if (!group) return [];
+    return forms ? [`${spellHundreds(group)} ${groupWord(group, forms)}`] : [spellHundreds(group)];
+  });
+  const value = `${valueParts.length ? valueParts.join(' ') : 'zero'} ${currencyWord}`.trim();
   const cents = Math.round((amount - whole) * 100);
   return `${value.charAt(0).toUpperCase()}${value.slice(1)}${cents ? ` ${cents}/100` : ''}`;
 };
@@ -245,11 +259,12 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
       const bytes = await pdf.save();
       const pdfBase64 = bytesToBase64(bytes);
       const distinctValidities = [...new Set(selectedLines.map(validityFor))];
-      await onSave(protocol, excerptContent, distinctValidities.length === 1 ? distinctValidities[0] : 'Несколько сроков', pdfBase64, createExpenseOrder);
       if (createExpenseOrder) {
         setExcerptPdfBase64(pdfBase64);
         setExpenseDate(todayIso());
         setExpenseDraftOpen(true);
+      } else {
+        await onSave(protocol, excerptContent, distinctValidities.length === 1 ? distinctValidities[0] : 'Несколько сроков', pdfBase64);
       }
     } finally {
       setSaving(false);

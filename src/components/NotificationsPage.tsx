@@ -962,16 +962,23 @@ export const NotificationsPage = () => {
       cashierLabelYs.push(pageHeight - (180 + 8) * mmY);
     }
 
-    const rowX = 20 * mmX;
-    const rowWidth = 155 * mmX;
-    const rowHeight = 26 * mmY;
+    // Orders made from a protocol excerpt use the same page size but a wider,
+    // point-based cashier field.  Do not repaint it with the public-link
+    // layout: that left old borders visible and placed the signature on top.
+    const isProtocolExpenseOrder = Boolean(meta.source_protocol_id);
+    const rowX = isProtocolExpenseOrder ? 58 : 20 * mmX;
+    const rowWidth = isProtocolExpenseOrder ? pageWidth - 116 : 155 * mmX;
+    const rowHeight = isProtocolExpenseOrder ? 70 : 26 * mmY;
     const dividerX = rowX + rowWidth * 0.58;
-    const cashierLabelY = Math.min(...cashierLabelYs);
-    const rowTop = cashierLabelY + 8 * mmY;
+    // The first (highest) matching label belongs to the original form. Older
+    // saves could add a second lower cashier block, so it must not become the
+    // new drawing target.
+    const cashierLabelY = Math.max(...cashierLabelYs);
+    const rowTop = cashierLabelY + (isProtocolExpenseOrder ? 18 : 8 * mmY);
     const rowBottom = rowTop - rowHeight;
 
     cashierLabelYs.forEach(labelY => {
-      const existingTop = labelY + 8 * mmY;
+      const existingTop = labelY + (isProtocolExpenseOrder ? 18 : 8 * mmY);
       page.drawRectangle({
         x: rowX - 1 * mmX,
         y: existingTop - rowHeight - 1 * mmY,
