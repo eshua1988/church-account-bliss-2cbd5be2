@@ -55,6 +55,27 @@ const bytesToBase64 = (bytes: Uint8Array) => {
 
 const base64ToBytes = (value: string) => Uint8Array.from(atob(value.replace(/^data:application\/pdf;base64,/, '')), character => character.charCodeAt(0));
 
+// The public payout form uses this wording in its printed receipt. Keeping it
+// here means the order created from a protocol has the same printable fields.
+const payoutAmountInWords = (amount: number, currency: string) => {
+  const ones = ['', 'jeden', 'dwa', 'trzy', 'cztery', 'pięć', 'sześć', 'siedem', 'osiem', 'dziewięć', 'dziesięć', 'jedenaście', 'dwanaście', 'trzynaście', 'czternaście', 'piętnaście', 'szesnaście', 'siedemnaście', 'osiemnaście', 'dziewiętnaście'];
+  const tens = ['', '', 'dwadzieścia', 'trzydzieści', 'czterdzieści', 'pięćdziesiąt', 'sześćdziesiąt', 'siedemdziesiąt', 'osiemdziesiąt', 'dziewięćdziesiąt'];
+  const hundreds = ['', 'sto', 'dwieście', 'trzysta', 'czterysta', 'pięćset', 'sześćset', 'siedemset', 'osiemset', 'dziewięćset'];
+  const spellHundreds = (value: number): string => {
+    if (value < 20) return ones[value];
+    if (value < 100) return `${tens[Math.floor(value / 10)]}${value % 10 ? ` ${ones[value % 10]}` : ''}`;
+    return `${hundreds[Math.floor(value / 100)]}${value % 100 ? ` ${spellHundreds(value % 100)}` : ''}`;
+  };
+  const whole = Math.floor(amount);
+  const thousands = Math.floor(whole / 1000);
+  const rest = whole % 1000;
+  const thousandWord = thousands % 100 >= 11 && thousands % 100 <= 19 ? 'tysięcy' : thousands % 10 === 1 ? 'tysiąc' : thousands % 10 >= 2 && thousands % 10 <= 4 ? 'tysiące' : 'tysięcy';
+  const currencyWord = currency === 'PLN' ? (whole % 100 >= 11 && whole % 100 <= 19 ? 'złotych' : whole % 10 === 1 ? 'złoty' : whole % 10 >= 2 && whole % 10 <= 4 ? 'złote' : 'złotych') : currency;
+  const value = `${thousands ? `${spellHundreds(thousands)} ${thousandWord} ` : ''}${rest || !thousands ? spellHundreds(rest) : ''} ${currencyWord}`.trim();
+  const cents = Math.round((amount - whole) * 100);
+  return `${value.charAt(0).toUpperCase()}${value.slice(1)}${cents ? ` ${cents}/100` : ''}`;
+};
+
 const numberedLines = (content: string) => content.split(/\r?\n/).map(value => value.trim()).filter(value => /^\d+(?:\.\d+)*\.\s+/.test(value));
 
 const expenseDepartments = [
@@ -242,46 +263,84 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
       const pdf = await PDFDocument.create();
       pdf.registerFontkit(fontkit);
       const font = await pdf.embedFont(Uint8Array.from(atob(ROBOTO_FONT_BASE64), character => character.charCodeAt(0)));
+      // Match the public payout link: the first page is a Polish payout receipt
+      // with bordered fields and signature areas, followed by the excerpt PDF.
       const width = 595.28, height = 841.89, margin = 58;
       const page = pdf.addPage([width, height]);
-      let y = height - 64;
-      const write = (value: string, size = 11, gap = 7) => {
-        let row = '';
-        for (const word of value.trim().split(/\s+/)) {
-          const candidate = row ? `${row} ${word}` : word;
-          if (font.widthOfTextAtSize(candidate, size) > width - margin * 2 && row) {
-            page.drawText(row, { x: margin, y, size, font });
-            y -= size + gap;
-            row = word;
-          } else row = candidate;
-        }
-        if (row) {
-          page.drawText(row, { x: margin, y, size, font });
-          y -= size + gap;
-        }
+      const tableWidth = width - margin * 2;
+      const labelWidth = 142;
+      const valueWidth = tableWidth - labelWidth;
+      const rowHeight = 28;
+      const padding = 8;
+      const amount = Number(expenseAmount);
+      const wrap = (value: string, maxWidth: number, size = 10) => {
+        const words = value.trim().split(/\s+/).filter(Boolean);
+        const result: string[] = [];
+        let line = '';
+        words.forEach(word => {
+          const next = line ? `${line} ${word}` : word;
+          if (font.widthOfTextAtSize(next, size) > maxWidth && line) { result.push(line); line = word; } else line = next;
+        });
+        if (line) result.push(line);
+        return result;
       };
-      const title = 'Расходный ордер';
-      page.drawText(title, { x: (width - font.widthOfTextAtSize(title, 18)) / 2, y, size: 18, font, color: rgb(.20, .28, .70) });
-      y -= 34;
-      if (churchName) { page.drawText(churchName, { x: Math.max(margin, (width - font.widthOfTextAtSize(churchName, 11)) / 2), y, size: 11, font }); y -= 38; }
-      write(`Дата: ${formatDate(expenseDate)}`);
-      write(`Сумма: ${Number(expenseAmount).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${expenseCurrency}`);
-      write(`Выдано: ${secretaryName || '____________________'}`);
-      write(`Отдел: ${expenseDepartment}`);
-      if (expenseAccount.trim()) write(`Счёт для перевода: ${expenseAccount.trim()}`);
-      y -= 12;
-      write('Основание:', 11, 8);
-      excerptContent.split(/\r?\n/).filter(Boolean).forEach(line => write(line, 10, 6));
-      y = Math.max(y - 16, 100);
-      page.drawLine({ start: { x: margin, y }, end: { x: width - margin, y }, thickness: .8, color: rgb(.45, .45, .45) });
-      y -= 28;
-      page.drawText('Секретарь', { x: margin, y, size: 10, font });
-      page.drawText(secretaryName || '____________________', { x: margin, y: y - 20, size: 11, font });
+      const writeWrapped = (value: string, x: number, top: number, maxWidth: number, size = 10) => {
+        const result = wrap(value, maxWidth, size);
+        result.forEach((lineValue, index) => page.drawText(lineValue, { x, y: top - index * (size + 3), size, font }));
+        return result.length;
+      };
+      const cell = (x: number, top: number, cellWidth: number, cellHeight: number, value: string, shaded = false, size = 10) => {
+        if (shaded) page.drawRectangle({ x, y: top - cellHeight, width: cellWidth, height: cellHeight, color: rgb(.94, .94, .94) });
+        page.drawRectangle({ x, y: top - cellHeight, width: cellWidth, height: cellHeight, borderColor: rgb(0, 0, 0), borderWidth: .45 });
+        writeWrapped(value, x + padding, top - cellHeight / 2 + size / 2 - 1, cellWidth - padding * 2, size);
+      };
+      const tableRow = (top: number, label: string, value: string, cellHeight = rowHeight) => {
+        cell(margin, top, labelWidth, cellHeight, label, true);
+        cell(margin + labelWidth, top, valueWidth, cellHeight, value);
+      };
+      const heading = churchName || 'KOŚCIÓŁ BIBLIJNYCH CHRZEŚCIJAN W WARSZAWIE';
+      page.drawText(heading, { x: (width - font.widthOfTextAtSize(heading, 11)) / 2, y: height - 55, size: 11, font });
+      const title = 'Dowód wypłaty';
+      page.drawText(title, { x: (width - font.widthOfTextAtSize(title, 16)) / 2, y: height - 92, size: 16, font });
+      let top = height - 130;
+      const halfTable = (tableWidth - 12) / 2;
+      const dateValueWidth = halfTable - 62;
+      cell(margin, top, 62, rowHeight, 'Data', true);
+      cell(margin + 62, top, dateValueWidth, rowHeight, expenseDate);
+      const amountX = margin + halfTable + 12;
+      cell(amountX, top, 85, rowHeight, `Kwota (${expenseCurrency})`, true);
+      cell(amountX + 85, top, halfTable - 85, rowHeight, `${amount.toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${expenseCurrency}`);
+      top -= rowHeight + 18;
+      tableRow(top, 'Wydano (imię i nazwisko)', secretaryName || '____________________');
+      top -= rowHeight;
+      tableRow(top, 'Konto do przelewu', expenseAccount.trim() || '—');
+      top -= rowHeight;
+      tableRow(top, 'Nazwa działu', expenseDepartment);
+      top -= rowHeight;
+      const basisRows = Math.max(2, wrap(excerptContent, valueWidth - padding * 2).length);
+      const basisHeight = Math.max(58, basisRows * 14 + padding * 2);
+      tableRow(top, 'Na podstawie', excerptContent, basisHeight);
+      top -= basisHeight;
+      const amountWords = payoutAmountInWords(amount, expenseCurrency);
+      const wordsHeight = 58;
+      tableRow(top, 'Kwota słownie', amountWords, wordsHeight);
+      top -= wordsHeight + 34;
+      const signatureHeight = 72;
+      const divider = margin + Math.round(tableWidth * .58);
+      page.drawRectangle({ x: margin, y: top - signatureHeight, width: tableWidth, height: signatureHeight, borderColor: rgb(0, 0, 0), borderWidth: .55 });
+      page.drawLine({ start: { x: divider, y: top }, end: { x: divider, y: top - signatureHeight }, thickness: .55, color: rgb(0, 0, 0) });
+      page.drawText('Podpis odbiorcy:', { x: margin + padding, y: top - 18, size: 10, font });
       if (secretarySignature) {
         const image = await pdf.embedPng(secretarySignature);
-        const scale = Math.min(130 / image.width, 48 / image.height);
-        page.drawImage(image, { x: width - margin - image.width * scale, y: y - 42, width: image.width * scale, height: image.height * scale });
+        const scale = Math.min((tableWidth - (divider - margin) - 20) / image.width, 48 / image.height);
+        page.drawImage(image, { x: divider + 10, y: top - 58, width: image.width * scale, height: image.height * scale });
       }
+      top -= signatureHeight + 16;
+      const cashierHeight = 70;
+      page.drawRectangle({ x: margin, y: top - cashierHeight, width: tableWidth, height: cashierHeight, borderColor: rgb(0, 0, 0), borderWidth: .45 });
+      page.drawLine({ start: { x: divider, y: top }, end: { x: divider, y: top - cashierHeight }, thickness: .45, color: rgb(0, 0, 0) });
+      page.drawText('Kasjer:', { x: margin + padding, y: top - 18, size: 10, font });
+      page.drawText('Podpis kasjera:', { x: divider + padding, y: top - 18, size: 10, font });
       const excerptPdf = await PDFDocument.load(base64ToBytes(excerptPdfBase64));
       const excerptPages = await pdf.copyPages(excerptPdf, excerptPdf.getPageIndices());
       excerptPages.forEach(item => pdf.addPage(item));
@@ -332,9 +391,9 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
       <Button type="button" variant="outline" disabled={!protocol || selectedLines.length === 0 || saving} onClick={() => void savePdf(true)}><ReceiptText className="mr-2 h-4 w-4"/>Добавить в расходный ордер</Button>
     </div>
     {expenseDraftOpen && protocol && <div className="space-y-5 rounded-xl border border-primary/30 bg-primary/5 p-4 sm:p-6">
-      <div><h2 className="text-xl font-bold">Расходный ордер</h2><p className="mt-1 text-sm text-muted-foreground">Заполняются только данные, которых нет в выписке. Окно остаётся внутри раздела протоколов.</p></div>
+      <div><h2 className="text-xl font-bold">Дополнительные данные расходного ордера</h2><p className="mt-1 text-sm text-muted-foreground">Данные остаются в разделе протоколов и переносятся в бланк расходного ордера. Выписка будет вложена второй страницей PDF.</p></div>
       <div className="grid gap-4 sm:grid-cols-3"><label className="space-y-2 text-sm font-medium">Дата<Input type="date" value={expenseDate} readOnly/></label><label className="space-y-2 text-sm font-medium">Сумма *<Input type="number" min="0" step="0.01" value={expenseAmount} onChange={event => setExpenseAmount(event.target.value)} placeholder="0,00"/></label><label className="space-y-2 text-sm font-medium">Валюта<select value={expenseCurrency} onChange={event => setExpenseCurrency(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option>PLN</option><option>EUR</option><option>USD</option><option>UAH</option></select></label><label className="space-y-2 text-sm font-medium sm:col-span-2">Выдано (имя и фамилия)<Input value={secretaryName} readOnly aria-readonly="true"/></label><label className="space-y-2 text-sm font-medium">Счёт для перевода<Input value={expenseAccount} onChange={event => setExpenseAccount(event.target.value)} placeholder="Если нужен"/></label></div>
-      <div className="space-y-3 rounded-lg border bg-card p-4"><p className="font-medium">Шаг 2 — отдел и основание</p><label className="block space-y-2 text-sm font-medium">Отдел *<select value={expenseDepartment} onChange={event => setExpenseDepartment(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="" disabled>Выберите отдел</option>{expenseDepartments.map(department => <option key={department} value={department}>{department}</option>)}</select></label><label className="block space-y-2 text-sm font-medium">Основание<Textarea value={excerptContent} readOnly rows={5}/></label></div>
+      <div className="space-y-3 rounded-lg border bg-card p-4"><p className="font-medium">Дополнительные сведения</p><label className="block space-y-2 text-sm font-medium">Отдел *<select value={expenseDepartment} onChange={event => setExpenseDepartment(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="" disabled>Выберите отдел</option>{expenseDepartments.map(department => <option key={department} value={department}>{department}</option>)}</select></label><label className="block space-y-2 text-sm font-medium">Основание<Textarea value={excerptContent} readOnly rows={5}/></label></div>
       <p className="text-xs text-muted-foreground">В итоговом PDF первая страница — расходный ордер, вторая — выписка из протокола. Подпись секретаря и выписка прикладываются автоматически.</p>
       <Button type="button" disabled={saving || !expenseDepartment || !(Number(expenseAmount) > 0)} onClick={() => void saveExpenseOrder()}>{saving ? 'Сохранение…' : <><FileDown className="mr-2 h-4 w-4"/>Сохранить расходный ордер</>}</Button>
     </div>}
