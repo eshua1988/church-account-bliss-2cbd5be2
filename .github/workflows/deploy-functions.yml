@@ -63,8 +63,8 @@ jobs:
             if [ "$fn" = "google-sheets" ] || [ "$fn" = "sheets-export" ] || [ "$fn" = "archive-pdf" ] || [ "$fn" = "public-protocols" ]; then
               # The function handles CORS preflight and validates the JWT itself.
               # Gateway JWT verification would reject browser OPTIONS requests first.
-              supabase functions deploy $fn --no-verify-jwt --project-ref htepbcotdqrewbxmasbf
+              supabase functions deploy $fn --yes --no-verify-jwt --project-ref htepbcotdqrewbxmasbf
             else
-              supabase functions deploy $fn --project-ref htepbcotdqrewbxmasbf
+              supabase functions deploy $fn --yes --project-ref htepbcotdqrewbxmasbf
             fi
           done
