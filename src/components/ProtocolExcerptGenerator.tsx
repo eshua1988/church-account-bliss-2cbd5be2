@@ -20,17 +20,40 @@ type Protocol = {
   pastor_name?: string;
 };
 
+type ExpenseOrderDraft = {
+  date: string;
+  amount: number;
+  currency: string;
+  department: string;
+  account: string;
+  basis: string;
+  pdfBase64: string;
+};
+
 type Props = {
   protocols: Protocol[];
   churchName: string;
   secretaryName: string;
   secretarySignature: string;
-  onSave: (protocol: Protocol, content: string, validity: string, pdfBase64: string, createExpenseOrder?: boolean) => Promise<void>;
+  onSave: (protocol: Protocol, content: string, validity: string, pdfBase64: string, createExpenseOrder?: boolean, expenseOrder?: ExpenseOrderDraft) => Promise<void>;
   editingExcerpt?: Protocol | null;
 };
 
 const formatDate = (date: string, time?: string) =>
   `${new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(`${date}T12:00:00`))} г.${time ? ` ${time}` : ''}`;
+
+const todayIso = () => {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+};
+
+const bytesToBase64 = (bytes: Uint8Array) => {
+  let binary = '';
+  for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  return btoa(binary);
+};
+
+const base64ToBytes = (value: string) => Uint8Array.from(atob(value.replace(/^data:application\/pdf;base64,/, '')), character => character.charCodeAt(0));
 
 const numberedLines = (content: string) => content.split(/\r?\n/).map(value => value.trim()).filter(value => /^\d+(?:\.\d+)*\.\s+/.test(value));
 
@@ -90,6 +113,8 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
   const [expenseCurrency, setExpenseCurrency] = useState('PLN');
   const [expenseDepartment, setExpenseDepartment] = useState('');
   const [expenseAccount, setExpenseAccount] = useState('');
+  const [expenseDate, setExpenseDate] = useState(todayIso);
+  const [excerptPdfBase64, setExcerptPdfBase64] = useState('');
   const candidates = editingExcerpt && !archived.some(item => item.id === editingExcerpt.id) ? [editingExcerpt, ...archived] : archived;
   const protocol = candidates.find(item => item.id === protocolId);
   const lines = useMemo(() => protocol ? numberedLines(protocol.content) : [], [protocol]);
@@ -197,11 +222,80 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
       page.drawText('Выписку составил, секретарь', { x: margin, y: signatureY + 20, size: 9, font });
       page.drawText(secretaryName || '____________________', { x: margin, y: signatureY, size: 11, font });
       const bytes = await pdf.save();
-      let binary = '';
-      for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+      const pdfBase64 = bytesToBase64(bytes);
       const distinctValidities = [...new Set(selectedLines.map(validityFor))];
-      await onSave(protocol, excerptContent, distinctValidities.length === 1 ? distinctValidities[0] : 'Несколько сроков', btoa(binary), createExpenseOrder);
-      if (createExpenseOrder) setExpenseDraftOpen(true);
+      await onSave(protocol, excerptContent, distinctValidities.length === 1 ? distinctValidities[0] : 'Несколько сроков', pdfBase64, createExpenseOrder);
+      if (createExpenseOrder) {
+        setExcerptPdfBase64(pdfBase64);
+        setExpenseDate(todayIso());
+        setExpenseDraftOpen(true);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveExpenseOrder = async () => {
+    if (!protocol || !excerptPdfBase64 || !expenseDepartment || !(Number(expenseAmount) > 0)) return;
+    setSaving(true);
+    try {
+      const pdf = await PDFDocument.create();
+      pdf.registerFontkit(fontkit);
+      const font = await pdf.embedFont(Uint8Array.from(atob(ROBOTO_FONT_BASE64), character => character.charCodeAt(0)));
+      const width = 595.28, height = 841.89, margin = 58;
+      const page = pdf.addPage([width, height]);
+      let y = height - 64;
+      const write = (value: string, size = 11, gap = 7) => {
+        let row = '';
+        for (const word of value.trim().split(/\s+/)) {
+          const candidate = row ? `${row} ${word}` : word;
+          if (font.widthOfTextAtSize(candidate, size) > width - margin * 2 && row) {
+            page.drawText(row, { x: margin, y, size, font });
+            y -= size + gap;
+            row = word;
+          } else row = candidate;
+        }
+        if (row) {
+          page.drawText(row, { x: margin, y, size, font });
+          y -= size + gap;
+        }
+      };
+      const title = 'Расходный ордер';
+      page.drawText(title, { x: (width - font.widthOfTextAtSize(title, 18)) / 2, y, size: 18, font, color: rgb(.20, .28, .70) });
+      y -= 34;
+      if (churchName) { page.drawText(churchName, { x: Math.max(margin, (width - font.widthOfTextAtSize(churchName, 11)) / 2), y, size: 11, font }); y -= 38; }
+      write(`Дата: ${formatDate(expenseDate)}`);
+      write(`Сумма: ${Number(expenseAmount).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${expenseCurrency}`);
+      write(`Выдано: ${secretaryName || '____________________'}`);
+      write(`Отдел: ${expenseDepartment}`);
+      if (expenseAccount.trim()) write(`Счёт для перевода: ${expenseAccount.trim()}`);
+      y -= 12;
+      write('Основание:', 11, 8);
+      excerptContent.split(/\r?\n/).filter(Boolean).forEach(line => write(line, 10, 6));
+      y = Math.max(y - 16, 100);
+      page.drawLine({ start: { x: margin, y }, end: { x: width - margin, y }, thickness: .8, color: rgb(.45, .45, .45) });
+      y -= 28;
+      page.drawText('Секретарь', { x: margin, y, size: 10, font });
+      page.drawText(secretaryName || '____________________', { x: margin, y: y - 20, size: 11, font });
+      if (secretarySignature) {
+        const image = await pdf.embedPng(secretarySignature);
+        const scale = Math.min(130 / image.width, 48 / image.height);
+        page.drawImage(image, { x: width - margin - image.width * scale, y: y - 42, width: image.width * scale, height: image.height * scale });
+      }
+      const excerptPdf = await PDFDocument.load(base64ToBytes(excerptPdfBase64));
+      const excerptPages = await pdf.copyPages(excerptPdf, excerptPdf.getPageIndices());
+      excerptPages.forEach(item => pdf.addPage(item));
+      const pdfBase64 = bytesToBase64(await pdf.save());
+      await onSave(protocol, excerptContent, 'Расходный ордер', '', false, {
+        date: expenseDate,
+        amount: Number(expenseAmount),
+        currency: expenseCurrency,
+        department: expenseDepartment,
+        account: expenseAccount.trim(),
+        basis: excerptContent,
+        pdfBase64,
+      });
+      setExpenseDraftOpen(false);
     } finally {
       setSaving(false);
     }
@@ -239,11 +333,10 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
     </div>
     {expenseDraftOpen && protocol && <div className="space-y-5 rounded-xl border border-primary/30 bg-primary/5 p-4 sm:p-6">
       <div><h2 className="text-xl font-bold">Расходный ордер</h2><p className="mt-1 text-sm text-muted-foreground">Заполняются только данные, которых нет в выписке. Окно остаётся внутри раздела протоколов.</p></div>
-      <div className="grid gap-4 sm:grid-cols-3"><label className="space-y-2 text-sm font-medium">Дата<Input type="date" value={protocol.protocol_date} readOnly/></label><label className="space-y-2 text-sm font-medium">Сумма *<Input type="number" min="0" step="0.01" value={expenseAmount} onChange={event => setExpenseAmount(event.target.value)} placeholder="0,00"/></label><label className="space-y-2 text-sm font-medium">Валюта<select value={expenseCurrency} onChange={event => setExpenseCurrency(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option>PLN</option><option>EUR</option><option>USD</option><option>UAH</option></select></label><label className="space-y-2 text-sm font-medium sm:col-span-2">Выдано (имя и фамилия)<Input value={secretaryName} readOnly aria-readonly="true"/></label><label className="space-y-2 text-sm font-medium">Счёт для перевода<Input value={expenseAccount} onChange={event => setExpenseAccount(event.target.value)} placeholder="Если нужен"/></label></div>
+      <div className="grid gap-4 sm:grid-cols-3"><label className="space-y-2 text-sm font-medium">Дата<Input type="date" value={expenseDate} readOnly/></label><label className="space-y-2 text-sm font-medium">Сумма *<Input type="number" min="0" step="0.01" value={expenseAmount} onChange={event => setExpenseAmount(event.target.value)} placeholder="0,00"/></label><label className="space-y-2 text-sm font-medium">Валюта<select value={expenseCurrency} onChange={event => setExpenseCurrency(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option>PLN</option><option>EUR</option><option>USD</option><option>UAH</option></select></label><label className="space-y-2 text-sm font-medium sm:col-span-2">Выдано (имя и фамилия)<Input value={secretaryName} readOnly aria-readonly="true"/></label><label className="space-y-2 text-sm font-medium">Счёт для перевода<Input value={expenseAccount} onChange={event => setExpenseAccount(event.target.value)} placeholder="Если нужен"/></label></div>
       <div className="space-y-3 rounded-lg border bg-card p-4"><p className="font-medium">Шаг 2 — отдел и основание</p><label className="block space-y-2 text-sm font-medium">Отдел *<select value={expenseDepartment} onChange={event => setExpenseDepartment(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="" disabled>Выберите отдел</option>{expenseDepartments.map(department => <option key={department} value={department}>{department}</option>)}</select></label><label className="block space-y-2 text-sm font-medium">Основание<Textarea value={excerptContent} readOnly rows={5}/></label></div>
-      <div className="space-y-3 rounded-lg border bg-card p-4"><p className="font-medium">Шаг 3 — вложение</p><p className="flex items-center gap-2 text-sm"><FileDown className="h-4 w-4 text-primary"/>Выписка из протокола.pdf будет приложена к ордеру.</p></div>
-      <div className="space-y-3 rounded-lg border bg-card p-4"><p className="font-medium">Шаг 4 — подпись секретаря</p><div className="flex flex-wrap items-center gap-3"><p className="text-sm">{secretaryName || 'Секретарь'}</p>{secretarySignature ? <img src={secretarySignature} alt="Подпись секретаря" className="h-14 w-32 rounded border bg-white object-contain p-1"/> : <p className="text-sm text-destructive">Добавьте подпись секретаря в настройках протоколов.</p>}</div></div>
-      <p className="text-xs text-muted-foreground">Предзаполнены: дата, имя секретаря, основание из маркеров и комментариев, выписка PDF и подпись секретаря. Нужно указать сумму и отдел.</p>
+      <p className="text-xs text-muted-foreground">В итоговом PDF первая страница — расходный ордер, вторая — выписка из протокола. Подпись секретаря и выписка прикладываются автоматически.</p>
+      <Button type="button" disabled={saving || !expenseDepartment || !(Number(expenseAmount) > 0)} onClick={() => void saveExpenseOrder()}>{saving ? 'Сохранение…' : <><FileDown className="mr-2 h-4 w-4"/>Сохранить расходный ордер</>}</Button>
     </div>}
   </section>;
 }

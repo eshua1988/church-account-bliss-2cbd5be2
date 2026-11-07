@@ -143,6 +143,82 @@ Deno.serve(async (request) => {
       return json({ document: data });
     }
 
+    if (action === 'create-expense-order') {
+      const order = body.order || {};
+      const pdf = String(order.pdf_base64 || '');
+      const amount = Number(order.amount);
+      const currency = String(order.currency || 'PLN').toUpperCase();
+      const department = String(order.department || '').trim();
+      const basis = String(order.basis || '').trim();
+      const date = String(order.protocol_date || '');
+      if (!pdf || pdf.length > 16_000_000 || !Number.isFinite(amount) || amount <= 0 || !department || !basis || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !['PLN', 'EUR', 'USD', 'UAH'].includes(currency)) {
+        return json({ error: 'Invalid expense order' }, 400);
+      }
+
+      // Keep one copy in the protocol workspace (for Protocol Notifications)
+      // and another in the finance documents bucket (for Expense Notifications).
+      const id = crypto.randomUUID();
+      const protocolPath = `${workspaceUserId}/${token}/${id}.pdf`;
+      const financePath = `${link.owner_user_id}/payout_${Date.now()}/expense-order-${id}.pdf`;
+      const bytes = pdfBytes(pdf);
+      try {
+        if (!isR2Configured()) throw new Error('R2 is not configured');
+        await uploadToR2(protocolPath, bytes, 'application/pdf');
+      } catch (r2Error) {
+        console.warn('R2 expense order upload failed, using legacy Storage:', r2Error);
+        const { error: uploadError } = await supabase.storage.from('protocol-documents').upload(protocolPath, bytes, { contentType: 'application/pdf', upsert: false });
+        if (uploadError) throw uploadError;
+      }
+      const { error: financeUploadError } = await supabase.storage.from('documents').upload(financePath, bytes, { contentType: 'application/pdf', upsert: false });
+      if (financeUploadError) throw financeUploadError;
+
+      const secretaryName = String(order.secretary_name || '').slice(0, 200);
+      const account = String(order.account || '').trim().slice(0, 300);
+      const { data: document, error: documentError } = await supabase.from('protocol_documents').insert({
+        id,
+        link_token: token,
+        owner_user_id: workspaceUserId,
+        council: 'Расходный ордер',
+        protocol_date: date,
+        protocol_time: null,
+        place: department.slice(0, 500),
+        present: [],
+        absent: [],
+        content: basis.slice(0, 30000),
+        secretary_name: secretaryName,
+        pastor_name: 'Расходный ордер',
+        secretary_signature: order.secretary_signature || null,
+        pastor_signature: null,
+        pdf_path: protocolPath,
+      }).select().single();
+      if (documentError) throw documentError;
+
+      const { data: existingNotifications } = await supabase.from('notifications').select('id').eq('user_id', link.owner_user_id).neq('type', 'push_subscription').order('created_at', { ascending: true });
+      if (existingNotifications && existingNotifications.length >= 25) {
+        const ids = existingNotifications.slice(0, existingNotifications.length - 24).map(item => item.id);
+        if (ids.length) await supabase.from('notifications').delete().in('id', ids);
+      }
+      const { error: notificationError } = await supabase.from('notifications').insert({
+        user_id: link.owner_user_id,
+        title: 'Новый расходный ордер',
+        message: `Расходный ордер на ${amount.toFixed(2)} ${currency} — ${secretaryName || 'секретарь'}`,
+        type: 'payout',
+        metadata: {
+          amount,
+          currency,
+          issued_to: secretaryName,
+          department_name: department,
+          basis,
+          account: account || null,
+          pdf_path: financePath,
+          protocol_document_id: id,
+          source_protocol_id: String(order.source_protocol_id || '') || null,
+        },
+      });
+      if (notificationError) throw notificationError;
+      return json({ document });
+    }
+
     if (action === 'update') {
       const protocol = body.protocol || {}; const pdf = String(protocol.pdf_base64 || ''); const id = String(body.id || '');
       if (!id || !pdf || pdf.length > 12_000_000 || !String(protocol.content || '').trim()) return json({ error: 'Invalid protocol document' }, 400);
