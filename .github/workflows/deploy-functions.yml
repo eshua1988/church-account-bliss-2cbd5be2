@@ -14,15 +14,51 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # The previous revision is needed to determine which functions changed.
+          fetch-depth: 2
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
           version: latest
 
-      - name: Deploy all Edge Functions
+      - name: Determine Edge Functions to deploy
+        id: functions
+        shell: bash
         run: |
-          for fn in google-sheets sheets-export archive-pdf public-transactions public-protocols submit-public-payout submit-public-deposit validate-payout-token send-push-notification add-images-to-payout generate-payout-pdf upload-payout-pdf check-pending-payouts telegram-bot banking-auth-start banking-auth-complete banking-sync church-hub-invite church-hub-accept-invite; do
+          all_functions="google-sheets sheets-export archive-pdf public-transactions public-protocols submit-public-payout submit-public-deposit validate-payout-token send-push-notification add-images-to-payout generate-payout-pdf upload-payout-pdf check-pending-payouts telegram-bot banking-auth-start banking-auth-complete banking-sync church-hub-invite church-hub-accept-invite"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "names=$all_functions" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
+          if echo "$changed_files" | grep -q '^supabase/functions/_shared/'; then
+            names="$all_functions"
+          else
+            names="$(echo "$changed_files" | awk -F/ '/^supabase\/functions\/[^/]+\// { print $3 }' | sort -u | tr '\n' ' ')"
+          fi
+
+          # A workflow-only repair must still republish the function changed by
+          # the preceding release; subsequent source changes are detected above.
+          if [ -z "$names" ] && echo "$changed_files" | grep -qx '.github/workflows/deploy-functions.yml'; then
+            names="public-protocols"
+          fi
+
+          echo "names=$(echo "$names" | xargs)" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy changed Edge Functions
+        env:
+          FUNCTIONS: ${{ steps.functions.outputs.names }}
+        run: |
+          if [ -z "$FUNCTIONS" ]; then
+            echo "No Edge Function source changes to deploy."
+            exit 0
+          fi
+
+          for fn in $FUNCTIONS; do
             if [ "$fn" = "google-sheets" ] || [ "$fn" = "sheets-export" ] || [ "$fn" = "archive-pdf" ] || [ "$fn" = "public-protocols" ]; then
               # The function handles CORS preflight and validates the JWT itself.
               # Gateway JWT verification would reject browser OPTIONS requests first.
