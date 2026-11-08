@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import fontkit from '@pdf-lib/fontkit';
 import { PDFDocument, rgb } from 'pdf-lib';
-import { FileDown, MessageSquare, ReceiptText } from 'lucide-react';
+import { FileDown, MessageSquare, ReceiptText, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -406,8 +406,9 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
       <Button type="button" disabled={!protocol || selectedLines.length === 0 || creatingPdf} onClick={() => void savePdf()}>{creatingPdf ? 'Создание PDF…' : <><FileDown className="mr-2 h-4 w-4"/>Сохранить PDF</>}</Button>
       <Button type="button" variant="outline" disabled={!protocol || selectedLines.length === 0 || creatingPdf} onClick={() => void savePdf(true)}><ReceiptText className="mr-2 h-4 w-4"/>Добавить в расходный ордер</Button>
     </div>
-    {expenseDraftOpen && protocol && <div className="space-y-5 rounded-xl border border-primary/30 bg-primary/5 p-4 sm:p-6">
-      <div><h2 className="text-xl font-bold">Дополнительные данные расходного ордера</h2><p className="mt-1 text-sm text-muted-foreground">Данные остаются в разделе протоколов и переносятся в бланк расходного ордера. Выписка будет вложена второй страницей PDF.</p></div>
+    {expenseDraftOpen && protocol && <div className="relative space-y-5 rounded-xl border border-primary/30 bg-primary/5 p-4 sm:p-6">
+      <Button type="button" variant="ghost" size="icon" className="absolute right-3 top-3" title="Закрыть добавление расходного ордера" aria-label="Закрыть добавление расходного ордера" onClick={() => { setExpenseDraftOpen(false); setExcerptPdfBase64(''); }}><X className="h-5 w-5"/></Button>
+      <div className="pr-10"><h2 className="text-xl font-bold">Дополнительные данные расходного ордера</h2><p className="mt-1 text-sm text-muted-foreground">Данные остаются в разделе протоколов и переносятся в бланк расходного ордера. Выписка будет вложена второй страницей PDF.</p></div>
       <div className="grid gap-4 sm:grid-cols-3"><label className="space-y-2 text-sm font-medium">Дата<Input type="date" value={expenseDate} readOnly/></label><label className="space-y-2 text-sm font-medium">Сумма *<Input type="number" min="0" step="0.01" value={expenseAmount} onChange={event => setExpenseAmount(event.target.value)} placeholder="0,00"/></label><label className="space-y-2 text-sm font-medium">Валюта<select value={expenseCurrency} onChange={event => setExpenseCurrency(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option>PLN</option><option>EUR</option><option>USD</option><option>UAH</option></select></label><label className="space-y-2 text-sm font-medium sm:col-span-3">Счёт для перевода<Input value={expenseAccount} onChange={event => setExpenseAccount(event.target.value)} placeholder="Если нужен"/></label></div>
       <div className="space-y-3 rounded-lg border bg-card p-4"><p className="font-medium">Дополнительные сведения</p><label className="block space-y-2 text-sm font-medium">Отдел *<select value={expenseDepartment} onChange={event => setExpenseDepartment(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="" disabled>Выберите отдел</option>{expenseDepartments.map(department => <option key={department} value={department}>{department}</option>)}</select></label></div>
       <p className="text-xs text-muted-foreground">В итоговом PDF первая страница — расходный ордер, вторая — выписка из протокола. Подпись секретаря и выписка прикладываются автоматически.</p>
