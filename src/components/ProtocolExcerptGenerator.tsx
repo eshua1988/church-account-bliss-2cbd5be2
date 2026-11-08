@@ -391,9 +391,9 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
 
   return <section className="w-full max-w-6xl space-y-5 rounded-xl border bg-card p-5 shadow-sm sm:p-8">
     <div><h1 className="text-2xl font-bold">Выписка из протокола</h1><p className="mt-1 text-muted-foreground">Отметьте один или несколько архивных протоколов и выберите пункты решений для общей выписки.</p></div>
-    <div className="space-y-2 rounded-lg border p-4"><p className="text-sm font-medium">Протоколы из архива</p>
-      {candidates.length ? candidates.map(item => <label key={item.id} className="flex cursor-pointer items-center gap-3 rounded-md p-2 hover:bg-muted/50"><input type="checkbox" checked={selectedProtocolIds.includes(item.id)} onChange={() => toggleProtocol(item.id)} className="h-4 w-4"/><span className="text-sm">{formatDate(item.protocol_date, item.protocol_time)} — {item.place || 'место не указано'}</span></label>) : <p className="text-sm text-muted-foreground">В архиве пока нет протоколов.</p>}
-    </div>
+    <div className="space-y-2"><p className="text-sm font-medium">Протоколы из архива</p><details className="rounded-lg border bg-background"><summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm"><span>{selectedProtocolIds.length ? `Выбрано протоколов: ${selectedProtocolIds.length}` : 'Выберите один или несколько протоколов'}</span><span className="text-muted-foreground">⌄</span></summary><div className="space-y-1 border-t p-2">
+      {candidates.length ? candidates.map(item => <label key={item.id} className="flex cursor-pointer items-center gap-3 rounded-md p-2 hover:bg-muted/50"><input type="checkbox" checked={selectedProtocolIds.includes(item.id)} onChange={() => toggleProtocol(item.id)} className="h-4 w-4"/><span className="text-sm">{formatDate(item.protocol_date, item.protocol_time)} — {item.place || 'место не указано'}</span></label>) : <p className="p-2 text-sm text-muted-foreground">В архиве пока нет протоколов.</p>}
+    </div></details></div>
     {selectedProtocols.map(sourceProtocol => {
       const sourceLines = numberedLines(sourceProtocol.content);
       return <div key={sourceProtocol.id} className="space-y-3 rounded-lg border p-4">
