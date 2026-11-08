@@ -336,7 +336,10 @@ export default function PublicProtocols() {
         setPicker(null);
     };
     const setArchived = async (protocol: Protocol, archivedValue: boolean) => { await invoke('set-archived', { id: protocol.id, archived: archivedValue }); setProtocols(value => value.map(item => item.id === protocol.id ? { ...item, archived: archivedValue } : item)); };
-    const isExpenseOrder = (item: Protocol) => item.council === 'Расходный ордер' || item.pastor_name === 'Расходный ордер';
+    // Older orders have not always used the exact same value in `council`.
+    // Detect the document by either stored field so their protocol-only
+    // actions can never be shown again after a migration or an old save.
+    const isExpenseOrder = (item: Protocol) => /расходн\w*\s+ордер/i.test(`${item.council} ${item.pastor_name}`);
     const isExcerpt = (item: Protocol) => item.pastor_name.startsWith('Выписка из протокола');
     const editProtocol = (item: Protocol) => { if (isExcerpt(item) || isExpenseOrder(item)) { setEditingExcerpt(item); setSection('excerpt'); window.scrollTo({ top: 0, behavior: 'smooth' }); return; } if (item.pastor_signed_at) return; setEditingProtocolId(item.id); setCouncil(item.council); setDate(item.protocol_date); setTime(item.protocol_time || ''); setPlace(item.place || ''); setPresent(item.present || []); setAbsent(item.absent || []); setContent(item.content || ''); setSection('create'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
     const signInToProtocols = async () => { setGoogleLoginLoading(true); const workspaceUrl = `${(import.meta.env.VITE_PROTOCOL_OAUTH_REDIRECT_URL || `${window.location.origin}${import.meta.env.BASE_URL}`).replace(/\/$/, '')}/#/protocols/${encodeURIComponent(token)}`; const { error } = await protocolAuth.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: workspaceUrl } }); if (error) {
