@@ -3,8 +3,10 @@ import fontkit from '@pdf-lib/fontkit';
 import { PDFDocument, rgb } from 'pdf-lib';
 import { FileDown, MessageSquare, ReceiptText, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { CurrencyConverter } from '@/components/CurrencyConverter';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import currencyConvertIcon from '@/assets/currency-convert-icon.png';
 import { ROBOTO_FONT_BASE64 } from '@/lib/robotoFont';
 
 type Protocol = {
@@ -145,6 +147,7 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
   const [creatingPdf, setCreatingPdf] = useState(false);
   const [savingExpenseOrder, setSavingExpenseOrder] = useState(false);
   const [expenseDraftOpen, setExpenseDraftOpen] = useState(false);
+  const [expenseConverterOpen, setExpenseConverterOpen] = useState(false);
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseCurrency, setExpenseCurrency] = useState('PLN');
   const [expenseDepartment, setExpenseDepartment] = useState('');
@@ -410,6 +413,18 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
       <Button type="button" variant="ghost" size="icon" className="absolute right-3 top-3" title="Закрыть добавление расходного ордера" aria-label="Закрыть добавление расходного ордера" onClick={() => { setExpenseDraftOpen(false); setExcerptPdfBase64(''); }}><X className="h-5 w-5"/></Button>
       <div className="pr-10"><h2 className="text-xl font-bold">Дополнительные данные расходного ордера</h2><p className="mt-1 text-sm text-muted-foreground">Данные остаются в разделе протоколов и переносятся в бланк расходного ордера. Выписка будет вложена второй страницей PDF.</p></div>
       <div className="grid gap-4 sm:grid-cols-3"><label className="space-y-2 text-sm font-medium">Дата<Input type="date" value={expenseDate} readOnly/></label><label className="space-y-2 text-sm font-medium">Сумма *<Input type="number" min="0" step="0.01" value={expenseAmount} onChange={event => setExpenseAmount(event.target.value)} placeholder="0,00"/></label><label className="space-y-2 text-sm font-medium">Валюта<select value={expenseCurrency} onChange={event => setExpenseCurrency(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option>PLN</option><option>EUR</option><option>USD</option><option>UAH</option></select></label><label className="space-y-2 text-sm font-medium sm:col-span-3">Счёт для перевода<Input value={expenseAccount} onChange={event => setExpenseAccount(event.target.value)} placeholder="Если нужен"/></label></div>
+      <Button type="button" variant="outline" className="w-fit" onClick={() => setExpenseConverterOpen(true)} title="Конвертировать валюту"><img src={currencyConvertIcon} alt="" className="mr-2 h-5 w-5"/>Конвертировать валюту</Button>
+      <CurrencyConverter
+        isOpen={expenseConverterOpen}
+        onClose={() => setExpenseConverterOpen(false)}
+        onApply={(amount, currency) => {
+          setExpenseAmount(amount);
+          setExpenseCurrency(currency);
+        }}
+        currentAmount={expenseAmount}
+        currentCurrency={expenseCurrency}
+        language="ru"
+      />
       <div className="space-y-3 rounded-lg border bg-card p-4"><p className="font-medium">Дополнительные сведения</p><label className="block space-y-2 text-sm font-medium">Отдел *<select value={expenseDepartment} onChange={event => setExpenseDepartment(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="" disabled>Выберите отдел</option>{expenseDepartments.map(department => <option key={department} value={department}>{department}</option>)}</select></label></div>
       <p className="text-xs text-muted-foreground">В итоговом PDF первая страница — расходный ордер, вторая — выписка из протокола. Подпись секретаря и выписка прикладываются автоматически.</p>
       <Button type="button" disabled={savingExpenseOrder || !expenseDepartment || !(Number(expenseAmount) > 0)} onClick={() => void saveExpenseOrder()}>{savingExpenseOrder ? 'Сохранение…' : <><FileDown className="mr-2 h-4 w-4"/>Сохранить расходный ордер</>}</Button>
