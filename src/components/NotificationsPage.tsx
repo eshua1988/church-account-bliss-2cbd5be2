@@ -986,6 +986,20 @@ export const NotificationsPage = () => {
     const rowTop = cashierLabelY + (isProtocolExpenseOrder ? 18 : 8 * mmY);
     const rowBottom = rowTop - rowHeight;
 
+    // A legacy signer drew the public-link cashier field a few millimetres
+    // above the protocol field. It has no separate text label to discover,
+    // so erase the whole free gap below the recipient signature before
+    // drawing the canonical protocol cashier row again.
+    if (isProtocolExpenseOrder) {
+      page.drawRectangle({
+        x: rowX - 18,
+        y: rowBottom - 4,
+        width: rowWidth + 36,
+        height: rowHeight + 20,
+        color: rgb(1, 1, 1),
+      });
+    }
+
     cashierLabels.forEach(({ y: labelY }) => {
       // Remove both the canonical row and the old public-link row. This also
       // repairs PDFs already signed before protocol orders were recognized.
