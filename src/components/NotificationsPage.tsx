@@ -965,7 +965,11 @@ export const NotificationsPage = () => {
     // Orders made from a protocol excerpt use the same page size but a wider,
     // point-based cashier field.  Do not repaint it with the public-link
     // layout: that left old borders visible and placed the signature on top.
-    const isProtocolExpenseOrder = Boolean(meta.source_protocol_id);
+    // Orders created from Protocols carry the generated protocol-document ID.
+    // Older orders did not always retain source_protocol_id in notification
+    // metadata, which made them fall back to the public-link layout and left
+    // the original (wider) cashier table visible above the new one.
+    const isProtocolExpenseOrder = Boolean(meta.source_protocol_id || meta.protocol_document_id);
     const rowX = isProtocolExpenseOrder ? 58 : 20 * mmX;
     const rowWidth = isProtocolExpenseOrder ? pageWidth - 116 : 155 * mmX;
     const rowHeight = isProtocolExpenseOrder ? 70 : 26 * mmY;
@@ -978,12 +982,20 @@ export const NotificationsPage = () => {
     const rowBottom = rowTop - rowHeight;
 
     cashierLabelYs.forEach(labelY => {
-      const existingTop = labelY + (isProtocolExpenseOrder ? 18 : 8 * mmY);
+      // Remove both the canonical row and the old public-link row. This also
+      // repairs PDFs already signed before protocol orders were recognized.
+      const existingTop = labelY + Math.max(18, 8 * mmY);
+      const legacyRowX = 20 * mmX;
+      const legacyRowWidth = 155 * mmX;
+      const legacyRowHeight = 26 * mmY;
+      const clearX = Math.min(rowX, legacyRowX) - 2 * mmX;
+      const clearRight = Math.max(rowX + rowWidth, legacyRowX + legacyRowWidth) + 2 * mmX;
+      const clearBottom = labelY + Math.min(18 - rowHeight, 8 * mmY - legacyRowHeight) - 2 * mmY;
       page.drawRectangle({
-        x: rowX - 2 * mmX,
-        y: existingTop - rowHeight - 2 * mmY,
-        width: rowWidth + 4 * mmX,
-        height: rowHeight + 4 * mmY,
+        x: clearX,
+        y: clearBottom,
+        width: clearRight - clearX,
+        height: existingTop - clearBottom,
         color: rgb(1, 1, 1),
       });
     });
