@@ -938,7 +938,7 @@ export const NotificationsPage = () => {
     const mmY = pageHeight / 297;
     // Locate the cashier row(s) already present in the generated payout PDF.
     // Older PDFs may contain a duplicate row from the previous implementation.
-    const cashierLabelYs: number[] = [];
+    const cashierLabels: Array<{ x: number; y: number }> = [];
     try {
       const sourcePdf = await pdfjsLib.getDocument({ data: originalBytes.slice() }).promise;
       const textContent = await (await sourcePdf.getPage(1)).getTextContent();
@@ -946,8 +946,9 @@ export const NotificationsPage = () => {
         const label = String(item.str || '').toLocaleLowerCase('pl').replace(/\s+/g, ' ').trim();
         if (/^(kasjer|кассир|cashier)\s*:?$/.test(label)) {
           const labelY = Number(item.transform?.[5]);
-          if (Number.isFinite(labelY) && !cashierLabelYs.some(y => Math.abs(y - labelY) < 2)) {
-            cashierLabelYs.push(labelY);
+          const labelX = Number(item.transform?.[4]);
+          if (Number.isFinite(labelY) && !cashierLabels.some(position => Math.abs(position.y - labelY) < 2)) {
+            cashierLabels.push({ x: labelX, y: labelY });
           }
         }
       });
@@ -958,8 +959,8 @@ export const NotificationsPage = () => {
 
     // Client-generated payout PDFs can have no readable text layer. Their
     // cashier row is fixed at 180 mm from the top of the A4 page.
-    if (cashierLabelYs.length === 0) {
-      cashierLabelYs.push(pageHeight - (180 + 8) * mmY);
+    if (cashierLabels.length === 0) {
+      cashierLabels.push({ x: 0, y: pageHeight - (180 + 8) * mmY });
     }
 
     // Orders made from a protocol excerpt use the same page size but a wider,
@@ -969,7 +970,11 @@ export const NotificationsPage = () => {
     // Older orders did not always retain source_protocol_id in notification
     // metadata, which made them fall back to the public-link layout and left
     // the original (wider) cashier table visible above the new one.
-    const isProtocolExpenseOrder = Boolean(meta.source_protocol_id || meta.protocol_document_id);
+    // The source label of protocol orders starts at 66 pt; ordinary payout
+    // labels start near 60 pt. Reading the original row makes signing robust
+    // even when old notification metadata lacks the protocol identifiers.
+    const originalCashierLabel = cashierLabels.reduce((highest, label) => label.y > highest.y ? label : highest);
+    const isProtocolExpenseOrder = Boolean(meta.source_protocol_id || meta.protocol_document_id || originalCashierLabel.x >= 64);
     const rowX = isProtocolExpenseOrder ? 58 : 20 * mmX;
     const rowWidth = isProtocolExpenseOrder ? pageWidth - 116 : 155 * mmX;
     const rowHeight = isProtocolExpenseOrder ? 70 : 26 * mmY;
@@ -977,11 +982,11 @@ export const NotificationsPage = () => {
     // The first (highest) matching label belongs to the original form. Older
     // saves could add a second lower cashier block, so it must not become the
     // new drawing target.
-    const cashierLabelY = Math.max(...cashierLabelYs);
+    const cashierLabelY = originalCashierLabel.y;
     const rowTop = cashierLabelY + (isProtocolExpenseOrder ? 18 : 8 * mmY);
     const rowBottom = rowTop - rowHeight;
 
-    cashierLabelYs.forEach(labelY => {
+    cashierLabels.forEach(({ y: labelY }) => {
       // Remove both the canonical row and the old public-link row. This also
       // repairs PDFs already signed before protocol orders were recognized.
       const existingTop = labelY + Math.max(18, 8 * mmY);
