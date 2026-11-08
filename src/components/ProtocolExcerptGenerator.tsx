@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import fontkit from '@pdf-lib/fontkit';
 import { PDFDocument, rgb } from 'pdf-lib';
 import { FileDown, MessageSquare, ReceiptText, X } from 'lucide-react';
@@ -139,7 +139,7 @@ const excerptSelection = (content: string) => {
 
 export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName, secretarySignature, onSave, editingExcerpt }: Props) {
   const archived = protocols.filter(protocol => protocol.archived);
-  const [protocolId, setProtocolId] = useState('');
+  const [selectedProtocolIds, setSelectedProtocolIds] = useState<string[]>([]);
   const [selectedLines, setSelectedLines] = useState<string[]>([]);
   const [comments, setComments] = useState<Record<string, string>>({});
   const [validities, setValidities] = useState<Record<string, string>>({});
@@ -155,24 +155,29 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
   const [expenseDate, setExpenseDate] = useState(todayIso);
   const [excerptPdfBase64, setExcerptPdfBase64] = useState('');
   const candidates = editingExcerpt && !archived.some(item => item.id === editingExcerpt.id) ? [editingExcerpt, ...archived] : archived;
-  const protocol = candidates.find(item => item.id === protocolId);
-  const lines = useMemo(() => protocol ? numberedLines(protocol.content) : [], [protocol]);
+  const selectedProtocols = candidates.filter(item => selectedProtocolIds.includes(item.id));
+  const protocol = selectedProtocols[0];
+  const lineKey = (protocolId: string, line: string) => `${protocolId}::${line}`;
+  const selectedEntries = selectedProtocols.flatMap(item => numberedLines(item.content).map(line => ({ protocol: item, line, key: lineKey(item.id, line) })));
 
   useEffect(() => {
     if (!editingExcerpt) return;
-    setProtocolId(editingExcerpt.id);
+    setSelectedProtocolIds([editingExcerpt.id]);
     const selection = excerptSelection(editingExcerpt.content);
-    setSelectedLines(selection.lines);
-    setComments(selection.comments);
-    setValidities(selection.validities);
+    setSelectedLines(selection.lines.map(line => lineKey(editingExcerpt.id, line)));
+    setComments(Object.fromEntries(Object.entries(selection.comments).map(([line, value]) => [lineKey(editingExcerpt.id, line), value])));
+    setValidities(Object.fromEntries(Object.entries(selection.validities).map(([line, value]) => [lineKey(editingExcerpt.id, line), value])));
     const storedValidity = editingExcerpt.pastor_name?.split('|')[1];
     if (storedValidity === 'До следующего решения' || storedValidity === 'Одноразовая') {
-      setValidities(current => Object.fromEntries(selection.lines.map(line => [line, current[line] || storedValidity])));
+      setValidities(current => Object.fromEntries(selection.lines.map(line => {
+        const key = lineKey(editingExcerpt.id, line);
+        return [key, current[key] || storedValidity];
+      })));
     }
   }, [editingExcerpt]);
 
-  const chooseProtocol = (id: string) => {
-    setProtocolId(id);
+  const toggleProtocol = (id: string) => {
+    setSelectedProtocolIds(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
     setSelectedLines([]);
     setComments({});
     setValidities({});
@@ -196,9 +201,9 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
   });
 
   const validityFor = (line: string) => validities[line] || 'До следующего решения';
-  const excerptContent = selectedLines.map(line => {
-    const comment = comments[line]?.trim();
-    return [line, comment ? `Комментарий: ${comment}` : '', `Срок действия: ${validityFor(line)}`].filter(Boolean).join('\n');
+  const excerptContent = selectedEntries.filter(item => selectedLines.includes(item.key)).map(({ protocol: sourceProtocol, line, key }) => {
+    const comment = comments[key]?.trim();
+    return [`Протокол от ${formatDate(sourceProtocol.protocol_date, sourceProtocol.protocol_time)}`, line, comment ? `Комментарий: ${comment}` : '', `Срок действия: ${validityFor(key)}`].filter(Boolean).join('\n');
   }).join('\n');
 
   const savePdf = async (createExpenseOrder = false) => {
@@ -242,14 +247,19 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
       y -= 20;
       page.drawLine({ start: { x: margin, y }, end: { x: width - margin, y }, thickness: .8, color: rgb(.45, .45, .45) });
       y -= 32;
-      selectedLines.forEach(line => {
+      let previousProtocolId = '';
+      selectedEntries.filter(item => selectedLines.includes(item.key)).forEach(({ protocol: sourceProtocol, line, key }) => {
+        if (previousProtocolId !== sourceProtocol.id) {
+          write(`Протокол от ${formatDate(sourceProtocol.protocol_date, sourceProtocol.protocol_time)}${sourceProtocol.place ? ` · ${sourceProtocol.place}` : ''}`, 10, 8, { color: rgb(.25, .25, .25) });
+          previousProtocolId = sourceProtocol.id;
+        }
         write(line, 11, 8);
-        const comment = comments[line]?.trim();
+        const comment = comments[key]?.trim();
         if (comment) {
           write(`(${comment})`, 9, 5, { x: margin + 14, color: rgb(.35, .35, .35) });
           y -= 5;
         }
-        write(`Срок действия: ${validityFor(line)}`, 9, 5, { x: margin + 14, color: rgb(.35, .35, .35) });
+        write(`Срок действия: ${validityFor(key)}`, 9, 5, { x: margin + 14, color: rgb(.35, .35, .35) });
         y -= 8;
       });
       const signatureY = 105;
@@ -380,31 +390,26 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
   };
 
   return <section className="w-full max-w-6xl space-y-5 rounded-xl border bg-card p-5 shadow-sm sm:p-8">
-    <div><h1 className="text-2xl font-bold">Выписка из протокола</h1><p className="mt-1 text-muted-foreground">Выберите архивный протокол и пункты решения, которые должны войти в выписку.</p></div>
-    <label className="block space-y-2 text-sm font-medium">Протокол из архива
-      <select value={protocolId} onChange={event => chooseProtocol(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-        <option value="">Выберите протокол</option>
-        {candidates.map(item => <option key={item.id} value={item.id}>{formatDate(item.protocol_date, item.protocol_time)} — {item.place || 'место не указано'}</option>)}
-      </select>
-    </label>
-    {protocolId && <div className="space-y-3 rounded-lg border p-4">
-      <p className="text-sm font-medium">Пункты протокола</p>
-      {lines.length ? lines.map(line => {
-        const selected = selectedLines.includes(line);
-        const editorOpen = commentEditorLine === line;
-        return <div key={line} className="rounded-md p-2 hover:bg-muted/50">
-          <div className="flex items-start gap-3">
-            <input type="checkbox" checked={selected} onChange={() => toggleLine(line)} className="mt-1 h-4 w-4"/>
-            <span className="flex-1 text-sm">{line}</span>
-            {selected && <Button type="button" variant={editorOpen || comments[line] ? 'secondary' : 'outline'} size="sm" className="shrink-0" onClick={() => setCommentEditorLine(current => current === line ? null : line)}><MessageSquare className="mr-1 h-4 w-4"/>Комментарий</Button>}
-          </div>
-          {selected && <label className="ml-7 mt-3 block max-w-sm space-y-1 text-xs font-medium text-muted-foreground">Срок действия этого пункта
-            <select value={validityFor(line)} onChange={event => setValidities(current => ({ ...current, [line]: event.target.value }))} className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground"><option>До следующего решения</option><option>Одноразовая</option></select>
-          </label>}
-          {selected && editorOpen && <div className="ml-7 mt-3 space-y-2"><label className="text-xs font-medium text-muted-foreground">Комментарий будет размещён под этим пунктом в выписке PDF</label><textarea value={comments[line] || ''} onChange={event => setComments(current => ({ ...current, [line]: event.target.value }))} rows={3} placeholder="Введите комментарий" className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"/></div>}
-        </div>;
-      }) : <p className="text-sm text-muted-foreground">В этом протоколе не найдены нумерованные пункты вида «1.», «1.1» или «1.1.1».</p>}
-    </div>}
+    <div><h1 className="text-2xl font-bold">Выписка из протокола</h1><p className="mt-1 text-muted-foreground">Отметьте один или несколько архивных протоколов и выберите пункты решений для общей выписки.</p></div>
+    <div className="space-y-2 rounded-lg border p-4"><p className="text-sm font-medium">Протоколы из архива</p>
+      {candidates.length ? candidates.map(item => <label key={item.id} className="flex cursor-pointer items-center gap-3 rounded-md p-2 hover:bg-muted/50"><input type="checkbox" checked={selectedProtocolIds.includes(item.id)} onChange={() => toggleProtocol(item.id)} className="h-4 w-4"/><span className="text-sm">{formatDate(item.protocol_date, item.protocol_time)} — {item.place || 'место не указано'}</span></label>) : <p className="text-sm text-muted-foreground">В архиве пока нет протоколов.</p>}
+    </div>
+    {selectedProtocols.map(sourceProtocol => {
+      const sourceLines = numberedLines(sourceProtocol.content);
+      return <div key={sourceProtocol.id} className="space-y-3 rounded-lg border p-4">
+        <p className="text-sm font-medium">Пункты: {formatDate(sourceProtocol.protocol_date, sourceProtocol.protocol_time)}{sourceProtocol.place ? ` · ${sourceProtocol.place}` : ''}</p>
+        {sourceLines.length ? sourceLines.map(line => {
+          const key = lineKey(sourceProtocol.id, line);
+          const selected = selectedLines.includes(key);
+          const editorOpen = commentEditorLine === key;
+          return <div key={key} className="rounded-md p-2 hover:bg-muted/50">
+            <div className="flex items-start gap-3"><input type="checkbox" checked={selected} onChange={() => toggleLine(key)} className="mt-1 h-4 w-4"/><span className="flex-1 text-sm">{line}</span>{selected && <Button type="button" variant={editorOpen || comments[key] ? 'secondary' : 'outline'} size="sm" className="shrink-0" onClick={() => setCommentEditorLine(current => current === key ? null : key)}><MessageSquare className="mr-1 h-4 w-4"/>Комментарий</Button>}</div>
+            {selected && <label className="ml-7 mt-3 block max-w-sm space-y-1 text-xs font-medium text-muted-foreground">Срок действия этого пункта<select value={validityFor(key)} onChange={event => setValidities(current => ({ ...current, [key]: event.target.value }))} className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground"><option>До следующего решения</option><option>Одноразовая</option></select></label>}
+            {selected && editorOpen && <div className="ml-7 mt-3 space-y-2"><label className="text-xs font-medium text-muted-foreground">Комментарий будет размещён под этим пунктом в выписке PDF</label><textarea value={comments[key] || ''} onChange={event => setComments(current => ({ ...current, [key]: event.target.value }))} rows={3} placeholder="Введите комментарий" className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"/></div>}
+          </div>;
+        }) : <p className="text-sm text-muted-foreground">В этом протоколе не найдены нумерованные пункты.</p>}
+      </div>;
+    })}
     <div className="flex flex-wrap gap-2">
       <Button type="button" disabled={!protocol || selectedLines.length === 0 || creatingPdf} onClick={() => void savePdf()}>{creatingPdf ? 'Создание PDF…' : <><FileDown className="mr-2 h-4 w-4"/>Сохранить PDF</>}</Button>
       <Button type="button" variant="outline" disabled={!protocol || selectedLines.length === 0 || creatingPdf} onClick={() => void savePdf(true)}><ReceiptText className="mr-2 h-4 w-4"/>Добавить в расходный ордер</Button>
