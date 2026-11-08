@@ -142,7 +142,8 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
   const [comments, setComments] = useState<Record<string, string>>({});
   const [validities, setValidities] = useState<Record<string, string>>({});
   const [commentEditorLine, setCommentEditorLine] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [creatingPdf, setCreatingPdf] = useState(false);
+  const [savingExpenseOrder, setSavingExpenseOrder] = useState(false);
   const [expenseDraftOpen, setExpenseDraftOpen] = useState(false);
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseCurrency, setExpenseCurrency] = useState('PLN');
@@ -199,7 +200,7 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
 
   const savePdf = async (createExpenseOrder = false) => {
     if (!protocol || selectedLines.length === 0) return;
-    setSaving(true);
+    setCreatingPdf(true);
     try {
       const pdf = await PDFDocument.create();
       pdf.registerFontkit(fontkit);
@@ -267,13 +268,13 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
         await onSave(protocol, excerptContent, distinctValidities.length === 1 ? distinctValidities[0] : 'Несколько сроков', pdfBase64);
       }
     } finally {
-      setSaving(false);
+      setCreatingPdf(false);
     }
   };
 
   const saveExpenseOrder = async () => {
     if (!protocol || !excerptPdfBase64 || !expenseDepartment || !(Number(expenseAmount) > 0)) return;
-    setSaving(true);
+    setSavingExpenseOrder(true);
     try {
       const pdf = await PDFDocument.create();
       pdf.registerFontkit(fontkit);
@@ -371,7 +372,7 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
       });
       setExpenseDraftOpen(false);
     } finally {
-      setSaving(false);
+      setSavingExpenseOrder(false);
     }
   };
 
@@ -402,15 +403,15 @@ export function ProtocolExcerptGenerator({ protocols, churchName, secretaryName,
       }) : <p className="text-sm text-muted-foreground">В этом протоколе не найдены нумерованные пункты вида «1.», «1.1» или «1.1.1».</p>}
     </div>}
     <div className="flex flex-wrap gap-2">
-      <Button type="button" disabled={!protocol || selectedLines.length === 0 || saving} onClick={() => void savePdf()}>{saving ? 'Создание PDF…' : <><FileDown className="mr-2 h-4 w-4"/>Сохранить PDF</>}</Button>
-      <Button type="button" variant="outline" disabled={!protocol || selectedLines.length === 0 || saving} onClick={() => void savePdf(true)}><ReceiptText className="mr-2 h-4 w-4"/>Добавить в расходный ордер</Button>
+      <Button type="button" disabled={!protocol || selectedLines.length === 0 || creatingPdf} onClick={() => void savePdf()}>{creatingPdf ? 'Создание PDF…' : <><FileDown className="mr-2 h-4 w-4"/>Сохранить PDF</>}</Button>
+      <Button type="button" variant="outline" disabled={!protocol || selectedLines.length === 0 || creatingPdf} onClick={() => void savePdf(true)}><ReceiptText className="mr-2 h-4 w-4"/>Добавить в расходный ордер</Button>
     </div>
     {expenseDraftOpen && protocol && <div className="space-y-5 rounded-xl border border-primary/30 bg-primary/5 p-4 sm:p-6">
       <div><h2 className="text-xl font-bold">Дополнительные данные расходного ордера</h2><p className="mt-1 text-sm text-muted-foreground">Данные остаются в разделе протоколов и переносятся в бланк расходного ордера. Выписка будет вложена второй страницей PDF.</p></div>
-      <div className="grid gap-4 sm:grid-cols-3"><label className="space-y-2 text-sm font-medium">Дата<Input type="date" value={expenseDate} readOnly/></label><label className="space-y-2 text-sm font-medium">Сумма *<Input type="number" min="0" step="0.01" value={expenseAmount} onChange={event => setExpenseAmount(event.target.value)} placeholder="0,00"/></label><label className="space-y-2 text-sm font-medium">Валюта<select value={expenseCurrency} onChange={event => setExpenseCurrency(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option>PLN</option><option>EUR</option><option>USD</option><option>UAH</option></select></label><label className="space-y-2 text-sm font-medium sm:col-span-2">Выдано (имя и фамилия)<Input value={secretaryName} readOnly aria-readonly="true"/></label><label className="space-y-2 text-sm font-medium">Счёт для перевода<Input value={expenseAccount} onChange={event => setExpenseAccount(event.target.value)} placeholder="Если нужен"/></label></div>
-      <div className="space-y-3 rounded-lg border bg-card p-4"><p className="font-medium">Дополнительные сведения</p><label className="block space-y-2 text-sm font-medium">Отдел *<select value={expenseDepartment} onChange={event => setExpenseDepartment(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="" disabled>Выберите отдел</option>{expenseDepartments.map(department => <option key={department} value={department}>{department}</option>)}</select></label><label className="block space-y-2 text-sm font-medium">Основание<Textarea value={excerptContent} readOnly rows={5}/></label></div>
+      <div className="grid gap-4 sm:grid-cols-3"><label className="space-y-2 text-sm font-medium">Дата<Input type="date" value={expenseDate} readOnly/></label><label className="space-y-2 text-sm font-medium">Сумма *<Input type="number" min="0" step="0.01" value={expenseAmount} onChange={event => setExpenseAmount(event.target.value)} placeholder="0,00"/></label><label className="space-y-2 text-sm font-medium">Валюта<select value={expenseCurrency} onChange={event => setExpenseCurrency(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option>PLN</option><option>EUR</option><option>USD</option><option>UAH</option></select></label><label className="space-y-2 text-sm font-medium sm:col-span-3">Счёт для перевода<Input value={expenseAccount} onChange={event => setExpenseAccount(event.target.value)} placeholder="Если нужен"/></label></div>
+      <div className="space-y-3 rounded-lg border bg-card p-4"><p className="font-medium">Дополнительные сведения</p><label className="block space-y-2 text-sm font-medium">Отдел *<select value={expenseDepartment} onChange={event => setExpenseDepartment(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="" disabled>Выберите отдел</option>{expenseDepartments.map(department => <option key={department} value={department}>{department}</option>)}</select></label></div>
       <p className="text-xs text-muted-foreground">В итоговом PDF первая страница — расходный ордер, вторая — выписка из протокола. Подпись секретаря и выписка прикладываются автоматически.</p>
-      <Button type="button" disabled={saving || !expenseDepartment || !(Number(expenseAmount) > 0)} onClick={() => void saveExpenseOrder()}>{saving ? 'Сохранение…' : <><FileDown className="mr-2 h-4 w-4"/>Сохранить расходный ордер</>}</Button>
+      <Button type="button" disabled={savingExpenseOrder || !expenseDepartment || !(Number(expenseAmount) > 0)} onClick={() => void saveExpenseOrder()}>{savingExpenseOrder ? 'Сохранение…' : <><FileDown className="mr-2 h-4 w-4"/>Сохранить расходный ордер</>}</Button>
     </div>}
   </section>;
 }

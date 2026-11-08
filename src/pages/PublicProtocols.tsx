@@ -196,7 +196,8 @@ export default function PublicProtocols() {
     const moveToTrash = async (item: Protocol) => { await invoke('move-to-trash', { id: item.id }); setProtocols(value => value.filter(protocol => protocol.id !== item.id)); await loadTrash(); };
     const restoreFromTrash = async (item: Protocol) => { const data = await invoke('restore-from-trash', { id: item.id }); setTrash(value => value.filter(protocol => protocol.id !== item.id)); setProtocols(value => [data.document, ...value]); };
     const createExcerpt = async (source: Protocol, excerptContent: string, excerptValidity: string, pdfBase64: string, createExpenseOrder = false, expenseOrder?: { date: string; amount: number; currency: string; department: string; account: string; basis: string; pdfBase64: string; }) => {
-        setSaving(true);
+        const isExpenseOrderSave = Boolean(expenseOrder);
+        if (!isExpenseOrderSave) setSaving(true);
         try {
             if (expenseOrder) {
                 const data = await invoke('create-expense-order', { order: { protocol_date: expenseOrder.date, amount: expenseOrder.amount, currency: expenseOrder.currency, department: expenseOrder.department, account: expenseOrder.account, basis: expenseOrder.basis, pdf_base64: expenseOrder.pdfBase64, secretary_name: settings.secretary_name, secretary_signature: settings.secretary_signature || null, source_protocol_id: source.id } });
@@ -213,7 +214,7 @@ export default function PublicProtocols() {
                 setSection('notifications');
                 setTab('main');
             }
-        } finally { setSaving(false); }
+        } finally { if (!isExpenseOrderSave) setSaving(false); }
     };
     const create = async (event: FormEvent) => {
         event.preventDefault();

@@ -943,8 +943,8 @@ export const NotificationsPage = () => {
       const sourcePdf = await pdfjsLib.getDocument({ data: originalBytes.slice() }).promise;
       const textContent = await (await sourcePdf.getPage(1)).getTextContent();
       textContent.items.forEach((item: any) => {
-        const label = String(item.str || '').toLocaleLowerCase('pl');
-        if (label.includes('kasjer') || label.includes('кассир') || label.includes('cashier')) {
+        const label = String(item.str || '').toLocaleLowerCase('pl').replace(/\s+/g, ' ').trim();
+        if (/^(kasjer|кассир|cashier)\s*:?$/.test(label)) {
           const labelY = Number(item.transform?.[5]);
           if (Number.isFinite(labelY) && !cashierLabelYs.some(y => Math.abs(y - labelY) < 2)) {
             cashierLabelYs.push(labelY);
@@ -980,10 +980,10 @@ export const NotificationsPage = () => {
     cashierLabelYs.forEach(labelY => {
       const existingTop = labelY + (isProtocolExpenseOrder ? 18 : 8 * mmY);
       page.drawRectangle({
-        x: rowX - 1 * mmX,
-        y: existingTop - rowHeight - 1 * mmY,
-        width: rowWidth + 2 * mmX,
-        height: rowHeight + 2 * mmY,
+        x: rowX - 2 * mmX,
+        y: existingTop - rowHeight - 2 * mmY,
+        width: rowWidth + 4 * mmX,
+        height: rowHeight + 4 * mmY,
         color: rgb(1, 1, 1),
       });
     });
@@ -995,7 +995,17 @@ export const NotificationsPage = () => {
       page.drawText(cashierNameToSave, { font: cashierFont, x: rowX + 3 * mmX, y: rowBottom + 9 * mmY, size: 9, maxWidth: dividerX - rowX - 6 * mmX });
       if (cashierSignatureDataUrl) {
         const cashierImage = await pdfDoc.embedPng(cashierSignatureDataUrl);
-        page.drawImage(cashierImage, { x: dividerX + 3 * mmX, y: rowBottom + 3 * mmY, width: rowX + rowWidth - dividerX - 6 * mmX, height: rowHeight - 6 * mmY });
+        const availableWidth = rowX + rowWidth - dividerX - 8 * mmX;
+        const availableHeight = rowHeight - 17 * mmY;
+        const scale = Math.min(availableWidth / cashierImage.width, availableHeight / cashierImage.height);
+        const signatureWidth = cashierImage.width * scale;
+        const signatureHeight = cashierImage.height * scale;
+        page.drawImage(cashierImage, {
+          x: dividerX + (rowX + rowWidth - dividerX - signatureWidth) / 2,
+          y: rowBottom + 3 * mmY + (availableHeight - signatureHeight) / 2,
+          width: signatureWidth,
+          height: signatureHeight,
+        });
       }
     }
 
