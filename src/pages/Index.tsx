@@ -128,10 +128,37 @@ const Index = () => {
   const [profileSignature, setProfileSignature] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
 
+  const applyProfile = useCallback((metadata?: Record<string, unknown> | null) => {
+    setProfileName(String(metadata?.display_name || user?.user_metadata?.display_name || ''));
+    setProfileSignature(String(metadata?.signature || user?.user_metadata?.signature || ''));
+  }, [user?.user_metadata]);
+
   useEffect(() => {
-    setProfileName(String(user?.user_metadata?.display_name || ''));
-    setProfileSignature(String(user?.user_metadata?.signature || ''));
-  }, [user?.id]);
+    if (!user) {
+      applyProfile(null);
+      return;
+    }
+    let active = true;
+    const loadProfile = async () => {
+      // getUser() reads the latest account metadata from Supabase, while the
+      // session object may still contain metadata from another device's old JWT.
+      const { data, error } = await supabase.auth.getUser();
+      if (!active) return;
+      if (error) {
+        console.warn('Could not load user profile:', error);
+        applyProfile(null);
+        return;
+      }
+      applyProfile(data.user?.user_metadata);
+    };
+    void loadProfile();
+    window.addEventListener('focus', loadProfile);
+
+    return () => {
+      active = false;
+      window.removeEventListener('focus', loadProfile);
+    };
+  }, [user?.id, applyProfile]);
 
   const profilePoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = event.currentTarget;
@@ -170,7 +197,8 @@ const Index = () => {
     if (!user) return;
     setSavingProfile(true);
     try {
-      const { error } = await supabase.auth.updateUser({ data: { ...user.user_metadata, display_name: profileName.trim() || user.email, signature: profileSignature || null } });
+      const displayName = profileName.trim() || user.email || 'Пользователь';
+      const { error } = await supabase.auth.updateUser({ data: { ...user.user_metadata, display_name: displayName, signature: profileSignature || null } });
       if (error) throw error;
       toast({ title: 'Профиль сохранён', description: 'Имя и подпись обновлены.' });
     } catch (error) {
