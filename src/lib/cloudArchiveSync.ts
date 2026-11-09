@@ -61,6 +61,20 @@ const mapWithConcurrency = async <T, R>(items: T[], limit: number, worker: (item
   return results;
 };
 
+const CLOUD_BATCH_SIZE = 25;
+const MAX_CLOUD_BATCHES_PER_SYNC = 2;
+const withTimeout = async <T,>(task: Promise<T>, timeoutMs: number, message: string): Promise<T> => {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      task,
+      new Promise<T>((_, reject) => { timeout = setTimeout(() => reject(new Error(message)), timeoutMs); }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+};
+
 export const syncNotificationArchivesToCloud = async (
   notifications: Notification[],
   connectionId?: string,
@@ -92,7 +106,9 @@ export const syncNotificationArchivesToCloud = async (
     return { uploaded: 0, archives: 0, skipped: true, errors };
   }
 
-  const archived = notifications.filter(notification => notification.metadata?.archived_at);
+  // Files are uploaded in small, immutable ZIP batches. This keeps a large
+  // archive from being downloaded and compressed again on every sync.
+  const archived = notifications.filter(notification => notification.metadata?.archived_at && !notification.metadata?.cloud_archive_synced_at);
   const groups = archived.reduce<Record<string, Notification[]>>((result, notification) => {
     const type = notification.metadata?.archive_type === 'income' ? 'income' : 'expense';
     const year = Number(notification.metadata?.archive_year) || getNotificationArchiveYear(notification);
@@ -101,38 +117,68 @@ export const syncNotificationArchivesToCloud = async (
     return result;
   }, {});
 
+  const batches = Object.entries(groups).flatMap(([key, items]) =>
+    Array.from({ length: Math.ceil(items.length / CLOUD_BATCH_SIZE) }, (_, index) => ({
+      key,
+      items: items.slice(index * CLOUD_BATCH_SIZE, (index + 1) * CLOUD_BATCH_SIZE),
+    })),
+  );
   let uploaded = 0;
-  for (const [key, items] of Object.entries(groups)) {
+  let processedBatches = 0;
+  for (const { key, items } of batches.slice(0, MAX_CLOUD_BATCHES_PER_SYNC)) {
     const [year, type] = key.split('-');
     const folderName = `${year} ${type === 'income' ? 'доход' : 'расход'}`;
     const zip = new JSZip();
     const folder = zip.folder(folderName);
     if (!folder) continue;
 
-    const pdfs = await mapWithConcurrency(items, 4, getPdfBlob);
+    const downloads = await mapWithConcurrency(items, 2, async notification => {
+      try {
+        return await withTimeout(getPdfBlob(notification), 45_000, `Превышено время загрузки PDF: ${notification.id}`);
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+        return null;
+      }
+    });
+    const uploadedItems = items.filter((_, index) => Boolean(downloads[index]));
     for (let index = 0; index < items.length; index++) {
       const notification = items[index];
-      const pdf = pdfs[index];
+      const pdf = downloads[index];
+      if (!pdf) continue;
       const monthFolder = folder.folder(getNotificationArchiveMonth(notification));
       monthFolder?.file(`${notification.id.slice(0, 8)}-${pdf.name}`, pdf.blob);
     }
+    if (uploadedItems.length === 0) continue;
 
     const archive = await zip.generateAsync({
       type: 'blob',
       compression: 'DEFLATE',
       compressionOptions: { level: 9 },
     });
-    const fileName = `${folderName}.zip`;
+    const fileName = `${folderName}-${getNotificationArchiveMonth(uploadedItems[0])}-${uploadedItems[0].id.slice(0, 8)}-${uploadedItems[uploadedItems.length - 1].id.slice(0, 8)}.zip`;
 
-    await Promise.all(connections.map(async connection => {
-      try {
-        await uploadCloudArchive(connection, fileName, archive);
+    const uploadResults = await Promise.allSettled(connections.map(connection => withTimeout(
+      uploadCloudArchive(connection, fileName, archive),
+      90_000,
+      `${connection.name}: превышено время загрузки архива`,
+    )));
+    uploadResults.forEach((result, index) => {
+      const connection = connections[index];
+      if (result.status === 'fulfilled') {
         uploaded++;
-      } catch (error) {
-        errors.push(`${connection.name}: ${error instanceof Error ? error.message : String(error)}`);
+      } else {
+        errors.push(`${connection.name}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`);
       }
-    }));
+    });
+    if (uploadResults.every(result => result.status === 'fulfilled')) {
+      const syncedAt = new Date().toISOString();
+      await Promise.all(uploadedItems.map(notification => supabase.from('notifications').update({
+        metadata: { ...(notification.metadata || {}), cloud_archive_synced_at: syncedAt },
+      }).eq('id', notification.id)));
+    }
+    processedBatches++;
   }
 
-  return { uploaded, archives: Object.keys(groups).length, skipped: false, errors };
+  const remaining = Math.max(batches.length - processedBatches, 0);
+  return { uploaded, archives: processedBatches, skipped: false, errors, pendingBatches: remaining };
 };

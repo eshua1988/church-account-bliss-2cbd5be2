@@ -41,6 +41,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 const SYNC_REPORT_STORAGE_KEY = 'church-sync-report-v1';
 const SYNC_QUEUE_STORAGE_KEY = 'church-sync-queue-v1';
+const SYNC_QUEUE_MAX_AGE_MS = 10 * 60 * 1000;
 
 const loadSyncReport = (): SyncReport | null => {
   try {
@@ -238,7 +239,10 @@ const Index = () => {
       })();
       const cloudTask = (async () => {
         updateLiveItem({ id: 'cloud', title: 'Облачные PDF-архивы', status: 'running', details: ['Синхронизация выполняется'] });
-        return syncNotificationArchivesToCloud(notifications);
+        return await Promise.race([
+          syncNotificationArchivesToCloud(notifications),
+          new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error('Превышено время ожидания облачной синхронизации')), 120_000)),
+        ]);
       })();
       const [configuredExports, bank, cloud] = await Promise.allSettled([
         configuredExportsTask,
@@ -275,7 +279,7 @@ const Index = () => {
         const cloudResult = cloud.value;
         const cloudItem: SyncReportItem = cloudResult.skipped
           ? { id: 'cloud', title: 'Облачные PDF-архивы', status: cloudResult.errors.length > 0 ? 'error' : 'skipped', details: [cloudResult.errors.length > 0 ? cloudResult.errors.join('; ') : 'Нет подключённых облачных хранилищ'] }
-          : { id: 'cloud', title: 'Облачные PDF-архивы', status: cloudResult.errors.length > 0 ? 'error' : 'success', details: [`Архивов обработано: ${cloudResult.archives}; файлов загружено: ${cloudResult.uploaded}`, ...cloudResult.errors] };
+          : { id: 'cloud', title: 'Облачные PDF-архивы', status: cloudResult.errors.length > 0 ? 'error' : 'success', details: [`Архивов обработано: ${cloudResult.archives}; файлов загружено: ${cloudResult.uploaded}`, ...(cloudResult.pendingBatches ? [`Осталось пакетов: ${cloudResult.pendingBatches}`] : []), ...cloudResult.errors] };
         reportItems.push(cloudItem);
         updateLiveItem(cloudItem);
         if (cloudResult.uploaded > 0) {
@@ -336,7 +340,7 @@ const Index = () => {
         const result = await syncNotificationArchivesToCloud(notifications);
         updateSyncReportItem(result.skipped
           ? { id, title: 'Облачные PDF-архивы', status: result.errors.length ? 'error' : 'skipped', details: [result.errors.length ? result.errors.join('; ') : 'Нет подключённых облачных хранилищ'] }
-          : { id, title: 'Облачные PDF-архивы', status: result.errors.length ? 'error' : 'success', details: [`Архивов обработано: ${result.archives}; файлов загружено: ${result.uploaded}`, ...result.errors] });
+          : { id, title: 'Облачные PDF-архивы', status: result.errors.length ? 'error' : 'success', details: [`Архивов обработано: ${result.archives}; файлов загружено: ${result.uploaded}`, ...(result.pendingBatches ? [`Осталось пакетов: ${result.pendingBatches}`] : []), ...result.errors] });
         return;
       }
       if (id.startsWith('sheets-')) {
@@ -355,7 +359,13 @@ const Index = () => {
   useEffect(() => {
     if (transactionsLoading || categoriesLoading || resumedSyncRef.current) return;
     try {
-      if (!localStorage.getItem(SYNC_QUEUE_STORAGE_KEY)) return;
+      const queued = localStorage.getItem(SYNC_QUEUE_STORAGE_KEY);
+      if (!queued) return;
+      const requestedAt = JSON.parse(queued)?.requestedAt;
+      if (!requestedAt || Date.now() - new Date(requestedAt).getTime() > SYNC_QUEUE_MAX_AGE_MS) {
+        localStorage.removeItem(SYNC_QUEUE_STORAGE_KEY);
+        return;
+      }
       resumedSyncRef.current = true;
       void handleSync();
     } catch {
