@@ -36,6 +36,8 @@ import { syncNotificationArchivesToCloud } from '@/lib/cloudArchiveSync';
 import { LinksPage } from '@/components/LinksPage';
 import { RemindersPage } from '@/components/RemindersPage';
 import { PdfArchiveStatistics } from '@/components/PdfArchiveStatistics';
+import { useAuth } from '@/contexts/AuthContext';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 const SYNC_REPORT_STORAGE_KEY = 'church-sync-report-v1';
 const SYNC_QUEUE_STORAGE_KEY = 'church-sync-queue-v1';
@@ -53,6 +55,7 @@ const loadSyncReport = (): SyncReport | null => {
 
 const Index = () => {
   const { t, getDateLocale } = useTranslation();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'statistics' | 'payout' | 'settings' | 'notifications' | 'links' | 'reminders'>('statistics');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -669,6 +672,7 @@ const Index = () => {
           {/* Settings Tab */}
           {activeTab === 'settings' && (
             <div className="animate-fade-in space-y-3">
+              {user && <div className="flex items-center gap-3 rounded-lg bg-card p-4 shadow-card sm:p-5"><Avatar className="h-12 w-12"><AvatarFallback className="gradient-primary text-primary-foreground">{(user.user_metadata?.display_name || user.email || 'П').split(/\s|@/).filter(Boolean).slice(0, 2).map(value => value[0]).join('').toUpperCase()}</AvatarFallback></Avatar><div className="min-w-0"><h4 className="font-semibold text-base sm:text-lg">{user.user_metadata?.display_name || 'Пользователь'}</h4><p className="truncate text-sm text-muted-foreground">{user.email}</p></div></div>}
               {/* Extension */}
               <div className="bg-card rounded-lg shadow-card overflow-hidden">
                 <button onClick={() => toggleSetting('extension')} className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-muted/50 transition-colors">

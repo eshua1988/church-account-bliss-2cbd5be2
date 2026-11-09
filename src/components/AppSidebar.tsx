@@ -247,33 +247,6 @@ export const AppSidebar = ({
 
   const SidebarContent = ({ isSheet = false }: { isSheet?: boolean }) => (
     <div className="flex flex-col h-full bg-card">
-      {/* User Profile at top */}
-      {user && (
-        <div className="border-b border-border">
-          {isSheet || !collapsed ? (
-            <UserProfile showText />
-          ) : (
-            <Tooltip delayDuration={0}>
-              <TooltipTrigger asChild>
-                <div className="flex justify-center py-3">
-                  <Avatar className="h-10 w-10 cursor-pointer">
-                    <AvatarFallback className="gradient-primary text-primary-foreground text-sm">
-                      {getInitials()}
-                    </AvatarFallback>
-                  </Avatar>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={10}>
-                <div>
-                  <p className="font-medium">{user?.user_metadata?.display_name || 'Пользователь'}</p>
-                  <p className="text-xs text-muted-foreground">{user?.email}</p>
-                </div>
-              </TooltipContent>
-            </Tooltip>
-          )}
-        </div>
-      )}
-
       {/* Menu items */}
       <nav className="flex-1 py-4 px-2">
         <ul className="space-y-2">
