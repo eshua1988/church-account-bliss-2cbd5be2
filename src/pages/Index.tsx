@@ -38,6 +38,9 @@ import { RemindersPage } from '@/components/RemindersPage';
 import { PdfArchiveStatistics } from '@/components/PdfArchiveStatistics';
 import { useAuth } from '@/contexts/AuthContext';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 const SYNC_REPORT_STORAGE_KEY = 'church-sync-report-v1';
 const SYNC_QUEUE_STORAGE_KEY = 'church-sync-queue-v1';
@@ -119,6 +122,63 @@ const Index = () => {
   const [syncReport, setSyncReport] = useState<SyncReport | null>(loadSyncReport);
   const [retryingSyncItemIds, setRetryingSyncItemIds] = useState<string[]>([]);
   const resumedSyncRef = useRef(false);
+  const profileSignatureCanvas = useRef<HTMLCanvasElement>(null);
+  const profileDrawing = useRef(false);
+  const [profileName, setProfileName] = useState('');
+  const [profileSignature, setProfileSignature] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  useEffect(() => {
+    setProfileName(String(user?.user_metadata?.display_name || ''));
+    setProfileSignature(String(user?.user_metadata?.signature || ''));
+  }, [user?.id]);
+
+  const profilePoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = event.currentTarget;
+    const bounds = canvas.getBoundingClientRect();
+    return { x: (event.clientX - bounds.left) * (canvas.width / bounds.width), y: (event.clientY - bounds.top) * (canvas.height / bounds.height) };
+  };
+  const startProfileSignature = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = event.currentTarget;
+    profileDrawing.current = true;
+    canvas.setPointerCapture(event.pointerId);
+    const point = profilePoint(event);
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    context.beginPath();
+    context.moveTo(point.x, point.y);
+  };
+  const drawProfileSignature = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!profileDrawing.current) return;
+    const canvas = event.currentTarget;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    const point = profilePoint(event);
+    context.lineWidth = 3;
+    context.lineCap = 'round';
+    context.strokeStyle = '#111827';
+    context.lineTo(point.x, point.y);
+    context.stroke();
+    setProfileSignature(canvas.toDataURL('image/png'));
+  };
+  const clearProfileSignature = () => {
+    const canvas = profileSignatureCanvas.current;
+    if (canvas) canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+    setProfileSignature('');
+  };
+  const saveProfile = async () => {
+    if (!user) return;
+    setSavingProfile(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ data: { ...user.user_metadata, display_name: profileName.trim() || user.email, signature: profileSignature || null } });
+      if (error) throw error;
+      toast({ title: 'Профиль сохранён', description: 'Имя и подпись обновлены.' });
+    } catch (error) {
+      toast({ title: 'Не удалось сохранить профиль', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -682,7 +742,69 @@ const Index = () => {
           {/* Settings Tab */}
           {activeTab === 'settings' && (
             <div className="animate-fade-in space-y-3">
-              {user && <div className="flex items-center gap-3 rounded-lg bg-card p-4 shadow-card sm:p-5"><Avatar className="h-12 w-12"><AvatarFallback className="gradient-primary text-primary-foreground">{(user.user_metadata?.display_name || user.email || 'П').split(/\s|@/).filter(Boolean).slice(0, 2).map(value => value[0]).join('').toUpperCase()}</AvatarFallback></Avatar><div className="min-w-0"><h4 className="font-semibold text-base sm:text-lg">{user.user_metadata?.display_name || 'Пользователь'}</h4><p className="truncate text-sm text-muted-foreground">{user.email}</p></div></div>}
+              {user && (
+                <div className="rounded-lg bg-card p-4 shadow-card sm:p-5">
+                  <div className="mb-5 flex items-center gap-3">
+                    <Avatar className="h-12 w-12">
+                      <AvatarFallback className="gradient-primary text-primary-foreground">
+                        {(profileName || user.email || 'П').split(/\s|@/).filter(Boolean).slice(0, 2).map(value => value[0]).join('').toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0">
+                      <h4 className="font-semibold text-base sm:text-lg">{profileName || 'Пользователь'}</h4>
+                      <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-5 lg:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="profile-name">Имя и фамилия</Label>
+                      <Input
+                        id="profile-name"
+                        value={profileName}
+                        onChange={(event) => setProfileName(event.target.value)}
+                        placeholder="Введите имя и фамилию"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label>Подпись</Label>
+                        <Button type="button" variant="ghost" size="sm" onClick={clearProfileSignature}>
+                          Очистить
+                        </Button>
+                      </div>
+                      <canvas
+                        ref={profileSignatureCanvas}
+                        width={700}
+                        height={220}
+                        className="h-36 w-full touch-none rounded-md border bg-white"
+                        onPointerDown={startProfileSignature}
+                        onPointerMove={drawProfileSignature}
+                        onPointerUp={() => { profileDrawing.current = false; }}
+                        onPointerCancel={() => { profileDrawing.current = false; }}
+                        onPointerLeave={() => { profileDrawing.current = false; }}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Нарисуйте подпись мышью или пальцем — она будет сохранена в профиле.
+                      </p>
+                    </div>
+                  </div>
+
+                  {profileSignature && (
+                    <div className="mt-4">
+                      <p className="mb-2 text-sm text-muted-foreground">Сохранённая подпись</p>
+                      <img src={profileSignature} alt="Подпись пользователя" className="h-20 max-w-full rounded-md border bg-white object-contain" />
+                    </div>
+                  )}
+
+                  <div className="mt-5 flex justify-end">
+                    <Button type="button" onClick={() => void saveProfile()} disabled={savingProfile}>
+                      {savingProfile ? 'Сохранение…' : 'Сохранить профиль'}
+                    </Button>
+                  </div>
+                </div>
+              )}
               {/* Extension */}
               <div className="bg-card rounded-lg shadow-card overflow-hidden">
                 <button onClick={() => toggleSetting('extension')} className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-muted/50 transition-colors">
