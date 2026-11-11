@@ -1,6 +1,6 @@
 ﻿const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
+  'Access-Control-Allow-Headers': 'authorization, x-user-token, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
@@ -67,7 +67,12 @@ Deno.serve(async (req) => {
     if (!supabaseUrl || !supabaseKey) return respond(500, { error: 'SUPABASE_URL / SERVICE_ROLE_KEY не настроены' })
 
     const authorization = req.headers.get('authorization') || ''
-    const token = authorization.match(/^Bearer\s+(.+)$/i)?.[1]
+    const authorizationToken = authorization.match(/^Bearer\s+(.+)$/i)?.[1]
+    // Browser requests deliberately do not use Authorization: Supabase's
+    // gateway can reject a stale browser JWT before the function can add CORS
+    // headers. The token is still validated below, from this CORS-enabled
+    // function, via the dedicated header.
+    const token = req.headers.get('x-user-token') || authorizationToken
     if (!token) return respond(401, { error: 'Требуется авторизация' })
 
     const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2')
@@ -76,7 +81,7 @@ Deno.serve(async (req) => {
     // function's CORS response. Validate every request here before using the
     // service-role client below. The service-role token is intentionally
     // allowed for the server-to-server sync from public-transactions.
-    if (token !== supabaseKey) {
+    if (authorizationToken !== supabaseKey) {
       const auth = createClient(supabaseUrl, supabaseKey, {
         auth: { autoRefreshToken: false, persistSession: false },
       })

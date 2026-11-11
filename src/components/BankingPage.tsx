@@ -470,14 +470,22 @@ export const BankingPage = () => {
     if (!user) return;
     setSyncingBank(bankName || '__all__');
     try {
-      const { data: json, error } = await supabase.functions.invoke<any>('banking-sync', {
-        body: { user_id: user.id, bank_name: bankName },
-      });
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Войдите в систему повторно');
 
-      if (error) {
-        const response = (error as any).context;
-        const details = await response?.json?.().catch(() => null);
-        toast({ title: 'Ошибка синхронизации', description: details?.error || error.message, variant: 'destructive' });
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/banking-sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          'x-user-token': session.access_token,
+        },
+        body: JSON.stringify({ user_id: user.id, bank_name: bankName }),
+      });
+      const json = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+
+      if (!response.ok) {
+        toast({ title: 'Ошибка синхронизации', description: json?.error || `HTTP ${response.status}`, variant: 'destructive' });
         return;
       }
 
