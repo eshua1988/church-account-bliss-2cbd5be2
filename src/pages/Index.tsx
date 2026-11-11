@@ -249,24 +249,14 @@ const Index = () => {
       setIsBankSyncing(true);
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) throw new Error('Войдите в систему повторно');
-      const supabaseUrl = (supabase as any).supabaseUrl as string;
-      const supabaseKey = (supabase as any).supabaseKey as string;
-      const accessToken = session.access_token || supabaseKey;
-
-      const res = await fetch(`${supabaseUrl}/functions/v1/banking-sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ user_id: session.user.id }),
+      const { data: json, error } = await supabase.functions.invoke<any>('banking-sync', {
+        body: { user_id: session.user.id },
       });
 
-      const json = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-
-      if (!res.ok) {
-        throw new Error(json?.error || `HTTP ${res.status}`);
+      if (error) {
+        const response = (error as any).context;
+        const details = await response?.json?.().catch(() => null);
+        throw new Error(details?.error || error.message);
       }
 
       if (json.imported > 0) {

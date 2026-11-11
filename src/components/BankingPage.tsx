@@ -470,25 +470,14 @@ export const BankingPage = () => {
     if (!user) return;
     setSyncingBank(bankName || '__all__');
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const supabaseUrl = (supabase as any).supabaseUrl as string;
-      const supabaseKey = (supabase as any).supabaseKey as string;
-      const accessToken = session?.access_token || supabaseKey;
-
-      const res = await fetch(`${supabaseUrl}/functions/v1/banking-sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ user_id: user.id, bank_name: bankName }),
+      const { data: json, error } = await supabase.functions.invoke<any>('banking-sync', {
+        body: { user_id: user.id, bank_name: bankName },
       });
 
-      const json = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-
-      if (!res.ok) {
-        toast({ title: 'Ошибка синхронизации', description: json?.error || `HTTP ${res.status}`, variant: 'destructive' });
+      if (error) {
+        const response = (error as any).context;
+        const details = await response?.json?.().catch(() => null);
+        toast({ title: 'Ошибка синхронизации', description: details?.error || error.message, variant: 'destructive' });
         return;
       }
 
