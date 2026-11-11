@@ -265,9 +265,8 @@ const Index = () => {
         headers: {
           'Content-Type': 'application/json',
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          'x-user-token': session.access_token,
         },
-        body: JSON.stringify({ user_id: session.user.id }),
+        body: JSON.stringify({ user_id: session.user.id, access_token: session.access_token }),
       });
       const json = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
 

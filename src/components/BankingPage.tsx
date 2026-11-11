@@ -478,9 +478,8 @@ export const BankingPage = () => {
         headers: {
           'Content-Type': 'application/json',
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          'x-user-token': session.access_token,
         },
-        body: JSON.stringify({ user_id: user.id, bank_name: bankName }),
+        body: JSON.stringify({ user_id: user.id, bank_name: bankName, access_token: session.access_token }),
       });
       const json = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
 

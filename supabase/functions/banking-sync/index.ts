@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return respond(405, { error: 'Метод не поддерживается' })
   try {
-    const { user_id, bank_name } = await req.json()
+    const { user_id, bank_name, access_token } = await req.json()
     if (!user_id) return respond(400, { error: 'user_id обязателен' })
 
     const privateKey = Deno.env.get('EB_PRIVATE_KEY')
@@ -70,9 +70,9 @@ Deno.serve(async (req) => {
     const authorizationToken = authorization.match(/^Bearer\s+(.+)$/i)?.[1]
     // Browser requests deliberately do not use Authorization: Supabase's
     // gateway can reject a stale browser JWT before the function can add CORS
-    // headers. The token is still validated below, from this CORS-enabled
-    // function, via the dedicated header.
-    const token = req.headers.get('x-user-token') || authorizationToken
+    // headers. The token is still validated below from the HTTPS request body.
+    // Keep the custom-header fallback briefly for an already-cached app build.
+    const token = access_token || req.headers.get('x-user-token') || authorizationToken
     if (!token) return respond(401, { error: 'Требуется авторизация' })
 
     const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2')
