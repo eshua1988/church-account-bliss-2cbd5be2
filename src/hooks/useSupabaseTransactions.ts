@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Transaction, Currency, TransactionType, TransactionCategory } from '@/types/transaction';
 import { DepartmentRule, findMatchingDepartment } from '@/lib/departmentRules';
+import { withRequestTimeout } from '@/lib/requestTimeout';
 
 interface DbTransaction {
   id: string;
@@ -85,7 +86,10 @@ export const useSupabaseTransactions = () => {
       return [] as CurrencyTotal[];
     }
 
-    const { data, error } = await (supabase as any).rpc('transaction_currency_totals');
+    const { data, error } = await withRequestTimeout(
+      (supabase as any).rpc('transaction_currency_totals'),
+      'Загрузка итогов по валютам',
+    );
     if (error) throw error;
 
     const totals = (data || []).map((row: any) => ({
@@ -114,13 +118,16 @@ export const useSupabaseTransactions = () => {
       if (append) setLoadingMore(true);
       const from = append ? offset : 0;
       const to = from + PAGE_SIZE - 1;
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('date', { ascending: false })
-        .order('created_at', { ascending: false })
-        .range(from, to);
+      const { data, error } = await withRequestTimeout(
+        supabase
+          .from('transactions')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('date', { ascending: false })
+          .order('created_at', { ascending: false })
+          .range(from, to),
+        'Загрузка транзакций',
+      );
 
       if (error) throw error;
 

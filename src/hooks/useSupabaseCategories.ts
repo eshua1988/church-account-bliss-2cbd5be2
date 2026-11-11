@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { TransactionType } from '@/types/transaction';
+import { withRequestTimeout } from '@/lib/requestTimeout';
 
 export interface Category {
   id: string;
@@ -111,11 +112,14 @@ export const useSupabaseCategories = () => {
     try {
       // Show loading spinner only on first load, background refreshes are silent
       if (!initializedRef.current) setLoading(true);
-      const { data, error } = await supabase
-        .from('categories')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('sort_order', { ascending: true });
+      const { data, error } = await withRequestTimeout(
+        supabase
+          .from('categories')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('sort_order', { ascending: true }),
+        'Загрузка категорий',
+      );
 
       if (error) throw error;
 
@@ -128,10 +132,13 @@ export const useSupabaseCategories = () => {
           sort_order: cat.sortOrder,
         }));
 
-        const { data: newData, error: insertError } = await supabase
-          .from('categories')
-          .insert(defaultCats)
-          .select();
+        const { data: newData, error: insertError } = await withRequestTimeout(
+          supabase
+            .from('categories')
+            .insert(defaultCats)
+            .select(),
+          'Создание категорий',
+        );
 
         if (insertError) throw insertError;
 
