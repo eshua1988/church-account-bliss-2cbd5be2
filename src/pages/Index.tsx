@@ -26,8 +26,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 const SYNC_REPORT_STORAGE_KEY = 'church-sync-report-v1';
+// Used only to discard markers left by versions that resumed work on startup.
 const SYNC_QUEUE_STORAGE_KEY = 'church-sync-queue-v1';
-const SYNC_QUEUE_MAX_AGE_MS = 10 * 60 * 1000;
 
 // Keep the initial mobile download focused on the balance screen. These
 // sections are requested only when the user actually opens them.
@@ -131,12 +131,17 @@ const Index = () => {
   const [isConfiguredExportsSyncing, setIsConfiguredExportsSyncing] = useState(false);
   const [syncReport, setSyncReport] = useState<SyncReport | null>(loadSyncReport);
   const [retryingSyncItemIds, setRetryingSyncItemIds] = useState<string[]>([]);
-  const resumedSyncRef = useRef(false);
   const profileSignatureCanvas = useRef<HTMLCanvasElement>(null);
   const profileDrawing = useRef(false);
   const [profileName, setProfileName] = useState('');
   const [profileSignature, setProfileSignature] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
+
+  useEffect(() => {
+    // An interrupted run belongs to the previous app session. Do not resume
+    // it after reopening the PWA; the user can explicitly start a new sync.
+    localStorage.removeItem(SYNC_QUEUE_STORAGE_KEY);
+  }, []);
 
   const applyProfile = useCallback((metadata?: Record<string, unknown> | null) => {
     setProfileName(String(metadata?.display_name || user?.user_metadata?.display_name || ''));
@@ -301,9 +306,6 @@ const Index = () => {
   const handleSync = useCallback(async () => {
     setIsConfiguredExportsSyncing(true);
     const startedAt = new Date().toISOString();
-    // The browser keeps running while the window is minimised. If it is closed
-    // or restarted, this marker resumes the full sync after the next sign-in.
-    localStorage.setItem(SYNC_QUEUE_STORAGE_KEY, JSON.stringify({ requestedAt: startedAt }));
     const updateLiveItem = (item: SyncReportItem) => {
       setSyncReport(current => {
         const items = current?.completedAt === startedAt ? [...current.items] : [];
@@ -403,7 +405,6 @@ const Index = () => {
       }
     } finally {
       setIsConfiguredExportsSyncing(false);
-      localStorage.removeItem(SYNC_QUEUE_STORAGE_KEY);
     }
   }, [handleBankSync, notifications, toast, transactions, expenseCategories, getAllTransactions]);
 
@@ -422,7 +423,6 @@ const Index = () => {
   const handleRetrySyncItem = useCallback(async (id: string) => {
     if (isSyncing || retryingSyncItemIds.includes(id)) return;
     setRetryingSyncItemIds(current => [...current, id]);
-    localStorage.setItem(SYNC_QUEUE_STORAGE_KEY, JSON.stringify({ requestedAt: new Date().toISOString(), retryItemId: id }));
     updateSyncReportItem({ id, title: syncReport?.items.find(item => item.id === id)?.title || 'Синхронизация', status: 'running', details: ['Синхронизация выполняется'] });
     try {
       if (id === 'bank') {
@@ -445,26 +445,8 @@ const Index = () => {
       updateSyncReportItem({ id, title: syncReport?.items.find(item => item.id === id)?.title || 'Синхронизация', status: 'error', details: [error instanceof Error ? error.message : String(error)] });
     } finally {
       setRetryingSyncItemIds(current => current.filter(item => item !== id));
-      localStorage.removeItem(SYNC_QUEUE_STORAGE_KEY);
     }
   }, [expenseCategories, getAllTransactions, handleBankSync, isSyncing, notifications, retryingSyncItemIds, syncReport?.items, transactions, updateSyncReportItem]);
-
-  useEffect(() => {
-    if (transactionsLoading || categoriesLoading || resumedSyncRef.current) return;
-    try {
-      const queued = localStorage.getItem(SYNC_QUEUE_STORAGE_KEY);
-      if (!queued) return;
-      const requestedAt = JSON.parse(queued)?.requestedAt;
-      if (!requestedAt || Date.now() - new Date(requestedAt).getTime() > SYNC_QUEUE_MAX_AGE_MS) {
-        localStorage.removeItem(SYNC_QUEUE_STORAGE_KEY);
-        return;
-      }
-      resumedSyncRef.current = true;
-      void handleSync();
-    } catch {
-      // Storage is optional; a manual synchronization remains available.
-    }
-  }, [handleSync, transactionsLoading, categoriesLoading]);
 
   const incomeByCategory = getTransactionsByCategory('income');
   const expenseByCategory = getTransactionsByCategory('expense');
