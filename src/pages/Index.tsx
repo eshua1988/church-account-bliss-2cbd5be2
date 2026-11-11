@@ -10,7 +10,7 @@ import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { Currency, CURRENCY_SYMBOLS, Transaction, TransactionType } from '@/types/transaction';
-import { Loader2, ChevronDown, ChevronUp, Landmark } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronUp, Landmark, LogOut } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
@@ -59,7 +59,7 @@ const loadSyncReport = (): SyncReport | null => {
 
 const Index = () => {
   const { t, getDateLocale } = useTranslation();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState<'statistics' | 'payout' | 'settings' | 'notifications' | 'links' | 'reminders'>('statistics');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -772,6 +772,16 @@ const Index = () => {
                       <h4 className="font-semibold text-base sm:text-lg">{profileName || 'Пользователь'}</h4>
                       <p className="truncate text-sm text-muted-foreground">{user.email}</p>
                     </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="ml-auto shrink-0"
+                      onClick={() => void signOut()}
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Выйти из аккаунта
+                    </Button>
                   </div>
 
                   <div className="grid gap-5 lg:grid-cols-2">
