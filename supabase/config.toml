@@ -41,3 +41,8 @@ verify_jwt = false
 
 [functions.generate-payout-pdf]
 verify_jwt = false
+
+# The function handles CORS preflight itself and validates the bearer token in
+# its handler (including that a browser caller may sync only its own account).
+[functions.banking-sync]
+verify_jwt = false

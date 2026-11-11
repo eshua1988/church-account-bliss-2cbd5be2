@@ -53,6 +53,7 @@ const bankDateParts = (tx, fallback) => {
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  if (req.method !== 'POST') return respond(405, { error: 'Метод не поддерживается' })
   try {
     const { user_id, bank_name } = await req.json()
     if (!user_id) return respond(400, { error: 'user_id обязателен' })
@@ -65,7 +66,25 @@ Deno.serve(async (req) => {
     if (!appId || !privateKey) return respond(400, { error: 'Секреты EB_APP_ID / EB_PRIVATE_KEY не настроены' })
     if (!supabaseUrl || !supabaseKey) return respond(500, { error: 'SUPABASE_URL / SERVICE_ROLE_KEY не настроены' })
 
+    const authorization = req.headers.get('authorization') || ''
+    const token = authorization.match(/^Bearer\s+(.+)$/i)?.[1]
+    if (!token) return respond(401, { error: 'Требуется авторизация' })
+
     const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2')
+
+    // Gateway JWT verification is disabled so that browsers can receive this
+    // function's CORS response. Validate every request here before using the
+    // service-role client below. The service-role token is intentionally
+    // allowed for the server-to-server sync from public-transactions.
+    if (token !== supabaseKey) {
+      const auth = createClient(supabaseUrl, supabaseKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      })
+      const { data: { user }, error: authError } = await auth.auth.getUser(token)
+      if (authError || !user) return respond(401, { error: 'Недействительная авторизация' })
+      if (user.id !== user_id) return respond(403, { error: 'Нельзя синхронизировать банковские данные другого пользователя' })
+    }
+
     const db = createClient(supabaseUrl, supabaseKey)
 
     // Load saved connections — single bank or all

@@ -5,6 +5,7 @@ on:
     branches: ['main']
     paths:
       - 'supabase/functions/**'
+      - 'supabase/config.toml'
       - '.github/workflows/deploy-functions.yml'
   workflow_dispatch:
 
@@ -41,10 +42,10 @@ jobs:
             names="$(echo "$changed_files" | awk -F/ '/^supabase\/functions\/[^/]+\// { print $3 }' | sort -u | tr '\n' ' ')"
           fi
 
-          # A workflow-only repair must still republish the function changed by
-          # the preceding release; subsequent source changes are detected above.
-          if [ -z "$names" ] && echo "$changed_files" | grep -qx '.github/workflows/deploy-functions.yml'; then
-            names="public-protocols"
+          # A deployment-configuration repair must republish its affected
+          # function; subsequent source changes are detected above.
+          if [ -z "$names" ] && echo "$changed_files" | grep -Eq '^(\.github/workflows/deploy-functions\.yml|supabase/config\.toml)$'; then
+            names="banking-sync"
           fi
 
           echo "names=$(echo "$names" | xargs)" >> "$GITHUB_OUTPUT"
@@ -60,7 +61,7 @@ jobs:
           fi
 
           for fn in $FUNCTIONS; do
-            if [ "$fn" = "google-sheets" ] || [ "$fn" = "sheets-export" ] || [ "$fn" = "archive-pdf" ] || [ "$fn" = "public-protocols" ]; then
+            if [ "$fn" = "google-sheets" ] || [ "$fn" = "sheets-export" ] || [ "$fn" = "archive-pdf" ] || [ "$fn" = "public-protocols" ] || [ "$fn" = "banking-sync" ]; then
               # The function handles CORS preflight and validates the JWT itself.
               # Gateway JWT verification would reject browser OPTIONS requests first.
               supabase functions deploy $fn --yes --no-verify-jwt --project-ref htepbcotdqrewbxmasbf
