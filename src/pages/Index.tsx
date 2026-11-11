@@ -1,11 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Header, type SyncReport, type SyncReportItem } from '@/components/Header';
 import { CurrencyBalanceCard } from '@/components/CurrencyBalanceCard';
-import { CategoryManager } from '@/components/CategoryManager';
 import { CategoryPieChart } from '@/components/charts/CategoryPieChart';
 import { StatisticsTable } from '@/components/StatisticsTable';
-import { PayoutGenerator } from '@/components/PayoutGenerator';
 import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { useTranslation } from '@/contexts/LanguageContext';
@@ -15,27 +13,12 @@ import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { AppSidebar } from '@/components/AppSidebar';
-import { GoogleSheetsSync, syncAllConfiguredGoogleSheetExports } from '@/components/GoogleSheetsSync';
-import { TelegramBotSettings } from '@/components/TelegramBotSettings';
-import { SharePayoutLink } from '@/components/SharePayoutLink';
-import { ShareDepositLink } from '@/components/ShareDepositLink';
-import { ShareTransactionsLink } from '@/components/ShareTransactionsLink';
-import { ShareAnalyticsLink } from '@/components/ShareAnalyticsLink';
-import { ShareProtocolsLink } from '@/components/ShareProtocolsLink';
+import { syncAllConfiguredGoogleSheetExports } from '@/components/GoogleSheetsSync';
 import { PublicLinkHeaderActions } from '@/components/PublicLinkHeaderActions';
-import { NotificationsPage } from '@/components/NotificationsPage';
-import { BankingPage } from '@/components/BankingPage';
-import { TelegramMenuPage } from '@/components/TelegramMenuPage';
-import { RegistrationBuilder } from '@/components/RegistrationBuilder';
-import { HeaderBrandingSettings } from '@/components/HeaderBrandingSettings';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useNotifications } from '@/hooks/useNotifications';
-import { CloudStorageSettings } from '@/components/CloudStorageSettings';
 import { syncNotificationArchivesToCloud } from '@/lib/cloudArchiveSync';
-import { LinksPage } from '@/components/LinksPage';
-import { RemindersPage } from '@/components/RemindersPage';
-import { PdfArchiveStatistics } from '@/components/PdfArchiveStatistics';
 import { useAuth } from '@/contexts/AuthContext';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -45,6 +28,33 @@ import { Label } from '@/components/ui/label';
 const SYNC_REPORT_STORAGE_KEY = 'church-sync-report-v1';
 const SYNC_QUEUE_STORAGE_KEY = 'church-sync-queue-v1';
 const SYNC_QUEUE_MAX_AGE_MS = 10 * 60 * 1000;
+
+// Keep the initial mobile download focused on the balance screen. These
+// sections are requested only when the user actually opens them.
+const CategoryManager = lazy(() => import('@/components/CategoryManager').then(module => ({ default: module.CategoryManager })));
+const PayoutGenerator = lazy(() => import('@/components/PayoutGenerator').then(module => ({ default: module.PayoutGenerator })));
+const GoogleSheetsSync = lazy(() => import('@/components/GoogleSheetsSync').then(module => ({ default: module.GoogleSheetsSync })));
+const TelegramBotSettings = lazy(() => import('@/components/TelegramBotSettings').then(module => ({ default: module.TelegramBotSettings })));
+const SharePayoutLink = lazy(() => import('@/components/SharePayoutLink').then(module => ({ default: module.SharePayoutLink })));
+const ShareDepositLink = lazy(() => import('@/components/ShareDepositLink').then(module => ({ default: module.ShareDepositLink })));
+const ShareTransactionsLink = lazy(() => import('@/components/ShareTransactionsLink').then(module => ({ default: module.ShareTransactionsLink })));
+const ShareAnalyticsLink = lazy(() => import('@/components/ShareAnalyticsLink').then(module => ({ default: module.ShareAnalyticsLink })));
+const ShareProtocolsLink = lazy(() => import('@/components/ShareProtocolsLink').then(module => ({ default: module.ShareProtocolsLink })));
+const NotificationsPage = lazy(() => import('@/components/NotificationsPage').then(module => ({ default: module.NotificationsPage })));
+const BankingPage = lazy(() => import('@/components/BankingPage').then(module => ({ default: module.BankingPage })));
+const TelegramMenuPage = lazy(() => import('@/components/TelegramMenuPage').then(module => ({ default: module.TelegramMenuPage })));
+const RegistrationBuilder = lazy(() => import('@/components/RegistrationBuilder').then(module => ({ default: module.RegistrationBuilder })));
+const HeaderBrandingSettings = lazy(() => import('@/components/HeaderBrandingSettings').then(module => ({ default: module.HeaderBrandingSettings })));
+const CloudStorageSettings = lazy(() => import('@/components/CloudStorageSettings').then(module => ({ default: module.CloudStorageSettings })));
+const LinksPage = lazy(() => import('@/components/LinksPage').then(module => ({ default: module.LinksPage })));
+const RemindersPage = lazy(() => import('@/components/RemindersPage').then(module => ({ default: module.RemindersPage })));
+const PdfArchiveStatistics = lazy(() => import('@/components/PdfArchiveStatistics').then(module => ({ default: module.PdfArchiveStatistics })));
+
+const DeferredSection = ({ children }: { children: ReactNode }) => (
+  <Suspense fallback={<div className="flex min-h-24 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>}>
+    {children}
+  </Suspense>
+);
 
 const loadSyncReport = (): SyncReport | null => {
   try {
@@ -750,7 +760,7 @@ const Index = () => {
               </Tabs>
                 </TabsContent>
                 <TabsContent value="pdf" className="mt-0">
-                  <PdfArchiveStatistics categories={categories} getCategoryName={getCategoryName} />
+                  <DeferredSection><PdfArchiveStatistics categories={categories} getCategoryName={getCategoryName} /></DeferredSection>
                 </TabsContent>
               </Tabs>
             </div>
@@ -759,7 +769,7 @@ const Index = () => {
           {/* Payout Generator Tab */}
           {activeTab === 'payout' && (
             <div className="animate-fade-in space-y-6">
-              <PayoutGenerator />
+              <DeferredSection><PayoutGenerator /></DeferredSection>
             </div>
           )}
 
@@ -847,7 +857,7 @@ const Index = () => {
                 </button>
                 {openSettings.extension && (
                   <div className="px-4 pb-4 sm:px-6 sm:pb-6">
-                    <HeaderBrandingSettings />
+                    <DeferredSection><HeaderBrandingSettings /></DeferredSection>
                   </div>
                 )}
               </div>
@@ -860,7 +870,7 @@ const Index = () => {
                 </button>
                 {openSettings.categories && (
                   <div className="px-4 pb-4 sm:px-6 sm:pb-6">
-                    <CategoryManager 
+                    <DeferredSection><CategoryManager
                       categories={categories} 
                       onAdd={handleAddCategory} 
                       onDelete={handleDeleteCategory} 
@@ -872,7 +882,7 @@ const Index = () => {
                           await updateTransaction(id, { departmentName: dept });
                         }
                       }}
-                    />
+                    /></DeferredSection>
                   </div>
                 )}
               </div>
@@ -885,13 +895,13 @@ const Index = () => {
                 </button>
                 {openSettings.sheets && (
                   <div className="px-4 pb-4 sm:px-6 sm:pb-6">
-                    <GoogleSheetsSync 
+                    <DeferredSection><GoogleSheetsSync
                       transactions={transactions} 
                       getAllTransactions={getAllTransactions}
                       getCategoryName={getCategoryName} 
                       onDeleteTransaction={deleteTransaction}
                       expenseCategories={expenseCategories}
-                    />
+                    /></DeferredSection>
                   </div>
                 )}
               </div>
@@ -904,7 +914,7 @@ const Index = () => {
                 </button>
                 {openSettings.cloud && (
                   <div className="px-4 pb-4 sm:px-6 sm:pb-6">
-                    <CloudStorageSettings />
+                    <DeferredSection><CloudStorageSettings /></DeferredSection>
                   </div>
                 )}
               </div>
@@ -925,7 +935,7 @@ const Index = () => {
                         </button>
                         {!openSettings.sharePayout && <PublicLinkHeaderActions kind="payout" />}
                       </div>
-                      {openSettings.sharePayout && <div className="border-t p-3 sm:p-4"><SharePayoutLink /></div>}
+                      {openSettings.sharePayout && <div className="border-t p-3 sm:p-4"><DeferredSection><SharePayoutLink /></DeferredSection></div>}
                     </div>
 
                     <div className="overflow-hidden rounded-xl border border-border">
@@ -936,7 +946,7 @@ const Index = () => {
                         </button>
                         {!openSettings.shareDeposit && <PublicLinkHeaderActions kind="deposit" />}
                       </div>
-                      {openSettings.shareDeposit && <div className="border-t p-3 sm:p-4"><ShareDepositLink /></div>}
+                      {openSettings.shareDeposit && <div className="border-t p-3 sm:p-4"><DeferredSection><ShareDepositLink /></DeferredSection></div>}
                     </div>
 
                     <div className="overflow-hidden rounded-xl border border-border">
@@ -947,7 +957,7 @@ const Index = () => {
                         </button>
                         {!openSettings.shareTransactions && <PublicLinkHeaderActions kind="transactions" />}
                       </div>
-                      {openSettings.shareTransactions && <div className="border-t p-3 sm:p-4"><ShareTransactionsLink /></div>}
+                      {openSettings.shareTransactions && <div className="border-t p-3 sm:p-4"><DeferredSection><ShareTransactionsLink /></DeferredSection></div>}
                     </div>
 
                     <div className="overflow-hidden rounded-xl border border-border">
@@ -958,7 +968,7 @@ const Index = () => {
                         </button>
                         {!openSettings.shareAnalytics && <PublicLinkHeaderActions kind="analytics" />}
                       </div>
-                      {openSettings.shareAnalytics && <div className="border-t p-3 sm:p-4"><ShareAnalyticsLink /></div>}
+                      {openSettings.shareAnalytics && <div className="border-t p-3 sm:p-4"><DeferredSection><ShareAnalyticsLink /></DeferredSection></div>}
                     </div>
 
                     <div className="overflow-hidden rounded-xl border border-border">
@@ -969,7 +979,7 @@ const Index = () => {
                         </button>
                         {!openSettings.shareProtocols && <PublicLinkHeaderActions kind="protocols" />}
                       </div>
-                      {openSettings.shareProtocols && <div className="border-t p-3 sm:p-4"><ShareProtocolsLink /></div>}
+                      {openSettings.shareProtocols && <div className="border-t p-3 sm:p-4"><DeferredSection><ShareProtocolsLink /></DeferredSection></div>}
                     </div>
                   </div>
                 )}
@@ -983,9 +993,9 @@ const Index = () => {
                 </button>
                 {openSettings.telegram && (
                   <div className="px-4 pb-4 sm:px-6 sm:pb-6 space-y-6">
-                    <TelegramBotSettings />
+                    <DeferredSection><TelegramBotSettings /></DeferredSection>
                     <Separator />
-                    <TelegramMenuPage />
+                    <DeferredSection><TelegramMenuPage /></DeferredSection>
                   </div>
                 )}
               </div>
@@ -998,7 +1008,7 @@ const Index = () => {
                 </button>
                 {openSettings.registration && (
                   <div className="px-4 pb-4 sm:px-6 sm:pb-6">
-                    <RegistrationBuilder />
+                    <DeferredSection><RegistrationBuilder /></DeferredSection>
                   </div>
                 )}
               </div>
@@ -1011,7 +1021,7 @@ const Index = () => {
                 </button>
                 {openSettings.banking && (
                   <div className="px-4 pb-4 sm:px-6 sm:pb-6">
-                    <BankingPage />
+                    <DeferredSection><BankingPage /></DeferredSection>
                   </div>
                 )}
               </div>
@@ -1020,10 +1030,10 @@ const Index = () => {
 
           {/* Notifications Tab */}
           {activeTab === 'notifications' && (
-            <NotificationsPage />
+            <DeferredSection><NotificationsPage /></DeferredSection>
           )}
 
-          {activeTab === 'links' && <LinksPage onSyncSheetExport={async exportId => {
+          {activeTab === 'links' && <DeferredSection><LinksPage onSyncSheetExport={async exportId => {
             const result = await syncAllConfiguredGoogleSheetExports(
               transactions,
               expenseCategories,
@@ -1032,9 +1042,9 @@ const Index = () => {
               [exportId],
             );
             if (result.failed > 0) throw new Error(result.errors.join('; '));
-          }} />}
+          }} /></DeferredSection>}
 
-          {activeTab === 'reminders' && <RemindersPage />}
+          {activeTab === 'reminders' && <DeferredSection><RemindersPage /></DeferredSection>}
 
         </main>
         </div>

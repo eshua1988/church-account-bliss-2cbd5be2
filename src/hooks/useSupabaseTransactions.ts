@@ -37,7 +37,9 @@ interface CurrencyTotal {
   transactionCount: number;
 }
 
-const PAGE_SIZE = 200;
+// A smaller first page keeps the dashboard responsive on iPhone while the
+// complete count and currency totals still come directly from PostgreSQL.
+const PAGE_SIZE = 100;
 
 const cleanBankText = (value: string | null) =>
   (value || '')
@@ -118,7 +120,7 @@ export const useSupabaseTransactions = () => {
       if (append) setLoadingMore(true);
       const from = append ? offset : 0;
       const to = from + PAGE_SIZE - 1;
-      const { data, error } = await withRequestTimeout(
+      const transactionsRequest = withRequestTimeout(
         supabase
           .from('transactions')
           .select('*')
@@ -128,14 +130,24 @@ export const useSupabaseTransactions = () => {
           .range(from, to),
         'Загрузка транзакций',
       );
+      // Totals do not depend on the rows being rendered. Starting both calls
+      // together removes one full mobile-network round trip from first paint.
+      const totalsRequest = append ? null : fetchCurrencyTotals().catch(error => {
+        // A delayed aggregate must not hide the transaction page on mobile.
+        console.error('Error fetching currency totals:', error);
+        return null;
+      });
+      const [{ data, error }, totals] = await Promise.all([
+        transactionsRequest,
+        totalsRequest ?? Promise.resolve(null),
+      ]);
 
       if (error) throw error;
 
       const mappedTransactions = (data as DbTransaction[]).map(mapDbToTransaction);
       setTransactions(current => append ? [...current, ...mappedTransactions] : mappedTransactions);
       if (!append) {
-        const totals = await fetchCurrencyTotals();
-        setTotalCount(totals.reduce((sum, total) => sum + total.transactionCount, 0));
+        setTotalCount((totals || []).reduce((sum, total) => sum + total.transactionCount, 0));
       }
       initializedRef.current = true;
     } catch (err) {

@@ -145,7 +145,12 @@ export const useSupabaseCategories = () => {
         setCategories(dedupeCategories((newData as DbCategory[]).map(mapDbToCategory)));
       } else {
         const mapped = (data as DbCategory[]).map(mapDbToCategory);
-        setCategories(await removeDuplicateCategories(mapped));
+        // Display categories immediately. Legacy duplicate cleanup can issue
+        // several writes and should not keep a slow mobile app on its loader.
+        setCategories(dedupeCategories(mapped));
+        void removeDuplicateCategories(mapped)
+          .then(cleaned => setCategories(cleaned))
+          .catch(error => console.error('Could not clean duplicate categories:', error));
       }
       initializedRef.current = true;
     } catch (err) {
