@@ -118,6 +118,19 @@ export const useSupabaseTransactions = () => {
     try {
       if (!initializedRef.current && !append) setLoading(true);
       if (append) setLoadingMore(true);
+      if (!append) setError(null);
+
+      // iOS can suspend a standalone PWA long enough for its access token to
+      // expire. getSession() refreshes it when possible before PostgREST reads
+      // begin, instead of silently rendering an empty dashboard.
+      const { data: { session }, error: sessionError } = await withRequestTimeout(
+        supabase.auth.getSession(),
+        'Проверка входа',
+      );
+      if (sessionError || !session?.access_token || session.user.id !== user.id) {
+        throw sessionError || new Error('Сеанс входа устарел. Выйдите и войдите в аккаунт снова.');
+      }
+
       const from = append ? offset : 0;
       const to = from + PAGE_SIZE - 1;
       const transactionsRequest = withRequestTimeout(
@@ -163,6 +176,16 @@ export const useSupabaseTransactions = () => {
     () => fetchTransactions(true, transactions.length),
     [fetchTransactions, transactions.length],
   );
+
+  const refresh = useCallback(async () => {
+    setError(null);
+    const { error: refreshError } = await supabase.auth.refreshSession();
+    if (refreshError) {
+      setError(refreshError);
+      return;
+    }
+    await fetchTransactions(false);
+  }, [fetchTransactions]);
 
   // Exports must not be limited by the paged list shown in the interface.
   const getAllTransactions = useCallback(async (): Promise<Transaction[]> => {
@@ -414,6 +437,6 @@ export const useSupabaseTransactions = () => {
     getRecentTransactions,
     getTransactionsByCategory,
     getMonthlyData,
-    refetch: fetchTransactions,
+    refetch: refresh,
   };
 };

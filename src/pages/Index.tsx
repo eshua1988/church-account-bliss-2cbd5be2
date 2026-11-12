@@ -97,6 +97,7 @@ const Index = () => {
     transactions,
     loading: transactionsLoading,
     loadingMore: transactionsLoadingMore,
+    error: transactionsError,
     totalCount: transactionCount,
     hasMore: hasMoreTransactions,
     loadMore: loadMoreTransactions,
@@ -143,8 +144,8 @@ const Index = () => {
     localStorage.removeItem(SYNC_QUEUE_STORAGE_KEY);
   }, []);
 
-  const applyProfile = useCallback((metadata?: Record<string, unknown> | null) => {
-    setProfileName(String(metadata?.display_name || user?.user_metadata?.display_name || ''));
+  const applyProfile = useCallback((metadata?: Record<string, unknown> | null, savedName?: string | null) => {
+    setProfileName(String(metadata?.display_name || savedName || user?.user_metadata?.display_name || ''));
     setProfileSignature(String(metadata?.signature || user?.user_metadata?.signature || ''));
   }, [user?.user_metadata]);
 
@@ -157,14 +158,17 @@ const Index = () => {
     const loadProfile = async () => {
       // getUser() reads the latest account metadata from Supabase, while the
       // session object may still contain metadata from another device's old JWT.
-      const { data, error } = await supabase.auth.getUser();
+      const [{ data: profile }, { data, error }] = await Promise.all([
+        supabase.from('profiles').select('display_name').eq('user_id', user.id).maybeSingle(),
+        supabase.auth.getUser(),
+      ]);
       if (!active) return;
       if (error) {
         console.warn('Could not load user profile:', error);
-        applyProfile(null);
+        applyProfile(null, profile?.display_name);
         return;
       }
-      applyProfile(data.user?.user_metadata);
+      applyProfile(data.user?.user_metadata, profile?.display_name);
     };
     void loadProfile();
     window.addEventListener('focus', loadProfile);
@@ -215,6 +219,10 @@ const Index = () => {
       const displayName = profileName.trim() || user.email || 'Пользователь';
       const { error } = await supabase.auth.updateUser({ data: { ...user.user_metadata, display_name: displayName, signature: profileSignature || null } });
       if (error) throw error;
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert({ user_id: user.id, email: user.email ?? null, display_name: displayName }, { onConflict: 'user_id' });
+      if (profileError) throw profileError;
       toast({ title: 'Профиль сохранён', description: 'Имя и подпись обновлены.' });
     } catch (error) {
       toast({ title: 'Не удалось сохранить профиль', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
@@ -670,6 +678,17 @@ const Index = () => {
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary"><Landmark className="h-5 w-5" /></div>
                 <div className="flex flex-wrap items-baseline gap-x-2"><h2 className="font-semibold">Банк</h2><p className="text-sm text-muted-foreground">— Транзакции сохранены из Банка онлайн.</p></div>
               </div>
+              {transactionsError && (
+                <div className="mb-4 flex flex-col gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-medium text-destructive">Не удалось загрузить данные из облака</p>
+                    <p className="mt-1 text-muted-foreground">{transactionsError.message}</p>
+                  </div>
+                  <Button type="button" variant="outline" onClick={() => void refetchTransactions()}>
+                    Повторить
+                  </Button>
+                </div>
+              )}
               <Tabs defaultValue="balance" className="w-full">
                 <div className="sticky top-0 z-30 -mx-3 sm:-mx-4 mb-4 px-3 sm:px-4 py-2 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85 border-b border-border/60">
                   <TabsList className="flex-wrap h-auto gap-1 p-1">
