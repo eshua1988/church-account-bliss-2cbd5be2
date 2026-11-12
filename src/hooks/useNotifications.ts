@@ -46,19 +46,12 @@ const urlBase64ToUint8Array = (base64String: string) => {
 
 const getPushBasePath = () => import.meta.env.BASE_URL || '/';
 
-const getPushAppUrl = () => new URL(getPushBasePath(), window.location.origin).toString();
-
 const ensurePushServiceWorker = async () => {
   const scopePath = getPushBasePath();
-  const scopeUrl = getPushAppUrl();
   const swUrl = new URL(`${scopePath.replace(/\/$/, '')}/sw.js`, window.location.origin).toString();
-  const existingRegistration = await navigator.serviceWorker.getRegistration(scopeUrl);
-
-  if (existingRegistration) {
-    return existingRegistration;
-  }
-
-  return navigator.serviceWorker.register(swUrl, { scope: scopePath });
+  // Always go through register so an installed app receives a worker update
+  // even when this hook runs after the initial app bootstrap.
+  return navigator.serviceWorker.register(swUrl, { scope: scopePath, updateViaCache: 'none' });
 };
 
 export const useNotifications = () => {
