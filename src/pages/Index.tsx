@@ -8,7 +8,7 @@ import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { useTranslation } from '@/contexts/LanguageContext';
 import { Currency, CURRENCY_SYMBOLS, Transaction, TransactionType } from '@/types/transaction';
-import { Loader2, ChevronDown, ChevronUp, Landmark, LogOut } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronUp, Landmark, LogOut, BarChart3, Settings, Mail, ExternalLink, ListTodo } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
@@ -126,7 +126,7 @@ const Index = () => {
 
   const expenseCategories = getExpenseCategories();
 
-  const { notifications, refetch: refetchNotifications } = useNotifications();
+  const { notifications, unreadCount, refetch: refetchNotifications } = useNotifications();
   
   const [isBankSyncing, setIsBankSyncing] = useState(false);
   const [isConfiguredExportsSyncing, setIsConfiguredExportsSyncing] = useState(false);
@@ -698,7 +698,7 @@ const Index = () => {
         
         <div className="flex-1 min-h-0 min-w-0 overflow-auto">
         
-        <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
+        <main className="container mx-auto px-3 pb-[calc(5.75rem+env(safe-area-inset-bottom))] pt-4 sm:px-4 sm:py-8">
 
           {/* Statistics Tab */}
           {activeTab === 'statistics' && (
@@ -1082,6 +1082,36 @@ const Index = () => {
           {activeTab === 'reminders' && <DeferredSection><RemindersPage /></DeferredSection>}
 
         </main>
+        <nav aria-label="Основная навигация" className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-border bg-card/95 px-1 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur md:hidden">
+          {([
+            ['statistics', 'Баланс', BarChart3],
+            ['settings', 'Настройки', Settings],
+            ['notifications', 'Уведомления', Mail],
+            ['links', 'Ссылки', ExternalLink],
+            ['reminders', 'Напоминания', ListTodo],
+          ] as const).map(([tab, label, Icon]) => {
+            const isActive = activeTab === tab;
+            return (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                aria-current={isActive ? 'page' : undefined}
+                className={`relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[10px] transition-colors ${isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                <span className="relative">
+                  <Icon className="h-5 w-5" />
+                  {tab === 'notifications' && unreadCount > 0 && !isActive && (
+                    <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-destructive-foreground">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
+                </span>
+                <span className="max-w-full truncate">{label}</span>
+              </button>
+            );
+          })}
+        </nav>
         </div>
       </div>
     </div>
