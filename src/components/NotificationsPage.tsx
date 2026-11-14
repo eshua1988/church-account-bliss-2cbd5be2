@@ -1430,16 +1430,19 @@ export const NotificationsPage = () => {
 
       // Export first. If the separate archive sheet is not configured, keep the
       // notification out of the archive so the user can correct the setting.
-      const { error: exportError } = await supabase.functions.invoke('archive-pdf', {
-        body: { values },
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Войдите в систему повторно');
+      const exportResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/archive-pdf`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify({ values, access_token: session.access_token }),
       });
-      if (exportError) {
-        let detail = exportError.message;
-        try {
-          const payload = await exportError.context?.json?.();
-          detail = payload?.error || detail;
-        } catch { /* retain the original error */ }
-        throw new Error(detail);
+      const exportPayload = await exportResponse.json().catch(() => ({}));
+      if (!exportResponse.ok) {
+        throw new Error(exportPayload?.error || `Ошибка архива: HTTP ${exportResponse.status}`);
       }
 
       // Save independent accounting rows. The original PDF and notification are

@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-api-version",
+  "Access-Control-Allow-Headers": "authorization, x-user-token, x-client-info, apikey, content-type, x-supabase-api-version, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -53,14 +53,18 @@ serve(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   try {
     const authHeader = request.headers.get("Authorization") || "";
-    if (!authHeader.startsWith("Bearer ")) return json({ error: "Unauthorized" }, 401);
-    const token = authHeader.slice(7);
     const body = await request.json();
+    // Do not send the browser's JWT in Authorization. Supabase's gateway can
+    // reject a stale PWA token before this function can add CORS headers. The
+    // token remains protected by HTTPS and is verified below.
+    const headerToken = authHeader.match(/^Bearer\s+(.+)$/i)?.[1];
+    const token = body.access_token || request.headers.get("x-user-token") || headerToken;
+    if (!token || typeof token !== "string") return json({ error: "Unauthorized" }, 401);
     const values: unknown[][] = Array.isArray(body.values) ? body.values : [];
     if (!values.length) return json({ error: "At least one archive row is required" }, 400);
 
     const supabase = createClient(Deno.env.get("SUPABASE_URL") || "", Deno.env.get("SUPABASE_ANON_KEY") || "", {
-      global: { headers: { Authorization: authHeader } },
+      global: { headers: { Authorization: `Bearer ${token}` } },
     });
     const { data: auth, error: authError } = await supabase.auth.getUser(token);
     if (authError || !auth.user) return json({ error: "Unauthorized" }, 401);

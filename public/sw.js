@@ -27,8 +27,9 @@ self.addEventListener("activate", (event) => {
           .map((name) => caches.delete(name)),
       );
       await self.clients.claim();
-      const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      await Promise.all(windows.map((client) => client.navigate(client.url)));
+      // Do not navigate existing PWA windows here. Chromium rejects a forced
+      // navigation for some standalone windows, which used to leave an
+      // unhandled "Cannot navigate to URL" error in the console.
     })(),
   );
 });
@@ -95,7 +96,13 @@ self.addEventListener("notificationclick", (event) => {
       const client = windows[0];
       if (client) {
         await client.focus();
-        await client.navigate(targetUrl);
+        // A notification may point to a route that is no longer available.
+        // Focus still succeeds; ignore only that optional navigation failure.
+        try {
+          await client.navigate(targetUrl);
+        } catch {
+          // Keep the already focused application window open.
+        }
         return;
       }
       await self.clients.openWindow(targetUrl);
