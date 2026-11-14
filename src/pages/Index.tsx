@@ -69,7 +69,7 @@ const loadSyncReport = (): SyncReport | null => {
 
 const Index = () => {
   const { t, getDateLocale } = useTranslation();
-  const { user, signOut } = useAuth();
+  const { user, session, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState<'statistics' | 'payout' | 'settings' | 'notifications' | 'links' | 'reminders'>('statistics');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -268,11 +268,14 @@ const Index = () => {
     };
   }, []);
 
-  const handleBankSync = useCallback(async (signal?: AbortSignal): Promise<SyncReportItem> => {
+  const handleBankSync = useCallback(async (
+    signal?: AbortSignal,
+    activeSession?: { user: { id: string }; access_token: string },
+  ): Promise<SyncReportItem> => {
     try {
       setIsBankSyncing(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user || !session.access_token) throw new Error('Войдите в систему повторно');
+      const currentSession = activeSession || (await supabase.auth.getSession()).data.session;
+      if (!currentSession?.user || !currentSession.access_token) throw new Error('Войдите в систему повторно');
 
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/banking-sync`, {
         method: 'POST',
@@ -280,7 +283,7 @@ const Index = () => {
           'Content-Type': 'application/json',
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         },
-        body: JSON.stringify({ user_id: session.user.id, access_token: session.access_token }),
+        body: JSON.stringify({ user_id: currentSession.user.id, access_token: currentSession.access_token }),
         signal,
       });
       const json = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
@@ -338,6 +341,11 @@ const Index = () => {
 
   const handleSync = useCallback(async () => {
     if (syncAbortController.current) return;
+    if (!session?.access_token || !session.user) {
+      toast({ title: 'Сеанс входа устарел', description: 'Выйдите и войдите в аккаунт снова.', variant: 'destructive' });
+      return;
+    }
+    const activeSession = { user: { id: session.user.id }, access_token: session.access_token };
     const controller = new AbortController();
     syncAbortController.current = controller;
     const { signal } = controller;
@@ -365,10 +373,11 @@ const Index = () => {
         updateLiveItem,
         undefined,
         signal,
+        activeSession,
       );
       const bankTask = (async () => {
         updateLiveItem({ id: 'bank', title: 'Импорт из банка', status: 'running', details: ['Синхронизация выполняется'] });
-        const item = await handleBankSync(signal);
+        const item = await handleBankSync(signal, activeSession);
         updateLiveItem(item);
         return item;
       })();
@@ -448,7 +457,7 @@ const Index = () => {
       if (syncAbortController.current === controller) syncAbortController.current = null;
       setIsConfiguredExportsSyncing(false);
     }
-  }, [handleBankSync, notifications, toast, transactions, expenseCategories, getAllTransactions]);
+  }, [handleBankSync, notifications, toast, transactions, expenseCategories, getAllTransactions, session]);
 
   const updateSyncReportItem = useCallback((item: SyncReportItem) => {
     setSyncReport(current => {

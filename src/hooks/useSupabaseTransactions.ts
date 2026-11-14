@@ -73,7 +73,7 @@ const mapDbToTransaction = (dbTx: DbTransaction): Transaction => ({
 });
 
 export const useSupabaseTransactions = () => {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -106,7 +106,7 @@ export const useSupabaseTransactions = () => {
   }, [user]);
 
   // Only keep a bounded page in browser memory. Aggregates are calculated by PostgreSQL.
-  const fetchTransactions = useCallback(async (append = false, offset = 0) => {
+  const fetchTransactions = useCallback(async (append = false, offset = 0, background = false) => {
     if (!user) {
       setTransactions([]);
       setTotalCount(0);
@@ -120,15 +120,13 @@ export const useSupabaseTransactions = () => {
       if (append) setLoadingMore(true);
       if (!append) setError(null);
 
-      // iOS can suspend a standalone PWA long enough for its access token to
-      // expire. getSession() refreshes it when possible before PostgREST reads
-      // begin, instead of silently rendering an empty dashboard.
-      const { data: { session }, error: sessionError } = await withRequestTimeout(
-        supabase.auth.getSession(),
-        'Проверка входа',
-      );
-      if (sessionError || !session?.access_token || session.user.id !== user.id) {
-        throw sessionError || new Error('Сеанс входа устарел. Выйдите и войдите в аккаунт снова.');
+      // Do not call auth.getSession() for every fetch. During a top-level
+      // sync several integrations ask Supabase for a session at once; on a
+      // slow browser that auth lock can starve ordinary data reads. The
+      // AuthProvider owns one current session and the Supabase client refreshes
+      // its token automatically for the actual database request.
+      if (!session?.access_token || session.user.id !== user.id) {
+        throw new Error('Сеанс входа устарел. Выйдите и войдите в аккаунт снова.');
       }
 
       const from = append ? offset : 0;
@@ -164,28 +162,21 @@ export const useSupabaseTransactions = () => {
       }
       initializedRef.current = true;
     } catch (err) {
-      console.error('Error fetching transactions:', err);
+      // Realtime fallback retries in the background. Keep a temporary mobile
+      // network issue visible in the UI, but do not write the same error into
+      // DevTools every 30 seconds.
+      if (!background) console.error('Error fetching transactions:', err);
       setError(err instanceof Error ? err : new Error('Failed to fetch transactions'));
     } finally {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [user, fetchCurrencyTotals]);
+  }, [user, session, fetchCurrencyTotals]);
 
   const loadMore = useCallback(
     () => fetchTransactions(true, transactions.length),
     [fetchTransactions, transactions.length],
   );
-
-  const refresh = useCallback(async () => {
-    setError(null);
-    const { error: refreshError } = await supabase.auth.refreshSession();
-    if (refreshError) {
-      setError(refreshError);
-      return;
-    }
-    await fetchTransactions(false);
-  }, [fetchTransactions]);
 
   // Exports must not be limited by the paged list shown in the interface.
   const getAllTransactions = useCallback(async (): Promise<Transaction[]> => {
@@ -223,8 +214,8 @@ export const useSupabaseTransactions = () => {
 
     const startPolling = () => {
       if (poll) return;
-      void fetchTransactions(false);
-      poll = setInterval(() => void fetchTransactions(false), 30_000);
+      void fetchTransactions(false, 0, true);
+      poll = setInterval(() => void fetchTransactions(false, 0, true), 30_000);
     };
 
     // Unique channel name per user prevents multi-device conflicts
@@ -437,6 +428,6 @@ export const useSupabaseTransactions = () => {
     getRecentTransactions,
     getTransactionsByCategory,
     getMonthlyData,
-    refetch: refresh,
+    refetch: fetchTransactions,
   };
 };

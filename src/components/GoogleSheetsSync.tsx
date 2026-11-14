@@ -369,12 +369,13 @@ export const syncAllConfiguredGoogleSheetExports = async (
   onProgress?: (item: { id: string; title: string; status: 'queued' | 'running' | 'success' | 'error'; details: string[] }) => void,
   exportIds?: string[],
   signal?: AbortSignal,
+  activeSession?: { user: { id: string }; access_token: string },
 ) => {
   const throwIfAborted = () => {
     if (signal?.aborted) throw new DOMException('Синхронизация отменена', 'AbortError');
   };
   throwIfAborted();
-  const { data: { session } } = await supabase.auth.getSession();
+  const session = activeSession || (await supabase.auth.getSession()).data.session;
   if (!session?.user) throw new Error('Пожалуйста, войдите в систему повторно');
 
   await recoverLegacyPdfArchiveEntries(session.user.id);
