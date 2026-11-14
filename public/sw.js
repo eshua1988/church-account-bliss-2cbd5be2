@@ -49,6 +49,12 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(request)
       .then((response) => {
+        // Pages deployments remove obsolete hashed chunks. If the current PWA
+        // still needs one that it used earlier, prefer its saved copy over a
+        // network 404; the app can then update cleanly on the next navigation.
+        if (!response.ok && isStaticAsset) {
+          return caches.match(request).then((cached) => cached || response);
+        }
         if (response.ok) {
           const copy = response.clone();
           void caches.open(APP_SHELL_CACHE).then((cache) => cache.put(request, copy));

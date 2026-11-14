@@ -2,6 +2,36 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 
+// GitHub Pages replaces hashed assets on each deployment. An already-open PWA
+// can therefore request a lazy chunk from its previous build and receive 404.
+// Recover once by navigating to a cache-busted app URL instead of leaving a
+// blank screen when a settings section is opened.
+const chunkRecoveryKey = "church-finances:chunk-recovery-at";
+const recoverFromStaleChunk = () => {
+  const now = Date.now();
+  const previousAttempt = Number(sessionStorage.getItem(chunkRecoveryKey) || 0);
+  if (now - previousAttempt < 15_000) return;
+
+  sessionStorage.setItem(chunkRecoveryKey, String(now));
+  const url = new URL(window.location.href);
+  url.searchParams.set("app-update", String(now));
+  window.location.replace(url.toString());
+};
+
+window.addEventListener("unhandledrejection", (event) => {
+  const message = String(event.reason?.message || event.reason || "");
+  if (/dynamically imported module|importing a module script|loading chunk/i.test(message)) {
+    event.preventDefault();
+    recoverFromStaleChunk();
+  }
+});
+
+window.addEventListener("error", (event) => {
+  const target = event.target;
+  const isMissingAsset = target instanceof HTMLScriptElement && target.src.includes("/assets/");
+  if (isMissingAsset) recoverFromStaleChunk();
+}, true);
+
 // Register the worker before authentication starts. Previously the worker was
 // installed only from the notifications hook, after a user session existed.
 // On iOS that made an installed app behave like a regular, uncached tab until
