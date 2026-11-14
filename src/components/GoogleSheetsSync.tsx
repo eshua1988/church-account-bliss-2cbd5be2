@@ -368,7 +368,12 @@ export const syncAllConfiguredGoogleSheetExports = async (
   getAllTransactions?: () => Promise<Transaction[]>,
   onProgress?: (item: { id: string; title: string; status: 'queued' | 'running' | 'success' | 'error'; details: string[] }) => void,
   exportIds?: string[],
+  signal?: AbortSignal,
 ) => {
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new DOMException('Синхронизация отменена', 'AbortError');
+  };
+  throwIfAborted();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error('Пожалуйста, войдите в систему повторно');
 
@@ -404,6 +409,7 @@ export const syncAllConfiguredGoogleSheetExports = async (
   });
   const items: Array<{ id: string; title: string; status: 'success' | 'error'; details: string[] }> = [];
   for (const [index, target] of exports.entries()) {
+    throwIfAborted();
     const title = `Google Sheets — ${target.export_type === 'pdf' ? 'PDF-архив' : 'транзакции'}`;
     const location = `${target.spreadsheet_id.slice(0, 12)}… · ${target.sheet_range}`;
     const id = `sheets-${target.id || index}`;
@@ -412,6 +418,7 @@ export const syncAllConfiguredGoogleSheetExports = async (
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sheets-export`, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
+        signal,
         body: JSON.stringify({
           accessToken: session.access_token,
           action: target.export_type === 'transactions' ? 'write' : 'archive_pdf_export',
@@ -429,6 +436,7 @@ export const syncAllConfiguredGoogleSheetExports = async (
       items.push(item);
       onProgress?.(item);
     } catch (error) {
+      if (signal?.aborted) throw error;
       const item = { id, title, status: 'error' as const, details: [location, error instanceof Error ? error.message : String(error)] };
       items.push(item);
       onProgress?.(item);

@@ -132,6 +132,7 @@ const Index = () => {
   const [isConfiguredExportsSyncing, setIsConfiguredExportsSyncing] = useState(false);
   const [syncReport, setSyncReport] = useState<SyncReport | null>(loadSyncReport);
   const [retryingSyncItemIds, setRetryingSyncItemIds] = useState<string[]>([]);
+  const syncAbortController = useRef<AbortController | null>(null);
   const profileSignatureCanvas = useRef<HTMLCanvasElement>(null);
   const profileDrawing = useRef(false);
   const [profileName, setProfileName] = useState('');
@@ -267,7 +268,7 @@ const Index = () => {
     };
   }, []);
 
-  const handleBankSync = useCallback(async (): Promise<SyncReportItem> => {
+  const handleBankSync = useCallback(async (signal?: AbortSignal): Promise<SyncReportItem> => {
     try {
       setIsBankSyncing(true);
       const { data: { session } } = await supabase.auth.getSession();
@@ -280,6 +281,7 @@ const Index = () => {
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         },
         body: JSON.stringify({ user_id: session.user.id, access_token: session.access_token }),
+        signal,
       });
       const json = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
 
@@ -302,6 +304,9 @@ const Index = () => {
         ],
       };
     } catch (e) {
+      if (signal?.aborted) {
+        return { id: 'bank', title: 'Импорт из банка', status: 'cancelled', details: ['Отменено пользователем'] };
+      }
       toast({ title: 'Ошибка синхр. банка', description: String(e), variant: 'destructive' });
       return { id: 'bank', title: 'Импорт из банка', status: 'error', details: [e instanceof Error ? e.message : String(e)] };
     } finally {
@@ -311,10 +316,35 @@ const Index = () => {
 
   const isSyncing = isBankSyncing || isConfiguredExportsSyncing;
 
+  const handleCancelSync = useCallback(() => {
+    const controller = syncAbortController.current;
+    if (!controller || controller.signal.aborted) return;
+    controller.abort();
+    const cancelledAt = new Date().toISOString();
+    setSyncReport(current => {
+      const next: SyncReport = {
+        completedAt: cancelledAt,
+        items: (current?.items || []).map(item =>
+          item.status === 'queued' || item.status === 'running'
+            ? { ...item, status: 'cancelled', details: ['Отменено пользователем'] }
+            : item,
+        ),
+      };
+      localStorage.setItem(SYNC_REPORT_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+    toast({ title: 'Синхронизация отменена', description: 'Запущенные и ожидающие задачи остановлены.' });
+  }, [toast]);
+
   const handleSync = useCallback(async () => {
+    if (syncAbortController.current) return;
+    const controller = new AbortController();
+    syncAbortController.current = controller;
+    const { signal } = controller;
     setIsConfiguredExportsSyncing(true);
     const startedAt = new Date().toISOString();
     const updateLiveItem = (item: SyncReportItem) => {
+      if (signal.aborted) return;
       setSyncReport(current => {
         const items = current?.completedAt === startedAt ? [...current.items] : [];
         const index = items.findIndex(candidate => candidate.id === item.id);
@@ -333,17 +363,19 @@ const Index = () => {
         expenseCategories,
         getAllTransactions,
         updateLiveItem,
+        undefined,
+        signal,
       );
       const bankTask = (async () => {
         updateLiveItem({ id: 'bank', title: 'Импорт из банка', status: 'running', details: ['Синхронизация выполняется'] });
-        const item = await handleBankSync();
+        const item = await handleBankSync(signal);
         updateLiveItem(item);
         return item;
       })();
       const cloudTask = (async () => {
         updateLiveItem({ id: 'cloud', title: 'Облачные PDF-архивы', status: 'running', details: ['Синхронизация выполняется'] });
         return await Promise.race([
-          syncNotificationArchivesToCloud(notifications),
+          syncNotificationArchivesToCloud(notifications, undefined, signal),
           new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error('Превышено время ожидания облачной синхронизации')), 120_000)),
         ]);
       })();
@@ -352,6 +384,7 @@ const Index = () => {
         bankTask,
         cloudTask,
       ]);
+      if (signal.aborted) return;
       const reportItems: SyncReportItem[] = [];
 
       if (configuredExports.status === 'fulfilled') {
@@ -412,6 +445,7 @@ const Index = () => {
         if (error) console.error('Failed to save shared sync report:', error);
       }
     } finally {
+      if (syncAbortController.current === controller) syncAbortController.current = null;
       setIsConfiguredExportsSyncing(false);
     }
   }, [handleBankSync, notifications, toast, transactions, expenseCategories, getAllTransactions]);
@@ -645,6 +679,7 @@ const Index = () => {
         onAddTransaction={handleAddTransaction}
         onSync={handleSync}
         isSyncing={isSyncing}
+        onCancelSync={handleCancelSync}
         syncReport={syncReport}
         onRetrySyncItem={handleRetrySyncItem}
         retryingSyncItemIds={retryingSyncItemIds}

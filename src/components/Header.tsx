@@ -25,6 +25,7 @@ import {
   Shield,
   Star,
   Sun,
+  X,
   Users,
   XCircle,
   type LucideIcon,
@@ -71,7 +72,7 @@ export interface SyncReportItem {
   id: string;
   title: string;
   details: string[];
-  status: 'success' | 'error' | 'skipped' | 'queued' | 'running';
+  status: 'success' | 'error' | 'skipped' | 'queued' | 'running' | 'cancelled';
 }
 
 export interface SyncReport {
@@ -243,6 +244,7 @@ interface HeaderProps {
   onAddTransaction?: (transaction: Omit<Transaction, 'id' | 'createdAt'>) => Promise<void>;
   onSync?: () => void;
   onRetrySyncItem?: (id: string) => void;
+  onCancelSync?: () => void;
   isSyncing?: boolean;
   retryingSyncItemIds?: string[];
   syncReport?: SyncReport | null;
@@ -257,6 +259,7 @@ export const Header = ({
   onAddTransaction,
   onSync,
   onRetrySyncItem,
+  onCancelSync,
   isSyncing = false,
   retryingSyncItemIds = [],
   syncReport,
@@ -420,17 +423,32 @@ export const Header = ({
                   </PopoverTrigger>
                   <PopoverContent align="end" className="w-[min(24rem,calc(100vw-2rem))] p-4">
                     <div className="space-y-3">
-                      <div>
-                        <p className="font-semibold">Отчёт синхронизации</p>
-                        <p className="text-xs text-muted-foreground">
-                          {syncReport ? `Последний запуск: ${formatSyncTime(syncReport.completedAt)}` : 'Синхронизация ещё не запускалась'}
-                        </p>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold">Отчёт синхронизации</p>
+                          <p className="text-xs text-muted-foreground">
+                            {syncReport ? `Последний запуск: ${formatSyncTime(syncReport.completedAt)}` : 'Синхронизация ещё не запускалась'}
+                          </p>
+                        </div>
+                        {isSyncing && onCancelSync && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="-mr-2 -mt-2 shrink-0 text-destructive hover:text-destructive"
+                            onClick={onCancelSync}
+                            aria-label="Отменить все синхронизации"
+                            title="Отменить все синхронизации"
+                          >
+                            <X className="h-5 w-5" />
+                          </Button>
+                        )}
                       </div>
                       {syncReport?.items.map(item => (
                         <div key={item.id} className="rounded-lg border p-3">
                           <div className="flex items-center justify-between gap-2 font-medium">
                             <div className="flex min-w-0 items-center gap-2">
-                              {item.status === 'success' ? <CheckCircle2 className="h-4 w-4 shrink-0 text-success" /> : item.status === 'error' ? <XCircle className="h-4 w-4 shrink-0 text-destructive" /> : item.status === 'running' ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" /> : item.status === 'queued' ? <Clock3 className="h-4 w-4 shrink-0 text-orange-500" /> : <ClipboardList className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                              {item.status === 'success' ? <CheckCircle2 className="h-4 w-4 shrink-0 text-success" /> : item.status === 'error' ? <XCircle className="h-4 w-4 shrink-0 text-destructive" /> : item.status === 'cancelled' ? <X className="h-4 w-4 shrink-0 text-muted-foreground" /> : item.status === 'running' ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" /> : item.status === 'queued' ? <Clock3 className="h-4 w-4 shrink-0 text-orange-500" /> : <ClipboardList className="h-4 w-4 shrink-0 text-muted-foreground" />}
                               <span className="truncate">{item.title}</span>
                             </div>
                             {onRetrySyncItem && (

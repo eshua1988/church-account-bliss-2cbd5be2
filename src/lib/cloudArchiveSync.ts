@@ -15,7 +15,7 @@ import {
   getNotificationArchiveYear,
 } from '@/lib/archiveFolders';
 
-const getPdfBlob = async (notification: Notification) => {
+const getPdfBlob = async (notification: Notification, signal?: AbortSignal) => {
   let filePath = notification.metadata?.pdf_path as string | undefined;
   const transactionId = notification.metadata?.transaction_id as string | undefined;
 
@@ -36,7 +36,7 @@ const getPdfBlob = async (notification: Notification) => {
   const params = new URLSearchParams({ action: 'download', filePath, userId: notification.user_id });
   const response = await fetch(
     `${supabaseUrl}/functions/v1/upload-payout-pdf?${params}`,
-    { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } },
+    { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }, signal },
   );
   if (!response.ok) {
     const result = await response.json().catch(() => ({}));
@@ -48,11 +48,12 @@ const getPdfBlob = async (notification: Notification) => {
   };
 };
 
-const mapWithConcurrency = async <T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>) => {
+const mapWithConcurrency = async <T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>, signal?: AbortSignal) => {
   const results = new Array<R>(items.length);
   let nextIndex = 0;
   const run = async () => {
     while (nextIndex < items.length) {
+      if (signal?.aborted) throw new DOMException('Синхронизация отменена', 'AbortError');
       const index = nextIndex++;
       results[index] = await worker(items[index]);
     }
@@ -78,7 +79,12 @@ const withTimeout = async <T,>(task: Promise<T>, timeoutMs: number, message: str
 export const syncNotificationArchivesToCloud = async (
   notifications: Notification[],
   connectionId?: string,
+  signal?: AbortSignal,
 ) => {
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new DOMException('Синхронизация отменена', 'AbortError');
+  };
+  throwIfAborted();
   const storedConnections = loadCloudConnections();
   const candidateConnections = connectionId
     ? storedConnections.filter(connection => connection.id === connectionId)
@@ -126,6 +132,7 @@ export const syncNotificationArchivesToCloud = async (
   let uploaded = 0;
   let processedBatches = 0;
   for (const { key, items } of batches.slice(0, MAX_CLOUD_BATCHES_PER_SYNC)) {
+    throwIfAborted();
     const [year, type] = key.split('-');
     const folderName = `${year} ${type === 'income' ? 'доход' : 'расход'}`;
     const zip = new JSZip();
@@ -134,12 +141,13 @@ export const syncNotificationArchivesToCloud = async (
 
     const downloads = await mapWithConcurrency(items, 2, async notification => {
       try {
-        return await withTimeout(getPdfBlob(notification), 45_000, `Превышено время загрузки PDF: ${notification.id}`);
+        return await withTimeout(getPdfBlob(notification, signal), 45_000, `Превышено время загрузки PDF: ${notification.id}`);
       } catch (error) {
         errors.push(error instanceof Error ? error.message : String(error));
         return null;
       }
-    });
+    }, signal);
+    throwIfAborted();
     const uploadedItems = items.filter((_, index) => Boolean(downloads[index]));
     for (let index = 0; index < items.length; index++) {
       const notification = items[index];
@@ -155,6 +163,7 @@ export const syncNotificationArchivesToCloud = async (
       compression: 'DEFLATE',
       compressionOptions: { level: 9 },
     });
+    throwIfAborted();
     const fileName = `${folderName}-${getNotificationArchiveMonth(uploadedItems[0])}-${uploadedItems[0].id.slice(0, 8)}-${uploadedItems[uploadedItems.length - 1].id.slice(0, 8)}.zip`;
 
     const uploadResults = await Promise.allSettled(connections.map(connection => withTimeout(
@@ -170,6 +179,7 @@ export const syncNotificationArchivesToCloud = async (
         errors.push(`${connection.name}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`);
       }
     });
+    throwIfAborted();
     if (uploadResults.every(result => result.status === 'fulfilled')) {
       const syncedAt = new Date().toISOString();
       await Promise.all(uploadedItems.map(notification => supabase.from('notifications').update({
