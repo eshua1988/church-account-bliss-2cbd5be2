@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { TransactionType } from '@/types/transaction';
 import { withRequestTimeout } from '@/lib/requestTimeout';
+import { loadDashboardData } from '@/lib/dashboardData';
 
 export interface Category {
   id: string;
@@ -59,7 +60,7 @@ const dedupeCategories = (items: Category[]) => {
 };
 
 export const useSupabaseCategories = () => {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const initializedRef = useRef(false);
@@ -112,16 +113,9 @@ export const useSupabaseCategories = () => {
     try {
       // Show loading spinner only on first load, background refreshes are silent
       if (!initializedRef.current) setLoading(true);
-      const { data, error } = await withRequestTimeout(
-        supabase
-          .from('categories')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('sort_order', { ascending: true }),
-        'Загрузка категорий',
-      );
-
-      if (error) throw error;
+      if (!session?.access_token) throw new Error('Сеанс входа устарел. Выйдите и войдите в аккаунт снова.');
+      const dashboard = await loadDashboardData(session.access_token);
+      const data = dashboard.categories as DbCategory[] | undefined;
 
       // If no categories exist, create defaults
       if (!data || data.length === 0) {
@@ -158,7 +152,7 @@ export const useSupabaseCategories = () => {
     } finally {
       setLoading(false);
     }
-  }, [user, removeDuplicateCategories]);
+  }, [user, session, removeDuplicateCategories]);
 
   useEffect(() => {
     fetchCategories();

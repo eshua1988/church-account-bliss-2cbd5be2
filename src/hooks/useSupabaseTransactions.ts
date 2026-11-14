@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Transaction, Currency, TransactionType, TransactionCategory } from '@/types/transaction';
 import { DepartmentRule, findMatchingDepartment } from '@/lib/departmentRules';
-import { withRequestTimeout } from '@/lib/requestTimeout';
+import { loadDashboardData } from '@/lib/dashboardData';
 
 interface DbTransaction {
   id: string;
@@ -36,10 +36,6 @@ interface CurrencyTotal {
   balance: number;
   transactionCount: number;
 }
-
-// A smaller first page keeps the dashboard responsive on iPhone while the
-// complete count and currency totals still come directly from PostgreSQL.
-const PAGE_SIZE = 100;
 
 const cleanBankText = (value: string | null) =>
   (value || '')
@@ -82,29 +78,6 @@ export const useSupabaseTransactions = () => {
   const [currencyTotals, setCurrencyTotals] = useState<CurrencyTotal[]>([]);
   const initializedRef = useRef(false);
 
-  const fetchCurrencyTotals = useCallback(async () => {
-    if (!user) {
-      setCurrencyTotals([]);
-      return [] as CurrencyTotal[];
-    }
-
-    const { data, error } = await withRequestTimeout(
-      (supabase as any).rpc('transaction_currency_totals'),
-      'Загрузка итогов по валютам',
-    );
-    if (error) throw error;
-
-    const totals = (data || []).map((row: any) => ({
-      currency: row.currency as Currency,
-      income: Number(row.income),
-      expense: Number(row.expense),
-      balance: Number(row.balance),
-      transactionCount: Number(row.transaction_count),
-    }));
-    setCurrencyTotals(totals);
-    return totals;
-  }, [user]);
-
   // Only keep a bounded page in browser memory. Aggregates are calculated by PostgreSQL.
   const fetchTransactions = useCallback(async (append = false, offset = 0, background = false) => {
     if (!user) {
@@ -129,36 +102,22 @@ export const useSupabaseTransactions = () => {
         throw new Error('Сеанс входа устарел. Выйдите и войдите в аккаунт снова.');
       }
 
-      const from = append ? offset : 0;
-      const to = from + PAGE_SIZE - 1;
-      const transactionsRequest = withRequestTimeout(
-        supabase
-          .from('transactions')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('date', { ascending: false })
-          .order('created_at', { ascending: false })
-          .range(from, to),
-        'Загрузка транзакций',
-      );
-      // Totals do not depend on the rows being rendered. Starting both calls
-      // together removes one full mobile-network round trip from first paint.
-      const totalsRequest = append ? null : fetchCurrencyTotals().catch(error => {
-        // A delayed aggregate must not hide the transaction page on mobile.
-        console.error('Error fetching currency totals:', error);
-        return null;
-      });
-      const [{ data, error }, totals] = await Promise.all([
-        transactionsRequest,
-        totalsRequest ?? Promise.resolve(null),
-      ]);
-
-      if (error) throw error;
-
-      const mappedTransactions = (data as DbTransaction[]).map(mapDbToTransaction);
+      // Read dashboard data through the Edge Function. On affected devices the
+      // browser's direct PostgREST connections stall, while the authenticated
+      // Edge Function path remains responsive (as bank sync already does).
+      const data = await loadDashboardData(session.access_token, { offset: append ? offset : 0 });
+      const mappedTransactions = ((data.transactions || []) as DbTransaction[]).map(mapDbToTransaction);
       setTransactions(current => append ? [...current, ...mappedTransactions] : mappedTransactions);
       if (!append) {
-        setTotalCount((totals || []).reduce((sum, total) => sum + total.transactionCount, 0));
+        const totals = (data.currency_totals || []).map((row: any) => ({
+          currency: row.currency as Currency,
+          income: Number(row.income),
+          expense: Number(row.expense),
+          balance: Number(row.balance),
+          transactionCount: Number(row.transaction_count),
+        }));
+        setCurrencyTotals(totals);
+        setTotalCount(totals.reduce((sum, total) => sum + total.transactionCount, 0));
       }
       initializedRef.current = true;
     } catch (err) {
@@ -171,7 +130,7 @@ export const useSupabaseTransactions = () => {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [user, session, fetchCurrencyTotals]);
+  }, [user, session]);
 
   const loadMore = useCallback(
     () => fetchTransactions(true, transactions.length),
@@ -180,22 +139,10 @@ export const useSupabaseTransactions = () => {
 
   // Exports must not be limited by the paged list shown in the interface.
   const getAllTransactions = useCallback(async (): Promise<Transaction[]> => {
-    if (!user) return [];
-    const all: Transaction[] = [];
-    for (let from = 0; ; from += PAGE_SIZE) {
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('date', { ascending: false })
-        .order('created_at', { ascending: false })
-        .range(from, from + PAGE_SIZE - 1);
-      if (error) throw error;
-      const page = (data as DbTransaction[]).map(mapDbToTransaction);
-      all.push(...page);
-      if (page.length < PAGE_SIZE) return all;
-    }
-  }, [user]);
+    if (!session?.access_token) return [];
+    const data = await loadDashboardData(session.access_token, { allTransactions: true });
+    return ((data.transactions || []) as DbTransaction[]).map(mapDbToTransaction);
+  }, [session]);
 
   // Realtime keeps active devices in sync. Poll only when its channel cannot
   // connect, rather than continually duplicating successful realtime traffic.
