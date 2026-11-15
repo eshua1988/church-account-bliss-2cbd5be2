@@ -27,7 +27,7 @@ import { loadHeaderSettings } from '@/components/Header';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { readPublicLinkCache, writePublicLinkCache } from '@/lib/publicLinkCache';
-import { validatePublicLinkToken } from '@/lib/publicLinkValidation';
+import { checkPublicPendingPayouts, validatePublicLinkToken } from '@/lib/publicLinkValidation';
 
 // Keep the worker in the Vite build. The CDN path used before is not published
 // for the installed PDF.js version and caused PDF attachments to fail with 404.
@@ -793,8 +793,10 @@ const PublicPayout = () => {
     let cancelled = false;
     const autoOpen = async () => {
       try {
-        const { data } = await supabase.functions.invoke('check-pending-payouts', {
-          body: { token: sharedLink.token, submitterName: autoName || 'auto', transactionId: autoTxId },
+        const data = await checkPublicPendingPayouts<{ pendingPayouts?: PendingPayout[] }>({
+          token: sharedLink.token,
+          submitterName: autoName || 'auto',
+          transactionId: autoTxId,
         });
         if (cancelled) return;
         if (data?.pendingPayouts?.length) {
@@ -843,8 +845,9 @@ const PublicPayout = () => {
         setSubmitterFirstName(firstName);
         setSubmitterLastName(lastName);
 
-        const { data } = await supabase.functions.invoke('check-pending-payouts', {
-          body: { token: sharedLink.token, submitterName: autoName.trim() },
+        const data = await checkPublicPendingPayouts<{ pendingPayouts?: PendingPayout[] }>({
+          token: sharedLink.token,
+          submitterName: autoName.trim(),
         });
         if (cancelled) return;
 
@@ -1483,13 +1486,11 @@ const PublicPayout = () => {
 
     const verifyRecentSubmission = async (submitterName: string) => {
       try {
-        const { data } = await supabase.functions.invoke('check-pending-payouts', {
-          body: {
-            token,
-            submitterName,
-            amount: parseFloat(formData.amount),
-            date: format(formData.date, 'yyyy-MM-dd'),
-          },
+        const data = await checkPublicPendingPayouts<{ recentSubmissionExists?: boolean }>({
+          token,
+          submitterName,
+          amount: parseFloat(formData.amount),
+          date: format(formData.date, 'yyyy-MM-dd'),
         });
         return Boolean(data?.recentSubmissionExists);
       } catch (verifyError) {
@@ -1856,23 +1857,10 @@ const PublicPayout = () => {
       
       try {
         // Check for pending payouts (transactions without images)
-        const { data, error } = await supabase.functions.invoke('check-pending-payouts', {
-          body: { 
-            token, 
-            submitterName: fullName 
-          }
+        const data = await checkPublicPendingPayouts<{ pendingPayouts?: PendingPayout[] }>({
+          token,
+          submitterName: fullName,
         });
-        
-        if (error) {
-          console.error('Error checking pending payouts:', error);
-          // On error — still show selection screen
-          setPendingPayouts([]);
-          setShowPendingChoice(false);
-          setShowPendingSelection(true);
-          setFormData(prev => ({ ...prev, issuedTo: fullName }));
-          navigateTo('pending');
-          return;
-        }
         
         // Always go to the selection screen — either with pending list or empty (user clicks "Create new")
         setPendingPayouts(data?.pendingPayouts || []);
