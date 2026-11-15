@@ -130,9 +130,10 @@ Deno.serve(async (req) => {
 
       // Files stay in the folder_key folder — no transaction created yet (owner clicks "В расход" manually)
       // Build PDF path using folder_key as the folder
+      const existingPdfPath = typeof meta.pdf_path === 'string' ? meta.pdf_path : undefined;
       const pdfDate = body.updatedDate || (meta.date as string) || new Date().toISOString().split('T')[0];
       const pdfFileName = `dowod_wyplaty_${pdfDate}_${body.transactionId.substring(0, 8)}.pdf`;
-      const uploadPdfPath = `${linkData.owner_user_id}/${body.transactionId}/${pdfFileName}`;
+      const uploadPdfPath = existingPdfPath || `${linkData.owner_user_id}/${body.transactionId}/${pdfFileName}`;
       updatedMeta['pdf_path'] = uploadPdfPath;
 
       await supabase.from('notifications').update({
@@ -195,9 +196,10 @@ Deno.serve(async (req) => {
         delete metaWithoutPushState.push_sent_at;
         delete metaWithoutPushState.push_sent_count;
         // Build PDF path server-side so the anonymous client doesn't need owner_user_id
+        const existingPdfPath = typeof metaWithoutPushState.pdf_path === 'string' ? metaWithoutPushState.pdf_path : undefined;
         const pdfDate = body.updatedDate || new Date().toISOString().split('T')[0];
         const pdfFileName = `dowod_wyplaty_${pdfDate}_${body.transactionId.substring(0, 8)}.pdf`;
-        const uploadPdfPath = `${linkData.owner_user_id}/${body.transactionId}/${pdfFileName}`;
+        const uploadPdfPath = existingPdfPath || `${linkData.owner_user_id}/${body.transactionId}/${pdfFileName}`;
         const updatedMetadata = {
           ...metaWithoutPushState,
           images_skipped: false,

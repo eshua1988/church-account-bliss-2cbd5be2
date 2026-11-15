@@ -1485,6 +1485,88 @@ const PublicPayout = () => {
     return { fileName, pdfBlob };
   };
 
+  // A continued payout must never recreate its voucher: doing that would replace
+  // the recipient and cashier signatures stored in the original PDF.  Instead,
+  // retain every existing page and append only the newly selected receipts.
+  const appendAttachmentsToExistingPdf = async (existingPdfUrl: string) => {
+    const response = await fetch(existingPdfUrl);
+    if (!response.ok) {
+      throw new Error('Не удалось загрузить исходный PDF ордера. Попробуйте ещё раз.');
+    }
+
+    const mergedDocument = await PDFDocument.load(await response.arrayBuffer());
+    const photoAttachments = attachedImages.filter((item) => !item.isFromPdf);
+
+    if (photoAttachments.length > 0) {
+      const receiptsDocument = new jsPDF();
+      const pageWidth = receiptsDocument.internal.pageSize.getWidth();
+      const pageHeight = receiptsDocument.internal.pageSize.getHeight();
+
+      for (const [index, imageAttachment] of photoAttachments.entries()) {
+        if (index > 0) receiptsDocument.addPage();
+
+        const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const element = new Image();
+          element.onload = () => resolve(element);
+          element.onerror = () => reject(new Error(`Не удалось обработать файл «${imageAttachment.file.name}».`));
+          element.src = imageAttachment.preview;
+        });
+
+        const maxPixels = 800;
+        let width = image.naturalWidth;
+        let height = image.naturalHeight;
+        if (width > maxPixels || height > maxPixels) {
+          if (width >= height) {
+            height = Math.round((height / width) * maxPixels);
+            width = maxPixels;
+          } else {
+            width = Math.round((width / height) * maxPixels);
+            height = maxPixels;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('Не удалось обработать изображение чека.');
+        context.drawImage(image, 0, 0, width, height);
+
+        const margin = 15;
+        const maxWidth = pageWidth - margin * 2;
+        const maxHeight = pageHeight - margin * 2;
+        let finalWidth = maxWidth;
+        let finalHeight = (height / width) * finalWidth;
+        if (finalHeight > maxHeight) {
+          finalHeight = maxHeight;
+          finalWidth = (width / height) * finalHeight;
+        }
+
+        receiptsDocument.addImage(
+          canvas.toDataURL('image/jpeg', 0.55),
+          'JPEG',
+          (pageWidth - finalWidth) / 2,
+          (pageHeight - finalHeight) / 2,
+          finalWidth,
+          finalHeight,
+        );
+      }
+
+      const receiptPdf = await PDFDocument.load(receiptsDocument.output('arraybuffer'));
+      const pages = await mergedDocument.copyPages(receiptPdf, receiptPdf.getPageIndices());
+      pages.forEach((page) => mergedDocument.addPage(page));
+    }
+
+    const pdfFiles = [...new Set(attachedImages.filter((item) => item.isFromPdf).map((item) => item.file))];
+    for (const file of pdfFiles) {
+      const receiptPdf = await PDFDocument.load(await file.arrayBuffer());
+      const pages = await mergedDocument.copyPages(receiptPdf, receiptPdf.getPageIndices());
+      pages.forEach((page) => mergedDocument.addPage(page));
+    }
+
+    return new Blob([await mergedDocument.save()], { type: 'application/pdf' });
+  };
+
   const handleSubmit = async () => {
     if (!token) return;
     if (!continuingPayout && !isPositiveAmount(formData.amount)) {
@@ -1529,25 +1611,17 @@ const PublicPayout = () => {
           ? storedNameMatch[1]
           : `${submitterFirstName.trim()} ${submitterLastName.trim()}`;
 
-        // Find category id for the selected department
-        const selectedCategory = categories.find(c => c.name === formData.departmentName);
+        if (!continuingPayout.pdfUrl) {
+          throw new Error('У исходного ордера не найден PDF. Добавить чек без замены подписей невозможно.');
+        }
 
-        const pdfResult = await generatePDF();
+        const updatedPdfBlob = await appendAttachmentsToExistingPdf(continuingPayout.pdfUrl);
 
         const updateResult = await withTimeout(invokePublicFunction('add-images-to-payout', {
           body: {
             token,
             transactionId: continuingPayout.id,
             submitterName: exactSubmitterName,
-            updatedBasis: formData.basis,
-            updatedIssuedTo: formData.issuedTo,
-            updatedAmountInWords: formData.amountInWords,
-            updatedDate: format(formData.date, 'yyyy-MM-dd'),
-            updatedAmount: parseFloat(formData.amount),
-            updatedCurrency: formData.currency,
-            updatedDecisionNumber: formData.bankAccount,
-            updatedDepartmentName: formData.departmentName,
-            updatedCategoryId: selectedCategory?.id ?? null,
           },
         }), 120000);
 
@@ -1557,37 +1631,32 @@ const PublicPayout = () => {
         // Upload PDF via service_role signed URL (anonymous client cannot write to Storage directly)
         // The edge function returns uploadPdfPath and knows owner_user_id — we only need token + path
         const uploadPdfPath: string | undefined = updateResult.data?.uploadPdfPath;
-        if (pdfResult?.pdfBlob && uploadPdfPath) {
-          try {
-            const supaUrl = (supabase as any).supabaseUrl as string;
-            const supaKey = (supabase as any).supabaseKey as string;
-            const params = new URLSearchParams({
-              action: 'upload-url',
-              filePath: uploadPdfPath,
-              token,
-            });
-            const urlRes = await fetch(`${supaUrl}/functions/v1/upload-payout-pdf?${params}`, {
-              headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` },
-            });
-            const urlData = await urlRes.json();
-            const uploadUrl = urlData.r2SignedUrl || urlData.signedUrl;
-            if (uploadUrl) {
-              const putRes = await fetch(uploadUrl, {
-                method: 'PUT',
-                body: pdfResult.pdfBlob,
-                headers: { 'Content-Type': 'application/pdf' },
-              });
-              if (!putRes.ok) {
-                console.error('[PDF upload] PUT failed:', putRes.status, await putRes.text());
-              }
-            } else {
-              console.error('[PDF upload] failed to get signedUrl:', urlData);
-            }
-          } catch (pdfErr) {
-            console.error('[PDF upload] signed URL upload failed:', pdfErr);
-          }
-        } else {
-          console.warn('[PDF upload] skipped: pdfBlob=', !!pdfResult?.pdfBlob, 'uploadPdfPath=', uploadPdfPath);
+        if (!uploadPdfPath) {
+          throw new Error('Не удалось подготовить обновление исходного PDF. Попробуйте ещё раз.');
+        }
+
+        const supaUrl = (supabase as any).supabaseUrl as string;
+        const supaKey = (supabase as any).supabaseKey as string;
+        const params = new URLSearchParams({
+          action: 'upload-url',
+          filePath: uploadPdfPath,
+          token,
+        });
+        const urlRes = await fetch(`${supaUrl}/functions/v1/upload-payout-pdf?${params}`, {
+          headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` },
+        });
+        const urlData = await urlRes.json().catch(() => ({}));
+        const uploadUrl = urlData.r2SignedUrl || urlData.signedUrl;
+        if (!urlRes.ok || !uploadUrl) {
+          throw new Error(urlData.error || 'Не удалось подготовить загрузку PDF с чеками.');
+        }
+        const putRes = await fetch(uploadUrl, {
+          method: 'PUT',
+          body: updatedPdfBlob,
+          headers: { 'Content-Type': 'application/pdf' },
+        });
+        if (!putRes.ok) {
+          throw new Error('Не удалось сохранить PDF с добавленными чеками. Проверьте интернет и повторите попытку.');
         }
 
         setIsSuccess(true);
@@ -1689,7 +1758,7 @@ const PublicPayout = () => {
 
   // For continuing payout, require images
   const isFormValid = !isProcessingAttachments && (continuingPayout
-    ? attachedImages.length > 0 && hasPaymentMethod
+    ? attachedImages.length > 0
     : (isPositiveAmount(formData.amount) && formData.issuedTo && hasPaymentMethod && formData.departmentName && formData.basis && formData.amountInWords && (imagesOptional || attachedImages.length > 0)));
 
   if (loading) {
@@ -2439,7 +2508,7 @@ const PublicPayout = () => {
               </div>
             )}
             
-            {/* Continuing payout - editable form + photos + signature */}
+            {/* Continuing payout — only receipts can be added. */}
             {continuingPayout ? (
               <>
                 <div className="flex items-center justify-between mb-3">
@@ -2449,9 +2518,12 @@ const PublicPayout = () => {
                   </Button>
                 </div>
 
-                {/* Editable document fields */}
-                <p className="text-sm font-medium text-muted-foreground">{t.editFields}</p>
+                <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+                  Данные ордера и подписи получателя и кассира сохранены. В PDF будут добавлены только новые чеки.
+                </div>
 
+                {false && (
+                  <>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label>{t.date} *</Label>
@@ -2581,6 +2653,8 @@ const PublicPayout = () => {
                   <Label>{t.amountInWords}</Label>
                   <Input value={formData.amountInWords} onChange={(e) => setFormData(prev => ({ ...prev, amountInWords: e.target.value }))} />
                 </div>
+                  </>
+                )}
                 
                 {/* Image Attachments - Required for continuation */}
                 <div className="space-y-3">
@@ -2638,8 +2712,8 @@ const PublicPayout = () => {
                   </div>
                 </div>
                 
-                {/* Signature - Required for continuation */}
-                <div className="space-y-3">
+                {/* Signatures were captured in the original document and must not be replaced. */}
+                {false && <div className="space-y-3">
                   <Label>{t.signature} *</Label>
 
                   {/* Big sign button */}
@@ -2679,13 +2753,13 @@ const PublicPayout = () => {
                   )}
                   {/* Hidden canvas for compatibility */}
                   <canvas ref={signatureCanvasRef} width={600} height={150} className="hidden" />
-                </div>
+                </div>}
                 
                 {/* Submit Button */}
                 <div className="flex">
                   <Button
                     onClick={handleSubmit}
-                    disabled={!isFormValid || !hasSignature || isSaving}
+                    disabled={!isFormValid || isSaving}
                     className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
                     size="lg"
                   >
