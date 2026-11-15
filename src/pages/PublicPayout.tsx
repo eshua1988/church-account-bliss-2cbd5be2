@@ -27,7 +27,7 @@ import { loadHeaderSettings } from '@/components/Header';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { readPublicLinkCache, writePublicLinkCache } from '@/lib/publicLinkCache';
-import { checkPublicPendingPayouts, validatePublicLinkToken } from '@/lib/publicLinkValidation';
+import { checkPublicPendingPayouts, submitPublicPayout, validatePublicLinkToken } from '@/lib/publicLinkValidation';
 
 // Keep the worker in the Vite build. The CDN path used before is not published
 // for the installed PDF.js version and caused PDF attachments to fail with 404.
@@ -1634,8 +1634,7 @@ const PublicPayout = () => {
 
       // 3. Save only the document path and form data. The request stays small
       //    on Android, iOS and desktop devices.
-      const submitResult = await withTimeout(supabase.functions.invoke('submit-public-payout', {
-        body: {
+      const submitData = await withTimeout(submitPublicPayout<{ error?: string }>({
           token,
           amount: parseFloat(formData.amount),
           currency: formData.currency,
@@ -1655,13 +1654,9 @@ const PublicPayout = () => {
           organizationName,
           clientPdfPath: prepareData.filePath,
           folderKey: prepareData.folderKey,
-        }
       }), 120000);
 
-      if (submitResult.error) throw submitResult.error;
-      if (submitResult.data?.error) throw new Error(submitResult.data.error);
-
-      const transactionId = submitResult.data?.transactionId;
+      if (submitData.error) throw new Error(submitData.error);
 
       // Signature was already uploaded to temp path and moved by the server.
       // Images were pre-uploaded as tempImgPaths and embedded by the server.

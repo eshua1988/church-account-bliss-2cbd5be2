@@ -49,3 +49,25 @@ export const checkPublicPendingPayouts = async <T = unknown>(
   }
   return data as T;
 };
+
+// Creating an order is a public-link action as well.  Do not use the shared
+// Supabase client here: an obsolete logged-in session may add Authorization
+// and make the Edge gateway reject the request before it sends CORS headers.
+export const submitPublicPayout = async <T = unknown>(
+  payload: Record<string, unknown>,
+): Promise<T> => {
+  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/submit-public-payout`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(data?.error || `Не удалось отправить ордер (HTTP ${response.status})`);
+  }
+  return data as T;
+};
