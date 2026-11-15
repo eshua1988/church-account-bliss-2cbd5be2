@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createR2SignedUrl, isR2Configured, r2ObjectExists } from "../_shared/r2.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,6 +13,30 @@ interface CheckPendingRequest {
   amount?: number;
   date?: string;
 }
+
+const transliterateForFilename = (value: string) => {
+  const map: Record<string, string> = {
+    а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'yo', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+    А: 'A', Б: 'B', В: 'V', Г: 'G', Д: 'D', Е: 'E', Ё: 'Yo', Ж: 'Zh', З: 'Z', И: 'I', Й: 'Y', К: 'K', Л: 'L', М: 'M', Н: 'N', О: 'O', П: 'P', Р: 'R', С: 'S', Т: 'T', У: 'U', Ф: 'F', Х: 'Kh', Ц: 'Ts', Ч: 'Ch', Ш: 'Sh', Щ: 'Shch', Ъ: '', Ы: 'Y', Ь: '', Э: 'E', Ю: 'Yu', Я: 'Ya',
+  };
+  return value.split('').map((character) => map[character] ?? character).join('')
+    .replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'dokument';
+};
+
+const getPdfUrl = async (supabase: ReturnType<typeof createClient>, path: string) => {
+  if (isR2Configured()) {
+    try {
+      if (await r2ObjectExists(path)) {
+        return await createR2SignedUrl(path, 'GET', { expiresInSeconds: 3600 });
+      }
+    } catch (error) {
+      console.warn('Unable to find PDF in R2:', error);
+    }
+  }
+
+  const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600);
+  return data?.signedUrl || null;
+};
 
 Deno.serve(async (req) => {
   // Handle CORS preflight
@@ -222,13 +247,26 @@ Deno.serve(async (req) => {
     // Get signed PDF URLs for notification-based payouts
     await Promise.all(notifPayouts.map(async (p) => {
       try {
-        const meta = (pendingNotifs?.find(n => (n.metadata as Record<string, unknown>).folder_key === p.id)?.metadata) as Record<string, unknown> | undefined;
-        const pdfPath = meta?.pdf_path as string | undefined;
-        if (pdfPath) {
-          const { data: signed } = await supabase.storage
-            .from('documents')
-            .createSignedUrl(pdfPath, 3600);
-          p.pdfUrl = signed?.signedUrl || null;
+        const notification = pendingNotifs?.find(n => (n.metadata as Record<string, unknown>).folder_key === p.id);
+        const meta = notification?.metadata as Record<string, unknown> | undefined;
+        const storedPath = meta?.pdf_path as string | undefined;
+        const date = (meta?.date as string) || p.date;
+        const issuedTo = (meta?.issued_to as string) || (meta?.submitter_name as string) || p.issued_to || '';
+        const legacyPath = `${linkData.owner_user_id}/${p.id}/dowod_wyplaty_${date}_${transliterateForFilename(issuedTo)}.pdf`;
+
+        for (const pdfPath of [storedPath, legacyPath].filter((path): path is string => Boolean(path))) {
+          const signedUrl = await getPdfUrl(supabase, pdfPath);
+          if (!signedUrl) continue;
+
+          p.pdfUrl = signedUrl;
+          // Old uploads did not always store their path in metadata. Persist it
+          // once found so future receipt additions always retain the signed PDF.
+          if (!storedPath && notification) {
+            await supabase.from('notifications').update({
+              metadata: { ...(meta || {}), pdf_path: pdfPath },
+            }).eq('id', notification.id);
+          }
+          break;
         }
       } catch (_) { /* ignore */ }
     }));
