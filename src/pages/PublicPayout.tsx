@@ -2082,15 +2082,6 @@ const PublicPayout = () => {
               </p>
             </CardHeader>
             <CardContent className="pt-6 space-y-4">
-              <div className="text-center mb-4">
-                <h3 className="text-lg font-semibold">
-                  {pendingPayouts.length > 0 ? t.foundDocuments : t.createNew}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  {pendingPayouts.length > 0 ? t.selectDocument : ''}
-                </p>
-              </div>
-              
               <Button
                 onClick={handleCreateNew}
                 variant="outline"
@@ -2099,6 +2090,15 @@ const PublicPayout = () => {
               >
                 {t.createNew}
               </Button>
+
+              <div className="text-center mb-4">
+                <h3 className="text-lg font-semibold">
+                  {pendingPayouts.length > 0 ? t.foundDocuments : t.createNew}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {pendingPayouts.length > 0 ? t.selectDocument : ''}
+                </p>
+              </div>
 
               <div className="space-y-3 max-h-64 overflow-y-auto">
                 {pendingPayouts.map((payout) => {
