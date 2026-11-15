@@ -12,6 +12,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { type DepositCurrency } from '@/lib/amountInWords';
 import { copyDepositIdentity } from '@/lib/depositEntryCopy';
 import { readPublicLinkCache, writePublicLinkCache } from '@/lib/publicLinkCache';
+import { validatePublicLinkToken } from '@/lib/publicLinkValidation';
 
 interface IncomeCategory {
   id: string;
@@ -131,7 +132,7 @@ const PublicDeposit = () => {
     const cached = readPublicLinkCache<any>(cacheKey);
     const request = cached
       ? Promise.resolve({ data: cached })
-      : supabase.functions.invoke('validate-payout-token', { body: { token } });
+      : validatePublicLinkToken(token).then(data => ({ data }));
 
     request
       .then(({ data }) => {

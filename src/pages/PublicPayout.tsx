@@ -27,6 +27,7 @@ import { loadHeaderSettings } from '@/components/Header';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { readPublicLinkCache, writePublicLinkCache } from '@/lib/publicLinkCache';
+import { validatePublicLinkToken } from '@/lib/publicLinkValidation';
 
 // Keep the worker in the Vite build. The CDN path used before is not published
 // for the installed PDF.js version and caused PDF attachments to fail with 404.
@@ -748,7 +749,7 @@ const PublicPayout = () => {
         const cached = readPublicLinkCache<any>(cacheKey);
         const { data: validationData, error: validationError } = cached
           ? { data: cached, error: null }
-          : await supabase.functions.invoke('validate-payout-token', { body: { token } });
+          : { data: await validatePublicLinkToken(token), error: null };
 
         if (validationError) throw validationError;
         

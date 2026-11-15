@@ -10,6 +10,8 @@ interface ValidateTokenRequest {
 }
 
 Deno.serve(async (req) => {
+  // This endpoint is intentionally public: the opaque shared-link token is
+  // its credential, so deployment must keep gateway JWT verification off.
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });

@@ -61,7 +61,7 @@ jobs:
           fi
 
           for fn in $FUNCTIONS; do
-            if [ "$fn" = "google-sheets" ] || [ "$fn" = "sheets-export" ] || [ "$fn" = "archive-pdf" ] || [ "$fn" = "public-protocols" ] || [ "$fn" = "banking-sync" ] || [ "$fn" = "dashboard-data" ]; then
+            if [ "$fn" = "google-sheets" ] || [ "$fn" = "sheets-export" ] || [ "$fn" = "archive-pdf" ] || [ "$fn" = "public-protocols" ] || [ "$fn" = "validate-payout-token" ] || [ "$fn" = "banking-sync" ] || [ "$fn" = "dashboard-data" ]; then
               # The function handles CORS preflight and validates the JWT itself.
               # Gateway JWT verification would reject browser OPTIONS requests first.
               supabase functions deploy $fn --yes --no-verify-jwt --project-ref htepbcotdqrewbxmasbf
