@@ -114,7 +114,7 @@ export const useSupabaseCategories = () => {
       // Show loading spinner only on first load, background refreshes are silent
       if (!initializedRef.current) setLoading(true);
       if (!session?.access_token) throw new Error('Сеанс входа устарел. Выйдите и войдите в аккаунт снова.');
-      const dashboard = await loadDashboardData(session.access_token);
+      const dashboard = await loadDashboardData(user.id, session.access_token);
       const data = dashboard.categories as DbCategory[] | undefined;
 
       // If no categories exist, create defaults

@@ -3,18 +3,20 @@ interface LoadOptions {
   offset?: number;
 }
 
-export const loadDashboardData = async (accessToken: string, options: LoadOptions = {}) => {
+export const loadDashboardData = async (userId: string, accessToken: string, options: LoadOptions = {}) => {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 25_000);
   try {
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/dashboard-data`, {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/banking-sync`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
       },
       body: JSON.stringify({
+        user_id: userId,
         access_token: accessToken,
+        action: 'dashboard',
         all_transactions: options.allTransactions === true,
         offset: options.offset || 0,
       }),

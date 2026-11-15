@@ -51,19 +51,52 @@ const bankDateParts = (tx, fallback) => {
   return { date, exact: exact ? String(exact) : null }
 }
 
+const loadDashboardSnapshot = async (db, userId, offset = 0, allTransactions = false) => {
+  const start = Math.max(0, Number(offset) || 0)
+  let transactionsQuery = db.from('transactions')
+    .select('*')
+    .eq('user_id', userId)
+    .order('date', { ascending: false })
+    .order('created_at', { ascending: false })
+  if (!allTransactions) transactionsQuery = transactionsQuery.range(start, start + 99)
+
+  const [transactionsResult, totalsResult, categoriesResult] = await Promise.all([
+    transactionsQuery,
+    db.from('transaction_currency_summaries')
+      .select('currency, income, expense, transaction_count')
+      .eq('user_id', userId),
+    db.from('categories')
+      .select('id, user_id, name, type, sort_order, created_at')
+      .eq('user_id', userId)
+      .order('sort_order', { ascending: true }),
+  ])
+  if (transactionsResult.error) throw transactionsResult.error
+  if (totalsResult.error) throw totalsResult.error
+  if (categoriesResult.error) throw categoriesResult.error
+
+  return {
+    transactions: transactionsResult.data || [],
+    currency_totals: (totalsResult.data || []).map(row => ({
+      currency: row.currency,
+      income: Number(row.income) || 0,
+      expense: Number(row.expense) || 0,
+      balance: (Number(row.income) || 0) - (Number(row.expense) || 0),
+      transaction_count: Number(row.transaction_count) || 0,
+    })),
+    categories: categoriesResult.data || [],
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return respond(405, { error: 'Метод не поддерживается' })
   try {
-    const { user_id, bank_name, access_token } = await req.json()
+    const { user_id, bank_name, access_token, action, offset, all_transactions } = await req.json()
     if (!user_id) return respond(400, { error: 'user_id обязателен' })
 
-    const privateKey = Deno.env.get('EB_PRIVATE_KEY')
-    const appId = Deno.env.get('EB_APP_ID')
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
-    if (!appId || !privateKey) return respond(400, { error: 'Секреты EB_APP_ID / EB_PRIVATE_KEY не настроены' })
     if (!supabaseUrl || !supabaseKey) return respond(500, { error: 'SUPABASE_URL / SERVICE_ROLE_KEY не настроены' })
 
     const authorization = req.headers.get('authorization') || ''
@@ -91,6 +124,18 @@ Deno.serve(async (req) => {
     }
 
     const db = createClient(supabaseUrl, supabaseKey)
+
+    // The dashboard deliberately uses this endpoint too. Some installed
+    // browsers keep a healthy connection to banking-sync but stall direct
+    // PostgREST calls; this path is authenticated in exactly the same way and
+    // reads only the caller's own data.
+    if (action === 'dashboard') {
+      return respond(200, await loadDashboardSnapshot(db, user_id, offset, Boolean(all_transactions)))
+    }
+
+    const privateKey = Deno.env.get('EB_PRIVATE_KEY')
+    const appId = Deno.env.get('EB_APP_ID')
+    if (!appId || !privateKey) return respond(400, { error: 'Секреты EB_APP_ID / EB_PRIVATE_KEY не настроены' })
 
     // Load saved connections — single bank or all
     let query = db.from('bank_connections')

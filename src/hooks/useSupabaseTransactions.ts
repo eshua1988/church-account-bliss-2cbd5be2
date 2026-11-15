@@ -105,7 +105,7 @@ export const useSupabaseTransactions = () => {
       // Read dashboard data through the Edge Function. On affected devices the
       // browser's direct PostgREST connections stall, while the authenticated
       // Edge Function path remains responsive (as bank sync already does).
-      const data = await loadDashboardData(session.access_token, { offset: append ? offset : 0 });
+      const data = await loadDashboardData(user.id, session.access_token, { offset: append ? offset : 0 });
       const mappedTransactions = ((data.transactions || []) as DbTransaction[]).map(mapDbToTransaction);
       setTransactions(current => append ? [...current, ...mappedTransactions] : mappedTransactions);
       if (!append) {
@@ -140,7 +140,7 @@ export const useSupabaseTransactions = () => {
   // Exports must not be limited by the paged list shown in the interface.
   const getAllTransactions = useCallback(async (): Promise<Transaction[]> => {
     if (!session?.access_token) return [];
-    const data = await loadDashboardData(session.access_token, { allTransactions: true });
+    const data = await loadDashboardData(user?.id || session.user.id, session.access_token, { allTransactions: true });
     return ((data.transactions || []) as DbTransaction[]).map(mapDbToTransaction);
   }, [session]);
 
