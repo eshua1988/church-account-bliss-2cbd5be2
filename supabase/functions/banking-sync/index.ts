@@ -346,11 +346,9 @@ Deno.serve(async (req) => {
         matchedBankRows.push({ row: existing[matchIndex], transaction: t })
         return false
       })
-      await Promise.all(matchedBankRows
-        .filter(match => match.row.id)
-        .map(match => db.from('transactions')
-          .update({ created_at: bankCreatedAt(match.transaction) })
-          .eq('id', match.row.id)))
+      // Existing imports already received their bank timestamp on their first
+      // import. Updating every matched row created hundreds of simultaneous
+      // PostgREST requests and could exhaust the Edge Function worker (HTTP 546).
       totalMissing += missingForBank.length
       missingForBank.slice(0, 100).forEach(t => missingTransactions.push({
         bank: connBankName,
@@ -417,10 +415,20 @@ Deno.serve(async (req) => {
         // Patterns: "37 oleksandr", "37oleksandr", "PRZELEW NA TELEFON 48666***427. 37oleksandr"
         const targetedDonationRegex = /(?:^|\.\s*)\d{2}(?:\s|\D)/i
 
-        const insertedTx = []
-        for (const [index, t] of newTx.entries()) {
+        const { data: rules } = await db.from('department_rules').select('*').eq('user_id', user_id)
+        const insertedRows = newTx.map(t => {
           const isTargetedDonation = t.type === 'income' && t.bank_title && targetedDonationRegex.test(t.bank_title)
-          const transactionRow = {
+          const title = (t.bank_title || '').toLowerCase()
+          const description = (t.description || '').toLowerCase()
+          const matchingRule = (rules || []).find(rule => {
+            if (rule.transaction_type && rule.transaction_type !== t.type) return false
+            const searchTerms = String(rule.search_text || '')
+              .split(',')
+              .map(term => term.trim().toLowerCase())
+              .filter(Boolean)
+            return searchTerms.some(term => title.includes(term) || description.includes(term))
+          })
+          return {
             user_id,
             date: t.date,
             created_at: bankCreatedAt(t),
@@ -434,51 +442,34 @@ Deno.serve(async (req) => {
             bank_title: t.bank_title || null,
             bank_sender: t.bank_sender || null,
             bank_recipient: t.bank_recipient || null,
-            department_name: isTargetedDonation ? 'Целевые пожертвования' : null,
+            department_name: isTargetedDonation ? 'Целевые пожертвования' : (matchingRule?.department_name || null),
           }
-          let { error } = await db.from('transactions').insert(transactionRow)
-          if (error?.code === '23505' && t.external_id) {
-            // The bank identifier can collide with an old/global row. Keep
-            // the transaction instead of dropping it, but omit that identifier.
-            const retryRow = { ...transactionRow, external_id: null }
-            const retryResult = await db.from('transactions').insert(retryRow)
-            error = retryResult.error
-          }
+        })
+
+        // A bank statement may contain hundreds of operations. Send small
+        // batches instead of one request per row so the function stays below
+        // the Edge worker CPU/memory limits.
+        const batchSize = 100
+        for (let start = 0; start < insertedRows.length; start += batchSize) {
+          const batch = insertedRows.slice(start, start + batchSize)
+          const { error } = await db.from('transactions').insert(batch)
           if (!error) {
-            imported++
-            insertedTx.push(t)
+            imported += batch.length
             continue
           }
-          insertError = String(error.message)
-        }
 
-        if (insertedTx.length > 0) {
-
-          // Apply department_rules to newly inserted transactions
-          const { data: rules } = await db.from('department_rules').select('*').eq('user_id', user_id)
-          if (rules && rules.length > 0) {
-            for (const rule of rules) {
-              // Find newly inserted transactions matching this rule
-              const matchingTx = insertedTx.filter(t => {
-                if (rule.transaction_type && rule.transaction_type !== t.type) return false
-                const searchTerms = String(rule.search_text || '')
-                  .split(',')
-                  .map(term => term.trim().toLowerCase())
-                  .filter(Boolean)
-                const title = (t.bank_title || '').toLowerCase()
-                const desc = (t.description || '').toLowerCase()
-                return searchTerms.some(term => title.includes(term) || desc.includes(term))
-              })
-              if (matchingTx.length > 0) {
-                const externalIds = matchingTx.map(t => t.external_id).filter(Boolean)
-                if (externalIds.length > 0) {
-                  await db.from('transactions')
-                    .update({ department_name: rule.department_name })
-                    .eq('user_id', user_id)
-                    .in('external_id', externalIds)
-                    .is('department_name', null)
-                }
-              }
+          // A global external_id from an old import can make a valid batch
+          // conflict. Retry only that exceptional batch one row at a time.
+          for (const row of batch) {
+            let { error: rowError } = await db.from('transactions').insert(row)
+            if (rowError?.code === '23505' && row.external_id) {
+              const retry = await db.from('transactions').insert({ ...row, external_id: null })
+              rowError = retry.error
+            }
+            if (rowError) {
+              insertError = String(rowError.message)
+            } else {
+              imported++
             }
           }
         }
@@ -507,6 +498,15 @@ Deno.serve(async (req) => {
     })
     } // end for each connection
 
+    // Return a fresh dashboard page in this same response. This prevents the
+    // PWA from making a second data request after a lengthy bank import.
+    let dashboard = null
+    try {
+      dashboard = await loadDashboardSnapshot(db, user_id)
+    } catch (snapshotError) {
+      console.error('Unable to attach dashboard snapshot:', snapshotError)
+    }
+
     return respond(200, {
       imported: totalImported,
       total: totalTx,
@@ -521,6 +521,7 @@ Deno.serve(async (req) => {
       date_from: connections.map(c => c.last_sync_at ? new Date(c.last_sync_at).toISOString().split('T')[0] : '2020-01-01').join(', '),
       banks: connections.map(c => c.bank_name),
       debug: allSyncDebug,
+      dashboard,
     })
   } catch(e) {
     return respond(500, { error: String(e) })

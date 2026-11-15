@@ -107,6 +107,7 @@ const Index = () => {
     deleteTransaction,
     updateTransaction,
     refetch: refetchTransactions,
+    applyDashboardSnapshot,
     getBalanceByCurrency,
     getTransactionsByCategory,
     getMonthlyData,
@@ -295,7 +296,9 @@ const Index = () => {
       if (json.imported > 0) {
         toast({ title: 'Банк синхронизирован', description: `Добавлено ${json.imported} новых транзакций` });
       }
-      await refetchTransactions();
+      // A fresh page is included in the successful bank response, so do not
+      // start a second browser request that can time out after a large import.
+      if (json.dashboard) applyDashboardSnapshot(json.dashboard);
       return {
         id: 'bank',
         title: 'Импорт из банка',
@@ -315,7 +318,7 @@ const Index = () => {
     } finally {
       setIsBankSyncing(false);
     }
-  }, [refetchTransactions, toast]);
+  }, [applyDashboardSnapshot, toast]);
 
   const isSyncing = isBankSyncing || isConfiguredExportsSyncing;
 

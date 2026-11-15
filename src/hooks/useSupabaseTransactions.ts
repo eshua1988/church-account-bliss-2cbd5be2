@@ -78,6 +78,23 @@ export const useSupabaseTransactions = () => {
   const [currencyTotals, setCurrencyTotals] = useState<CurrencyTotal[]>([]);
   const initializedRef = useRef(false);
 
+  const applyDashboardSnapshot = useCallback((data: any, append = false) => {
+    const mappedTransactions = ((data?.transactions || []) as DbTransaction[]).map(mapDbToTransaction);
+    setTransactions(current => append ? [...current, ...mappedTransactions] : mappedTransactions);
+    if (!append) {
+      const totals = (data?.currency_totals || []).map((row: any) => ({
+        currency: row.currency as Currency,
+        income: Number(row.income),
+        expense: Number(row.expense),
+        balance: Number(row.balance),
+        transactionCount: Number(row.transaction_count),
+      }));
+      setCurrencyTotals(totals);
+      setTotalCount(totals.reduce((sum, total) => sum + total.transactionCount, 0));
+    }
+    initializedRef.current = true;
+  }, []);
+
   // Only keep a bounded page in browser memory. Aggregates are calculated by PostgreSQL.
   const fetchTransactions = useCallback(async (append = false, offset = 0, background = false) => {
     if (!user) {
@@ -106,20 +123,7 @@ export const useSupabaseTransactions = () => {
       // browser's direct PostgREST connections stall, while the authenticated
       // Edge Function path remains responsive (as bank sync already does).
       const data = await loadDashboardData(user.id, session.access_token, { offset: append ? offset : 0 });
-      const mappedTransactions = ((data.transactions || []) as DbTransaction[]).map(mapDbToTransaction);
-      setTransactions(current => append ? [...current, ...mappedTransactions] : mappedTransactions);
-      if (!append) {
-        const totals = (data.currency_totals || []).map((row: any) => ({
-          currency: row.currency as Currency,
-          income: Number(row.income),
-          expense: Number(row.expense),
-          balance: Number(row.balance),
-          transactionCount: Number(row.transaction_count),
-        }));
-        setCurrencyTotals(totals);
-        setTotalCount(totals.reduce((sum, total) => sum + total.transactionCount, 0));
-      }
-      initializedRef.current = true;
+      applyDashboardSnapshot(data, append);
     } catch (err) {
       // Realtime fallback retries in the background. Keep a temporary mobile
       // network issue visible in the UI, but do not write the same error into
@@ -130,7 +134,7 @@ export const useSupabaseTransactions = () => {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [user, session]);
+  }, [user, session, applyDashboardSnapshot]);
 
   const loadMore = useCallback(
     () => fetchTransactions(true, transactions.length),
@@ -375,6 +379,7 @@ export const useSupabaseTransactions = () => {
     getRecentTransactions,
     getTransactionsByCategory,
     getMonthlyData,
+    applyDashboardSnapshot,
     refetch: fetchTransactions,
   };
 };
