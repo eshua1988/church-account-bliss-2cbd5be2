@@ -20,7 +20,6 @@ import {
   Loader2,
   Menu,
   Moon,
-  Plus,
   RefreshCw,
   Shield,
   Star,
@@ -32,16 +31,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/contexts/LanguageContext';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { TransactionForm } from './TransactionForm';
-import { Transaction } from '@/types/transaction';
-import { Category } from '@/hooks/useSupabaseCategories';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { CloudSyncIcon } from '@/components/icons/CloudSyncIcon';
@@ -241,35 +230,28 @@ interface HeaderProps {
   collapsed?: boolean;
   onToggleSidebar?: () => void;
   onOpenMobileMenu?: () => void;
-  onAddTransaction?: (transaction: Omit<Transaction, 'id' | 'createdAt'>) => Promise<void>;
   onSync?: () => void;
   onRetrySyncItem?: (id: string) => void;
   onCancelSync?: () => void;
   isSyncing?: boolean;
   retryingSyncItemIds?: string[];
   syncReport?: SyncReport | null;
-  incomeCategories?: Category[];
-  expenseCategories?: Category[];
 }
 
 export const Header = ({
   collapsed,
   onToggleSidebar,
   onOpenMobileMenu,
-  onAddTransaction,
   onSync,
   onRetrySyncItem,
   onCancelSync,
   isSyncing = false,
   retryingSyncItemIds = [],
   syncReport,
-  incomeCategories = [],
-  expenseCategories = [],
 }: HeaderProps) => {
   const isMobile = useIsMobile();
   const { t } = useTranslation();
   const { user } = useAuth();
-  const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState(false);
   const [headerSettings, setHeaderSettings] = useState<HeaderSettings | null>(loadHeaderSettings);
 
   useEffect(() => {
@@ -344,13 +326,6 @@ export const Header = ({
   const formatSyncTime = (value: string) => new Intl.DateTimeFormat('ru-RU', {
     dateStyle: 'short', timeStyle: 'short',
   }).format(new Date(value));
-
-  const handleAddTransaction = async (transaction: Omit<Transaction, 'id' | 'createdAt'>) => {
-    if (onAddTransaction) {
-      await onAddTransaction(transaction);
-      setIsTransactionDialogOpen(false);
-    }
-  };
 
   const renderHeaderIcon = () => {
     if (currentIconName === 'custom' && currentCustomImage) {
@@ -474,29 +449,6 @@ export const Header = ({
                   </PopoverContent>
                 </Popover>
               </div>
-            )}
-
-            {onAddTransaction && (
-              <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button className="gradient-primary text-primary-foreground font-semibold shadow-glow transition-all duration-200 hover:shadow-lg">
-                    <Plus className="h-4 w-4 sm:mr-2" />
-                    <span className="hidden sm:inline">{t('addTransaction')}</span>
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="flex max-h-[90vh] w-[95vw] flex-col overflow-hidden sm:max-w-[500px]">
-                  <DialogHeader>
-                    <DialogTitle>{t('newTransaction')}</DialogTitle>
-                  </DialogHeader>
-                  <div className="flex-1 overflow-y-auto pr-2">
-                    <TransactionForm
-                      onSubmit={handleAddTransaction}
-                      incomeCategories={incomeCategories}
-                      expenseCategories={expenseCategories}
-                    />
-                  </div>
-                </DialogContent>
-              </Dialog>
             )}
 
             <LanguageSelector />

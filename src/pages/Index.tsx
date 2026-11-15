@@ -7,8 +7,8 @@ import { StatisticsTable } from '@/components/StatisticsTable';
 import { useSupabaseTransactions } from '@/hooks/useSupabaseTransactions';
 import { useSupabaseCategories } from '@/hooks/useSupabaseCategories';
 import { useTranslation } from '@/contexts/LanguageContext';
-import { Currency, CURRENCY_SYMBOLS, Transaction, TransactionType } from '@/types/transaction';
-import { Loader2, ChevronDown, ChevronUp, Landmark, LogOut, BarChart3, Settings, Mail, ExternalLink, ListTodo } from 'lucide-react';
+import { Currency, Transaction, TransactionType } from '@/types/transaction';
+import { Loader2, ChevronDown, ChevronUp, Landmark, LogOut, BarChart3, Settings, Mail, ExternalLink, ListTodo, Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
@@ -68,7 +68,7 @@ const loadSyncReport = (): SyncReport | null => {
 };
 
 const Index = () => {
-  const { t, getDateLocale } = useTranslation();
+  const { t } = useTranslation();
   const { user, session, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState<'statistics' | 'payout' | 'settings' | 'notifications' | 'links' | 'reminders'>('statistics');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
@@ -103,7 +103,6 @@ const Index = () => {
     loadMore: loadMoreTransactions,
     getAllTransactions,
     availableCurrencies,
-    addTransaction,
     deleteTransaction,
     updateTransaction,
     refetch: refetchTransactions,
@@ -138,6 +137,7 @@ const Index = () => {
   const profileDrawing = useRef(false);
   const [profileName, setProfileName] = useState('');
   const [profileSignature, setProfileSignature] = useState('');
+  const [isProfileSignatureEditorOpen, setIsProfileSignatureEditorOpen] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
 
   useEffect(() => {
@@ -511,23 +511,6 @@ const Index = () => {
   const incomeByCategory = getTransactionsByCategory('income');
   const expenseByCategory = getTransactionsByCategory('expense');
 
-  const handleAddTransaction = async (transaction: Omit<Transaction, 'id' | 'createdAt'>) => {
-    try {
-      await addTransaction(transaction);
-      toast({
-        title: transaction.type === 'income' ? t('incomeAdded') : t('expenseAdded'),
-        description: `${transaction.amount.toLocaleString(getDateLocale())} ${CURRENCY_SYMBOLS[transaction.currency]}`,
-      });
-      // Auto-sync will be triggered by useEffect watching transactions.length
-    } catch (error) {
-      toast({
-        title: 'Ошибка',
-        description: 'Не удалось добавить транзакцию',
-        variant: 'destructive',
-      });
-    }
-  };
-
   const handleDeleteTransaction = async (id: string) => {
     try {
       await deleteTransaction(id);
@@ -694,15 +677,12 @@ const Index = () => {
         collapsed={sidebarCollapsed}
         onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
         onOpenMobileMenu={() => setMobileMenuOpen(true)}
-        onAddTransaction={handleAddTransaction}
         onSync={handleSync}
         isSyncing={isSyncing}
         onCancelSync={handleCancelSync}
         syncReport={syncReport}
         onRetrySyncItem={handleRetrySyncItem}
         retryingSyncItemIds={retryingSyncItemIds}
-        incomeCategories={getIncomeCategories()}
-        expenseCategories={getExpenseCategories()}
       />
       
       <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -853,8 +833,8 @@ const Index = () => {
                     </Button>
                   </div>
 
-                  <div className="grid gap-5 lg:grid-cols-2">
-                    <div className="space-y-2">
+                  <div className="space-y-5">
+                    <div className="max-w-xl space-y-2">
                       <Label htmlFor="profile-name">Имя и фамилия</Label>
                       <Input
                         id="profile-name"
@@ -864,36 +844,55 @@ const Index = () => {
                       />
                     </div>
 
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between gap-3">
-                        <Label>Подпись</Label>
-                        <Button type="button" variant="ghost" size="sm" onClick={clearProfileSignature}>
-                          Очистить
+                    <div className="max-w-xl rounded-lg border bg-background p-3">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <Label>Сохранённая подпись</Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() => setIsProfileSignatureEditorOpen(value => !value)}
+                          aria-label={profileSignature ? 'Изменить подпись' : 'Добавить подпись'}
+                          title={profileSignature ? 'Изменить подпись' : 'Добавить подпись'}
+                        >
+                          <Plus className="h-4 w-4" />
                         </Button>
                       </div>
-                      <canvas
-                        ref={profileSignatureCanvas}
-                        width={700}
-                        height={220}
-                        className="h-36 w-full touch-none rounded-md border bg-white"
-                        onPointerDown={startProfileSignature}
-                        onPointerMove={drawProfileSignature}
-                        onPointerUp={() => { profileDrawing.current = false; }}
-                        onPointerCancel={() => { profileDrawing.current = false; }}
-                        onPointerLeave={() => { profileDrawing.current = false; }}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Нарисуйте подпись мышью или пальцем — она будет сохранена в профиле.
-                      </p>
+                      {profileSignature ? (
+                        <img src={profileSignature} alt="Подпись пользователя" className="h-20 max-w-full rounded-md border bg-white object-contain" />
+                      ) : (
+                        <p className="py-4 text-sm text-muted-foreground">Подпись пока не добавлена.</p>
+                      )}
                     </div>
-                  </div>
 
-                  {profileSignature && (
-                    <div className="mt-4">
-                      <p className="mb-2 text-sm text-muted-foreground">Сохранённая подпись</p>
-                      <img src={profileSignature} alt="Подпись пользователя" className="h-20 max-w-full rounded-md border bg-white object-contain" />
-                    </div>
-                  )}
+                    {isProfileSignatureEditorOpen && (
+                      <div className="max-w-2xl space-y-2 rounded-lg border bg-background p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <Label>{profileSignature ? 'Новая подпись' : 'Подпись'}</Label>
+                          <Button type="button" variant="ghost" size="sm" onClick={clearProfileSignature}>
+                            Очистить
+                          </Button>
+                        </div>
+                        <canvas
+                          ref={profileSignatureCanvas}
+                          width={700}
+                          height={220}
+                          className="h-36 w-full touch-none rounded-md border bg-white"
+                          onPointerDown={startProfileSignature}
+                          onPointerMove={drawProfileSignature}
+                          onPointerUp={() => { profileDrawing.current = false; }}
+                          onPointerCancel={() => { profileDrawing.current = false; }}
+                          onPointerLeave={() => { profileDrawing.current = false; }}
+                        />
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-xs text-muted-foreground">Нарисуйте подпись мышью или пальцем, затем сохраните профиль.</p>
+                          <Button type="button" variant="outline" size="sm" onClick={() => setIsProfileSignatureEditorOpen(false)}>
+                            Готово
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   <div className="mt-5 flex justify-end">
                     <Button type="button" onClick={() => void saveProfile()} disabled={savingProfile}>
