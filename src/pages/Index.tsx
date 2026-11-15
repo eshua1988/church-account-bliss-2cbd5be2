@@ -369,21 +369,27 @@ const Index = () => {
     try {
       // Each integration is independent: one failed destination must never
       // cancel exports to the others.
-      const configuredExportsTask = syncAllConfiguredGoogleSheetExports(
-        transactions,
-        expenseCategories,
-        getAllTransactions,
-        updateLiveItem,
-        undefined,
-        signal,
-        activeSession,
-      );
       const bankTask = (async () => {
         updateLiveItem({ id: 'bank', title: 'Импорт из банка', status: 'running', details: ['Синхронизация выполняется'] });
         const item = await handleBankSync(signal, activeSession);
         updateLiveItem(item);
         return item;
       })();
+      // Bank import and a full Sheets export both read a large transaction
+      // history. Running them together caused competing Edge Function calls
+      // on slower PWA connections. Export only after bank processing ends.
+      const configuredExportsTask = bankTask.then(async () => {
+        if (signal.aborted) throw new DOMException('Синхронизация отменена', 'AbortError');
+        return syncAllConfiguredGoogleSheetExports(
+          transactions,
+          expenseCategories,
+          getAllTransactions,
+          updateLiveItem,
+          undefined,
+          signal,
+          activeSession,
+        );
+      });
       const cloudTask = (async () => {
         updateLiveItem({ id: 'cloud', title: 'Облачные PDF-архивы', status: 'running', details: ['Синхронизация выполняется'] });
         return await Promise.race([
