@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { CheckCircle2, Eraser, Glasses, Loader2, Plus, ReceiptText, Trash2, UserRoundPlus } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,7 +11,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { type DepositCurrency } from '@/lib/amountInWords';
 import { copyDepositIdentity } from '@/lib/depositEntryCopy';
 import { readPublicLinkCache, writePublicLinkCache } from '@/lib/publicLinkCache';
-import { validatePublicLinkToken } from '@/lib/publicLinkValidation';
+import { submitPublicDeposit, validatePublicLinkToken } from '@/lib/publicLinkValidation';
 
 interface IncomeCategory {
   id: string;
@@ -370,15 +369,22 @@ const PublicDeposit = () => {
       return;
     }
     setSubmitting(true);
-    const { data, error: submitError } = await supabase.functions.invoke('submit-public-deposit', {
-      body: { token, entries: preparedEntries, organizationName },
-    });
-    setSubmitting(false);
-    if (submitError || !data?.success) {
-      setError(data?.error || submitError?.message || 'Не удалось отправить документ');
-      return;
+    try {
+      const data = await submitPublicDeposit<{ success?: boolean; error?: string }>({
+        token,
+        entries: preparedEntries,
+        organizationName,
+      });
+      if (!data?.success) {
+        setError(data?.error || 'Не удалось отправить документ');
+        return;
+      }
+      setSuccess(true);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Не удалось отправить документ');
+    } finally {
+      setSubmitting(false);
     }
-    setSuccess(true);
   };
 
   if (loading) {

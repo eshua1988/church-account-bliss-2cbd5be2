@@ -14,6 +14,7 @@ import { CloudConnection, hasCloudCredentials, isCloudEnabledOnDevice, loadCloud
 import { ProtocolPwaInstall } from '@/components/ProtocolPwaInstall';
 import { ProtocolExcerptGenerator } from '@/components/ProtocolExcerptGenerator';
 import { readPublicLinkCache, writePublicLinkCache } from '@/lib/publicLinkCache';
+import { invokePublicFunction } from '@/lib/publicLinkValidation';
 const today = () => new Date().toISOString().slice(0, 10);
 const defaultCouncils = [{ id: 'elders', name: 'Пресвитерский совет', attendees: [] as string[] }, { id: 'church', name: 'Церковный совет', attendees: [] as string[] }];
 const monthFolders = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
@@ -112,8 +113,10 @@ export default function PublicProtocols() {
     const [newCouncil, setNewCouncil] = useState('');
     const [openYears, setOpenYears] = useState<string[]>([]);
     useEffect(() => { const { data: { subscription } } = protocolAuth.auth.onAuthStateChange((_event, session) => { setProtocolUser(session?.user ?? null); setAuthLoading(false); }); void protocolAuth.auth.getSession().then(({ data }) => { setProtocolUser(data.session?.user ?? null); setAuthLoading(false); }); return () => subscription.unsubscribe(); }, []);
-    const invoke = useCallback(async (action: string, extra = {}) => { const { data, error } = await protocolAuth.functions.invoke('public-protocols', { body: { token, action, public: isPublicSubmission, ...extra } }); if (error || data?.error)
-        throw new Error(data?.error || error.message); return data; }, [token]);
+    const invoke = useCallback(async (action: string, extra = {}) => { const payload = { token, action, public: isPublicSubmission, ...extra }; const { data, error } = isPublicSubmission
+        ? await invokePublicFunction('public-protocols', { body: payload })
+        : await protocolAuth.functions.invoke('public-protocols', { body: payload }); if (error || data?.error)
+        throw new Error(data?.error || error?.message || 'Не удалось выполнить запрос'); return data; }, [token, isPublicSubmission]);
     const reload = useCallback(async () => { if (!protocolUser && !isPublicSubmission) {
         settingsLoaded.current = false;
         setSettings(emptySettings);

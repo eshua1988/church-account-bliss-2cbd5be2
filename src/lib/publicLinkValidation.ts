@@ -71,3 +71,50 @@ export const submitPublicPayout = async <T = unknown>(
   }
   return data as T;
 };
+
+export const submitPublicDeposit = async <T = unknown>(
+  payload: Record<string, unknown>,
+): Promise<T> => {
+  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/submit-public-deposit`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(data?.error || `Не удалось отправить приходный ордер (HTTP ${response.status})`);
+  }
+  return data as T;
+};
+
+/**
+ * Executes a public Edge Function without carrying over an authenticated
+ * application/PWA session. Public functions still validate their link token
+ * and any action-specific permissions on the server.
+ */
+export const invokePublicFunction = async <T = unknown>(
+  functionName: string,
+  options: { body: unknown },
+): Promise<{ data: T | null; error: Error | null }> => {
+  try {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${functionName}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+      },
+      body: JSON.stringify(options.body),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      return { data: null, error: new Error(data?.error || `Ошибка публичного запроса (HTTP ${response.status})`) };
+    }
+    return { data: data as T, error: null };
+  } catch (error) {
+    return { data: null, error: error instanceof Error ? error : new Error('Не удалось выполнить публичный запрос') };
+  }
+};

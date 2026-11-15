@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, PenLine } from 'lucide-react';
 import { useParams } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
+import { invokePublicFunction } from '@/lib/publicLinkValidation';
 
 const base64 = (bytes: Uint8Array) => {
   let value = '';
@@ -15,7 +15,7 @@ export default function PastorProtocolSignature() {
   const canvasRef = useRef<HTMLCanvasElement>(null); const drawing = useRef(false);
   const [document, setDocument] = useState<any>(null); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [hasSignature, setHasSignature] = useState(false); const [message, setMessage] = useState('');
   const invoke = useCallback(async (action: string, extra = {}) => {
-    const { data, error } = await supabase.functions.invoke('public-protocols', { body: { token, action, sign_token: signToken, ...extra } });
+    const { data, error } = await invokePublicFunction('public-protocols', { body: { token, action, sign_token: signToken, ...extra } });
     if (error || data?.error) throw new Error(data?.error || error.message);
     return data;
   }, [token, signToken]);

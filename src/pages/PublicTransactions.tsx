@@ -13,13 +13,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/integrations/supabase/client';
 import { Toaster } from '@/components/ui/toaster';
 import { useToast } from '@/hooks/use-toast';
 import { CURRENCY_SYMBOLS, Transaction } from '@/types/transaction';
 import DateRangeFilter from '@/components/DateRangeFilter';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { readPublicLinkCache, writePublicLinkCache } from '@/lib/publicLinkCache';
+import { invokePublicFunction } from '@/lib/publicLinkValidation';
 
 interface Category {
   id: string;
@@ -201,7 +201,7 @@ const PublicTransactions = () => {
         const cached = !append ? readPublicLinkCache<PublicTransactionsResponse>(cacheKey) : null;
         let data = cached;
         if (!data) {
-          const { data: responseData, error: functionError } = await supabase.functions.invoke<PublicTransactionsResponse>(
+          const { data: responseData, error: functionError } = await invokePublicFunction<PublicTransactionsResponse>(
             'public-transactions',
             { body: { token, cursor: append ? nextCursorRef.current : undefined, requesterName: settingsPersonName } },
           );
@@ -322,7 +322,7 @@ const PublicTransactions = () => {
     setIsBankSyncing(true);
     try {
       if (!token) throw new Error('Неправильная ссылка');
-      const { data: result, error: syncError } = await supabase.functions.invoke<PublicTransactionsResponse>(
+      const { data: result, error: syncError } = await invokePublicFunction<PublicTransactionsResponse>(
         'public-transactions',
         { body: { action: 'sync-bank', token } },
       );
@@ -466,7 +466,7 @@ const PublicTransactions = () => {
     setAddingRuleTerms(true);
     try {
       const types = typeFilter === 'all' ? ['income', 'expense'] : [typeFilter];
-      const { data, error: functionError } = await supabase.functions.invoke<PublicTransactionsResponse>(
+      const { data, error: functionError } = await invokePublicFunction<PublicTransactionsResponse>(
         'public-transactions',
         {
           body: {
@@ -697,7 +697,7 @@ const PublicTransactions = () => {
 
     setExportingSourceId(source.id);
     try {
-      const { data, error: functionError } = await supabase.functions.invoke<PublicTransactionsResponse>(
+      const { data, error: functionError } = await invokePublicFunction<PublicTransactionsResponse>(
         'public-transactions',
         {
           body: {
@@ -734,7 +734,7 @@ const PublicTransactions = () => {
 
     setIsSavingSheetsSettings(true);
     try {
-      const { data, error: functionError } = await supabase.functions.invoke<PublicTransactionsResponse>(
+      const { data, error: functionError } = await invokePublicFunction<PublicTransactionsResponse>(
         'public-transactions',
         {
           body: {
@@ -789,7 +789,7 @@ const PublicTransactions = () => {
   const deleteExportSource = async (sourceId: string) => {
     if (!token) return;
     try {
-      const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse>('public-transactions', { body: { action: 'delete-export-source', token, sourceId, requesterName: settingsPersonName } });
+      const { data, error } = await invokePublicFunction<PublicTransactionsResponse>('public-transactions', { body: { action: 'delete-export-source', token, sourceId, requesterName: settingsPersonName } });
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || 'Не удалось удалить таблицу');
       setExportSources(current => current.filter(source => source.id !== sourceId));
@@ -801,7 +801,7 @@ const PublicTransactions = () => {
     if (!token || !spreadsheetInput.trim()) return;
     setIsLoadingSheetNames(true);
     try {
-      const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse>('public-transactions', {
+      const { data, error } = await invokePublicFunction<PublicTransactionsResponse>('public-transactions', {
         body: { action: 'list-sheets', token, spreadsheetId: spreadsheetInput },
       });
       if (error) throw error;
@@ -835,7 +835,7 @@ const PublicTransactions = () => {
     if (!token || !registrationSpreadsheetId.trim()) return;
     setIsSavingRegistrationSource(true);
     try {
-      const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse>('public-transactions', {
+      const { data, error } = await invokePublicFunction<PublicTransactionsResponse>('public-transactions', {
         body: { action: 'save-registration-source', token, sourceId: editingRegistrationSourceId || undefined, spreadsheetId: registrationSpreadsheetId, sheetName: registrationSheetName, sheetRange: registrationSheetRange, nameColumns: registrationSheetRange, amountColumn: registrationAmountColumn, searchKeyword: registrationSearchKeyword, requesterName: settingsPersonName },
       });
       if (error) throw error;
@@ -871,7 +871,7 @@ const PublicTransactions = () => {
   const deleteRegistrationSource = async (sourceId: string) => {
     if (!token) return;
     try {
-      const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse>('public-transactions', { body: { action: 'delete-registration-source', token, sourceId, requesterName: settingsPersonName } });
+      const { data, error } = await invokePublicFunction<PublicTransactionsResponse>('public-transactions', { body: { action: 'delete-registration-source', token, sourceId, requesterName: settingsPersonName } });
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || 'Не удалось удалить таблицу');
       setRegistrationSources(current => current.filter(source => source.id !== sourceId));
@@ -886,7 +886,7 @@ const PublicTransactions = () => {
     }
     setReconcilingSourceId(source.id);
     try {
-      const { data, error } = await supabase.functions.invoke<PublicTransactionsResponse & { matched?: number }>('public-transactions', {
+      const { data, error } = await invokePublicFunction<PublicTransactionsResponse & { matched?: number }>('public-transactions', {
         body: {
           action: 'reconcile-registration-sheets',
           token,

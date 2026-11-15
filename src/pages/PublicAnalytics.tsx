@@ -5,11 +5,11 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Legend, Line,
   Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
-import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { readPublicLinkCache, writePublicLinkCache } from '@/lib/publicLinkCache';
+import { invokePublicFunction } from '@/lib/publicLinkValidation';
 import { DateRangeFilter } from '@/components/DateRangeFilter';
 
 type TransactionFilter = 'all' | 'income' | 'expense';
@@ -79,7 +79,7 @@ const PublicAnalytics = () => {
       return;
     }
     setData(null);
-    supabase.functions.invoke<Response>('public-transactions', {
+    invokePublicFunction<Response>('public-transactions', {
       body: { token, action: 'analytics', fromDate, toDate, analyticsSource },
     }).then(({ data }) => {
       const response = data || { valid: false };

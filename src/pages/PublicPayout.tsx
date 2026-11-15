@@ -27,7 +27,7 @@ import { loadHeaderSettings } from '@/components/Header';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { readPublicLinkCache, writePublicLinkCache } from '@/lib/publicLinkCache';
-import { checkPublicPendingPayouts, submitPublicPayout, validatePublicLinkToken } from '@/lib/publicLinkValidation';
+import { checkPublicPendingPayouts, invokePublicFunction, submitPublicPayout, validatePublicLinkToken } from '@/lib/publicLinkValidation';
 
 // Keep the worker in the Vite build. The CDN path used before is not published
 // for the installed PDF.js version and caused PDF attachments to fail with 404.
@@ -1534,7 +1534,7 @@ const PublicPayout = () => {
 
         const pdfResult = await generatePDF();
 
-        const updateResult = await withTimeout(supabase.functions.invoke('add-images-to-payout', {
+        const updateResult = await withTimeout(invokePublicFunction('add-images-to-payout', {
           body: {
             token,
             transactionId: continuingPayout.id,
