@@ -77,6 +77,7 @@ const translations: Record<Language, Record<string, string>> = {
     issuedTo: 'Wydano (imię i nazwisko)',
     bankAccount: 'Konto do przelewu',
     bankAccountPlaceholder: 'Wpisz numer konta lub telefonu...',
+    cashPayment: 'Gotówką',
     department: 'Nazwa oddziału',
     selectCategory: 'Wybierz kategorię',
     basis: 'Podstawa (na jakie potrzeby)',
@@ -151,6 +152,7 @@ const translations: Record<Language, Record<string, string>> = {
     issuedTo: 'Выдано (имя и фамилия)',
     bankAccount: 'Счёт для перевода',
     bankAccountPlaceholder: 'Введите номер счёта или телефон...',
+    cashPayment: 'Наличными',
     department: 'Название отдела',
     selectCategory: 'Выберите категорию',
     basis: 'Основание (на какие нужды)',
@@ -225,6 +227,7 @@ const translations: Record<Language, Record<string, string>> = {
     issuedTo: 'Issued to (full name)',
     bankAccount: 'Bank account',
     bankAccountPlaceholder: 'Enter account number or phone...',
+    cashPayment: 'Cash',
     department: 'Department name',
     selectCategory: 'Select category',
     basis: 'Purpose (for what needs)',
@@ -299,6 +302,7 @@ const translations: Record<Language, Record<string, string>> = {
     issuedTo: 'Видано (ім\'я та прізвище)',
     bankAccount: 'Рахунок для переказу',
     bankAccountPlaceholder: 'Введіть номер рахунку або телефон...',
+    cashPayment: 'Готівкою',
     department: 'Назва відділу',
     selectCategory: 'Виберіть категорію',
     basis: 'Підстава (на які потреби)',
@@ -693,6 +697,7 @@ const PublicPayout = () => {
   const [isProcessingAttachments, setIsProcessingAttachments] = useState(false);
   const [language, setLanguage] = useState<Language>('ru');
   const [imagesOptional, setImagesOptional] = useState(false); // false = images required by default
+  const [isCashPayment, setIsCashPayment] = useState(false);
   const [showConverter, setShowConverter] = useState(false);
   const [conversionInfo, setConversionInfo] = useState<{ fromAmount: string; fromCurrency: string; toAmount: string; toCurrency: string; rate: string } | null>(null);
   
@@ -722,6 +727,21 @@ const PublicPayout = () => {
     basis: '',
     amountInWords: '',
   });
+
+  const hasPaymentMethod = isCashPayment || Boolean(formData.bankAccount.trim());
+  const isCashAccount = (value: string | null | undefined) =>
+    Object.values(translations).some(translation => translation.cashPayment === value?.trim());
+
+  const handleCashPaymentChange = (isCash: boolean) => {
+    setIsCashPayment(isCash);
+    setFormData(prev => ({ ...prev, bankAccount: isCash ? t.cashPayment : '' }));
+  };
+
+  useEffect(() => {
+    if (isCashPayment) {
+      setFormData(prev => ({ ...prev, bankAccount: t.cashPayment }));
+    }
+  }, [isCashPayment, language, t.cashPayment]);
 
   const currencies = [
     { value: 'PLN', label: 'zł' },
@@ -820,6 +840,7 @@ const PublicPayout = () => {
             basis: cleanDesc,
             amountInWords: payout.amount_in_words || '',
           });
+          setIsCashPayment(isCashAccount(payout.bank_account));
           setContinuingPayout(payout);
           setImagesOptional(false);
           setNavigationHistory(['login', 'continuing']);
@@ -1673,8 +1694,8 @@ const PublicPayout = () => {
 
   // For continuing payout, require images
   const isFormValid = !isProcessingAttachments && (continuingPayout
-    ? attachedImages.length > 0 
-    : (isPositiveAmount(formData.amount) && formData.issuedTo && formData.departmentName && formData.basis && formData.amountInWords && (imagesOptional || attachedImages.length > 0)));
+    ? attachedImages.length > 0 && hasPaymentMethod
+    : (isPositiveAmount(formData.amount) && formData.issuedTo && hasPaymentMethod && formData.departmentName && formData.basis && formData.amountInWords && (imagesOptional || attachedImages.length > 0)));
 
   if (loading) {
     return (
@@ -1739,6 +1760,7 @@ const PublicPayout = () => {
     setHasSignature(false);
     setSignatureDataUrl(null);
     setImagesOptional(false);
+    setIsCashPayment(false);
   };
 
   if (isSuccess) {
@@ -1907,6 +1929,7 @@ const PublicPayout = () => {
         basis: cleanDescription,
         amountInWords: payout.amount_in_words || '',
       });
+      setIsCashPayment(isCashAccount(payout.bank_account));
       
       // Force images required for continuation
       setImagesOptional(false);
@@ -1916,10 +1939,12 @@ const PublicPayout = () => {
       setShowPendingChoice(false);
       setShowPendingSelection(false);
       setIsAuthenticated(true);
+      setIsCashPayment(false);
       navigateTo('form');
       setFormData(prev => ({
         ...prev,
-        issuedTo: `${submitterFirstName.trim()} ${submitterLastName.trim()}`
+        issuedTo: `${submitterFirstName.trim()} ${submitterLastName.trim()}`,
+        bankAccount: '',
       }));
     };
 
@@ -2066,6 +2091,15 @@ const PublicPayout = () => {
                 </p>
               </div>
               
+              <Button
+                onClick={handleCreateNew}
+                variant="outline"
+                className="w-full"
+                size="lg"
+              >
+                {t.createNew}
+              </Button>
+
               <div className="space-y-3 max-h-64 overflow-y-auto">
                 {pendingPayouts.map((payout) => {
                   const cleanDesc = payout.description?.replace(/\s*\[Bez zalacznikow - [^\]]+\]/g, '').trim() || '';
@@ -2118,14 +2152,6 @@ const PublicPayout = () => {
               </div>
               
               <div className="border-t pt-4 space-y-3">
-                <Button
-                  onClick={handleCreateNew}
-                  variant="outline"
-                  className="w-full"
-                  size="lg"
-                >
-                  {t.createNew}
-                </Button>
                 <Button
                   onClick={handleBackToLogin}
                   variant="ghost"
@@ -2386,7 +2412,7 @@ const PublicPayout = () => {
                         window.setTimeout(() => setCurrentStep(step => step + 1), 0);
                       }}
                       disabled={
-                        (currentStep === 1 && (!isPositiveAmount(formData.amount) || !formData.issuedTo.trim())) ||
+                        (currentStep === 1 && (!isPositiveAmount(formData.amount) || !formData.issuedTo.trim() || !hasPaymentMethod)) ||
                         (currentStep === 2 && (!formData.departmentName.trim() || !formData.basis.trim())) ||
                         (currentStep === 3 && (!imagesOptional && attachedImages.length === 0)) ||
                         (currentStep === 4 && !hasSignature)
@@ -2464,8 +2490,29 @@ const PublicPayout = () => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>{t.bankAccount}</Label>
-                    <Input placeholder={t.bankAccountPlaceholder} value={formData.bankAccount} onChange={(e) => handleInputChange('bankAccount', e.target.value)} />
+                    <div className="flex items-center justify-between gap-3">
+                      <Label>{t.bankAccount} *</Label>
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="continuing-cash-payment" className="text-sm font-normal cursor-pointer">{t.cashPayment}</Label>
+                        <Switch
+                          id="continuing-cash-payment"
+                          checked={isCashPayment}
+                          onCheckedChange={handleCashPaymentChange}
+                        />
+                      </div>
+                    </div>
+                    {isCashPayment ? (
+                      <div className="flex h-10 items-center rounded-md border border-input bg-muted/50 px-3 text-sm">
+                        {t.cashPayment}
+                      </div>
+                    ) : (
+                      <Input
+                        required
+                        placeholder={t.bankAccountPlaceholder}
+                        value={formData.bankAccount}
+                        onChange={(e) => handleInputChange('bankAccount', e.target.value)}
+                      />
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label>{t.department} *</Label>
@@ -2752,15 +2799,32 @@ const PublicPayout = () => {
                     
                     {/* Bank Account - digits and + only */}
                     <div className="space-y-2">
-                      <Label>{t.bankAccount}</Label>
-                      <Input
-                        placeholder={t.bankAccountPlaceholder}
-                        value={formData.bankAccount}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/[^0-9A-Za-z+ ]/g, '').toUpperCase();
-                          handleInputChange('bankAccount', val);
-                        }}
-                      />
+                      <div className="flex items-center justify-between gap-3">
+                        <Label>{t.bankAccount} *</Label>
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor="cash-payment" className="text-sm font-normal cursor-pointer">{t.cashPayment}</Label>
+                          <Switch
+                            id="cash-payment"
+                            checked={isCashPayment}
+                            onCheckedChange={handleCashPaymentChange}
+                          />
+                        </div>
+                      </div>
+                      {isCashPayment ? (
+                        <div className="flex h-10 items-center rounded-md border border-input bg-muted/50 px-3 text-sm">
+                          {t.cashPayment}
+                        </div>
+                      ) : (
+                        <Input
+                          required
+                          placeholder={t.bankAccountPlaceholder}
+                          value={formData.bankAccount}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9A-Za-z+ ]/g, '').toUpperCase();
+                            handleInputChange('bankAccount', val);
+                          }}
+                        />
+                      )}
                     </div>
                   </>
                 )}
