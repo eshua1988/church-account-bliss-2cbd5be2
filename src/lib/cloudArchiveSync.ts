@@ -62,8 +62,6 @@ const mapWithConcurrency = async <T, R>(items: T[], limit: number, worker: (item
   return results;
 };
 
-const CLOUD_BATCH_SIZE = 25;
-const MAX_CLOUD_BATCHES_PER_SYNC = 2;
 const withTimeout = async <T,>(task: Promise<T>, timeoutMs: number, message: string): Promise<T> => {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -112,31 +110,25 @@ export const syncNotificationArchivesToCloud = async (
     return { uploaded: 0, archives: 0, skipped: true, errors };
   }
 
-  // Files are uploaded in small, immutable ZIP batches. This keeps a large
-  // archive from being downloaded and compressed again on every sync.
-  const archived = notifications.filter(notification => notification.metadata?.archived_at && !notification.metadata?.cloud_archive_synced_at);
+  // A cloud archive is one ZIP per calendar year. Rebuild only years that have
+  // new documents (or documents created by the former batch format), using all
+  // documents of that year, then overwrite its ZIP with the same name.
+  const archived = notifications.filter(notification => notification.metadata?.archived_at);
+  const yearsToRebuild = new Set(archived
+    .filter(notification => notification.metadata?.cloud_archive_format !== 'yearly-v1')
+    .map(notification => String(Number(notification.metadata?.archive_year) || getNotificationArchiveYear(notification))));
   const groups = archived.reduce<Record<string, Notification[]>>((result, notification) => {
-    const type = notification.metadata?.archive_type === 'income' ? 'income' : 'expense';
     const year = Number(notification.metadata?.archive_year) || getNotificationArchiveYear(notification);
-    const key = `${year}-${type}`;
-    (result[key] ||= []).push(notification);
+    if (yearsToRebuild.has(String(year))) (result[String(year)] ||= []).push(notification);
     return result;
   }, {});
 
-  const batches = Object.entries(groups).flatMap(([key, items]) =>
-    Array.from({ length: Math.ceil(items.length / CLOUD_BATCH_SIZE) }, (_, index) => ({
-      key,
-      items: items.slice(index * CLOUD_BATCH_SIZE, (index + 1) * CLOUD_BATCH_SIZE),
-    })),
-  );
   let uploaded = 0;
-  let processedBatches = 0;
-  for (const { key, items } of batches.slice(0, MAX_CLOUD_BATCHES_PER_SYNC)) {
+  let processedArchives = 0;
+  for (const [year, items] of Object.entries(groups)) {
     throwIfAborted();
-    const [year, type] = key.split('-');
-    const folderName = `${year} ${type === 'income' ? 'доход' : 'расход'}`;
     const zip = new JSZip();
-    const folder = zip.folder(folderName);
+    const folder = zip.folder(year);
     if (!folder) continue;
 
     const downloads = await mapWithConcurrency(items, 2, async notification => {
@@ -148,15 +140,17 @@ export const syncNotificationArchivesToCloud = async (
       }
     }, signal);
     throwIfAborted();
-    const uploadedItems = items.filter((_, index) => Boolean(downloads[index]));
+    // Do not replace an existing yearly archive with an incomplete one if a
+    // document cannot be downloaded during this run.
+    if (downloads.some(pdf => !pdf)) continue;
     for (let index = 0; index < items.length; index++) {
       const notification = items[index];
       const pdf = downloads[index];
       if (!pdf) continue;
-      const monthFolder = folder.folder(getNotificationArchiveMonth(notification));
+      const typeFolder = folder.folder(notification.metadata?.archive_type === 'income' ? 'доход' : 'расход');
+      const monthFolder = typeFolder?.folder(getNotificationArchiveMonth(notification));
       monthFolder?.file(`${notification.id.slice(0, 8)}-${pdf.name}`, pdf.blob);
     }
-    if (uploadedItems.length === 0) continue;
 
     const archive = await zip.generateAsync({
       type: 'blob',
@@ -164,7 +158,7 @@ export const syncNotificationArchivesToCloud = async (
       compressionOptions: { level: 9 },
     });
     throwIfAborted();
-    const fileName = `${folderName}-${getNotificationArchiveMonth(uploadedItems[0])}-${uploadedItems[0].id.slice(0, 8)}-${uploadedItems[uploadedItems.length - 1].id.slice(0, 8)}.zip`;
+    const fileName = `${year}.zip`;
 
     const uploadResults = await Promise.allSettled(connections.map(connection => withTimeout(
       uploadCloudArchive(connection, fileName, archive),
@@ -182,13 +176,12 @@ export const syncNotificationArchivesToCloud = async (
     throwIfAborted();
     if (uploadResults.every(result => result.status === 'fulfilled')) {
       const syncedAt = new Date().toISOString();
-      await Promise.all(uploadedItems.map(notification => supabase.from('notifications').update({
-        metadata: { ...(notification.metadata || {}), cloud_archive_synced_at: syncedAt },
+      await Promise.all(items.map(notification => supabase.from('notifications').update({
+        metadata: { ...(notification.metadata || {}), cloud_archive_synced_at: syncedAt, cloud_archive_format: 'yearly-v1' },
       }).eq('id', notification.id)));
     }
-    processedBatches++;
+    processedArchives++;
   }
 
-  const remaining = Math.max(batches.length - processedBatches, 0);
-  return { uploaded, archives: processedBatches, skipped: false, errors, pendingBatches: remaining };
+  return { uploaded, archives: processedArchives, skipped: false, errors, pendingBatches: 0 };
 };
